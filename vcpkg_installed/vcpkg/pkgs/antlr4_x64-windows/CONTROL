@@ -1,0 +1,7 @@
+Package: antlr4
+Version: 4.13.1
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: ace55cbb2e3cd151080e558bee9bd3d9228acbf166aed6cf4bb864224bedc7b5
+Description: ANother Tool for Language Recognition
