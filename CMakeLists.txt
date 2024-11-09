@@ -17,8 +17,8 @@ set(PROJECT_VERSION_PATCH 0)
 # Set path to generator
 set(ANTLR4_JAR_LOCATION ${PROJECT_SOURCE_DIR}/lib/antlr-4.13.2-complete.jar)
 
-find_package(antlr4-generator REQUIRED)
 find_package(antlr4-runtime CONFIG REQUIRED)
+find_package(antlr4-generator REQUIRED)
 
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
@@ -61,7 +61,9 @@ target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR})
 target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_LEXER})
 target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_PARSER})
 
-target_link_libraries(yonac-llvm PRIVATE antlr4_shared Boost::boost Boost::program_options)
+add_dependencies(yonac-llvm antlr4_static)
+
+target_link_libraries(yonac-llvm PRIVATE antlr4_static Boost::boost Boost::program_options)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET yonac-llvm PROPERTY CXX_STANDARD 20)

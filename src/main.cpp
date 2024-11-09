@@ -7,6 +7,7 @@
 
 #include "YonaLexer.h"
 #include "YonaParser.h"
+#include "YonaVisitor.h"
 #include "main.h"
 
 namespace po = boost::program_options;
@@ -53,6 +54,8 @@ int main(const int argc, const char* argv[]) {
     parser.addErrorListener(&ConsoleErrorListener::INSTANCE);
 
     YonaParser::InputContext* tree = parser.input();
+    YonaVisitor yona_visitor;
+    cout << typeid(yona_visitor.visitInput(tree)).name() << endl;
 
     stream.close();
     return 0;

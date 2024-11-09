@@ -22,6 +22,26 @@
       }
     },
     {
+      "name": "darwin-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_TOOLCHAIN_FILE": {
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+          "type": "FILEPATH"
+        }
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
       "name": "x64-debug",
       "displayName": "x64 Debug",
       "inherits": "windows-base",
@@ -57,6 +77,26 @@
       "name": "x86-release",
       "displayName": "x86 Release",
       "inherits": "x86-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "arm64-debug",
+      "displayName": "arm64 Debug",
+      "inherits": "darwin-base",
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "arm64-release",
+      "displayName": "arm64 Release",
+      "inherits": "arm64-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
