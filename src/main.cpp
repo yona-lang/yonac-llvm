@@ -30,7 +30,6 @@ void process_program_options(const int argc, const char* const argv[]) {
         exit(EXIT_FAILURE);
     }
     po::notify(args);
-    return;
 }
 
 int main(const int argc, const char* argv[]) {

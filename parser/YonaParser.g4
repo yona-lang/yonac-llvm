@@ -87,7 +87,7 @@ apply : call funArg* ;
 funArg : PARENS_L expression PARENS_R | value;
 call : name | moduleCall | nameCall ;
 moduleCall : (fqn | PARENS_L expression PARENS_R) DCOLON name ;
-nameCall : var=name DCOLON fun=name;
+nameCall : varName=name DCOLON funName=name;
 module : NEWLINE* KW_MODULE fqn KW_EXPORTS nonEmptyListOfNames KW_AS NEWLINE NEWLINE? record* NEWLINE? function+ NEWLINE? KW_END ;
 nonEmptyListOfNames : NEWLINE? name NEWLINE? (COMMA NEWLINE? name)* NEWLINE? ;
 
