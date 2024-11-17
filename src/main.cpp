@@ -1,9 +1,9 @@
 ﻿// yonac-llvm.cpp : Defines the entry point for the application.
 //
 
-#include <iostream>
 #include <antlr4-runtime.h>
 #include <boost/program_options.hpp>
+#include <iostream>
 
 #include "YonaLexer.h"
 #include "YonaParser.h"
@@ -15,25 +15,27 @@ using namespace antlr4;
 using namespace yonac;
 using namespace std;
 
-void process_program_options(const int argc, const char* const argv[]) {
+void process_program_options(const int argc, const char* const argv[])
+{
     po::options_description desc("Allowed options");
     desc.add_options()("help", "Show brief usage message");
 
     po::variables_map args;
 
-    try {
-        po::store(
-            po::parse_command_line(argc, argv, desc),
-            args);
+    try
+    {
+        po::store(po::parse_command_line(argc, argv, desc), args);
     }
-    catch (po::error const& e) {
+    catch (po::error const& e)
+    {
         cerr << e.what() << '\n';
         exit(EXIT_FAILURE);
     }
     po::notify(args);
 }
 
-int main(const int argc, const char* argv[]) {
+int main(const int argc, const char* argv[])
+{
     process_program_options(argc, argv);
 
     ifstream stream;

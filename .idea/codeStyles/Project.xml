@@ -5,6 +5,8 @@
     </Python>
     <RiderCodeStyleSettings>
       <option name="/Default/CodeStyle/CodeFormatting/CppClangFormat/EnableClangFormatSupport/@EntryValue" value="true" type="bool" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppClangFormat/ExecutableToUse/@EntryValue" value="Custom" type="string" />
+      <option name="/Default/CodeStyle/CodeFormatting/CppClangFormat/ExternalClangFormatPath/@EntryValue" value="/usr/bin/clang-format" type="string" />
     </RiderCodeStyleSettings>
     <ScalaCodeStyleSettings>
       <option name="sortAsScalastyle" value="true" />

@@ -22,7 +22,7 @@
       }
     },
     {
-      "name": "darwin-base",
+      "name": "llvm-base",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
@@ -34,11 +34,21 @@
           "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
           "type": "FILEPATH"
         }
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "gcc-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "installDir": "${sourceDir}/out/install/${presetName}",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cc",
+        "CMAKE_CXX_COMPILER": "c++",
+        "CMAKE_TOOLCHAIN_FILE": {
+          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+          "type": "FILEPATH"
+        }
       }
     },
     {
@@ -84,7 +94,7 @@
     {
       "name": "arm64-debug",
       "displayName": "arm64 Debug",
-      "inherits": "darwin-base",
+      "inherits": "llvm-base",
       "architecture": {
         "value": "arm64",
         "strategy": "external"
@@ -97,6 +107,46 @@
       "name": "arm64-release",
       "displayName": "arm64 Release",
       "inherits": "arm64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "x64-debug-gcc",
+      "displayName": "x64 Debug GCC",
+      "inherits": "gcc-base",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "x64-release-gcc",
+      "displayName": "x64 Release GCC",
+      "inherits": "x64-debug-gcc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "x64-debug-llvm",
+      "displayName": "x64 Debug LLVM",
+      "inherits": "llvm-base",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "x64-release-llvm",
+      "displayName": "x64 Release LLVM",
+      "inherits": "x64-debug-llvm",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }

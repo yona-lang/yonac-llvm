@@ -1,13 +1,15 @@
 #pragma once
 
+#include <antlr4-runtime.h>
 #include <iostream>
 #include <stack>
-#include <antlr4-runtime.h>
 
-namespace yonac {
+namespace yonac
+{
     using namespace std;
 
-    class YonaLexerBase : public antlr4::Lexer {
+    class YonaLexerBase : public antlr4::Lexer
+    {
     private:
         size_t interpolatedStringLevel = 0;
         stack<size_t> curlyLevels;

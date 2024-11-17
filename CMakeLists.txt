@@ -8,11 +8,12 @@ if (POLICY CMP0141)
   cmake_policy(SET CMP0141 NEW)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
+cmake_policy(SET CMP0167 NEW)
 
-project ("yonac-llvm" CXX C)
-set(PROJECT_VERSION_MAJOR 0)
-set(PROJECT_VERSION_MINOR 1)
-set(PROJECT_VERSION_PATCH 0)
+project (YONAC_LLVM CXX C)
+set(YONAC_LLVM_VERSION_MAJOR 0)
+set(YONAC_LLVM_VERSION_MINOR 1)
+set(YONAC_LLVM_VERSION_PATCH 0)
 
 # Set path to generator
 set(ANTLR4_JAR_LOCATION ${PROJECT_SOURCE_DIR}/lib/antlr-4.13.2-complete.jar)
@@ -54,19 +55,21 @@ file(GLOB all_SRCS
         )
 
 # Add source to this project's executable.
-add_executable (yonac-llvm ${all_SRCS} ${ANTLR4_SRC_FILES_YONA_LEXER} ${ANTLR4_SRC_FILES_YONA_PARSER})
+add_executable (yona ${all_SRCS} ${ANTLR4_SRC_FILES_YONA_LEXER} ${ANTLR4_SRC_FILES_YONA_PARSER}
+        src/ast.cpp
+        src/YonaVisitor.cpp)
 
-target_include_directories(yonac-llvm PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR})
-target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_LEXER})
-target_include_directories(yonac-llvm PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_PARSER})
+target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR})
+target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_LEXER})
+target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_PARSER})
 
-add_dependencies(yonac-llvm antlr4_static)
+add_dependencies(yona antlr4_static)
 
-target_link_libraries(yonac-llvm PRIVATE antlr4_static Boost::boost Boost::program_options)
+target_link_libraries(yona PRIVATE antlr4_static Boost::boost Boost::program_options)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET yonac-llvm PROPERTY CXX_STANDARD 20)
+  set_property(TARGET yona PROPERTY CXX_STANDARD 23)
 endif()
 
 # TODO: Add tests and install targets if needed.

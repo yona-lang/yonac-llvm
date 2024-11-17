@@ -1,748 +1,849 @@
 #pragma once
 
-#include <any>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
-#include <vector>
 #include <variant>
-#include <optional>
-#include <memory>
+#include <vector>
 
-namespace yonac::ast {
-    class IdentifierExpr;
-    class SequenceExpr;
-    class StringExpr;
-    class CatchPatternExpr;
-    class CatchExpr;
-    class DictGeneratorReducer;
+namespace yonac::ast
+{
     class AsDataStructurePattern;
-    class PatternValue;
     class RecordPattern;
-    class DictPattern;
-    class TuplePattern;
     class SeqPattern;
     class HeadTailsPattern;
     class TailsHeadPattern;
     class HeadTailsHeadPattern;
-    class PatternExpr;
+    class DictPattern;
+    class TuplePattern;
+    class PatternValue;
 
     using namespace std;
 
-    class Token {};
+    class Token
+    {
+    };
 
     template <typename T>
-    class AstVisitor {
+    class AstVisitor
+    {
     public:
         virtual ~AstVisitor() = default;
         virtual T visit() = 0; // Placeholder for the actual implementation
     };
 
-    class AstNode {
-    public:
+    class AstNode
+    {
+    protected:
         Token token;
+
+    public:
+        AstNode() = default;
+        using Ptr = unique_ptr<AstNode>;
+        virtual ~AstNode() = default;
     };
 
-    class ExprNode : public AstNode {};
-    class PatternNode : public AstNode {};
-    class UnderscoreNode : public PatternNode {};
+    class ExprNode : public AstNode
+    {
+    };
+    class PatternNode : public AstNode
+    {
+    };
+    class UnderscoreNode : public PatternNode
+    {
+    };
 
-    class ValueExpr : public ExprNode {};
-
-    using PatternWithoutSequence = variant<UnderscoreNode, PatternValue, TuplePattern, DictPattern>;
-    using SequencePattern = variant<SeqPattern, HeadTailsPattern, TailsHeadPattern, HeadTailsHeadPattern>;
-    using DataStructurePattern = variant<TuplePattern, SequencePattern, DictPattern, RecordPattern>;
-    using Pattern = variant<UnderscoreNode, PatternValue, DataStructurePattern, AsDataStructurePattern>;
-    using TailPattern = variant<IdentifierExpr, SequenceExpr, UnderscoreNode, StringExpr>;
+    class ValueExpr : public ExprNode
+    {
+    };
 
     template <typename T>
-    class LiteralExpr : public ValueExpr {
+    class LiteralExpr : public ValueExpr
+    {
     protected:
         T value;
 
     public:
-        explicit LiteralExpr(T value) : value(value) {}
+        explicit LiteralExpr(T value);
     };
-    class OpExpr : public ExprNode {};
-    class BinaryOpExpr : public OpExpr {
+    class OpExpr : public ExprNode
+    {
+    };
+    class BinaryOpExpr : public OpExpr
+    {
     protected:
-        unique_ptr<ExprNode> left;
-        unique_ptr<ExprNode> right;
+        ExprNode left;
+        ExprNode right;
 
     public:
-        explicit BinaryOpExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : left(std::move(left)), right(std::move(right)) {}
+        explicit BinaryOpExpr(const ExprNode& left, const ExprNode& right);
     };
-    class AliasExpr : public ExprNode {};
-    class CallExpr : public ExprNode {};
-    class ImportClauseExpr : public ExprNode {};
-    class GeneratorExpr : public ExprNode {};
-    class CollectionExtractorExpr : public ExprNode {};
-    class SequenceExpr : public ExprNode {};
-
-    class FunctionBody : public AstNode {};
-
-    class NameExpr : public ExprNode {
-    protected:
-        string value;
-
-    public:
-        explicit NameExpr(string value) : value(std::move(value)) {}
+    class AliasExpr : public ExprNode
+    {
     };
-
-    class IdentifierExpr : public ValueExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-
-    public:
-        explicit IdentifierExpr(unique_ptr<NameExpr> name) : name(std::move(name)) {}
+    class CallExpr : public ExprNode
+    {
+    };
+    class ImportClauseExpr : public ExprNode
+    {
+    };
+    class GeneratorExpr : public ExprNode
+    {
+    };
+    class CollectionExtractorExpr : public ExprNode
+    {
+    };
+    class SequenceExpr : public ExprNode
+    {
     };
 
-    class RecordNode : public AstNode {
-    protected:
-        string recordType;
-        vector<unique_ptr<IdentifierExpr>> identifiers;
-
-    public:
-        explicit RecordNode(string recordType, vector<unique_ptr<IdentifierExpr>> identifiers)
-            : AstNode(), recordType(std::move(recordType)), identifiers(std::move(identifiers)) {}
+    class FunctionBody : public AstNode
+    {
     };
 
-    class TrueLiteralExpr : public LiteralExpr<bool> {
-    public:
-        explicit TrueLiteralExpr() : LiteralExpr<bool>(true) {}
-    };
-    class FalseLiteralExpr : public LiteralExpr<bool> {
-    public:
-        explicit FalseLiteralExpr() : LiteralExpr<bool>(false) {}
-    };
-    class FloatExpr : public LiteralExpr<float> {
-    public:
-        explicit FloatExpr(const float value) : LiteralExpr<float>(value) {}
-    };
-    class IntegerExpr : public LiteralExpr<int> {
-    public:
-        explicit IntegerExpr(const int value) : LiteralExpr<int>(value) {}
-    };
-    class ByteExpr : public LiteralExpr<unsigned char> {
-    public:
-        explicit ByteExpr(unsigned const char value) : LiteralExpr<unsigned char>(value) {}
-    };
-    class StringExpr : public LiteralExpr<string> {
-    public:
-        explicit StringExpr(string value) : LiteralExpr<string>(std::move(value)) {}
-    };
-    class CharacterExpr : public LiteralExpr<char> {
-    public:
-        explicit CharacterExpr(const char value) : LiteralExpr<char>(value) {}
-    };
-
-    class UnitExpr : public LiteralExpr<nullptr_t> {
-    public:
-        UnitExpr() : LiteralExpr<nullptr_t>(nullptr) {}
-    };
-    class TupleExpr : public ValueExpr {
-    protected:
-        vector<unique_ptr<ExprNode>> values;
-
-    public:
-        explicit TupleExpr(vector<unique_ptr<ExprNode>> values) : values(std::move(values)) {}
-    };
-    class DictExpr : public ValueExpr {
-    protected:
-        vector<pair<unique_ptr<ExprNode>, unique_ptr<ExprNode>>> values;
-
-    public:
-        explicit DictExpr(vector<pair<unique_ptr<ExprNode>, unique_ptr<ExprNode>>> values) : values(std::move(values)) {}
-    };
-    class ValuesSequenceExpr : public SequenceExpr {
-    protected:
-        vector<unique_ptr<ExprNode>> values;
-
-    public:
-        explicit ValuesSequenceExpr(vector<unique_ptr<ExprNode>> values) : values(std::move(values)) {}
-    };
-    class RangeSequenceExpr : public SequenceExpr {
-    protected:
-        unique_ptr<ExprNode> start;
-        unique_ptr<ExprNode> end;
-        unique_ptr<ExprNode> step;
-
-    public:
-        explicit RangeSequenceExpr(unique_ptr<ExprNode> start, unique_ptr<ExprNode> end, unique_ptr<ExprNode> step)
-            : start(std::move(start)), end(std::move(end)), step(std::move(step)) {}
-    };
-    class SetExpr : public ValueExpr {
-    protected:
-        vector<unique_ptr<ExprNode>> values;
-
-    public:
-        explicit SetExpr(vector<unique_ptr<ExprNode>> values) : values(std::move(values)) {}
-    };
-    class SymbolExpr : public ValueExpr {
+    class NameExpr : public ExprNode
+    {
     protected:
         string value;
 
     public:
-        explicit SymbolExpr(string value) : value(std::move(value)) {}
+        explicit NameExpr(const string& value);
     };
-    class PackageNameExpr : public ValueExpr {
+
+    class IdentifierExpr : public ValueExpr
+    {
+    protected:
+        NameExpr name;
+
+    public:
+        explicit IdentifierExpr(const NameExpr& name);
+    };
+
+    class RecordNode : public AstNode
+    {
+    protected:
+        NameExpr recordType;
+        vector<IdentifierExpr> identifiers;
+
+    public:
+        explicit RecordNode(const NameExpr& recordType, const vector<IdentifierExpr>& identifiers);
+    };
+
+    class TrueLiteralExpr : public LiteralExpr<bool>
+    {
+    public:
+        explicit TrueLiteralExpr();
+    };
+    class FalseLiteralExpr : public LiteralExpr<bool>
+    {
+    public:
+        explicit FalseLiteralExpr();
+    };
+    class FloatExpr : public LiteralExpr<float>
+    {
+    public:
+        explicit FloatExpr(const float value);
+    };
+    class IntegerExpr : public LiteralExpr<int>
+    {
+    public:
+        explicit IntegerExpr(const int value);
+    };
+    class ByteExpr : public LiteralExpr<unsigned char>
+    {
+    public:
+        explicit ByteExpr(unsigned const char value);
+    };
+    class StringExpr : public LiteralExpr<string>
+    {
+    public:
+        explicit StringExpr(const string& value);
+    };
+    class CharacterExpr : public LiteralExpr<char>
+    {
+    public:
+        explicit CharacterExpr(const char value);
+    };
+
+    class UnitExpr : public LiteralExpr<nullptr_t>
+    {
+    public:
+        UnitExpr();
+    };
+    class TupleExpr : public ValueExpr
+    {
+    protected:
+        vector<ExprNode> values;
+
+    public:
+        explicit TupleExpr(const vector<ExprNode>& values);
+    };
+    class DictExpr : public ValueExpr
+    {
+    protected:
+        vector<pair<ExprNode, ExprNode>> values;
+
+    public:
+        explicit DictExpr(const vector<pair<ExprNode, ExprNode>>& values);
+    };
+    class ValuesSequenceExpr : public SequenceExpr
+    {
+    protected:
+        vector<ExprNode> values;
+
+    public:
+        explicit ValuesSequenceExpr(const vector<ExprNode>& values);
+    };
+    class RangeSequenceExpr : public SequenceExpr
+    {
+    protected:
+        ExprNode start;
+        ExprNode end;
+        ExprNode step;
+
+    public:
+        explicit RangeSequenceExpr(const ExprNode& start, const ExprNode& end, const ExprNode& step);
+    };
+    class SetExpr : public ValueExpr
+    {
+    protected:
+        vector<ExprNode> values;
+
+    public:
+        explicit SetExpr(const vector<ExprNode>& values);
+    };
+    class SymbolExpr : public ValueExpr
+    {
+    protected:
+        string value;
+
+    public:
+        explicit SymbolExpr(const string& value);
+    };
+    class PackageNameExpr : public ValueExpr
+    {
     protected:
         vector<NameExpr> parts;
 
     public:
-        explicit PackageNameExpr(vector<NameExpr> parts) : parts(std::move(parts)) {}
+        explicit PackageNameExpr(const vector<NameExpr>& parts);
     };
-    class FqnExpr : public ValueExpr {
+    class FqnExpr : public ValueExpr
+    {
     protected:
-        unique_ptr<PackageNameExpr> packageName;
-        unique_ptr<NameExpr> moduleName;
+        PackageNameExpr packageName;
+        NameExpr moduleName;
 
     public:
-        explicit FqnExpr(unique_ptr<PackageNameExpr> packageName, unique_ptr<NameExpr> moduleName)
-            : packageName(std::move(packageName)), moduleName(std::move(moduleName)) {}
+        explicit FqnExpr(const PackageNameExpr& packageName, const NameExpr& moduleName);
     };
-    class FunctionExpr : public ExprNode {
+    class FunctionExpr : public ExprNode
+    {
     protected:
         string name;
-        vector<unique_ptr<PatternNode>> patterns;
-        vector<unique_ptr<FunctionBody>> bodies;
+        vector<PatternNode> patterns;
+        vector<FunctionBody> bodies;
 
     public:
-        explicit FunctionExpr(string name, vector<unique_ptr<PatternNode>> patterns,
-            vector<unique_ptr<FunctionBody>> bodies)
-            : name(std::move(name)), patterns(std::move(patterns)), bodies(std::move(bodies)) {}
+        explicit FunctionExpr(const string& name, const vector<PatternNode>& patterns,
+                              const vector<FunctionBody>& bodies);
     };
 
-    class ModuleExpr : public ValueExpr {
+    class ModuleExpr : public ValueExpr
+    {
     protected:
-        unique_ptr<unique_ptr<FqnExpr>> fqn;
+        FqnExpr fqn;
         vector<string> exports;
-        vector<unique_ptr<RecordNode>> records;
-        vector<unique_ptr<FunctionExpr>> functions;
+        vector<RecordNode> records;
+        vector<FunctionExpr> functions;
 
     public:
-        explicit ModuleExpr(unique_ptr<unique_ptr<FqnExpr>> fqn, vector<string> exports,
-            vector<unique_ptr<RecordNode>> records, vector<unique_ptr<FunctionExpr>> functions)
-            : fqn(std::move(fqn)), exports(std::move(exports)), records(std::move(records)), functions(std::move(functions)) {}
+        explicit ModuleExpr(const FqnExpr& fqn, const vector<string>& exports, const vector<RecordNode>& records,
+                            const vector<FunctionExpr>& functions);
     };
-    class RecordInstanceExpr : public ValueExpr {
+    class RecordInstanceExpr : public ValueExpr
+    {
+    protected:
+        NameExpr recordType;
+        vector<pair<NameExpr, ExprNode>> items;
+
+    public:
+        explicit RecordInstanceExpr(const NameExpr& recordType, const vector<pair<NameExpr, ExprNode>>& items);
+    };
+
+    class BodyWithGuards : public FunctionBody
+    {
+    protected:
+        ExprNode guard;
+        vector<ExprNode> exprs;
+
+    public:
+        explicit BodyWithGuards(const ExprNode& guard, const vector<ExprNode>& exprs);
+    };
+    class BodyWithoutGuards : public FunctionBody
+    {
+    protected:
+        ExprNode expr;
+
+    public:
+        explicit BodyWithoutGuards(const ExprNode& expr);
+    };
+    class LogicalNotOpExpr : public OpExpr
+    {
+    protected:
+        ExprNode expr;
+
+    public:
+        explicit LogicalNotOpExpr(const ExprNode& expr);
+    };
+    class BinaryNotOpExpr : public OpExpr
+    {
+    protected:
+        ExprNode expr;
+
+    public:
+        explicit BinaryNotOpExpr(const ExprNode& expr);
+    };
+
+    class PowerExpr : public BinaryOpExpr
+    {
+    public:
+        explicit PowerExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class MultiplyExpr : public BinaryOpExpr
+    {
+    public:
+        explicit MultiplyExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class DivideExpr : public BinaryOpExpr
+    {
+    public:
+        explicit DivideExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class ModuloExpr : public BinaryOpExpr
+    {
+    public:
+        explicit ModuloExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class AddExpr : public BinaryOpExpr
+    {
+    public:
+        explicit AddExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class SubtractExpr : public BinaryOpExpr
+    {
+    public:
+        explicit SubtractExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class LeftShiftExpr : public BinaryOpExpr
+    {
+    public:
+        explicit LeftShiftExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class RightShiftExpr : public BinaryOpExpr
+    {
+    public:
+        explicit RightShiftExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class ZerofillRightShiftExpr : public BinaryOpExpr
+    {
+    public:
+        explicit ZerofillRightShiftExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class GteExpr : public BinaryOpExpr
+    {
+    public:
+        explicit GteExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class LteExpr : public BinaryOpExpr
+    {
+    public:
+        explicit LteExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class GtExpr : public BinaryOpExpr
+    {
+    public:
+        explicit GtExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class LtExpr : public BinaryOpExpr
+    {
+    public:
+        explicit LtExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class EqExpr : public BinaryOpExpr
+    {
+    public:
+        explicit EqExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class NeqExpr : public BinaryOpExpr
+    {
+    public:
+        explicit NeqExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class ConsLeftExpr : public BinaryOpExpr
+    {
+    public:
+        explicit ConsLeftExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class ConsRightExpr : public BinaryOpExpr
+    {
+    public:
+        explicit ConsRightExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class JoinExpr : public BinaryOpExpr
+    {
+    public:
+        explicit JoinExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class BitwiseAndExpr : public BinaryOpExpr
+    {
+    public:
+        explicit BitwiseAndExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class BitwiseXorExpr : public BinaryOpExpr
+    {
+    public:
+        explicit BitwiseXorExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class BitwiseOrExpr : public BinaryOpExpr
+    {
+    public:
+        explicit BitwiseOrExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class LogicalAndExpr : public BinaryOpExpr
+    {
+    public:
+        explicit LogicalAndExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class LogicalOrExpr : public BinaryOpExpr
+    {
+    public:
+        explicit LogicalOrExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class InExpr : public BinaryOpExpr
+    {
+    public:
+        explicit InExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class PipeLeftExpr : public BinaryOpExpr
+    {
+    public:
+        explicit PipeLeftExpr(const ExprNode& left, const ExprNode& right);
+    };
+    class PipeRightExpr : public BinaryOpExpr
+    {
+    public:
+        explicit PipeRightExpr(const ExprNode& left, const ExprNode& right);
+    };
+
+    class LetExpr : public ExprNode
+    {
+    protected:
+        vector<AliasExpr> aliases;
+        ExprNode expr;
+
+    public:
+        explicit LetExpr(const vector<AliasExpr>& aliases, const ExprNode& expr);
+    };
+    class IfExpr : public ExprNode
+    {
+    protected:
+        ExprNode condition;
+        ExprNode thenExpr;
+        optional<ExprNode> elseExpr;
+
+    public:
+        explicit IfExpr(const ExprNode& condition, const ExprNode& thenExpr, const optional<ExprNode>& elseExpr);
+    };
+    class ApplyExpr : public ExprNode
+    {
+    protected:
+        CallExpr call;
+        vector<variant<ExprNode, ValueExpr>> args;
+
+    public:
+        explicit ApplyExpr(const CallExpr& call, const vector<variant<ExprNode, ValueExpr>>& args);
+    };
+    class DoExpr : public ExprNode
+    {
+    protected:
+        vector<variant<AliasExpr, ExprNode>> steps;
+
+    public:
+        explicit DoExpr(const vector<variant<AliasExpr, ExprNode>>& steps);
+    };
+    class ImportExpr : public ExprNode
+    {
+    protected:
+        vector<ImportClauseExpr> clauses;
+        ExprNode expr;
+
+    public:
+        explicit ImportExpr(const vector<ImportClauseExpr>& clauses, const ExprNode& expr);
+    };
+    class RaiseExpr : public ExprNode
+    {
+    protected:
+        SymbolExpr symbol;
+        LiteralExpr<string> message;
+
+    public:
+        explicit RaiseExpr(const SymbolExpr& symbol, const LiteralExpr<string>& message);
+    };
+    class WithExpr : public ExprNode
+    {
+    protected:
+        ExprNode contextExpr;
+        optional<NameExpr> name;
+        ExprNode bodyExpr;
+
+    public:
+        explicit WithExpr(const ExprNode& contextExpr, const optional<NameExpr>& name, const ExprNode& bodyExpr);
+    };
+    class FieldAccessExpr : public ExprNode
+    {
+    protected:
+        IdentifierExpr identifier;
+        NameExpr name;
+
+    public:
+        explicit FieldAccessExpr(const IdentifierExpr& identifier, const NameExpr& name);
+    };
+    class FieldUpdateExpr : public ExprNode
+    {
+    protected:
+        IdentifierExpr identifier;
+        vector<pair<NameExpr, ExprNode>> updates;
+
+    public:
+        explicit FieldUpdateExpr(const IdentifierExpr& identifier, const vector<pair<NameExpr, ExprNode>>& updates);
+    };
+
+    class LambdaAlias : public AliasExpr
+    {
+    protected:
+        NameExpr name;
+        FunctionExpr lambda;
+
+    public:
+        explicit LambdaAlias(const NameExpr& name, const FunctionExpr& lambda);
+    };
+    class ModuleAlias : public AliasExpr
+    {
+    protected:
+        NameExpr name;
+        ModuleExpr module;
+
+    public:
+        explicit ModuleAlias(const NameExpr& name, const ModuleExpr& module);
+    };
+    class ValueAlias : public AliasExpr
+    {
+    protected:
+        IdentifierExpr identifier;
+        ExprNode expr;
+
+    public:
+        explicit ValueAlias(const IdentifierExpr& identifier, const ExprNode& expr);
+    };
+    class PatternAlias : public AliasExpr
+    {
+    protected:
+        PatternNode pattern;
+        ExprNode expr;
+
+    public:
+        explicit PatternAlias(const PatternNode& pattern, const ExprNode& expr);
+    };
+    class FqnAlias : public AliasExpr
+    {
+    protected:
+        NameExpr name;
+        FqnExpr fqn;
+
+    public:
+        explicit FqnAlias(const NameExpr& name, const FqnExpr& fqn);
+    };
+    class FunctionAlias : public AliasExpr
+    {
+    protected:
+        NameExpr name;
+        NameExpr alias;
+
+    public:
+        explicit FunctionAlias(const NameExpr& name, const NameExpr& alias);
+    };
+
+    class AliasCall : public CallExpr
+    {
+    protected:
+        NameExpr alias;
+        NameExpr funName;
+
+    public:
+        explicit AliasCall(const NameExpr& alias, const NameExpr& funName);
+    };
+    class NameCall : public CallExpr
+    {
+    protected:
+        NameExpr name;
+
+    public:
+        explicit NameCall(const NameExpr& name);
+    };
+    class ModuleCall : public CallExpr
+    {
+    protected:
+        variant<FqnExpr, ExprNode> fqn;
+        NameExpr funName;
+
+    public:
+        explicit ModuleCall(const variant<FqnExpr, ExprNode>& fqn, const NameExpr& funName);
+    };
+
+    class ModuleImport : public ImportClauseExpr
+    {
+    protected:
+        FqnExpr fqn;
+        NameExpr name;
+
+    public:
+        explicit ModuleImport(const FqnExpr& fqn, const NameExpr& name);
+    };
+    class FunctionsImport : public ImportClauseExpr
+    {
+    protected:
+        vector<FunctionAlias> aliases;
+        FqnExpr fromFqn;
+
+    public:
+        explicit FunctionsImport(const vector<FunctionAlias>& aliases, const FqnExpr& fromFqn);
+    };
+
+    class SeqGeneratorExpr : public GeneratorExpr
+    {
+    protected:
+        ExprNode reducerExpr;
+        CollectionExtractorExpr collectionExtractor;
+        ExprNode stepExpression;
+
+    public:
+        explicit SeqGeneratorExpr(const ExprNode& reducerExpr, const CollectionExtractorExpr& collectionExtractor,
+                                  ExprNode stepExpression);
+    };
+    class SetGeneratorExpr : public GeneratorExpr
+    {
+    protected:
+        ExprNode reducerExpr;
+        CollectionExtractorExpr collectionExtractor;
+        ExprNode stepExpression;
+
+    public:
+        explicit SetGeneratorExpr(const ExprNode& reducerExpr, const CollectionExtractorExpr& collectionExtractor,
+                                  const ExprNode& stepExpression);
+    };
+    class DictGeneratorReducer : public ExprNode
+    {
+    protected:
+        ExprNode key;
+        ExprNode value;
+
+    public:
+        explicit DictGeneratorReducer(const ExprNode& key, const ExprNode& value);
+    };
+    class DictGeneratorExpr : public GeneratorExpr
+    {
+    protected:
+        DictGeneratorReducer reducerExpr;
+        CollectionExtractorExpr collectionExtractor;
+        ExprNode stepExpression;
+
+    public:
+        explicit DictGeneratorExpr(const DictGeneratorReducer& reducerExpr,
+                                   const CollectionExtractorExpr& collectionExtractor, const ExprNode& stepExpression);
+    };
+    class UnderscorePattern : public PatternNode
+    {
+    };
+
+    using IdentifierOrUnderscore = variant<IdentifierExpr, UnderscoreNode>;
+
+    class ValueCollectionExtractorExpr : public CollectionExtractorExpr
+    {
+    protected:
+        IdentifierOrUnderscore expr;
+
+    public:
+        explicit ValueCollectionExtractorExpr(const IdentifierOrUnderscore& expr);
+    };
+    class KeyValueCollectionExtractorExpr : public CollectionExtractorExpr
+    {
+    protected:
+        IdentifierOrUnderscore keyExpr;
+        IdentifierOrUnderscore valueExpr;
+
+    public:
+        explicit KeyValueCollectionExtractorExpr(const IdentifierOrUnderscore& keyExpr,
+                                                 const IdentifierOrUnderscore& valueExpr);
+    };
+
+    using PatternWithoutSequence = PatternNode; // variant<UnderscorePattern, PatternValue, TuplePattern, DictPattern>;
+    using SequencePattern =
+        PatternNode; // variant<SeqPattern, HeadTailsPattern, TailsHeadPattern, HeadTailsHeadPattern>;
+    using DataStructurePattern = PatternNode; // variant<TuplePattern, SequencePattern, DictPattern, RecordPattern>;
+    using Pattern =
+        PatternNode; // variant<UnderscorePattern, PatternValue, DataStructurePattern, AsDataStructurePattern>;
+    using TailPattern = PatternNode; // variant<IdentifierExpr, SequenceExpr, UnderscoreNode, StringExpr>;
+
+    class PatternWithGuards : public PatternNode
+    {
+    protected:
+        ExprNode guard;
+        ExprNode exprNode;
+
+    public:
+        explicit PatternWithGuards(const ExprNode& guard, const ExprNode& exprNode);
+    };
+    class PatternWithoutGuards : public PatternNode
+    {
+    protected:
+        ExprNode exprNode;
+
+    public:
+        PatternWithoutGuards() = default;
+        explicit PatternWithoutGuards(const ExprNode& exprNode);
+    };
+    class PatternExpr : public ExprNode
+    {
+    protected:
+        variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>> patternExpr;
+
+    public:
+        explicit PatternExpr(const variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>>& patternExpr);
+    };
+    class CatchPatternExpr : public ExprNode
+    {
+    protected:
+        Pattern matchPattern;
+        variant<PatternWithoutGuards, vector<PatternWithGuards>> pattern;
+
+    public:
+        explicit CatchPatternExpr(const Pattern& matchPattern,
+                                  const variant<PatternWithoutGuards, vector<PatternWithGuards>>& pattern);
+    };
+    class CatchExpr : public ExprNode
+    {
+    protected:
+        vector<CatchPatternExpr> patterns;
+
+    public:
+        explicit CatchExpr(const vector<CatchPatternExpr>& patterns);
+    };
+    class TryCatchExpr : public ExprNode
+    {
+    protected:
+        ExprNode tryExpr;
+        CatchExpr catchExpr;
+
+    public:
+        explicit TryCatchExpr(const ExprNode& tryExpr, const CatchExpr& catchExpr);
+    };
+
+    class PatternValue : public PatternNode
+    {
+    protected:
+        variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr> expr;
+
+    public:
+        explicit PatternValue(
+            const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr);
+    };
+    class AsDataStructurePattern : public PatternNode
+    {
+    protected:
+        IdentifierExpr identifier;
+        DataStructurePattern pattern;
+
+    public:
+        AsDataStructurePattern(const IdentifierExpr& identifier, const DataStructurePattern& pattern);
+    };
+    class TuplePattern : public PatternNode
+    {
+    protected:
+        vector<Pattern> patterns;
+
+    public:
+        explicit TuplePattern(const vector<Pattern>& patterns);
+    };
+
+    class SeqPattern : public PatternNode
+    {
+    protected:
+        vector<Pattern> patterns;
+
+    public:
+        explicit SeqPattern(const vector<Pattern>& patterns);
+    };
+
+    class HeadTailsPattern : public PatternNode
+    {
+    protected:
+        vector<PatternWithoutSequence> heads;
+        TailPattern tail;
+
+    public:
+        explicit HeadTailsPattern(const vector<PatternWithoutSequence>& heads, const TailPattern& tail);
+    };
+
+    class TailsHeadPattern : public PatternNode
+    {
+    protected:
+        TailPattern tail;
+        vector<PatternWithoutSequence> heads;
+
+    public:
+        explicit TailsHeadPattern(const TailPattern& tail, const vector<PatternWithoutSequence>& heads);
+    };
+
+    class HeadTailsHeadPattern : public PatternNode
+    {
+    protected:
+        vector<PatternWithoutSequence> left;
+        TailPattern tail;
+        vector<PatternWithoutSequence> right;
+
+    public:
+        explicit HeadTailsHeadPattern(const vector<PatternWithoutSequence>& left, const TailPattern& tail,
+                                      const vector<PatternWithoutSequence>& right);
+    };
+
+    class DictPattern : public PatternNode
+    {
+    protected:
+        vector<pair<PatternValue, Pattern>> keyValuePairs;
+
+    public:
+        explicit DictPattern(const vector<pair<PatternValue, Pattern>>& keyValuePairs);
+    };
+
+    class RecordPattern : public PatternNode
+    {
     protected:
         string recordType;
-        vector<pair<unique_ptr<NameExpr>, unique_ptr<ExprNode>>> items;
+        vector<pair<NameExpr, Pattern>> items;
 
     public:
-        explicit RecordInstanceExpr(string recordType, vector<pair<unique_ptr<NameExpr>, unique_ptr<ExprNode>>> items)
-            : recordType(std::move(recordType)), items(std::move(items)) {}
+        explicit RecordPattern(const string& recordType, const vector<pair<NameExpr, Pattern>>& items);
     };
 
-    class BodyWithGuards : public FunctionBody {
+    class CaseExpr : public ExprNode
+    {
     protected:
-        unique_ptr<ExprNode> guard;
-        unique_ptr<ExprNode> expr;
+        ExprNode expr;
+        vector<PatternExpr> patterns;
 
     public:
-        explicit BodyWithGuards(unique_ptr<ExprNode> guard, unique_ptr<ExprNode> expr) : guard(std::move(guard)), expr(std::move(expr)) {}
-    };
-    class BodyWithoutGuards : public FunctionBody {
-    protected:
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit BodyWithoutGuards(unique_ptr<ExprNode> expr) : expr(std::move(expr)) {}
-    };
-    class LogicalNotOpExpr : public OpExpr {
-    protected:
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit LogicalNotOpExpr(unique_ptr<ExprNode> expr) : expr(std::move(expr)) {}
-    };
-    class BinaryNotOpExpr : public OpExpr {
-    protected:
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit BinaryNotOpExpr(unique_ptr<ExprNode> expr) : expr(std::move(expr)) {}
-    };
-
-    class PowerExpr : public BinaryOpExpr {
-    public:
-        explicit PowerExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class MultiplyExpr : public BinaryOpExpr {
-    public:
-        explicit MultiplyExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class DivideExpr : public BinaryOpExpr {
-    public:
-        explicit DivideExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class ModuloExpr : public BinaryOpExpr {
-    public:
-        explicit ModuloExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class AddExpr : public BinaryOpExpr {
-    public:
-        explicit AddExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class SubtractExpr : public BinaryOpExpr {
-    public:
-        explicit SubtractExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class LeftShiftExpr : public BinaryOpExpr {
-    public:
-        explicit LeftShiftExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class RightShiftExpr : public BinaryOpExpr {
-    public:
-        explicit RightShiftExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class ZerofillRightShiftExpr : public BinaryOpExpr {
-    public:
-        explicit ZerofillRightShiftExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class GteExpr : public BinaryOpExpr {
-    public:
-        explicit GteExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class LteExpr : public BinaryOpExpr {
-    public:
-        explicit LteExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class GtExpr : public BinaryOpExpr {
-    public:
-        explicit GtExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class LtExpr : public BinaryOpExpr {
-    public:
-        explicit LtExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class EqExpr : public BinaryOpExpr {
-    public:
-        explicit EqExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class NeqExpr : public BinaryOpExpr {
-    public:
-        explicit NeqExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class ConsLeftExpr : public BinaryOpExpr {
-    public:
-        explicit ConsLeftExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class ConsRightExpr : public BinaryOpExpr {
-    public:
-        explicit ConsRightExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class JoinExpr : public BinaryOpExpr {
-    public:
-        explicit JoinExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class BitwiseAndExpr : public BinaryOpExpr {
-    public:
-        explicit BitwiseAndExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class BitwiseXorExpr : public BinaryOpExpr {
-    public:
-        explicit BitwiseXorExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class BitwiseOrExpr : public BinaryOpExpr {
-    public:
-        explicit BitwiseOrExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class LogicalAndExpr : public BinaryOpExpr {
-    public:
-        explicit LogicalAndExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class LogicalOrExpr : public BinaryOpExpr {
-    public:
-        explicit LogicalOrExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class InExpr : public BinaryOpExpr {
-    public:
-        explicit InExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class PipeLeftExpr : public BinaryOpExpr {
-    public:
-        explicit PipeLeftExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-    class PipeRightExpr : public BinaryOpExpr {
-    public:
-        explicit PipeRightExpr(unique_ptr<ExprNode> left, unique_ptr<ExprNode> right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-    };
-
-    class LetExpr : public ExprNode {
-    protected:
-        vector<unique_ptr<AliasExpr>> aliases;
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit LetExpr(vector<unique_ptr<AliasExpr>> aliases, unique_ptr<ExprNode> expr)
-            : aliases(std::move(aliases)), expr(std::move(expr)) {}
-    };
-    class IfExpr : public ExprNode {
-    protected:
-        unique_ptr<ExprNode> condition;
-        unique_ptr<ExprNode> thenExpr;
-        optional<unique_ptr<ExprNode>> elseExpr;
-
-    public:
-        explicit IfExpr(unique_ptr<ExprNode> condition, unique_ptr<ExprNode> thenExpr, optional<unique_ptr<ExprNode>> elseExpr)
-            : condition(std::move(condition)), thenExpr(std::move(thenExpr)), elseExpr(std::move(elseExpr)) {}
-    };
-    class ApplyExpr : public ExprNode {
-    protected:
-        unique_ptr<CallExpr> call;
-        vector<variant<unique_ptr<ExprNode>, unique_ptr<ValueExpr>>> args;
-
-    public:
-        explicit ApplyExpr(unique_ptr<CallExpr> call, vector<variant<unique_ptr<ExprNode>, unique_ptr<ValueExpr>>> args)
-            : call(std::move(call)), args(std::move(args)) {}
-    };
-    class CaseExpr : public ExprNode {
-    protected:
-        unique_ptr<ExprNode> expr;
-        vector<unique_ptr<PatternExpr>> patterns;
-
-    public:
-        explicit CaseExpr(unique_ptr<ExprNode> expr, vector<unique_ptr<PatternExpr>> patterns)
-            : expr(std::move(expr)), patterns(std::move(patterns)) {}
-    };
-    class DoExpr : public ExprNode {
-    protected:
-        vector<variant<unique_ptr<AliasExpr>, unique_ptr<ExprNode>>> steps;
-
-    public:
-        explicit DoExpr(vector<variant<unique_ptr<AliasExpr>, unique_ptr<ExprNode>>> steps) : steps(steps) {}
-    };
-    class ImportExpr : public ExprNode {
-    protected:
-        vector<unique_ptr<ImportClauseExpr>> clauses;
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit ImportExpr(vector<unique_ptr<ImportClauseExpr>> clauses, unique_ptr<ExprNode> expr)
-            : clauses(std::move(clauses)), expr(std::move(expr)) {}
-    };
-    class TryCatchExpr : public ExprNode {
-    protected:
-        unique_ptr<ExprNode> tryExpr;
-        unique_ptr<CatchExpr> catchExpr;
-
-    public:
-        explicit TryCatchExpr(unique_ptr<ExprNode> tryExpr, unique_ptr<CatchExpr> catchExpr)
-            : tryExpr(std::move(tryExpr)), catchExpr(std::move(catchExpr)) {}
-    };
-    class CatchExpr : public ExprNode {
-    protected:
-        vector<unique_ptr<CatchPatternExpr>> patterns;
-
-    public:
-        explicit CatchExpr(vector<unique_ptr<CatchPatternExpr>> patterns) : patterns(patterns) {}
-    };
-    class RaiseExpr : public ExprNode {
-    protected:
-        unique_ptr<SymbolExpr> symbol;
-        unique_ptr<StringExpr> message;
-
-    public:
-        explicit RaiseExpr(unique_ptr<SymbolExpr> symbol, unique_ptr<StringExpr> message)
-            : symbol(std::move(symbol)), message(std::move(message)) {}
-    };
-    class WithExpr : public ExprNode {
-    protected:
-        unique_ptr<ExprNode> contextExpr;
-        optional<unique_ptr<NameExpr>> name;
-        unique_ptr<ExprNode> bodyExpr;
-
-    public:
-        explicit WithExpr(unique_ptr<ExprNode> contextExpr, optional<unique_ptr<NameExpr>> name, unique_ptr<ExprNode> bodyExpr)
-            : contextExpr(std::move(contextExpr)), name(std::move(name)), bodyExpr(std::move(bodyExpr)) {}
-    };
-    class FieldAccessExpr : public ExprNode {
-    protected:
-        unique_ptr<IdentifierExpr> identifier;
-        unique_ptr<NameExpr> name;
-
-    public:
-        explicit FieldAccessExpr(unique_ptr<IdentifierExpr> identifier, unique_ptr<NameExpr> name)
-            : identifier(std::move(identifier)), name(std::move(name)) {}
-    };
-    class FieldUpdateExpr : public ExprNode {
-    protected:
-        unique_ptr<IdentifierExpr> identifier;
-        vector<pair<unique_ptr<NameExpr>, unique_ptr<ExprNode>>> updates;
-
-    public:
-        explicit FieldUpdateExpr(unique_ptr<IdentifierExpr> identifier, vector<pair<unique_ptr<NameExpr>, unique_ptr<ExprNode>>> updates)
-            : identifier(std::move(identifier)), updates(std::move(updates)) {}
-    };
-
-    class LambdaAlias : public AliasExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-        unique_ptr<FunctionExpr> lambda;
-
-    public:
-        explicit LambdaAlias(unique_ptr<NameExpr> name, unique_ptr<FunctionExpr> lambda) : name(std::move(name)), lambda(std::move(lambda)) {}
-    };
-    class ModuleAlias : public AliasExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-        unique_ptr<ModuleExpr> module;
-
-    public:
-        explicit ModuleAlias(unique_ptr<NameExpr> name, unique_ptr<ModuleExpr> module) : name(std::move(name)), module(std::move(module)) {}
-    };
-    class ValueAlias : public AliasExpr {
-    protected:
-        unique_ptr<IdentifierExpr> identifier;
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit ValueAlias(unique_ptr<IdentifierExpr> identifier, unique_ptr<ExprNode> expr)
-            : identifier(std::move(identifier)), expr(std::move(expr)) {}
-    };
-    class PatternAlias : public AliasExpr {
-    protected:
-        unique_ptr<PatternNode> pattern;
-        unique_ptr<ExprNode> expr;
-
-    public:
-        explicit PatternAlias(unique_ptr<PatternNode> pattern, unique_ptr<ExprNode> expr)
-            : pattern(std::move(pattern)), expr(std::move(expr)) {}
-    };
-    class FqnAlias : public AliasExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-        unique_ptr<FqnExpr> fqn;
-
-    public:
-        explicit FqnAlias(unique_ptr<NameExpr> name, unique_ptr<FqnExpr> fqn) : name(std::move(name)), fqn(std::move(fqn)) {}
-    };
-    class FunctionAlias : public AliasExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-        unique_ptr<NameExpr> alias;
-
-    public:
-        explicit FunctionAlias(unique_ptr<NameExpr> name, unique_ptr<NameExpr> alias) : name(std::move(name)), alias(std::move(alias)) {}
-    };
-
-    class AliasCall : public CallExpr {
-    protected:
-        unique_ptr<NameExpr> alias;
-        unique_ptr<NameExpr> funName;
-
-    public:
-        explicit AliasCall(unique_ptr<NameExpr> alias, unique_ptr<NameExpr> funName)
-            : alias(std::move(alias)), funName(std::move(funName)) {}
-    };
-    class NameCall : public CallExpr {
-    protected:
-        unique_ptr<NameExpr> name;
-
-    public:
-        explicit NameCall(unique_ptr<NameExpr> name) : name(std::move(name)) {}
-    };
-    class ModuleCall : public CallExpr {
-    protected:
-        variant<unique_ptr<FqnExpr>, unique_ptr<ExprNode>> fqn;
-        unique_ptr<NameExpr> funName;
-
-    public:
-        explicit ModuleCall(variant<unique_ptr<FqnExpr>, unique_ptr<ExprNode>> fqn, unique_ptr<NameExpr> funName)
-            : fqn(std::move(fqn)), funName(std::move(funName)) {}
-    };
-
-    class ModuleImport : public ImportClauseExpr {
-    protected:
-        unique_ptr<FqnExpr> fqn;
-        unique_ptr<NameExpr> name;
-
-    public:
-        explicit ModuleImport(unique_ptr<FqnExpr> fqn, unique_ptr<NameExpr> name) : fqn(std::move(fqn)), name(std::move(name)) {}
-    };
-    class FunctionsImport : public ImportClauseExpr {
-    protected:
-        vector<unique_ptr<FunctionAlias>> aliases;
-        unique_ptr<FqnExpr> fromFqn;
-
-    public:
-        explicit FunctionsImport(vector<unique_ptr<FunctionAlias>> aliases, unique_ptr<FqnExpr> fromFqn)
-            : aliases(aliases), fromFqn(std::move(fromFqn)) {}
-    };
-
-    class SeqGeneratorExpr : public GeneratorExpr {
-    protected:
-        unique_ptr<ExprNode> reducerExpr;
-        unique_ptr<CollectionExtractorExpr> collectionExtractor;
-        unique_ptr<ExprNode> stepExpression;
-
-    public:
-        explicit SeqGeneratorExpr(unique_ptr<ExprNode> reducerExpr, unique_ptr<CollectionExtractorExpr> collectionExtractor,
-            unique_ptr<ExprNode> stepExpression)
-            : reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)), stepExpression(std::move(stepExpression)) {}
-    };
-    class SetGeneratorExpr : public GeneratorExpr {
-    protected:
-        unique_ptr<ExprNode> reducerExpr;
-        unique_ptr<CollectionExtractorExpr> collectionExtractor;
-        unique_ptr<ExprNode> stepExpression;
-
-    public:
-        explicit SetGeneratorExpr(unique_ptr<ExprNode> reducerExpr, unique_ptr<CollectionExtractorExpr> collectionExtractor,
-            unique_ptr<ExprNode> stepExpression)
-            : reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)), stepExpression(std::move(stepExpression)) {}
-    };
-    class DictGeneratorExpr : public GeneratorExpr {
-    protected:
-        unique_ptr<DictGeneratorReducer> reducerExpr;
-        unique_ptr<CollectionExtractorExpr> collectionExtractor;
-        unique_ptr<ExprNode> stepExpression;
-
-    public:
-        explicit DictGeneratorExpr(unique_ptr<DictGeneratorReducer> reducerExpr, unique_ptr<CollectionExtractorExpr> collectionExtractor,
-            unique_ptr<ExprNode> stepExpression)
-            : reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)), stepExpression(std::move(stepExpression)) {}
-    };
-    class DictGeneratorReducer : public ExprNode {
-    protected:
-        unique_ptr<ExprNode> key;
-        unique_ptr<ExprNode> value;
-
-    public:
-        explicit DictGeneratorReducer(unique_ptr<ExprNode> key, unique_ptr<ExprNode> value) : key(std::move(key)), value(std::move(value)) {}
-    };
-
-    class UnderscorePattern : public UnderscoreNode {};
-
-    using IdentifierOrUnderscore = variant<unique_ptr<IdentifierExpr>, unique_ptr<UnderscoreNode>>;
-
-    class ValueCollectionExtractorExpr : public CollectionExtractorExpr {
-    protected:
-        unique_ptr<IdentifierOrUnderscore> expr;
-
-    public:
-        explicit ValueCollectionExtractorExpr(unique_ptr<IdentifierOrUnderscore> expr) : expr(std::move(expr)) {}
-    };
-    class KeyValueCollectionExtractorExpr : public CollectionExtractorExpr {
-    protected:
-        unique_ptr<IdentifierOrUnderscore> keyExpr;
-        unique_ptr<IdentifierOrUnderscore> valueExpr;
-
-    public:
-        explicit KeyValueCollectionExtractorExpr(unique_ptr<IdentifierOrUnderscore> keyExpr, unique_ptr<IdentifierOrUnderscore> valueExpr)
-            : keyExpr(std::move(keyExpr)), valueExpr(std::move(valueExpr)) {}
-    };
-
-    class PatternWithGuards : public AstNode {
-    protected:
-        unique_ptr<ExprNode> guard;
-        unique_ptr<ExprNode> exprNode;
-
-    public:
-        explicit PatternWithGuards(unique_ptr<ExprNode> guard, unique_ptr<ExprNode> exprNode)
-            : guard(std::move(guard)), exprNode(std::move(exprNode)) {}
-    };
-    class PatternWithoutGuards : public AstNode {
-    protected:
-        unique_ptr<ExprNode> exprNode;
-
-    public:
-        explicit PatternWithoutGuards(unique_ptr<ExprNode> exprNode) : exprNode(std::move(exprNode)) {}
-    };
-    class PatternExpr : public ExprNode {
-    protected:
-        variant<unique_ptr<Pattern>, unique_ptr<PatternWithoutGuards>, vector<unique_ptr<PatternWithGuards>>> patternExpr;
-
-    public:
-        explicit PatternExpr(variant<unique_ptr<Pattern>, unique_ptr<PatternWithoutGuards>, vector<unique_ptr<PatternWithGuards>>> patternExpr)
-            : patternExpr(std::move(patternExpr)) {}
-    };
-    class CatchPatternExpr : public ExprNode {
-    protected:
-        unique_ptr<Pattern> matchPattern;
-        variant<unique_ptr<PatternWithoutGuards>, vector<unique_ptr<PatternWithGuards>>> pattern;
-
-    public:
-        explicit CatchPatternExpr(unique_ptr<Pattern> matchPattern, variant<unique_ptr<PatternWithoutGuards>, vector<unique_ptr<PatternWithGuards>>> pattern)
-            : matchPattern(std::move(matchPattern)), pattern(std::move(pattern)) {}
-    };
-
-    class PatternValue : public PatternNode {
-    protected:
-        variant<unique_ptr<LiteralExpr<nullptr_t>>, unique_ptr<LiteralExpr<any>>, unique_ptr<SymbolExpr>, unique_ptr<IdentifierExpr>> expr;
-
-    public:
-        explicit PatternValue(variant<unique_ptr<LiteralExpr<nullptr_t>>, unique_ptr<LiteralExpr<any>>, unique_ptr<SymbolExpr>, unique_ptr<IdentifierExpr>> expr)
-            : expr(std::move(expr)) {}
-    };
-    class AsDataStructurePattern : public PatternNode {
-    protected:
-        unique_ptr<IdentifierExpr> identifier;
-        unique_ptr<DataStructurePattern> pattern;
-
-    public:
-        AsDataStructurePattern(unique_ptr<IdentifierExpr> identifier, unique_ptr<DataStructurePattern> pattern)
-            : identifier(std::move(identifier)), pattern(std::move(pattern)) {}
-    };
-    class TuplePattern : public PatternNode {
-    protected:
-        vector<unique_ptr<Pattern>> patterns;
-
-    public:
-        explicit TuplePattern(vector<unique_ptr<Pattern>> patterns) : patterns(std::move(patterns)) {}
-    };
-    class SeqPattern : public PatternNode {
-    protected:
-        vector<unique_ptr<Pattern>> patterns;
-
-    public:
-        explicit SeqPattern(vector<unique_ptr<Pattern>> patterns) : patterns(std::move(patterns)) {}
-    };
-    class HeadTailsPattern : public PatternNode {
-    protected:
-        vector<unique_ptr<PatternWithoutSequence>> heads;
-        unique_ptr<TailPattern> tail;
-
-    public:
-        explicit HeadTailsPattern(vector<unique_ptr<PatternWithoutSequence>> heads, unique_ptr<TailPattern> tail)
-            : heads(std::move(heads)), tail(std::move(tail)) {}
-    };
-    class TailsHeadPattern : public PatternNode {
-    protected:
-        unique_ptr<TailPattern> tail;
-        vector<unique_ptr<PatternWithoutSequence>> heads;
-
-    public:
-        explicit TailsHeadPattern(unique_ptr<TailPattern> tail, vector<unique_ptr<PatternWithoutSequence>> heads)
-            : tail(std::move(tail)), heads(std::move(heads)) {}
-    };
-    class HeadTailsHeadPattern : public PatternNode {
-    protected:
-        vector<unique_ptr<PatternWithoutSequence>> left;
-        unique_ptr<TailPattern> tail;
-        vector<unique_ptr<PatternWithoutSequence>> right;
-
-    public:
-        explicit HeadTailsHeadPattern(vector<unique_ptr<PatternWithoutSequence>> left, unique_ptr<TailPattern> tail,
-            vector<unique_ptr<PatternWithoutSequence>> right)
-            : left(std::move(left)), tail(std::move(tail)), right(std::move(right)) {}
-    };
-    class DictPattern : public PatternNode {
-    protected:
-        vector<pair<unique_ptr<PatternValue>, unique_ptr<Pattern>>> keyValuePairs{};
-
-    public:
-        explicit DictPattern(vector<pair<unique_ptr<PatternValue>, unique_ptr<Pattern>>> keyValuePairs)
-            : keyValuePairs(std::move(keyValuePairs)) {}
-    };
-    class RecordPattern : public PatternNode {
-    protected:
-        string recordType;
-        vector<pair<unique_ptr<NameExpr>, unique_ptr<Pattern>>> items{};
-
-    public:
-        explicit RecordPattern(string recordType, vector<pair<unique_ptr<NameExpr>, unique_ptr<Pattern>>> items)
-            : recordType(std::move(recordType)), items(items) {}
+        explicit CaseExpr(const ExprNode& expr, const vector<PatternExpr>& patterns);
     };
 }
