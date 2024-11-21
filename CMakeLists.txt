@@ -10,6 +10,8 @@ if (POLICY CMP0141)
 endif()
 cmake_policy(SET CMP0167 NEW)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 project (YONAC_LLVM CXX C)
 set(YONAC_LLVM_VERSION_MAJOR 0)
 set(YONAC_LLVM_VERSION_MINOR 1)
@@ -24,7 +26,7 @@ find_package(antlr4-generator REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost REQUIRED COMPONENTS program_options) # header only libraries must not be added here
+find_package(Boost REQUIRED COMPONENTS program_options log) # header only libraries must not be added here
 
 # generate lexer
  antlr4_generate(
@@ -33,7 +35,7 @@ find_package(Boost REQUIRED COMPONENTS program_options) # header only libraries 
    LEXER
    FALSE
    FALSE
-   "yonac"
+   "yona"
    )
 
  # generate parser
@@ -43,7 +45,7 @@ find_package(Boost REQUIRED COMPONENTS program_options) # header only libraries 
    PARSER
    FALSE
    TRUE
-   "yonac"
+   "yona"
    "${ANTLR4_TOKEN_FILES_YONA_LEXER}"
    "${ANTLR4_TOKEN_DIRECTORY_YONA_LEXER}"
    )
@@ -55,9 +57,7 @@ file(GLOB all_SRCS
         )
 
 # Add source to this project's executable.
-add_executable (yona ${all_SRCS} ${ANTLR4_SRC_FILES_YONA_LEXER} ${ANTLR4_SRC_FILES_YONA_PARSER}
-        src/ast.cpp
-        src/YonaVisitor.cpp)
+add_executable (yona ${all_SRCS} ${ANTLR4_SRC_FILES_YONA_LEXER} ${ANTLR4_SRC_FILES_YONA_PARSER})
 
 target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR})
@@ -66,7 +66,7 @@ target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_PARSER})
 
 add_dependencies(yona antlr4_static)
 
-target_link_libraries(yona PRIVATE antlr4_static Boost::boost Boost::program_options)
+target_link_libraries(yona PRIVATE antlr4_static Boost::boost Boost::program_options Boost::log)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET yona PROPERTY CXX_STANDARD 23)

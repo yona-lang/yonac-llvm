@@ -4,7 +4,7 @@
 #include <iostream>
 #include <stack>
 
-namespace yonac
+namespace yona
 {
     using namespace std;
 

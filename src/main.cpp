@@ -2,17 +2,22 @@
 //
 
 #include <antlr4-runtime.h>
+#include <boost/log/trivial.hpp>
 #include <boost/program_options.hpp>
 #include <iostream>
 
 #include "YonaLexer.h"
 #include "YonaParser.h"
 #include "YonaVisitor.h"
+#include "interpreter.h"
 #include "main.h"
+
+#include "ErrorListener.h"
+#include "optimizer.h"
 
 namespace po = boost::program_options;
 using namespace antlr4;
-using namespace yonac;
+using namespace yona;
 using namespace std;
 
 void process_program_options(const int argc, const char* const argv[])
@@ -38,26 +43,35 @@ int main(const int argc, const char* argv[])
 {
     process_program_options(argc, argv);
 
-    ifstream stream;
     string fname;
-#ifndef NDEBUG
+#ifdef NDEBUG
     fname = argc > 1 ? argv[1] : "test.yona";
 #else
     fname = argv[1];
 #endif
-    stream.open(fname);
+    ifstream stream(fname);
 
     ANTLRInputStream input(stream);
     YonaLexer lexer(&input);
     CommonTokenStream tokens(&lexer);
     YonaParser parser(&tokens);
+    parser::ErrorListener error_listener;
 
-    lexer.addErrorListener(&ConsoleErrorListener::INSTANCE);
-    parser.addErrorListener(&ConsoleErrorListener::INSTANCE);
+    lexer.removeErrorListeners();
+    parser.removeErrorListeners();
+    lexer.addErrorListener(&error_listener);
+    parser.addErrorListener(&error_listener);
 
+    BOOST_LOG_TRIVIAL(info) << "Yona Parser started for input file: " << fname;
     YonaParser::InputContext* tree = parser.input();
+    BOOST_LOG_TRIVIAL(debug) << "Parse tree: " << tree->toStringTree();
+
     YonaVisitor yona_visitor;
-    cout << typeid(yona_visitor.visitInput(tree)).name() << endl;
+    compiler::Optimizer optimizer;
+    interp::Interpreter interpreter;
+    auto ast = yona_visitor.visitInput(tree);
+    auto optimized_ast = optimizer.visit(any_cast<expr_wrapper>(ast).get_node<AstNode>());
+    interpreter.visit(optimized_ast);
 
     stream.close();
     return 0;

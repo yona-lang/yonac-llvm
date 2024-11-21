@@ -1,6 +1,6 @@
 #include "ast.h"
 
-namespace yonac::ast
+namespace yona::ast
 {
     template <typename T>
     LiteralExpr<T>::LiteralExpr(T value) : value(std::move(value))

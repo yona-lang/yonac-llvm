@@ -7,7 +7,7 @@
 #include <variant>
 #include <vector>
 
-namespace yonac::ast
+namespace yona::ast
 {
     class AsDataStructurePattern;
     class RecordPattern;
@@ -25,14 +25,6 @@ namespace yonac::ast
     {
     };
 
-    template <typename T>
-    class AstVisitor
-    {
-    public:
-        virtual ~AstVisitor() = default;
-        virtual T visit() = 0; // Placeholder for the actual implementation
-    };
-
     class AstNode
     {
     protected:
@@ -42,6 +34,14 @@ namespace yonac::ast
         AstNode() = default;
         using Ptr = unique_ptr<AstNode>;
         virtual ~AstNode() = default;
+    };
+
+    template <typename T>
+    class AstVisitor
+    {
+    public:
+        virtual ~AstVisitor() = default;
+        virtual T visit(const AstNode& node) = 0; // Placeholder for the actual implementation
     };
 
     class ExprNode : public AstNode

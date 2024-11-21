@@ -3,10 +3,33 @@
 #include "YonaParserBaseVisitor.h"
 #include "ast.h"
 
-namespace yonac
+namespace yona
 {
     using namespace std;
     using namespace ast;
+
+    struct expr_wrapper
+    {
+    private:
+        AstNode node;
+
+    public:
+        explicit expr_wrapper(const AstNode& node) : node(node) {}
+
+        template <typename T>
+            requires derived_from<T, AstNode>
+        T get_node()
+        {
+            return *dynamic_cast<T*>(&node);
+        }
+    };
+
+    template <typename T, typename... Args>
+        requires derived_from<T, AstNode>
+    any make_expr_wrapper(Args&&... args)
+    {
+        return any(expr_wrapper(T(std::forward<Args>(args)...)));
+    }
 
     class YonaVisitor : public YonaParserBaseVisitor
     {
@@ -19,7 +42,7 @@ namespace yonac
             requires derived_from<T, AstNode>
         T visit_expr(antlr4::tree::ParseTree* tree)
         {
-            return any_cast<T>(visit(tree));
+            return any_cast<expr_wrapper>(visit(tree)).get_node<T>();
         }
 
         template <typename T, typename PT>
@@ -38,7 +61,6 @@ namespace yonac
         std::any visitInput(YonaParser::InputContext* ctx) override;
         std::any visitFunction(YonaParser::FunctionContext* ctx) override;
         std::any visitFunctionName(YonaParser::FunctionNameContext* ctx) override;
-        std::any visitFunctionBody(YonaParser::FunctionBodyContext* ctx) override;
         std::any visitBodyWithGuards(YonaParser::BodyWithGuardsContext* ctx) override;
         std::any visitBodyWithoutGuard(YonaParser::BodyWithoutGuardContext* ctx) override;
         std::any visitNegationExpression(YonaParser::NegationExpressionContext* ctx) override;

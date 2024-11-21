@@ -1,6 +1,7 @@
 {
   "dependencies": [
     "antlr4",
-    "boost-program-options"
+    "boost-program-options",
+    "boost-log"
   ]
 }

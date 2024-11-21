@@ -4,7 +4,7 @@
 #include "YonaLexer.h"
 #include "YonaLexerBase.h"
 
-namespace yonac
+namespace yona
 {
     using namespace std;
 
