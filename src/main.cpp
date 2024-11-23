@@ -6,14 +6,14 @@
 #include <boost/program_options.hpp>
 #include <iostream>
 
+#include "Interpreter.h"
 #include "YonaLexer.h"
 #include "YonaParser.h"
 #include "YonaVisitor.h"
-#include "interpreter.h"
 #include "main.h"
 
 #include "ErrorListener.h"
-#include "optimizer.h"
+#include "Optimizer.h"
 
 namespace po = boost::program_options;
 using namespace antlr4;

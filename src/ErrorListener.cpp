@@ -11,7 +11,7 @@
 namespace yona::parser
 {
     using namespace std;
-    void ErrorListener::syntaxError(Recognizer* recognizer, Token* offendingSymbol, size_t line,
+    void ErrorListener::syntaxError(Recognizer* recognizer, antlr4::Token* offendingSymbol, size_t line,
                                     size_t charPositionInLine, const std::string& msg, std::exception_ptr e)
     {
         BOOST_LOG_TRIVIAL(error) << "Syntax error at " << line << ":" << charPositionInLine << ": "

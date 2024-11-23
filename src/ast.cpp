@@ -1,390 +1,442 @@
 #include "ast.h"
 
+#include <cmath>
+#include <utility>
+#include <variant>
+
 namespace yona::ast
 {
     template <typename T>
-    LiteralExpr<T>::LiteralExpr(T value) : value(std::move(value))
+    LiteralExpr<T>::LiteralExpr(Token token, T value) : ValueExpr(token), value(std::move(value))
     {
     }
 
-    BinaryOpExpr::BinaryOpExpr(const ExprNode& left, const ExprNode& right) :
-        left(std::move(left)), right(std::move(right))
+    ScopedNode* ScopedNode::getParentScopedNode() const
+    {
+        if (parent == nullptr)
+        {
+            return nullptr;
+        }
+        else
+        {
+            AstNode* tmp = parent;
+            do
+            {
+                if (const auto result = dynamic_cast<ScopedNode*>(tmp); result != nullptr)
+                {
+                    return result;
+                }
+                else
+                {
+                    tmp = tmp->parent;
+                }
+            }
+            while (tmp != nullptr);
+            return nullptr;
+        }
+    }
+
+    BinaryOpExpr::BinaryOpExpr(Token token, ExprNode left, ExprNode right) :
+        OpExpr(token), left(*left.with_parent<ExprNode>(this)), right(*right.with_parent<ExprNode>(this))
     {
     }
 
-    NameExpr::NameExpr(const string& value) : value(std::move(value)) {}
+    NameExpr::NameExpr(Token token, string value) : ExprNode(token), value(std::move(value)) {}
 
-    IdentifierExpr::IdentifierExpr(const NameExpr& name) : name(std::move(name)) {}
-
-    RecordNode::RecordNode(const NameExpr& recordType, const vector<IdentifierExpr>& identifiers) :
-        AstNode(), recordType(std::move(recordType)), identifiers(std::move(identifiers))
+    IdentifierExpr::IdentifierExpr(Token token, NameExpr name) :
+        ValueExpr(token), name(*name.with_parent<NameExpr>(this))
     {
     }
 
-    TrueLiteralExpr::TrueLiteralExpr() : LiteralExpr<bool>(true) {}
-
-    FalseLiteralExpr::FalseLiteralExpr() : LiteralExpr<bool>(false) {}
-
-    FloatExpr::FloatExpr(const float value) : LiteralExpr<float>(value) {}
-
-    IntegerExpr::IntegerExpr(const int value) : LiteralExpr<int>(value) {}
-
-    ByteExpr::ByteExpr(unsigned const char value) : LiteralExpr<unsigned char>(value) {}
-
-    StringExpr::StringExpr(const string& value) : LiteralExpr<string>(std::move(value)) {}
-
-    CharacterExpr::CharacterExpr(const char value) : LiteralExpr<char>(value) {}
-
-    UnitExpr::UnitExpr() : LiteralExpr<nullptr_t>(nullptr) {}
-
-    TupleExpr::TupleExpr(const vector<ExprNode>& values) : values(std::move(values)) {}
-
-    DictExpr::DictExpr(const vector<pair<ExprNode, ExprNode>>& values) : values(std::move(values)) {}
-
-    ValuesSequenceExpr::ValuesSequenceExpr(const vector<ExprNode>& values) : values(std::move(values)) {}
-
-    RangeSequenceExpr::RangeSequenceExpr(const ExprNode& start, const ExprNode& end, const ExprNode& step) :
-        start(std::move(start)), end(std::move(end)), step(std::move(step))
+    RecordNode::RecordNode(Token token, NameExpr recordType, const vector<IdentifierExpr>& identifiers) :
+        AstNode(token), recordType(*recordType.with_parent<NameExpr>(this)),
+        identifiers(nodes_with_parent(identifiers, this))
     {
     }
 
-    SetExpr::SetExpr(const vector<ExprNode>& values) : values(std::move(values)) {}
+    TrueLiteralExpr::TrueLiteralExpr(Token) : LiteralExpr<bool>(token, true) {}
 
-    SymbolExpr::SymbolExpr(const string& value) : value(std::move(value)) {}
+    FalseLiteralExpr::FalseLiteralExpr(Token) : LiteralExpr<bool>(token, false) {}
 
-    PackageNameExpr::PackageNameExpr(const vector<NameExpr>& parts) : parts(std::move(parts)) {}
+    FloatExpr::FloatExpr(Token token, float value) : LiteralExpr<float>(token, value) {}
 
-    FqnExpr::FqnExpr(const PackageNameExpr& packageName, const NameExpr& moduleName) :
-        packageName(std::move(packageName)), moduleName(std::move(moduleName))
+    IntegerExpr::IntegerExpr(Token token, int value) : LiteralExpr<int>(token, value) {}
+
+    ByteExpr::ByteExpr(Token token, unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
+
+    StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, value) {}
+
+    CharacterExpr::CharacterExpr(Token token, const char value) : LiteralExpr<char>(token, value) {}
+
+    UnitExpr::UnitExpr(Token) : LiteralExpr<nullptr_t>(token, nullptr) {}
+
+    TupleExpr::TupleExpr(Token token, const vector<ExprNode>& values) :
+        ValueExpr(token), values(nodes_with_parent(values, this))
     {
     }
 
-    FunctionExpr::FunctionExpr(const string& name, const vector<PatternNode>& patterns,
+    DictExpr::DictExpr(Token token, const vector<pair<ExprNode, ExprNode>>& values) :
+        ValueExpr(token), values(nodes_with_parent(values, this))
+    {
+    }
+
+    ValuesSequenceExpr::ValuesSequenceExpr(Token token, const vector<ExprNode>& values) :
+        SequenceExpr(token), values(nodes_with_parent(values, this))
+    {
+    }
+
+    RangeSequenceExpr::RangeSequenceExpr(Token token, ExprNode start, ExprNode end, ExprNode step) :
+        SequenceExpr(token), start(*start.with_parent<ExprNode>(this)), end(*end.with_parent<ExprNode>(this)),
+        step(*step.with_parent<ExprNode>(this))
+    {
+    }
+
+    SetExpr::SetExpr(Token token, const vector<ExprNode>& values) :
+        ValueExpr(token), values(nodes_with_parent(values, this))
+    {
+    }
+
+    SymbolExpr::SymbolExpr(Token token, string value) : ValueExpr(token), value(std::move(value)) {}
+
+    PackageNameExpr::PackageNameExpr(Token token, const vector<NameExpr>& parts) :
+        ValueExpr(token), parts(nodes_with_parent(parts, this))
+    {
+    }
+
+    FqnExpr::FqnExpr(Token token, PackageNameExpr packageName, NameExpr moduleName) :
+        ValueExpr(token), packageName(*packageName.with_parent<PackageNameExpr>(this)),
+        moduleName(*moduleName.with_parent<NameExpr>(this))
+    {
+    }
+
+    FunctionExpr::FunctionExpr(Token token, string name, const vector<PatternNode>& patterns,
                                const vector<FunctionBody>& bodies) :
-        name(std::move(name)), patterns(std::move(patterns)), bodies(std::move(bodies))
+        ExprNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)),
+        bodies(nodes_with_parent(bodies, this))
     {
     }
 
-    ModuleExpr::ModuleExpr(const FqnExpr& fqn, const vector<string>& exports, const vector<RecordNode>& records,
+    ModuleExpr::ModuleExpr(Token token, FqnExpr fqn, const vector<string>& exports, const vector<RecordNode>& records,
                            const vector<FunctionExpr>& functions) :
-        fqn(std::move(fqn)), exports(std::move(exports)), records(std::move(records)), functions(std::move(functions))
+        ValueExpr(token), fqn(*fqn.with_parent<FqnExpr>(this)), exports(exports),
+        records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this))
     {
     }
 
-    RecordInstanceExpr::RecordInstanceExpr(const NameExpr& recordType, const vector<pair<NameExpr, ExprNode>>& items) :
-        recordType(std::move(recordType)), items(std::move(items))
+    RecordInstanceExpr::RecordInstanceExpr(Token token, NameExpr recordType,
+                                           const vector<pair<NameExpr, ExprNode>>& items) :
+        ValueExpr(token), recordType(*recordType.with_parent<NameExpr>(this)), items(nodes_with_parent(items, this))
     {
     }
 
-    BodyWithGuards::BodyWithGuards(const ExprNode& guard, const vector<ExprNode>& expr) :
-        guard(std::move(guard)), exprs(expr)
+    BodyWithGuards::BodyWithGuards(Token token, ExprNode guard, const vector<ExprNode>& expr) :
+        FunctionBody(token), guard(*guard.with_parent<ExprNode>(this)), exprs(nodes_with_parent(expr, this))
     {
     }
 
-    BodyWithoutGuards::BodyWithoutGuards(const ExprNode& expr) : expr(std::move(expr)) {}
-
-    LogicalNotOpExpr::LogicalNotOpExpr(const ExprNode& expr) : expr(std::move(expr)) {}
-
-    BinaryNotOpExpr::BinaryNotOpExpr(const ExprNode& expr) : expr(std::move(expr)) {}
-
-    PowerExpr::PowerExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right))
+    BodyWithoutGuards::BodyWithoutGuards(Token token, ExprNode expr) :
+        FunctionBody(token), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    MultiplyExpr::MultiplyExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    LogicalNotOpExpr::LogicalNotOpExpr(Token token, ExprNode expr) :
+        OpExpr(token), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    DivideExpr::DivideExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    BinaryNotOpExpr::BinaryNotOpExpr(Token token, ExprNode expr) :
+        OpExpr(token), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    ModuloExpr::ModuloExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    PowerExpr::PowerExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    MultiplyExpr::MultiplyExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    DivideExpr::DivideExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    ModuloExpr::ModuloExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    AddExpr::AddExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    SubtractExpr::SubtractExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    LeftShiftExpr::LeftShiftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    RightShiftExpr::RightShiftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    ZerofillRightShiftExpr::ZerofillRightShiftExpr(Token token, ExprNode left, ExprNode right) :
+        BinaryOpExpr(token, left, right)
     {
     }
 
-    AddExpr::AddExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
+    GteExpr::GteExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
 
-    SubtractExpr::SubtractExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    LteExpr::LteExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    GtExpr::GtExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    LtExpr::LtExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    EqExpr::EqExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    NeqExpr::NeqExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    ConsLeftExpr::ConsLeftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    ConsRightExpr::ConsRightExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    JoinExpr::JoinExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    BitwiseAndExpr::BitwiseAndExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    BitwiseXorExpr::BitwiseXorExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    BitwiseOrExpr::BitwiseOrExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    LogicalAndExpr::LogicalAndExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    LogicalOrExpr::LogicalOrExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    InExpr::InExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    PipeLeftExpr::PipeLeftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    PipeRightExpr::PipeRightExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+
+    LetExpr::LetExpr(Token token, const vector<AliasExpr>& aliases, ExprNode expr) :
+        ExprNode(token), aliases(nodes_with_parent(aliases, this)), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    LeftShiftExpr::LeftShiftExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    IfExpr::IfExpr(Token token, ExprNode condition, ExprNode thenExpr, const optional<ExprNode>& elseExpr) :
+        ExprNode(token), condition(*condition.with_parent<ExprNode>(this)),
+        thenExpr(*thenExpr.with_parent<ExprNode>(this)), elseExpr(node_with_parent(elseExpr, this))
     {
     }
 
-    RightShiftExpr::RightShiftExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    ApplyExpr::ApplyExpr(Token token, CallExpr call, const vector<variant<ExprNode, ValueExpr>>& args) :
+        ExprNode(token), call(*call.with_parent<CallExpr>(this)), args(nodes_with_parent(args, this))
     {
     }
 
-    ZerofillRightShiftExpr::ZerofillRightShiftExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    DoExpr::DoExpr(Token token, const vector<variant<AliasExpr, ExprNode>>& steps) : ExprNode(token), steps(steps) {}
+
+    ImportExpr::ImportExpr(Token token, const vector<ImportClauseExpr>& clauses, ExprNode expr) :
+        ExprNode(token), clauses(nodes_with_parent(clauses, this)), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    GteExpr::GteExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    LteExpr::LteExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    GtExpr::GtExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    LtExpr::LtExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    EqExpr::EqExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    NeqExpr::NeqExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    ConsLeftExpr::ConsLeftExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    RaiseExpr::RaiseExpr(Token token, SymbolExpr symbol, LiteralExpr<string> message) :
+        ExprNode(token), symbol(*symbol.with_parent<SymbolExpr>(this)),
+        message(*message.with_parent<LiteralExpr<string>>(this))
     {
     }
 
-    ConsRightExpr::ConsRightExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    WithExpr::WithExpr(Token token, ExprNode contextExpr, const optional<NameExpr>& name, ExprNode bodyExpr) :
+        ExprNode(token), contextExpr(*contextExpr.with_parent<ExprNode>(this)), name(node_with_parent(name, this)),
+        bodyExpr(*bodyExpr.with_parent<ExprNode>(this))
     {
     }
 
-    JoinExpr::JoinExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    BitwiseAndExpr::BitwiseAndExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
+    FieldAccessExpr::FieldAccessExpr(Token token, IdentifierExpr identifier, NameExpr name) :
+        ExprNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
+        name(*name.with_parent<NameExpr>(this))
     {
     }
 
-    BitwiseXorExpr::BitwiseXorExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    BitwiseOrExpr::BitwiseOrExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    LogicalAndExpr::LogicalAndExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    LogicalOrExpr::LogicalOrExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    InExpr::InExpr(const ExprNode& left, const ExprNode& right) : BinaryOpExpr(std::move(left), std::move(right)) {}
-
-    PipeLeftExpr::PipeLeftExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    PipeRightExpr::PipeRightExpr(const ExprNode& left, const ExprNode& right) :
-        BinaryOpExpr(std::move(left), std::move(right))
-    {
-    }
-
-    LetExpr::LetExpr(const vector<AliasExpr>& aliases, const ExprNode& expr) :
-        aliases(std::move(aliases)), expr(std::move(expr))
-    {
-    }
-
-    IfExpr::IfExpr(const ExprNode& condition, const ExprNode& thenExpr, const optional<ExprNode>& elseExpr) :
-        condition(std::move(condition)), thenExpr(std::move(thenExpr)), elseExpr(std::move(elseExpr))
-    {
-    }
-
-    ApplyExpr::ApplyExpr(const CallExpr& call, const vector<variant<ExprNode, ValueExpr>>& args) :
-        call(std::move(call)), args(std::move(args))
-    {
-    }
-
-    DoExpr::DoExpr(const vector<variant<AliasExpr, ExprNode>>& steps) : steps(std::move(steps)) {}
-
-    ImportExpr::ImportExpr(const vector<ImportClauseExpr>& clauses, const ExprNode& expr) :
-        clauses(std::move(clauses)), expr(std::move(expr))
-    {
-    }
-
-    RaiseExpr::RaiseExpr(const SymbolExpr& symbol, const LiteralExpr<string>& message) :
-        symbol(std::move(symbol)), message(std::move(message))
-    {
-    }
-
-    WithExpr::WithExpr(const ExprNode& contextExpr, const optional<NameExpr>& name, const ExprNode& bodyExpr) :
-        contextExpr(std::move(contextExpr)), name(std::move(name)), bodyExpr(std::move(bodyExpr))
-    {
-    }
-
-    FieldAccessExpr::FieldAccessExpr(const IdentifierExpr& identifier, const NameExpr& name) :
-        identifier(std::move(identifier)), name(std::move(name))
-    {
-    }
-
-    FieldUpdateExpr::FieldUpdateExpr(const IdentifierExpr& identifier,
+    FieldUpdateExpr::FieldUpdateExpr(Token token, IdentifierExpr identifier,
                                      const vector<pair<NameExpr, ExprNode>>& updates) :
-        identifier(std::move(identifier)), updates(std::move(updates))
+        ExprNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
+        updates(nodes_with_parent(updates, this))
     {
     }
 
-    LambdaAlias::LambdaAlias(const NameExpr& name, const FunctionExpr& lambda) :
-        name(std::move(name)), lambda(std::move(lambda))
+    LambdaAlias::LambdaAlias(Token token, NameExpr name, FunctionExpr lambda) :
+        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), lambda(*lambda.with_parent<FunctionExpr>(this))
     {
     }
 
-    ModuleAlias::ModuleAlias(const NameExpr& name, const ModuleExpr& module) :
-        name(std::move(name)), module(std::move(module))
+    ModuleAlias::ModuleAlias(Token token, NameExpr name, ModuleExpr module) :
+        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), module(*module.with_parent<ModuleExpr>(this))
     {
     }
 
-    ValueAlias::ValueAlias(const IdentifierExpr& identifier, const ExprNode& expr) :
-        identifier(std::move(identifier)), expr(std::move(expr))
+    ValueAlias::ValueAlias(Token token, IdentifierExpr identifier, ExprNode expr) :
+        AliasExpr(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
+        expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    PatternAlias::PatternAlias(const PatternNode& pattern, const ExprNode& expr) :
-        pattern(std::move(pattern)), expr(std::move(expr))
+    PatternAlias::PatternAlias(Token token, PatternNode pattern, ExprNode expr) :
+        AliasExpr(token), pattern(*pattern.with_parent<PatternNode>(this)), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
-    FqnAlias::FqnAlias(const NameExpr& name, const FqnExpr& fqn) : name(std::move(name)), fqn(std::move(fqn)) {}
-
-    FunctionAlias::FunctionAlias(const NameExpr& name, const NameExpr& alias) :
-        name(std::move(name)), alias(std::move(alias))
+    FqnAlias::FqnAlias(Token token, NameExpr name, FqnExpr fqn) :
+        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), fqn(*fqn.with_parent<FqnExpr>(this))
     {
     }
 
-    AliasCall::AliasCall(const NameExpr& alias, const NameExpr& funName) :
-        alias(std::move(alias)), funName(std::move(funName))
+    FunctionAlias::FunctionAlias(Token token, NameExpr name, NameExpr alias) :
+        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), alias(*alias.with_parent<NameExpr>(this))
     {
     }
 
-    NameCall::NameCall(const NameExpr& name) : name(std::move(name)) {}
-
-    ModuleCall::ModuleCall(const variant<FqnExpr, ExprNode>& fqn, const NameExpr& funName) :
-        fqn(std::move(fqn)), funName(std::move(funName))
+    AliasCall::AliasCall(Token token, NameExpr alias, NameExpr funName) :
+        CallExpr(token), alias(*alias.with_parent<NameExpr>(this)), funName(*funName.with_parent<NameExpr>(this))
     {
     }
 
-    ModuleImport::ModuleImport(const FqnExpr& fqn, const NameExpr& name) : fqn(std::move(fqn)), name(std::move(name)) {}
+    NameCall::NameCall(Token token, NameExpr name) : CallExpr(token), name(*name.with_parent<NameExpr>(this)) {}
 
-    FunctionsImport::FunctionsImport(const vector<FunctionAlias>& aliases, const FqnExpr& fromFqn) :
-        aliases(std::move(aliases)), fromFqn(std::move(fromFqn))
+    ModuleCall::ModuleCall(Token token, const variant<FqnExpr, ExprNode>& fqn, NameExpr funName) :
+        CallExpr(token), fqn(node_with_parent(fqn, this)), funName(*funName.with_parent<NameExpr>(this))
     {
     }
 
-    SeqGeneratorExpr::SeqGeneratorExpr(const ExprNode& reducerExpr, const CollectionExtractorExpr& collectionExtractor,
+    ModuleImport::ModuleImport(Token token, FqnExpr fqn, NameExpr name) :
+        ImportClauseExpr(token), fqn(*fqn.with_parent<FqnExpr>(this)), name(*name.with_parent<NameExpr>(this))
+    {
+    }
+
+    FunctionsImport::FunctionsImport(Token token, const vector<FunctionAlias>& aliases, FqnExpr fromFqn) :
+        ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(*fromFqn.with_parent<FqnExpr>(this))
+    {
+    }
+
+    SeqGeneratorExpr::SeqGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
                                        ExprNode stepExpression) :
-        reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)),
-        stepExpression(std::move(stepExpression))
+        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<ExprNode>(this)),
+        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(*stepExpression.with_parent<ExprNode>(this))
     {
     }
 
-    SetGeneratorExpr::SetGeneratorExpr(const ExprNode& reducerExpr, const CollectionExtractorExpr& collectionExtractor,
-                                       const ExprNode& stepExpression) :
-        reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)),
-        stepExpression(std::move(stepExpression))
+    SetGeneratorExpr::SetGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
+                                       ExprNode stepExpression) :
+        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<ExprNode>(this)),
+        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(*stepExpression.with_parent<ExprNode>(this))
     {
     }
 
-    DictGeneratorReducer::DictGeneratorReducer(const ExprNode& key, const ExprNode& value) :
-        key(std::move(key)), value(std::move(value))
+    DictGeneratorReducer::DictGeneratorReducer(Token token, ExprNode key, ExprNode value) :
+        ExprNode(token), key(*key.with_parent<ExprNode>(this)), value(*value.with_parent<ExprNode>(this))
     {
     }
 
-    DictGeneratorExpr::DictGeneratorExpr(const DictGeneratorReducer& reducerExpr,
-                                         const CollectionExtractorExpr& collectionExtractor,
-                                         const ExprNode& stepExpression) :
-        reducerExpr(std::move(reducerExpr)), collectionExtractor(std::move(collectionExtractor)),
-        stepExpression(std::move(stepExpression))
+    DictGeneratorExpr::DictGeneratorExpr(Token token, DictGeneratorReducer reducerExpr,
+                                         CollectionExtractorExpr collectionExtractor, ExprNode stepExpression) :
+        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<DictGeneratorReducer>(this)),
+        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(*stepExpression.with_parent<ExprNode>(this))
     {
     }
 
-    ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(const IdentifierOrUnderscore& expr) :
-        expr(std::move(expr))
+    ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore expr) :
+        CollectionExtractorExpr(token), expr(node_with_parent(expr, this))
     {
     }
 
-    KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(const IdentifierOrUnderscore& keyExpr,
-                                                                     const IdentifierOrUnderscore& valueExpr) :
-        keyExpr(std::move(keyExpr)), valueExpr(std::move(valueExpr))
+    KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore keyExpr,
+                                                                     IdentifierOrUnderscore valueExpr) :
+        CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)),
+        valueExpr(node_with_parent(valueExpr, this))
     {
     }
 
-    PatternWithGuards::PatternWithGuards(const ExprNode& guard, const ExprNode& exprNode) :
-        PatternNode(), guard(std::move(guard)), exprNode(std::move(exprNode)) {};
+    PatternWithGuards::PatternWithGuards(Token token, ExprNode guard, ExprNode exprNode) :
+        PatternNode(token), guard(*guard.with_parent<ExprNode>(this)),
+        exprNode(*exprNode.with_parent<ExprNode>(this)) {};
 
-    PatternWithoutGuards::PatternWithoutGuards(const ExprNode& exprNode) : PatternNode(), exprNode(std::move(exprNode))
+    PatternWithoutGuards::PatternWithoutGuards(Token token, ExprNode exprNode) :
+        PatternNode(token), exprNode(*exprNode.with_parent<ExprNode>(this))
     {
     }
 
-    PatternExpr::PatternExpr(const variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>>& patternExpr) :
-        patternExpr(std::move(patternExpr))
+    PatternExpr::PatternExpr(Token token,
+                             const variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>>& patternExpr) :
+        ExprNode(token), patternExpr(patternExpr)
     {
+        // std::visit({ [this](Pattern& arg) { arg.with_parent<Pattern>(this); },
+        //              [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
+        //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
+        //            patternExpr); // TODO
     }
 
-    CatchPatternExpr::CatchPatternExpr(const Pattern& matchPattern,
+    CatchPatternExpr::CatchPatternExpr(Token token, Pattern matchPattern,
                                        const variant<PatternWithoutGuards, vector<PatternWithGuards>>& pattern) :
-        matchPattern(std::move(matchPattern)), pattern(std::move(pattern))
+        ExprNode(token), matchPattern(*matchPattern.with_parent<Pattern>(this)), pattern(pattern)
+    {
+        // std::visit({ [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
+        //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
+        //            pattern); // TODO
+    }
+
+    CatchExpr::CatchExpr(Token token, const vector<CatchPatternExpr>& patterns) :
+        ExprNode(token), patterns(nodes_with_parent(patterns, this))
     {
     }
 
-    CatchExpr::CatchExpr(const vector<CatchPatternExpr>& patterns) : patterns(std::move(patterns)) {}
-
-    TryCatchExpr::TryCatchExpr(const ExprNode& tryExpr, const CatchExpr& catchExpr) :
-        tryExpr(std::move(tryExpr)), catchExpr(std::move(catchExpr))
+    TryCatchExpr::TryCatchExpr(Token token, ExprNode tryExpr, CatchExpr catchExpr) :
+        ExprNode(token), tryExpr(*tryExpr.with_parent<ExprNode>(this)),
+        catchExpr(*catchExpr.with_parent<CatchExpr>(this))
     {
     }
 
-    PatternValue::PatternValue(
-        const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr) :
-        expr(std::move(expr))
+    PatternValue::PatternValue(Token token,
+                               const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr) :
+        PatternNode(token), expr(node_with_parent(expr, this))
     {
     }
 
-    AsDataStructurePattern::AsDataStructurePattern(const IdentifierExpr& identifier,
-                                                   const DataStructurePattern& pattern) :
-        identifier(std::move(identifier)), pattern(std::move(pattern))
+    AsDataStructurePattern::AsDataStructurePattern(Token token, IdentifierExpr identifier,
+                                                   DataStructurePattern pattern) :
+        PatternNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
+        pattern(*pattern.with_parent<DataStructurePattern>(this))
     {
     }
 
-    TuplePattern::TuplePattern(const vector<Pattern>& patterns) : patterns(std::move(patterns)) {}
-
-    SeqPattern::SeqPattern(const vector<Pattern>& patterns) : patterns(std::move(patterns)) {}
-
-    HeadTailsPattern::HeadTailsPattern(const vector<PatternWithoutSequence>& heads, const TailPattern& tail) :
-        heads(std::move(heads)), tail(std::move(tail))
+    TuplePattern::TuplePattern(Token token, const vector<Pattern>& patterns) :
+        PatternNode(token), patterns(nodes_with_parent(patterns, this))
     {
     }
 
-    TailsHeadPattern::TailsHeadPattern(const TailPattern& tail, const vector<PatternWithoutSequence>& heads) :
-        tail(std::move(tail)), heads(std::move(heads))
+    SeqPattern::SeqPattern(Token token, const vector<Pattern>& patterns) :
+        PatternNode(token), patterns(nodes_with_parent(patterns, this))
     {
     }
 
-    HeadTailsHeadPattern::HeadTailsHeadPattern(const vector<PatternWithoutSequence>& left, const TailPattern& tail,
-                                               const vector<PatternWithoutSequence>& right) :
-        left(std::move(left)), tail(std::move(tail)), right(std::move(right))
+    HeadTailsPattern::HeadTailsPattern(Token token, const vector<PatternWithoutSequence>& heads, TailPattern tail) :
+        PatternNode(token), heads(nodes_with_parent(heads, this)), tail(*tail.with_parent<TailPattern>(this))
     {
     }
 
-    DictPattern::DictPattern(const vector<pair<PatternValue, Pattern>>& keyValuePairs) :
-        keyValuePairs(std::move(keyValuePairs))
+    TailsHeadPattern::TailsHeadPattern(Token token, TailPattern tail, const vector<PatternWithoutSequence>& heads) :
+        PatternNode(token), tail(*tail.with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this))
     {
     }
 
-    RecordPattern::RecordPattern(const string& recordType, const vector<pair<NameExpr, Pattern>>& items) :
-        recordType(std::move(recordType)), items(std::move(items))
+    HeadTailsHeadPattern::HeadTailsHeadPattern(Token token, const vector<PatternWithoutSequence>& left,
+                                               TailPattern tail, const vector<PatternWithoutSequence>& right) :
+        PatternNode(token), left(nodes_with_parent(left, this)), tail(*tail.with_parent<TailPattern>(this)),
+        right(nodes_with_parent(right, this))
     {
     }
 
-    CaseExpr::CaseExpr(const ExprNode& expr, const vector<PatternExpr>& patterns) :
-        expr(std::move(expr)), patterns(std::move(patterns))
+    DictPattern::DictPattern(Token token, const vector<pair<PatternValue, Pattern>>& keyValuePairs) :
+        PatternNode(token), keyValuePairs(nodes_with_parent(keyValuePairs, this))
+    {
+    }
+
+    RecordPattern::RecordPattern(Token token, string recordType, const vector<pair<NameExpr, Pattern>>& items) :
+        PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(items, this))
+    {
+    }
+
+    CaseExpr::CaseExpr(Token token, ExprNode expr, const vector<PatternExpr>& patterns) :
+        ExprNode(token), expr(*expr.with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
     {
     }
 }

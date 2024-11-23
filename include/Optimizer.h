@@ -15,6 +15,6 @@ namespace yona::compiler
     class Optimizer : public AstVisitor<AstNode>
     {
     public:
-        AstNode visit(const AstNode& node) override;
+        AstNode visit(AstNode node) override;
     };
 }

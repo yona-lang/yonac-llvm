@@ -12,16 +12,16 @@
 namespace yona::interp
 {
     using namespace std;
-    using namespace yona::ast;
+    using namespace ast;
 
     using result_t = any;
 
     class Interpreter : public AstVisitor<result_t>
     {
     public:
-        result_t visit(const AstNode& node) override;
-        result_t visit(const BinaryOpExpr& node);
-        result_t visit(const AddExpr& node);
+        result_t visit(AstNode node) override;
+        result_t visit(BinaryOpExpr node);
+        result_t visit(AddExpr node);
     };
 
 } // yonac::interp

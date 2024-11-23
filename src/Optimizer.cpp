@@ -2,7 +2,7 @@
 // Created by akovari on 17.11.24.
 //
 
-#include "optimizer.h"
+#include "Optimizer.h"
 #include "ast.h"
 
 namespace yona::compiler
