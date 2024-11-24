@@ -10,11 +10,11 @@
 namespace yona::compiler
 {
     using namespace std;
-    using namespace yona::ast;
+    using namespace ast;
 
     class Optimizer : public AstVisitor<AstNode>
     {
     public:
-        AstNode visit(AstNode node) override;
+        AstNode visit(const AstNode& node) override;
     };
 }

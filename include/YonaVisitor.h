@@ -1,5 +1,8 @@
 #pragma once
 
+#include <boost/log/trivial.hpp>
+
+
 #include "YonaParserBaseVisitor.h"
 #include "ast.h"
 
@@ -20,7 +23,7 @@ namespace yona
             requires derived_from<T, AstNode>
         T get_node()
         {
-            return *dynamic_cast<T*>(&node);
+            return *static_cast<T*>(&node);
         }
     };
 

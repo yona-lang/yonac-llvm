@@ -111,7 +111,7 @@ namespace yona::ast
 
     FunctionExpr::FunctionExpr(Token token, string name, const vector<PatternNode>& patterns,
                                const vector<FunctionBody>& bodies) :
-        ExprNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)),
+        ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)),
         bodies(nodes_with_parent(bodies, this))
     {
     }
@@ -205,7 +205,7 @@ namespace yona::ast
     PipeRightExpr::PipeRightExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
 
     LetExpr::LetExpr(Token token, const vector<AliasExpr>& aliases, ExprNode expr) :
-        ExprNode(token), aliases(nodes_with_parent(aliases, this)), expr(*expr.with_parent<ExprNode>(this))
+        ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
@@ -223,7 +223,7 @@ namespace yona::ast
     DoExpr::DoExpr(Token token, const vector<variant<AliasExpr, ExprNode>>& steps) : ExprNode(token), steps(steps) {}
 
     ImportExpr::ImportExpr(Token token, const vector<ImportClauseExpr>& clauses, ExprNode expr) :
-        ExprNode(token), clauses(nodes_with_parent(clauses, this)), expr(*expr.with_parent<ExprNode>(this))
+        ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(*expr.with_parent<ExprNode>(this))
     {
     }
 
@@ -234,7 +234,7 @@ namespace yona::ast
     }
 
     WithExpr::WithExpr(Token token, ExprNode contextExpr, const optional<NameExpr>& name, ExprNode bodyExpr) :
-        ExprNode(token), contextExpr(*contextExpr.with_parent<ExprNode>(this)), name(node_with_parent(name, this)),
+        ScopedNode(token), contextExpr(*contextExpr.with_parent<ExprNode>(this)), name(node_with_parent(name, this)),
         bodyExpr(*bodyExpr.with_parent<ExprNode>(this))
     {
     }

@@ -4,10 +4,10 @@
 
 #pragma once
 
+#include <any>
 #include <string>
 #include <unordered_map>
-
-#include "Interpreter.h"
+#include "interpretation.h"
 
 namespace yona::interp
 {
@@ -28,7 +28,7 @@ namespace yona::interp
         unordered_map<string, Symbol> symbols;
 
     public:
-        SymbolTable() = default;
+        virtual ~SymbolTable() = default;
     };
 
 } // yona::interp

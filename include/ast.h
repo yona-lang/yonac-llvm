@@ -2,15 +2,13 @@
 
 #include <antlr4-runtime.h>
 #include <concepts>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
-#include <Interpreter.h>
-#include <SymbolTable.h>
+#include "SymbolTable.h"
 
 namespace yona::ast
 {
@@ -31,8 +29,8 @@ namespace yona::ast
     {
     public:
         Token token;
-        AstNode* parent;
-        explicit AstNode(Token token);
+        AstNode* parent = nullptr;
+        explicit AstNode(Token token): token(token) {};
         virtual ~AstNode() = default;
 
         template <typename T>
@@ -102,7 +100,7 @@ namespace yona::ast
     {
     public:
         virtual ~AstVisitor() = default;
-        virtual T visit(const AstNode node) = 0; // Placeholder for the actual implementation
+        virtual T visit(const AstNode& node) = 0; // Placeholder for the actual implementation
     };
 
     class ExprNode : public AstNode
@@ -129,7 +127,7 @@ namespace yona::ast
         explicit ValueExpr(Token token) : ExprNode(token) {}
     };
 
-    class ScopedNode final : public AstNode
+    class ScopedNode : public AstNode
     {
     protected:
         interp::SymbolTable symbol_table;
@@ -176,10 +174,10 @@ namespace yona::ast
         explicit CallExpr(Token token) : ExprNode(token) {}
     };
 
-    class ImportClauseExpr : public ExprNode
+    class ImportClauseExpr : public ScopedNode
     {
     public:
-        explicit ImportClauseExpr(Token token) : ExprNode(token) {}
+        explicit ImportClauseExpr(Token token) : ScopedNode(token) {}
     };
 
     class GeneratorExpr : public ExprNode
@@ -357,7 +355,7 @@ namespace yona::ast
         explicit FqnExpr(Token token, PackageNameExpr packageName, NameExpr moduleName);
     };
 
-    class FunctionExpr : public ExprNode
+    class FunctionExpr : public ScopedNode
     {
     protected:
         string name;
@@ -585,7 +583,7 @@ namespace yona::ast
         explicit PipeRightExpr(Token token, ExprNode left, ExprNode right);
     };
 
-    class LetExpr : public ExprNode
+    class LetExpr : public ScopedNode
     {
     protected:
         vector<AliasExpr> aliases;
@@ -625,7 +623,7 @@ namespace yona::ast
         explicit DoExpr(Token token, const vector<variant<AliasExpr, ExprNode>>& steps);
     };
 
-    class ImportExpr : public ExprNode
+    class ImportExpr : public ScopedNode
     {
     protected:
         vector<ImportClauseExpr> clauses;
@@ -645,7 +643,7 @@ namespace yona::ast
         explicit RaiseExpr(Token token, SymbolExpr symbol, LiteralExpr<string> message);
     };
 
-    class WithExpr : public ExprNode
+    class WithExpr : public ScopedNode
     {
     protected:
         ExprNode contextExpr;

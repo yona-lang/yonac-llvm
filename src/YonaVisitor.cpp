@@ -497,7 +497,10 @@ namespace yona
 
     any YonaVisitor::visitNonEmptyListOfNames(YonaParser::NonEmptyListOfNamesContext* ctx)
     {
-        return make_expr_wrapper<FqnExpr>(*ctx, visit_exprs<NameExpr>(ctx->name()));
+        vector<NameExpr> parts = visit_exprs<NameExpr>(ctx->name());
+        NameExpr moduleName = parts.back();
+        parts.pop_back();
+        return make_expr_wrapper<FqnExpr>(*ctx, PackageNameExpr(*ctx, parts), moduleName);
     }
 
     any YonaVisitor::visitUnit(YonaParser::UnitContext* ctx) { return make_expr_wrapper<UnitExpr>(*ctx); }

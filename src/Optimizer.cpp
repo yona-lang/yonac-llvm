@@ -3,7 +3,6 @@
 //
 
 #include "Optimizer.h"
-#include "ast.h"
 
 namespace yona::compiler
 {
