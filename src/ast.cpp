@@ -385,8 +385,8 @@ namespace yona::ast
     {
     }
 
-    PatternValue::PatternValue(Token token,
-                               const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr) :
+    PatternValue::PatternValue(
+        Token token, const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr) :
         PatternNode(token), expr(node_with_parent(expr, this))
     {
     }
@@ -438,5 +438,189 @@ namespace yona::ast
     CaseExpr::CaseExpr(Token token, ExprNode expr, const vector<PatternExpr>& patterns) :
         ExprNode(token), expr(*expr.with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
     {
+    }
+
+    template <typename T>
+    T AstVisitor<T>::visit(const ExprNode& node) const
+    {
+        if (const AliasExpr* derived = dynamic_cast<const AliasExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const ApplyExpr* derived = dynamic_cast<const ApplyExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const CallExpr* derived = dynamic_cast<const CallExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const CaseExpr* derived = dynamic_cast<const CaseExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const CatchExpr* derived = dynamic_cast<const CatchExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const CatchPatternExpr* derived = dynamic_cast<const CatchPatternExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const CollectionExtractorExpr* derived = dynamic_cast<const CollectionExtractorExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const DictGeneratorReducer* derived = dynamic_cast<const DictGeneratorReducer*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const DoExpr* derived = dynamic_cast<const DoExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const FieldAccessExpr* derived = dynamic_cast<const FieldAccessExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const FieldUpdateExpr* derived = dynamic_cast<const FieldUpdateExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const GeneratorExpr* derived = dynamic_cast<const GeneratorExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const IfExpr* derived = dynamic_cast<const IfExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const NameExpr* derived = dynamic_cast<const NameExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const OpExpr* derived = dynamic_cast<const OpExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const PatternExpr* derived = dynamic_cast<const PatternExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const RaiseExpr* derived = dynamic_cast<const RaiseExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const SequenceExpr* derived = dynamic_cast<const SequenceExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const TryCatchExpr* derived = dynamic_cast<const TryCatchExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const ValueExpr* derived = dynamic_cast<const ValueExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        unreachable();
+    }
+
+    template <typename T>
+    T AstVisitor<T>::visit(const AstNode& node) const
+    {
+        if (const ExprNode* derived = dynamic_cast<const ExprNode*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const PatternNode* derived = dynamic_cast<const PatternNode*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const ScopedNode* derived = dynamic_cast<const ScopedNode*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const FunctionBody* derived = dynamic_cast<const FunctionBody*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        unreachable();
+    }
+
+    template <typename T>
+    T AstVisitor<T>::visit(const ScopedNode& node) const
+    {
+        if (const ImportClauseExpr* derived = dynamic_cast<const ImportClauseExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const FunctionExpr* derived = dynamic_cast<const FunctionExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const LetExpr* derived = dynamic_cast<const LetExpr*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        unreachable();
+    }
+
+    template <typename T>
+    T AstVisitor<T>::visit(const PatternNode& node) const
+    {
+        if (const UnderscoreNode* derived = dynamic_cast<const UnderscoreNode*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const UnderscorePattern* derived = dynamic_cast<const UnderscorePattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const PatternWithGuards* derived = dynamic_cast<const PatternWithGuards*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const PatternWithoutGuards* derived = dynamic_cast<const PatternWithoutGuards*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const PatternValue* derived = dynamic_cast<const PatternValue*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const AsDataStructurePattern* derived = dynamic_cast<const AsDataStructurePattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const TuplePattern* derived = dynamic_cast<const TuplePattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const SeqPattern* derived = dynamic_cast<const SeqPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const HeadTailsPattern* derived = dynamic_cast<const HeadTailsPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const TailsHeadPattern* derived = dynamic_cast<const TailsHeadPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const HeadTailsHeadPattern* derived = dynamic_cast<const HeadTailsHeadPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const DictPattern* derived = dynamic_cast<const DictPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        if (const RecordPattern* derived = dynamic_cast<const RecordPattern*>(&node))
+        {
+            return static_cast<T>(visit(derived));
+        }
+        unreachable();
     }
 }

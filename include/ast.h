@@ -8,10 +8,11 @@
 #include <variant>
 #include <vector>
 
-#include "SymbolTable.h"
+#include "types.h"
 
 namespace yona::ast
 {
+    class AstNode;
     class AsDataStructurePattern;
     class RecordPattern;
     class SeqPattern;
@@ -23,6 +24,7 @@ namespace yona::ast
     class PatternValue;
 
     using namespace std;
+    using namespace compiler;
     using Token = const antlr4::ParserRuleContext&;
 
     class AstNode
@@ -30,8 +32,9 @@ namespace yona::ast
     public:
         Token token;
         AstNode* parent = nullptr;
-        explicit AstNode(Token token): token(token) {};
+        explicit AstNode(Token token) : token(token) {};
         virtual ~AstNode() = default;
+        Type infer_type();
 
         template <typename T>
             requires derived_from<T, AstNode>
@@ -95,14 +98,6 @@ namespace yona::ast
         return nodes;
     }
 
-    template <typename T>
-    class AstVisitor
-    {
-    public:
-        virtual ~AstVisitor() = default;
-        virtual T visit(const AstNode& node) = 0; // Placeholder for the actual implementation
-    };
-
     class ExprNode : public AstNode
     {
     public:
@@ -129,9 +124,6 @@ namespace yona::ast
 
     class ScopedNode : public AstNode
     {
-    protected:
-        interp::SymbolTable symbol_table;
-
     public:
         explicit ScopedNode(Token token) : AstNode(token) {}
         ScopedNode* getParentScopedNode() const;
@@ -140,10 +132,9 @@ namespace yona::ast
     template <typename T>
     class LiteralExpr : public ValueExpr
     {
-    protected:
-        T value;
-
     public:
+        const T value;
+
         explicit LiteralExpr(Token token, T value);
     };
     class OpExpr : public ExprNode
@@ -154,11 +145,10 @@ namespace yona::ast
 
     class BinaryOpExpr : public OpExpr
     {
-    protected:
-        ExprNode left;
-        ExprNode right;
-
     public:
+        const ExprNode left;
+        const ExprNode right;
+
         explicit BinaryOpExpr(Token token, ExprNode left, ExprNode right);
     };
 
@@ -206,29 +196,26 @@ namespace yona::ast
 
     class NameExpr : public ExprNode
     {
-    protected:
-        string value;
-
     public:
+        const string value;
+
         explicit NameExpr(Token token, string value);
     };
 
     class IdentifierExpr : public ValueExpr
     {
-    protected:
-        NameExpr name;
-
     public:
+        const NameExpr name;
+
         explicit IdentifierExpr(Token token, NameExpr name);
     };
 
     class RecordNode : public AstNode
     {
-    protected:
-        NameExpr recordType;
-        vector<IdentifierExpr> identifiers;
-
     public:
+        const NameExpr recordType;
+        const vector<IdentifierExpr> identifiers;
+
         explicit RecordNode(Token token, NameExpr recordType, const vector<IdentifierExpr>& identifiers);
     };
 
@@ -282,148 +269,133 @@ namespace yona::ast
 
     class TupleExpr : public ValueExpr
     {
-    protected:
-        vector<ExprNode> values;
-
     public:
+        const vector<ExprNode> values;
+
         explicit TupleExpr(Token token, const vector<ExprNode>& values);
     };
 
     class DictExpr : public ValueExpr
     {
-    protected:
-        vector<pair<ExprNode, ExprNode>> values;
-
     public:
+        const vector<pair<ExprNode, ExprNode>> values;
+
         explicit DictExpr(Token token, const vector<pair<ExprNode, ExprNode>>& values);
     };
 
     class ValuesSequenceExpr : public SequenceExpr
     {
-    protected:
-        vector<ExprNode> values;
-
     public:
+        const vector<ExprNode> values;
+
         explicit ValuesSequenceExpr(Token token, const vector<ExprNode>& values);
     };
 
     class RangeSequenceExpr : public SequenceExpr
     {
-    protected:
-        ExprNode start;
-        ExprNode end;
-        ExprNode step;
-
     public:
+        const ExprNode start;
+        const ExprNode end;
+        const ExprNode step;
+
         explicit RangeSequenceExpr(Token token, ExprNode start, ExprNode end, ExprNode step);
     };
 
     class SetExpr : public ValueExpr
     {
-    protected:
-        vector<ExprNode> values;
-
     public:
+        const vector<ExprNode> values;
+
         explicit SetExpr(Token token, const vector<ExprNode>& values);
     };
 
     class SymbolExpr : public ValueExpr
     {
-    protected:
-        string value;
-
     public:
+        const string value;
+
         explicit SymbolExpr(Token token, string value);
     };
 
     class PackageNameExpr : public ValueExpr
     {
-    protected:
-        vector<NameExpr> parts;
-
     public:
+        const vector<NameExpr> parts;
+
         explicit PackageNameExpr(Token token, const vector<NameExpr>& parts);
     };
 
     class FqnExpr : public ValueExpr
     {
-    protected:
-        PackageNameExpr packageName;
-        NameExpr moduleName;
-
     public:
+        const PackageNameExpr packageName;
+        const NameExpr moduleName;
+
         explicit FqnExpr(Token token, PackageNameExpr packageName, NameExpr moduleName);
     };
 
     class FunctionExpr : public ScopedNode
     {
-    protected:
-        string name;
-        vector<PatternNode> patterns;
-        vector<FunctionBody> bodies;
-
     public:
+        const string name;
+        const vector<PatternNode> patterns;
+        const vector<FunctionBody> bodies;
+
         explicit FunctionExpr(Token token, string name, const vector<PatternNode>& patterns,
                               const vector<FunctionBody>& bodies);
     };
 
     class ModuleExpr : public ValueExpr
     {
-    protected:
-        FqnExpr fqn;
-        vector<string> exports;
-        vector<RecordNode> records;
-        vector<FunctionExpr> functions;
-
     public:
+        const FqnExpr fqn;
+        const vector<string> exports;
+        const vector<RecordNode> records;
+        const vector<FunctionExpr> functions;
+
         explicit ModuleExpr(Token token, FqnExpr fqn, const vector<string>& exports, const vector<RecordNode>& records,
                             const vector<FunctionExpr>& functions);
     };
 
     class RecordInstanceExpr : public ValueExpr
     {
-    protected:
-        NameExpr recordType;
-        vector<pair<NameExpr, ExprNode>> items;
-
     public:
+        const NameExpr recordType;
+        const vector<pair<NameExpr, ExprNode>> items;
+
         explicit RecordInstanceExpr(Token token, NameExpr recordType, const vector<pair<NameExpr, ExprNode>>& items);
     };
 
     class BodyWithGuards : public FunctionBody
     {
-    protected:
-        ExprNode guard;
-        vector<ExprNode> exprs;
-
     public:
+        const ExprNode guard;
+        const vector<ExprNode> exprs;
+
         explicit BodyWithGuards(Token token, ExprNode guard, const vector<ExprNode>& exprs);
     };
 
     class BodyWithoutGuards : public FunctionBody
     {
-    protected:
-        ExprNode expr;
-
     public:
+        const ExprNode expr;
+
         explicit BodyWithoutGuards(Token token, ExprNode expr);
     };
 
     class LogicalNotOpExpr : public OpExpr
     {
-    protected:
-        ExprNode expr;
-
     public:
+        const ExprNode expr;
+
         explicit LogicalNotOpExpr(Token token, ExprNode expr);
     };
 
     class BinaryNotOpExpr : public OpExpr
     {
-    protected:
-        ExprNode expr;
-
     public:
+        const ExprNode expr;
+
         explicit BinaryNotOpExpr(Token token, ExprNode expr);
     };
 
@@ -585,247 +557,223 @@ namespace yona::ast
 
     class LetExpr : public ScopedNode
     {
-    protected:
-        vector<AliasExpr> aliases;
-        ExprNode expr;
-
     public:
+        const vector<AliasExpr> aliases;
+        const ExprNode expr;
+
         explicit LetExpr(Token token, const vector<AliasExpr>& aliases, ExprNode expr);
     };
 
     class IfExpr : public ExprNode
     {
-    protected:
-        ExprNode condition;
-        ExprNode thenExpr;
-        optional<ExprNode> elseExpr;
-
     public:
+        const ExprNode condition;
+        const ExprNode thenExpr;
+        const optional<ExprNode> elseExpr;
+
         explicit IfExpr(Token token, ExprNode condition, ExprNode thenExpr, const optional<ExprNode>& elseExpr);
     };
 
     class ApplyExpr : public ExprNode
     {
-    protected:
-        CallExpr call;
-        vector<variant<ExprNode, ValueExpr>> args;
-
     public:
+        const CallExpr call;
+        const vector<variant<ExprNode, ValueExpr>> args;
+
         explicit ApplyExpr(Token token, CallExpr call, const vector<variant<ExprNode, ValueExpr>>& args);
     };
 
     class DoExpr : public ExprNode
     {
-    protected:
-        vector<variant<AliasExpr, ExprNode>> steps;
-
     public:
+        const vector<variant<AliasExpr, ExprNode>> steps;
+
         explicit DoExpr(Token token, const vector<variant<AliasExpr, ExprNode>>& steps);
     };
 
     class ImportExpr : public ScopedNode
     {
-    protected:
-        vector<ImportClauseExpr> clauses;
-        ExprNode expr;
-
     public:
+        const vector<ImportClauseExpr> clauses;
+        const ExprNode expr;
+
         explicit ImportExpr(Token token, const vector<ImportClauseExpr>& clauses, ExprNode expr);
     };
 
     class RaiseExpr : public ExprNode
     {
-    protected:
-        SymbolExpr symbol;
-        LiteralExpr<string> message;
-
     public:
+        const SymbolExpr symbol;
+        const LiteralExpr<string> message;
+
         explicit RaiseExpr(Token token, SymbolExpr symbol, LiteralExpr<string> message);
     };
 
     class WithExpr : public ScopedNode
     {
-    protected:
-        ExprNode contextExpr;
-        optional<NameExpr> name;
-        ExprNode bodyExpr;
-
     public:
+        const ExprNode contextExpr;
+        const optional<NameExpr> name;
+        const ExprNode bodyExpr;
+
         explicit WithExpr(Token token, ExprNode contextExpr, const optional<NameExpr>& name, ExprNode bodyExpr);
     };
 
     class FieldAccessExpr : public ExprNode
     {
-    protected:
-        IdentifierExpr identifier;
-        NameExpr name;
-
     public:
+        const IdentifierExpr identifier;
+        const NameExpr name;
+
         explicit FieldAccessExpr(Token token, IdentifierExpr identifier, NameExpr name);
     };
 
     class FieldUpdateExpr : public ExprNode
     {
-    protected:
-        IdentifierExpr identifier;
-        vector<pair<NameExpr, ExprNode>> updates;
-
     public:
+        const IdentifierExpr identifier;
+        const vector<pair<NameExpr, ExprNode>> updates;
+
         explicit FieldUpdateExpr(Token token, IdentifierExpr identifier,
                                  const vector<pair<NameExpr, ExprNode>>& updates);
     };
 
     class LambdaAlias : public AliasExpr
     {
-    protected:
-        NameExpr name;
-        FunctionExpr lambda;
-
     public:
+        const NameExpr name;
+        const FunctionExpr lambda;
+
         explicit LambdaAlias(Token token, NameExpr name, FunctionExpr lambda);
     };
 
     class ModuleAlias : public AliasExpr
     {
-    protected:
-        NameExpr name;
-        ModuleExpr module;
-
     public:
+        const NameExpr name;
+        const ModuleExpr module;
+
         explicit ModuleAlias(Token token, NameExpr name, ModuleExpr module);
     };
 
     class ValueAlias : public AliasExpr
     {
-    protected:
-        IdentifierExpr identifier;
-        ExprNode expr;
-
     public:
+        const IdentifierExpr identifier;
+        const ExprNode expr;
+
         explicit ValueAlias(Token token, IdentifierExpr identifier, ExprNode expr);
     };
 
     class PatternAlias : public AliasExpr
     {
-    protected:
-        PatternNode pattern;
-        ExprNode expr;
-
     public:
+        const PatternNode pattern;
+        const ExprNode expr;
+
         explicit PatternAlias(Token token, PatternNode pattern, ExprNode expr);
     };
 
     class FqnAlias : public AliasExpr
     {
-    protected:
-        NameExpr name;
-        FqnExpr fqn;
-
     public:
+        const NameExpr name;
+        const FqnExpr fqn;
+
         explicit FqnAlias(Token token, NameExpr name, FqnExpr fqn);
     };
 
     class FunctionAlias : public AliasExpr
     {
-    protected:
-        NameExpr name;
-        NameExpr alias;
-
     public:
+        const NameExpr name;
+        const NameExpr alias;
+
         explicit FunctionAlias(Token token, NameExpr name, NameExpr alias);
     };
 
     class AliasCall : public CallExpr
     {
-    protected:
-        NameExpr alias;
-        NameExpr funName;
-
     public:
+        const NameExpr alias;
+        const NameExpr funName;
+
         explicit AliasCall(Token token, NameExpr alias, NameExpr funName);
     };
 
     class NameCall : public CallExpr
     {
-    protected:
-        NameExpr name;
-
     public:
+        const NameExpr name;
+
         explicit NameCall(Token token, NameExpr name);
     };
 
     class ModuleCall : public CallExpr
     {
-    protected:
-        variant<FqnExpr, ExprNode> fqn;
-        NameExpr funName;
-
     public:
+        const variant<FqnExpr, ExprNode> fqn;
+        const NameExpr funName;
+
         explicit ModuleCall(Token token, const variant<FqnExpr, ExprNode>& fqn, NameExpr funName);
     };
 
     class ModuleImport : public ImportClauseExpr
     {
-    protected:
-        FqnExpr fqn;
-        NameExpr name;
-
     public:
+        const FqnExpr fqn;
+        const NameExpr name;
+
         explicit ModuleImport(Token token, FqnExpr fqn, NameExpr name);
     };
 
     class FunctionsImport : public ImportClauseExpr
     {
-    protected:
-        vector<FunctionAlias> aliases;
-        FqnExpr fromFqn;
-
     public:
+        const vector<FunctionAlias> aliases;
+        const FqnExpr fromFqn;
+
         explicit FunctionsImport(Token token, const vector<FunctionAlias>& aliases, FqnExpr fromFqn);
     };
 
     class SeqGeneratorExpr : public GeneratorExpr
     {
-    protected:
-        ExprNode reducerExpr;
-        CollectionExtractorExpr collectionExtractor;
-        ExprNode stepExpression;
-
     public:
+        const ExprNode reducerExpr;
+        const CollectionExtractorExpr collectionExtractor;
+        const ExprNode stepExpression;
+
         explicit SeqGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
                                   ExprNode stepExpression);
     };
 
     class SetGeneratorExpr : public GeneratorExpr
     {
-    protected:
-        ExprNode reducerExpr;
-        CollectionExtractorExpr collectionExtractor;
-        ExprNode stepExpression;
-
     public:
+        const ExprNode reducerExpr;
+        const CollectionExtractorExpr collectionExtractor;
+        const ExprNode stepExpression;
+
         explicit SetGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
                                   ExprNode stepExpression);
     };
 
     class DictGeneratorReducer : public ExprNode
     {
-    protected:
-        ExprNode key;
-        ExprNode value;
-
     public:
+        const ExprNode key;
+        const ExprNode value;
+
         explicit DictGeneratorReducer(Token token, ExprNode key, ExprNode value);
     };
 
     class DictGeneratorExpr : public GeneratorExpr
     {
-    protected:
-        DictGeneratorReducer reducerExpr;
-        CollectionExtractorExpr collectionExtractor;
-        ExprNode stepExpression;
-
     public:
+        const DictGeneratorReducer reducerExpr;
+        const CollectionExtractorExpr collectionExtractor;
+        const ExprNode stepExpression;
+
         explicit DictGeneratorExpr(Token token, DictGeneratorReducer reducerExpr,
                                    CollectionExtractorExpr collectionExtractor, ExprNode stepExpression);
     };
@@ -839,20 +787,18 @@ namespace yona::ast
 
     class ValueCollectionExtractorExpr : public CollectionExtractorExpr
     {
-    protected:
-        IdentifierOrUnderscore expr;
-
     public:
+        const IdentifierOrUnderscore expr;
+
         explicit ValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore expr);
     };
 
     class KeyValueCollectionExtractorExpr : public CollectionExtractorExpr
     {
-    protected:
-        IdentifierOrUnderscore keyExpr;
-        IdentifierOrUnderscore valueExpr;
-
     public:
+        const IdentifierOrUnderscore keyExpr;
+        const IdentifierOrUnderscore valueExpr;
+
         explicit KeyValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore keyExpr,
                                                  IdentifierOrUnderscore valueExpr);
     };
@@ -867,106 +813,96 @@ namespace yona::ast
 
     class PatternWithGuards : public PatternNode
     {
-    protected:
-        ExprNode guard;
-        ExprNode exprNode;
-
     public:
+        const ExprNode guard;
+        const ExprNode exprNode;
+
         explicit PatternWithGuards(Token token, ExprNode guard, ExprNode exprNode);
     };
 
     class PatternWithoutGuards : public PatternNode
     {
-    protected:
-        ExprNode exprNode;
-
     public:
+        const ExprNode exprNode;
+
         explicit PatternWithoutGuards(Token token, ExprNode exprNode);
     };
 
     class PatternExpr : public ExprNode
     {
-    protected:
-        variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>> patternExpr;
-
     public:
+        const variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>> patternExpr;
+
         explicit PatternExpr(Token token,
                              const variant<Pattern, PatternWithoutGuards, vector<PatternWithGuards>>& patternExpr);
     };
 
     class CatchPatternExpr : public ExprNode
     {
-    protected:
-        Pattern matchPattern;
-        variant<PatternWithoutGuards, vector<PatternWithGuards>> pattern;
-
     public:
+        const Pattern matchPattern;
+        const variant<PatternWithoutGuards, vector<PatternWithGuards>> pattern;
+
         explicit CatchPatternExpr(Token token, Pattern matchPattern,
                                   const variant<PatternWithoutGuards, vector<PatternWithGuards>>& pattern);
     };
 
     class CatchExpr : public ExprNode
     {
-    protected:
-        vector<CatchPatternExpr> patterns;
-
     public:
+        const vector<CatchPatternExpr> patterns;
+
         explicit CatchExpr(Token token, const vector<CatchPatternExpr>& patterns);
     };
 
     class TryCatchExpr : public ExprNode
     {
-    protected:
-        ExprNode tryExpr;
-        CatchExpr catchExpr;
-
     public:
+        const ExprNode tryExpr;
+        const CatchExpr catchExpr;
+
         explicit TryCatchExpr(Token token, ExprNode tryExpr, CatchExpr catchExpr);
     };
 
     class PatternValue : public PatternNode
     {
-    protected:
-        variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr> expr;
-
     public:
-        explicit PatternValue(Token token,
-                              const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr);
+        const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr> expr;
+
+        explicit PatternValue(
+            Token token, const variant<LiteralExpr<nullptr_t>, LiteralExpr<void*>, SymbolExpr, IdentifierExpr>& expr);
     };
 
     class AsDataStructurePattern : public PatternNode
     {
-    protected:
-        IdentifierExpr identifier;
-        DataStructurePattern pattern;
-
     public:
+        const IdentifierExpr identifier;
+        const DataStructurePattern pattern;
+
         explicit AsDataStructurePattern(Token token, IdentifierExpr identifier, DataStructurePattern pattern);
     };
 
     class TuplePattern : public PatternNode
     {
-    protected:
-        vector<Pattern> patterns;
-
     public:
+        const vector<Pattern> patterns;
+
         explicit TuplePattern(Token token, const vector<Pattern>& patterns);
     };
 
     class SeqPattern : public PatternNode
     {
-    protected:
-        vector<Pattern> patterns;
-
     public:
+        const vector<Pattern> patterns;
+
         explicit SeqPattern(Token token, const vector<Pattern>& patterns);
     };
 
     class HeadTailsPattern : public PatternNode
     {
     protected:
-        vector<PatternWithoutSequence> heads;
-        TailPattern tail;
+        const vector<PatternWithoutSequence> heads;
+        const TailPattern tail;
 
     public:
         explicit HeadTailsPattern(Token token, const vector<PatternWithoutSequence>& heads, TailPattern tail);
@@ -974,52 +910,158 @@ namespace yona::ast
 
     class TailsHeadPattern : public PatternNode
     {
-    protected:
-        TailPattern tail;
-        vector<PatternWithoutSequence> heads;
-
     public:
+        const TailPattern tail;
+        const vector<PatternWithoutSequence> heads;
+
         explicit TailsHeadPattern(Token token, TailPattern tail, const vector<PatternWithoutSequence>& heads);
     };
 
     class HeadTailsHeadPattern : public PatternNode
     {
-    protected:
-        vector<PatternWithoutSequence> left;
-        TailPattern tail;
-        vector<PatternWithoutSequence> right;
-
     public:
+        const vector<PatternWithoutSequence> left;
+        const TailPattern tail;
+        const vector<PatternWithoutSequence> right;
+
         explicit HeadTailsHeadPattern(Token token, const vector<PatternWithoutSequence>& left, TailPattern tail,
                                       const vector<PatternWithoutSequence>& right);
     };
 
     class DictPattern : public PatternNode
     {
-    protected:
-        vector<pair<PatternValue, Pattern>> keyValuePairs;
-
     public:
+        const vector<pair<PatternValue, Pattern>> keyValuePairs;
+
         explicit DictPattern(Token token, const vector<pair<PatternValue, Pattern>>& keyValuePairs);
     };
 
     class RecordPattern : public PatternNode
     {
-    protected:
-        string recordType;
-        vector<pair<NameExpr, Pattern>> items;
-
     public:
+        const string recordType;
+        const vector<pair<NameExpr, Pattern>> items;
+
         explicit RecordPattern(Token token, string recordType, const vector<pair<NameExpr, Pattern>>& items);
     };
 
     class CaseExpr : public ExprNode
     {
-    protected:
-        ExprNode expr;
-        vector<PatternExpr> patterns;
-
     public:
+        const ExprNode expr;
+        const vector<PatternExpr> patterns;
+
         explicit CaseExpr(Token token, ExprNode expr, const vector<PatternExpr>& patterns);
+    };
+
+    template <typename T>
+    class AstVisitor
+    {
+    public:
+        virtual ~AstVisitor() = default;
+        virtual T visit(const AddExpr& node) const = 0;
+        virtual T visit(const AliasCall& node) const = 0;
+        virtual T visit(const AliasExpr& node) const = 0;
+        virtual T visit(const ApplyExpr& node) const = 0;
+        virtual T visit(const AsDataStructurePattern& node) const = 0;
+        virtual T visit(const BinaryNotOpExpr& node) const = 0;
+        virtual T visit(const BitwiseAndExpr& node) const = 0;
+        virtual T visit(const BitwiseOrExpr& node) const = 0;
+        virtual T visit(const BitwiseXorExpr& node) const = 0;
+        virtual T visit(const BodyWithGuards& node) const = 0;
+        virtual T visit(const BodyWithoutGuards& node) const = 0;
+        virtual T visit(const ByteExpr& node) const = 0;
+        virtual T visit(const CaseExpr& node) const = 0;
+        virtual T visit(const CatchExpr& node) const = 0;
+        virtual T visit(const CatchPatternExpr& node) const = 0;
+        virtual T visit(const CharacterExpr& node) const = 0;
+        virtual T visit(const ConsLeftExpr& node) const = 0;
+        virtual T visit(const ConsRightExpr& node) const = 0;
+        virtual T visit(const DictExpr& node) const = 0;
+        virtual T visit(const DictGeneratorExpr& node) const = 0;
+        virtual T visit(const DictGeneratorReducer& node) const = 0;
+        virtual T visit(const DictPattern& node) const = 0;
+        virtual T visit(const DivideExpr& node) const = 0;
+        virtual T visit(const DoExpr& node) const = 0;
+        virtual T visit(const EqExpr& node) const = 0;
+        virtual T visit(const FalseLiteralExpr& node) const = 0;
+        virtual T visit(const FieldAccessExpr& node) const = 0;
+        virtual T visit(const FieldUpdateExpr& node) const = 0;
+        virtual T visit(const FloatExpr& node) const = 0;
+        virtual T visit(const FqnAlias& node) const = 0;
+        virtual T visit(const FqnExpr& node) const = 0;
+        virtual T visit(const FunctionAlias& node) const = 0;
+        virtual T visit(const FunctionBody& node) const = 0;
+        virtual T visit(const FunctionExpr& node) const = 0;
+        virtual T visit(const FunctionsImport& node) const = 0;
+        virtual T visit(const GtExpr& node) const = 0;
+        virtual T visit(const GteExpr& node) const = 0;
+        virtual T visit(const HeadTailsHeadPattern& node) const = 0;
+        virtual T visit(const HeadTailsPattern& node) const = 0;
+        virtual T visit(const IdentifierExpr& node) const = 0;
+        virtual T visit(const IfExpr& node) const = 0;
+        virtual T visit(const ImportClauseExpr& node) const = 0;
+        virtual T visit(const ImportExpr& node) const = 0;
+        virtual T visit(const InExpr& node) const = 0;
+        virtual T visit(const IntegerExpr& node) const = 0;
+        virtual T visit(const JoinExpr& node) const = 0;
+        virtual T visit(const KeyValueCollectionExtractorExpr& node) const = 0;
+        virtual T visit(const LambdaAlias& node) const = 0;
+        virtual T visit(const LeftShiftExpr& node) const = 0;
+        virtual T visit(const LetExpr& node) const = 0;
+        virtual T visit(const LogicalAndExpr& node) const = 0;
+        virtual T visit(const LogicalNotOpExpr& node) const = 0;
+        virtual T visit(const LogicalOrExpr& node) const = 0;
+        virtual T visit(const LtExpr& node) const = 0;
+        virtual T visit(const LteExpr& node) const = 0;
+        virtual T visit(const ModuloExpr& node) const = 0;
+        virtual T visit(const ModuleAlias& node) const = 0;
+        virtual T visit(const ModuleCall& node) const = 0;
+        virtual T visit(const ModuleExpr& node) const = 0;
+        virtual T visit(const ModuleImport& node) const = 0;
+        virtual T visit(const MultiplyExpr& node) const = 0;
+        virtual T visit(const NameCall& node) const = 0;
+        virtual T visit(const NameExpr& node) const = 0;
+        virtual T visit(const NeqExpr& node) const = 0;
+        virtual T visit(const OpExpr& node) const = 0;
+        virtual T visit(const PackageNameExpr& node) const = 0;
+        virtual T visit(const PatternAlias& node) const = 0;
+        virtual T visit(const PatternExpr& node) const = 0;
+        virtual T visit(const PatternValue& node) const = 0;
+        virtual T visit(const PatternWithGuards& node) const = 0;
+        virtual T visit(const PatternWithoutGuards& node) const = 0;
+        virtual T visit(const PipeLeftExpr& node) const = 0;
+        virtual T visit(const PipeRightExpr& node) const = 0;
+        virtual T visit(const PowerExpr& node) const = 0;
+        virtual T visit(const RaiseExpr& node) const = 0;
+        virtual T visit(const RangeSequenceExpr& node) const = 0;
+        virtual T visit(const RecordInstanceExpr& node) const = 0;
+        virtual T visit(const RecordNode& node) const = 0;
+        virtual T visit(const RecordPattern& node) const = 0;
+        virtual T visit(const RightShiftExpr& node) const = 0;
+        virtual T visit(const SeqGeneratorExpr& node) const = 0;
+        virtual T visit(const SeqPattern& node) const = 0;
+        virtual T visit(const SequenceExpr& node) const = 0;
+        virtual T visit(const SetExpr& node) const = 0;
+        virtual T visit(const SetGeneratorExpr& node) const = 0;
+        virtual T visit(const StringExpr& node) const = 0;
+        virtual T visit(const SubtractExpr& node) const = 0;
+        virtual T visit(const SymbolExpr& node) const = 0;
+        virtual T visit(const TailsHeadPattern& node) const = 0;
+        virtual T visit(const TrueLiteralExpr& node) const = 0;
+        virtual T visit(const TryCatchExpr& node) const = 0;
+        virtual T visit(const TupleExpr& node) const = 0;
+        virtual T visit(const TuplePattern& node) const = 0;
+        virtual T visit(const UnitExpr& node) const = 0;
+        virtual T visit(const ValueAlias& node) const = 0;
+        virtual T visit(const ValueCollectionExtractorExpr& node) const = 0;
+        virtual T visit(const ValueExpr& node) const = 0;
+        virtual T visit(const ValuesSequenceExpr& node) const = 0;
+        virtual T visit(const WithExpr& node) const = 0;
+        virtual T visit(const ZerofillRightShiftExpr& node) const = 0;
+        virtual T visit(const ExprNode& node) const;
+        virtual T visit(const AstNode& node) const;
+        virtual T visit(const ScopedNode& node) const;
+        virtual T visit(const PatternNode& node) const;
     };
 }

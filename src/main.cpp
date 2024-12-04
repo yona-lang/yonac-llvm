@@ -1,5 +1,4 @@
-﻿// yonac-llvm.cpp : Defines the entry point for the application.
-//
+﻿// main.cpp : Defines the entry point for the application.
 
 #include <antlr4-runtime.h>
 #include <boost/log/trivial.hpp>
@@ -70,8 +69,8 @@ int main(const int argc, const char* argv[])
     compiler::Optimizer optimizer;
     interp::Interpreter interpreter;
     auto ast = yona_visitor.visitInput(tree);
-    auto optimized_ast = optimizer.visit(any_cast<expr_wrapper>(ast).get_node<AstNode>());
-    interpreter.visit(optimized_ast);
+    auto optimized_ast = optimizer.visit(any_cast<expr_wrapper>(ast).get_node<ExprNode>());
+    auto result = interpreter.visit(optimized_ast);
 
     stream.close();
     return 0;
