@@ -69,8 +69,8 @@ int main(const int argc, const char* argv[])
     compiler::Optimizer optimizer;
     interp::Interpreter interpreter;
     auto ast = yona_visitor.visitInput(tree);
-    auto optimized_ast = optimizer.visit(any_cast<expr_wrapper>(ast).get_node<ExprNode>());
-    auto result = interpreter.visit(optimized_ast);
+    auto optimized_ast = any_cast<expr_wrapper>(ast).get_node<AstNode>().accept(optimizer);
+    auto result = any_cast<AstNode>(optimized_ast).accept(interpreter);
 
     stream.close();
     return 0;

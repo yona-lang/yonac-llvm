@@ -687,10 +687,10 @@ namespace yona
 
     any YonaVisitor::visitDoExpr(YonaParser::DoExprContext* ctx)
     {
-        vector<variant<AliasExpr, ExprNode>> steps;
+        vector<ExprNode> steps;
         for (auto& step : ctx->doOneStep())
         {
-            steps.push_back(any_cast<variant<AliasExpr, ExprNode>>(visitDoOneStep(step)));
+            steps.push_back(any_cast<ExprNode>(visitDoOneStep(step)));
         }
         return make_expr_wrapper<DoExpr>(*ctx, steps);
     }

@@ -4,47 +4,89 @@
 
 #pragma once
 
+#include <antlr4-runtime.h>
 #include <string>
 
-namespace yona::compiler
-{
-    struct Type;
+#include "types.h"
 
+using Token = const antlr4::ParserRuleContext&;
+
+namespace yona::compiler::types
+{
     using namespace std;
 
-    enum ValType
+    struct SingleItemCollectionType;
+    struct DictCollectionType;
+    struct DictCollectionType;
+    struct TupleType;
+    struct FunctionType;
+    struct SumType;
+
+    enum ValueType
     {
         Int,
         Float,
-        Bool,
-        String,
+        Byte,
         Char,
+        String,
+        Bool,
         Unit,
-        List,
-        Tuple,
-        Set,
-        Dict,
-        FQN
+        Symbol,
+        Module
     };
 
-    using TypeVar = Type<ValType>;
-    using TypeFunc = Type<pair<Type, Type>>;
-    using TypeRecord = Type<string>;
-    using TypeModule = Type<string>;
+    // TODO implement comparators
+    using Type = variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>,
+                         shared_ptr<FunctionType>, shared_ptr<TupleType>, shared_ptr<SumType>, nullptr_t>;
 
-    using VariantType = variant<TypeVar, TypeFunc, TypeRecord, TypeModule>;
-
-    struct Type
+    struct SingleItemCollectionType
     {
-        enum Kind
+        enum CollectionKind
         {
-            Val,
-            Func,
-            Record,
-            Module
+            Set,
+            Seq
         } kind;
-        ValType value;
+        Type valueType;
+    };
 
-        Type unify_with(const Type& type);
+    struct DictCollectionType
+    {
+        Type keyType;
+        Type valueType;
+    };
+
+    struct TupleType
+    {
+        vector<Type> fieldTypes;
+        explicit TupleType(const vector<Type>& field_types) : fieldTypes(field_types) {}
+    };
+
+    struct FunctionType
+    {
+        Type returnType;
+        Type argumentType;
+    };
+
+    struct SumType
+    {
+        unordered_set<Type> types;
+    };
+
+    struct TypeError
+    {
+        Token token;
+        string message;
+
+        explicit TypeError(Token token, string message) : token(token), message(std::move(message)) {}
+    };
+
+    class TypeInferenceContext final
+    {
+    private:
+        vector<TypeError> errors;
+
+    public:
+        void addError(const TypeError& error) { errors.push_back(error); }
+        [[nodiscard]] const vector<TypeError>& getErrors() const { return errors; }
     };
 }

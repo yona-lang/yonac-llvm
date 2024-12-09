@@ -7,108 +7,109 @@
 namespace yona::compiler
 {
     using namespace std;
-    const AstNode Optimizer::visit(const AddExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const AliasCall& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const AliasExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ApplyExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const AsDataStructurePattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BinaryNotOpExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BitwiseAndExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BitwiseOrExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BitwiseXorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BodyWithGuards& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const BodyWithoutGuards& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ByteExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const CaseExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const CatchExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const CatchPatternExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const CharacterExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ConsLeftExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ConsRightExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DictExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DictGeneratorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DictGeneratorReducer& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DictPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DivideExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const DoExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const EqExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FalseLiteralExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FieldAccessExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FieldUpdateExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FloatExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FqnAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FqnExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FunctionAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FunctionBody& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FunctionExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const FunctionsImport& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const GtExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const GteExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const HeadTailsHeadPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const HeadTailsPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const IdentifierExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const IfExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ImportClauseExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ImportExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const InExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const IntegerExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const JoinExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const KeyValueCollectionExtractorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LambdaAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LeftShiftExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LetExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LogicalAndExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LogicalNotOpExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LogicalOrExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LtExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const LteExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ModuloExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ModuleAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ModuleCall& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ModuleExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ModuleImport& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const MultiplyExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const NameCall& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const NameExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const NeqExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const OpExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PackageNameExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PatternAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PatternExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PatternValue& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PatternWithGuards& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PatternWithoutGuards& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PipeLeftExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PipeRightExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const PowerExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RaiseExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RangeSequenceExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RecordInstanceExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RecordNode& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RecordPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const RightShiftExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SeqGeneratorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SeqPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SequenceExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SetExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SetGeneratorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const StringExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SubtractExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const SymbolExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const TailsHeadPattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const TrueLiteralExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const TryCatchExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const TupleExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const TuplePattern& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const UnitExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ValueAlias& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ValueCollectionExtractorExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ValueExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ValuesSequenceExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const WithExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ZerofillRightShiftExpr& node) const { return static_cast<AstNode>(node); }
-    const AstNode Optimizer::visit(const ExprNode& node) const { return AstVisitor::visit(node); }
-    const AstNode Optimizer::visit(const AstNode& node) const { return AstVisitor::visit(node); }
-    const AstNode Optimizer::visit(const ScopedNode& node) const { return AstVisitor::visit(node); }
-    const AstNode Optimizer::visit(const PatternNode& node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(const AddExpr& node) const { return any(node); }
+    any Optimizer::visit(const AliasCall& node) const { return any(node); }
+    any Optimizer::visit(const AliasExpr& node) const { return any(node); }
+    any Optimizer::visit(const ApplyExpr& node) const { return any(node); }
+    any Optimizer::visit(const AsDataStructurePattern& node) const { return any(node); }
+    any Optimizer::visit(const BinaryNotOpExpr& node) const { return any(node); }
+    any Optimizer::visit(const BitwiseAndExpr& node) const { return any(node); }
+    any Optimizer::visit(const BitwiseOrExpr& node) const { return any(node); }
+    any Optimizer::visit(const BitwiseXorExpr& node) const { return any(node); }
+    any Optimizer::visit(const BodyWithGuards& node) const { return any(node); }
+    any Optimizer::visit(const BodyWithoutGuards& node) const { return any(node); }
+    any Optimizer::visit(const ByteExpr& node) const { return any(node); }
+    any Optimizer::visit(const CaseExpr& node) const { return any(node); }
+    any Optimizer::visit(const CatchExpr& node) const { return any(node); }
+    any Optimizer::visit(const CatchPatternExpr& node) const { return any(node); }
+    any Optimizer::visit(const CharacterExpr& node) const { return any(node); }
+    any Optimizer::visit(const ConsLeftExpr& node) const { return any(node); }
+    any Optimizer::visit(const ConsRightExpr& node) const { return any(node); }
+    any Optimizer::visit(const DictExpr& node) const { return any(node); }
+    any Optimizer::visit(const DictGeneratorExpr& node) const { return any(node); }
+    any Optimizer::visit(const DictGeneratorReducer& node) const { return any(node); }
+    any Optimizer::visit(const DictPattern& node) const { return any(node); }
+    any Optimizer::visit(const DivideExpr& node) const { return any(node); }
+    any Optimizer::visit(const DoExpr& node) const { return any(node); }
+    any Optimizer::visit(const EqExpr& node) const { return any(node); }
+    any Optimizer::visit(const FalseLiteralExpr& node) const { return any(node); }
+    any Optimizer::visit(const FieldAccessExpr& node) const { return any(node); }
+    any Optimizer::visit(const FieldUpdateExpr& node) const { return any(node); }
+    any Optimizer::visit(const FloatExpr& node) const { return any(node); }
+    any Optimizer::visit(const FqnAlias& node) const { return any(node); }
+    any Optimizer::visit(const FqnExpr& node) const { return any(node); }
+    any Optimizer::visit(const FunctionAlias& node) const { return any(node); }
+    any Optimizer::visit(const FunctionBody& node) const { return any(node); }
+    any Optimizer::visit(const FunctionExpr& node) const { return any(node); }
+    any Optimizer::visit(const FunctionsImport& node) const { return any(node); }
+    any Optimizer::visit(const GtExpr& node) const { return any(node); }
+    any Optimizer::visit(const GteExpr& node) const { return any(node); }
+    any Optimizer::visit(const HeadTailsHeadPattern& node) const { return any(node); }
+    any Optimizer::visit(const HeadTailsPattern& node) const { return any(node); }
+    any Optimizer::visit(const IdentifierExpr& node) const { return any(node); }
+    any Optimizer::visit(const IfExpr& node) const { return any(node); }
+    any Optimizer::visit(const ImportClauseExpr& node) const { return any(node); }
+    any Optimizer::visit(const ImportExpr& node) const { return any(node); }
+    any Optimizer::visit(const InExpr& node) const { return any(node); }
+    any Optimizer::visit(const IntegerExpr& node) const { return any(node); }
+    any Optimizer::visit(const JoinExpr& node) const { return any(node); }
+    any Optimizer::visit(const KeyValueCollectionExtractorExpr& node) const { return any(node); }
+    any Optimizer::visit(const LambdaAlias& node) const { return any(node); }
+    any Optimizer::visit(const LeftShiftExpr& node) const { return any(node); }
+    any Optimizer::visit(const LetExpr& node) const { return any(node); }
+    any Optimizer::visit(const LogicalAndExpr& node) const { return any(node); }
+    any Optimizer::visit(const LogicalNotOpExpr& node) const { return any(node); }
+    any Optimizer::visit(const LogicalOrExpr& node) const { return any(node); }
+    any Optimizer::visit(const LtExpr& node) const { return any(node); }
+    any Optimizer::visit(const LteExpr& node) const { return any(node); }
+    any Optimizer::visit(const ModuloExpr& node) const { return any(node); }
+    any Optimizer::visit(const ModuleAlias& node) const { return any(node); }
+    any Optimizer::visit(const ModuleCall& node) const { return any(node); }
+    any Optimizer::visit(const ModuleExpr& node) const { return any(node); }
+    any Optimizer::visit(const ModuleImport& node) const { return any(node); }
+    any Optimizer::visit(const MultiplyExpr& node) const { return any(node); }
+    any Optimizer::visit(const NameCall& node) const { return any(node); }
+    any Optimizer::visit(const NameExpr& node) const { return any(node); }
+    any Optimizer::visit(const NeqExpr& node) const { return any(node); }
+    any Optimizer::visit(const OpExpr& node) const { return any(node); }
+    any Optimizer::visit(const PackageNameExpr& node) const { return any(node); }
+    any Optimizer::visit(const PatternAlias& node) const { return any(node); }
+    any Optimizer::visit(const PatternExpr& node) const { return any(node); }
+    any Optimizer::visit(const PatternValue& node) const { return any(node); }
+    any Optimizer::visit(const PatternWithGuards& node) const { return any(node); }
+    any Optimizer::visit(const PatternWithoutGuards& node) const { return any(node); }
+    any Optimizer::visit(const PipeLeftExpr& node) const { return any(node); }
+    any Optimizer::visit(const PipeRightExpr& node) const { return any(node); }
+    any Optimizer::visit(const PowerExpr& node) const { return any(node); }
+    any Optimizer::visit(const RaiseExpr& node) const { return any(node); }
+    any Optimizer::visit(const RangeSequenceExpr& node) const { return any(node); }
+    any Optimizer::visit(const RecordInstanceExpr& node) const { return any(node); }
+    any Optimizer::visit(const RecordNode& node) const { return any(node); }
+    any Optimizer::visit(const RecordPattern& node) const { return any(node); }
+    any Optimizer::visit(const RightShiftExpr& node) const { return any(node); }
+    any Optimizer::visit(const SeqGeneratorExpr& node) const { return any(node); }
+    any Optimizer::visit(const SeqPattern& node) const { return any(node); }
+    any Optimizer::visit(const SequenceExpr& node) const { return any(node); }
+    any Optimizer::visit(const SetExpr& node) const { return any(node); }
+    any Optimizer::visit(const SetGeneratorExpr& node) const { return any(node); }
+    any Optimizer::visit(const StringExpr& node) const { return any(node); }
+    any Optimizer::visit(const SubtractExpr& node) const { return any(node); }
+    any Optimizer::visit(const SymbolExpr& node) const { return any(node); }
+    any Optimizer::visit(const TailsHeadPattern& node) const { return any(node); }
+    any Optimizer::visit(const TrueLiteralExpr& node) const { return any(node); }
+    any Optimizer::visit(const TryCatchExpr& node) const { return any(node); }
+    any Optimizer::visit(const TupleExpr& node) const { return any(node); }
+    any Optimizer::visit(const TuplePattern& node) const { return any(node); }
+    any Optimizer::visit(const UnderscoreNode& node) const { return any(node); }
+    any Optimizer::visit(const UnitExpr& node) const { return any(node); }
+    any Optimizer::visit(const ValueAlias& node) const { return any(node); }
+    any Optimizer::visit(const ValueCollectionExtractorExpr& node) const { return any(node); }
+    any Optimizer::visit(const ValueExpr& node) const { return any(node); }
+    any Optimizer::visit(const ValuesSequenceExpr& node) const { return any(node); }
+    any Optimizer::visit(const WithExpr& node) const { return any(node); }
+    any Optimizer::visit(const ZerofillRightShiftExpr& node) const { return any(node); }
+    any Optimizer::visit(const ExprNode& node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(const AstNode& node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(const ScopedNode& node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(const PatternNode& node) const { return AstVisitor::visit(node); }
 }
