@@ -25,8 +25,8 @@ namespace yona
         }
 
         return wrap_expr<FunctionExpr>(*ctx, ctx->functionName()->name()->LOWERCASE_NAME()->getText(),
-                                               visit_exprs<PatternNode>(ctx->pattern()),
-                                               any_cast<vector<FunctionBody*>>(visitFunctionBody(ctx->functionBody())));
+                                       visit_exprs<PatternNode>(ctx->pattern()),
+                                       any_cast<vector<FunctionBody*>>(visitFunctionBody(ctx->functionBody())));
     }
     std::any YonaVisitor::visitFunctionName(YonaParser::FunctionNameContext* ctx) { return visitName(ctx->name()); }
 
@@ -38,7 +38,7 @@ namespace yona
     any YonaVisitor::visitBodyWithGuards(YonaParser::BodyWithGuardsContext* ctx)
     {
         return wrap_expr<BodyWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard),
-                                                 visit_exprs<ExprNode>(ctx->expression()));
+                                         visit_exprs<ExprNode>(ctx->expression()));
     }
 
     any YonaVisitor::visitNegationExpression(YonaParser::NegationExpressionContext* ctx)
@@ -65,33 +65,29 @@ namespace yona
         }
         else
         {
-            return wrap_expr<SubtractExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                   visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<SubtractExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
     }
 
     any YonaVisitor::visitPipeRightExpression(YonaParser::PipeRightExpressionContext* ctx)
     {
-        return wrap_expr<PipeRightExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<PipeRightExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitBinaryShiftExpression(YonaParser::BinaryShiftExpressionContext* ctx)
     {
         if (ctx->OP_LEFTSHIFT() != nullptr)
         {
-            return wrap_expr<LeftShiftExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                    visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<LeftShiftExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
         else if (ctx->OP_RIGHTSHIFT() != nullptr)
         {
-            return wrap_expr<RightShiftExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                     visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<RightShiftExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
         else
         {
             return wrap_expr<ZerofillRightShiftExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                             visit_expr<ExprNode>(ctx->right));
+                                                     visit_expr<ExprNode>(ctx->right));
         }
     }
 
@@ -108,8 +104,8 @@ namespace yona
     any YonaVisitor::visitBacktickExpression(YonaParser::BacktickExpressionContext* ctx)
     {
         return wrap_expr<ApplyExpr>(*ctx, visit_expr<CallExpr>(ctx->call()),
-                                            vector{ any_cast<variant<ExprNode*, ValueExpr*>>(visit(ctx->left)),
-                                                    any_cast<variant<ExprNode*, ValueExpr*>>(visit(ctx->right)) });
+                                    vector{ any_cast<variant<ExprNode*, ValueExpr*>>(visit(ctx->left)),
+                                            any_cast<variant<ExprNode*, ValueExpr*>>(visit(ctx->right)) });
     }
 
     any YonaVisitor::visitCaseExpression(YonaParser::CaseExpressionContext* ctx) { return visit(ctx->caseExpr()); }
@@ -121,8 +117,7 @@ namespace yona
 
     any YonaVisitor::visitBitwiseAndExpression(YonaParser::BitwiseAndExpressionContext* ctx)
     {
-        return wrap_expr<BitwiseAndExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                 visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<BitwiseAndExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitLetExpression(YonaParser::LetExpressionContext* ctx) { return visitLet(ctx->let()); }
@@ -131,14 +126,12 @@ namespace yona
 
     any YonaVisitor::visitLogicalAndExpression(YonaParser::LogicalAndExpressionContext* ctx)
     {
-        return wrap_expr<LogicalAndExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                 visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<LogicalAndExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitConsRightExpression(YonaParser::ConsRightExpressionContext* ctx)
     {
-        return wrap_expr<ConsRightExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<ConsRightExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitExpressionInParents(YonaParser::ExpressionInParentsContext* ctx)
@@ -153,8 +146,7 @@ namespace yona
 
     any YonaVisitor::visitBitwiseXorExpression(YonaParser::BitwiseXorExpressionContext* ctx)
     {
-        return wrap_expr<BitwiseXorExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                 visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<BitwiseXorExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitGeneratorExpression(YonaParser::GeneratorExpressionContext* ctx)
@@ -171,30 +163,25 @@ namespace yona
     {
         if (ctx->OP_POWER() != nullptr)
         {
-            return wrap_expr<PowerExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<PowerExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
         else if (ctx->OP_MULTIPLY() != nullptr)
         {
-            return wrap_expr<MultiplyExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                   visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<MultiplyExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
         else if (ctx->OP_DIVIDE() != nullptr)
         {
-            return wrap_expr<DivideExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                 visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<DivideExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
         else
         {
-            return wrap_expr<ModuloExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                 visit_expr<ExprNode>(ctx->right));
+            return wrap_expr<ModuloExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
         }
     }
 
     any YonaVisitor::visitLogicalOrExpression(YonaParser::LogicalOrExpressionContext* ctx)
     {
-        return wrap_expr<LogicalOrExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<LogicalOrExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitPipeLeftExpression(YonaParser::PipeLeftExpressionContext* ctx)
@@ -232,8 +219,7 @@ namespace yona
 
     any YonaVisitor::visitBitwiseOrExpression(YonaParser::BitwiseOrExpressionContext* ctx)
     {
-        return wrap_expr<BitwiseOrExpr>(*ctx, visit_expr<ExprNode>(ctx->left),
-                                                visit_expr<ExprNode>(ctx->right));
+        return wrap_expr<BitwiseOrExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
     }
 
     any YonaVisitor::visitInExpression(YonaParser::InExpressionContext* ctx)
@@ -404,13 +390,13 @@ namespace yona
     any YonaVisitor::visitValueAlias(YonaParser::ValueAliasContext* ctx)
     {
         return wrap_expr<ValueAlias>(*ctx, visit_expr<IdentifierExpr>(ctx->identifier()),
-                                             visit_expr<ExprNode>(ctx->expression()));
+                                     visit_expr<ExprNode>(ctx->expression()));
     }
 
     any YonaVisitor::visitPatternAlias(YonaParser::PatternAliasContext* ctx)
     {
         return wrap_expr<PatternAlias>(*ctx, visit_expr<PatternNode>(ctx->pattern()),
-                                               visit_expr<ExprNode>(ctx->expression()));
+                                       visit_expr<ExprNode>(ctx->expression()));
     }
 
     any YonaVisitor::visitFqnAlias(YonaParser::FqnAliasContext* ctx) { return visitFqn(ctx->fqn()); }
@@ -624,8 +610,8 @@ namespace yona
     any YonaVisitor::visitLambda(YonaParser::LambdaContext* ctx)
     {
         return wrap_expr<FunctionExpr>(*ctx, nextLambdaName(), visit_exprs<PatternNode>(ctx->pattern()),
-                                               vector{ static_cast<FunctionBody*>(new BodyWithoutGuards(
-                                                   *ctx->expression(), visit_expr<ExprNode>(ctx->expression()))) });
+                                       vector{ static_cast<FunctionBody*>(new BodyWithoutGuards(
+                                           *ctx->expression(), visit_expr<ExprNode>(ctx->expression()))) });
     }
 
     any YonaVisitor::visitUnderscore(YonaParser::UnderscoreContext* ctx) { return UnderscorePattern(*ctx); }
@@ -647,8 +633,8 @@ namespace yona
 
     any YonaVisitor::visitRangeSequence(YonaParser::RangeSequenceContext* ctx)
     {
-        return wrap_expr<RangeSequenceExpr>(*ctx, visit_expr<ExprNode>(ctx->start),
-                                                    visit_expr<ExprNode>(ctx->end), visit_expr<ExprNode>(ctx->step));
+        return wrap_expr<RangeSequenceExpr>(*ctx, visit_expr<ExprNode>(ctx->start), visit_expr<ExprNode>(ctx->end),
+                                            visit_expr<ExprNode>(ctx->step));
     }
 
     any YonaVisitor::visitCaseExpr(YonaParser::CaseExprContext* ctx)
@@ -713,8 +699,7 @@ namespace yona
 
     any YonaVisitor::visitPatternExpressionWithGuard(YonaParser::PatternExpressionWithGuardContext* ctx)
     {
-        return wrap_expr<PatternWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard),
-                                                    visit_expr<ExprNode>(ctx->expr));
+        return wrap_expr<PatternWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard), visit_expr<ExprNode>(ctx->expr));
     }
 
     any YonaVisitor::visitPattern(YonaParser::PatternContext* ctx)
@@ -854,7 +839,7 @@ namespace yona
             rightPatterns.push_back(any_cast<PatternWithoutSequence*>(visitRightPattern(pattern)));
         }
         return wrap_expr<HeadTailsHeadPattern>(*ctx, leftPatterns, visit_expr<PatternNode>(ctx->tails()),
-                                                       rightPatterns);
+                                               rightPatterns);
     }
 
     any YonaVisitor::visitLeftPattern(YonaParser::LeftPatternContext* ctx)
@@ -935,7 +920,7 @@ namespace yona
     any YonaVisitor::visitFunctionsImport(YonaParser::FunctionsImportContext* ctx)
     {
         return wrap_expr<FunctionsImport>(*ctx, visit_exprs<FunctionAlias>(ctx->functionAlias()),
-                                                  visit_expr<FqnExpr>(ctx->fqn()));
+                                          visit_expr<FqnExpr>(ctx->fqn()));
     }
 
     any YonaVisitor::visitFunctionAlias(YonaParser::FunctionAliasContext* ctx) { return visitName(ctx->funAlias); }
@@ -943,7 +928,7 @@ namespace yona
     any YonaVisitor::visitTryCatchExpr(YonaParser::TryCatchExprContext* ctx)
     {
         return wrap_expr<TryCatchExpr>(*ctx, visit_expr<ExprNode>(ctx->expression()),
-                                               visit_expr<CatchExpr>(ctx->catchExpr()));
+                                       visit_expr<CatchExpr>(ctx->catchExpr()));
     }
     std::any YonaVisitor::visitCatchExpr(YonaParser::CatchExprContext* ctx)
     {
@@ -972,21 +957,20 @@ namespace yona
     }
     std::any YonaVisitor::visitCatchPatternExpressionWithGuard(YonaParser::CatchPatternExpressionWithGuardContext* ctx)
     {
-        return wrap_expr<PatternWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard),
-                                                    visit_expr<ExprNode>(ctx->expr));
+        return wrap_expr<PatternWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard), visit_expr<ExprNode>(ctx->expr));
     }
 
     any YonaVisitor::visitRaiseExpr(YonaParser::RaiseExprContext* ctx)
     {
         return wrap_expr<RaiseExpr>(*ctx, visit_expr<SymbolExpr>(ctx->symbol()),
-                                            visit_expr<LiteralExpr<string>>(ctx->stringLiteral()));
+                                    visit_expr<StringExpr>(ctx->stringLiteral()));
     }
 
     any YonaVisitor::visitWithExpr(YonaParser::WithExprContext* ctx)
     {
         return wrap_expr<WithExpr>(*ctx, visit_expr<ExprNode>(ctx->context),
-                                           ctx->name() == nullptr ? nullptr : visit_expr<NameExpr>(ctx->name()),
-                                           visit_expr<ExprNode>(ctx->body));
+                                   ctx->name() == nullptr ? nullptr : visit_expr<NameExpr>(ctx->name()),
+                                   visit_expr<ExprNode>(ctx->body));
     }
     std::any YonaVisitor::visitGeneratorExpr(YonaParser::GeneratorExprContext* ctx)
     {
@@ -1007,28 +991,28 @@ namespace yona
     any YonaVisitor::visitSequenceGeneratorExpr(YonaParser::SequenceGeneratorExprContext* ctx)
     {
         return wrap_expr<SeqGeneratorExpr>(*ctx, visit_expr<ExprNode>(ctx->reducer),
-                                                   visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
-                                                   visit_expr<ExprNode>(ctx->stepExpression));
+                                           visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
+                                           visit_expr<ExprNode>(ctx->stepExpression));
     }
 
     any YonaVisitor::visitSetGeneratorExpr(YonaParser::SetGeneratorExprContext* ctx)
     {
         return wrap_expr<SetGeneratorExpr>(*ctx, visit_expr<ExprNode>(ctx->reducer),
-                                                   visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
-                                                   visit_expr<ExprNode>(ctx->stepExpression));
+                                           visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
+                                           visit_expr<ExprNode>(ctx->stepExpression));
     }
 
     any YonaVisitor::visitDictGeneratorExpr(YonaParser::DictGeneratorExprContext* ctx)
     {
         return wrap_expr<DictGeneratorExpr>(*ctx, visit_expr<DictGeneratorReducer>(ctx->dictGeneratorReducer()),
-                                                    visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
-                                                    visit_expr<ExprNode>(ctx->stepExpression));
+                                            visit_expr<CollectionExtractorExpr>(ctx->collectionExtractor()),
+                                            visit_expr<ExprNode>(ctx->stepExpression));
     }
 
     any YonaVisitor::visitDictGeneratorReducer(YonaParser::DictGeneratorReducerContext* ctx)
     {
         return wrap_expr<DictGeneratorReducer>(*ctx, visit_expr<ExprNode>(ctx->dictKey()->expression()),
-                                                       visit_expr<ExprNode>(ctx->dictVal()->expression()));
+                                               visit_expr<ExprNode>(ctx->dictVal()->expression()));
     }
     std::any YonaVisitor::visitCollectionExtractor(YonaParser::CollectionExtractorContext* ctx)
     {
@@ -1096,7 +1080,7 @@ namespace yona
     any YonaVisitor::visitFieldAccessExpr(YonaParser::FieldAccessExprContext* ctx)
     {
         return wrap_expr<FieldAccessExpr>(*ctx, visit_expr<IdentifierExpr>(ctx->identifier()),
-                                                  visit_expr<NameExpr>(ctx->name()));
+                                          visit_expr<NameExpr>(ctx->name()));
     }
 
     any YonaVisitor::visitFieldUpdateExpr(YonaParser::FieldUpdateExprContext* ctx)

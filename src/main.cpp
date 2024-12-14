@@ -83,6 +83,7 @@ int main(const int argc, const char* argv[])
     auto optimized_ast = any_cast<expr_wrapper>(ast).get_node<AstNode>()->accept(optimizer);
     auto result = any_cast<expr_wrapper>(optimized_ast).get_node<AstNode>()->accept(interpreter);
     cout << result.type().name() << endl;
+    delete any_cast<expr_wrapper>(optimized_ast).get_node<AstNode>();
 
     stream.close();
     return 0;
