@@ -14,9 +14,9 @@ namespace yona
 
     template <typename T, typename... Args>
         requires derived_from<T, AstNode>
-    any make_expr_wrapper(Token token, Args&&... args)
+    any wrap_expr(Token token, Args&&... args)
     {
-        return any(expr_wrapper(T(token, std::forward<Args>(args)...)));
+        return any(expr_wrapper(new T(token, std::forward<Args>(args)...)));
     }
 
     class YonaVisitor : public YonaParserBaseVisitor
@@ -28,16 +28,16 @@ namespace yona
 
         template <typename T>
             requires derived_from<T, AstNode>
-        T visit_expr(antlr4::tree::ParseTree* tree)
+        T* visit_expr(antlr4::tree::ParseTree* tree)
         {
             return any_cast<expr_wrapper>(visit(tree)).get_node<T>();
         }
 
         template <typename T, typename PT>
             requires derived_from<T, AstNode>
-        vector<T> visit_exprs(vector<PT*> trees)
+        vector<T*> visit_exprs(vector<PT*> trees)
         {
-            vector<T> exprs;
+            vector<T*> exprs;
             for (auto tree : trees)
             {
                 exprs.push_back(visit_expr<T>(tree));

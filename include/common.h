@@ -14,16 +14,16 @@ namespace yona
     struct expr_wrapper
     {
     private:
-        AstNode node;
+        AstNode* node;
 
     public:
-        explicit expr_wrapper(const AstNode& node) : node(node) {}
+        explicit expr_wrapper(AstNode* node) : node(node) {}
 
         template <typename T>
             requires derived_from<T, AstNode>
-        T get_node()
+        T* get_node()
         {
-            return *static_cast<T*>(&node);
+            return static_cast<T*>(node);
         }
     };
 };

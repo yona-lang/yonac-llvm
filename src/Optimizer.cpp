@@ -3,113 +3,114 @@
 //
 
 #include "Optimizer.h"
+#include "common.h"
 
 namespace yona::compiler
 {
     using namespace std;
-    any Optimizer::visit(const AddExpr& node) const { return any(node); }
-    any Optimizer::visit(const AliasCall& node) const { return any(node); }
-    any Optimizer::visit(const AliasExpr& node) const { return any(node); }
-    any Optimizer::visit(const ApplyExpr& node) const { return any(node); }
-    any Optimizer::visit(const AsDataStructurePattern& node) const { return any(node); }
-    any Optimizer::visit(const BinaryNotOpExpr& node) const { return any(node); }
-    any Optimizer::visit(const BitwiseAndExpr& node) const { return any(node); }
-    any Optimizer::visit(const BitwiseOrExpr& node) const { return any(node); }
-    any Optimizer::visit(const BitwiseXorExpr& node) const { return any(node); }
-    any Optimizer::visit(const BodyWithGuards& node) const { return any(node); }
-    any Optimizer::visit(const BodyWithoutGuards& node) const { return any(node); }
-    any Optimizer::visit(const ByteExpr& node) const { return any(node); }
-    any Optimizer::visit(const CaseExpr& node) const { return any(node); }
-    any Optimizer::visit(const CatchExpr& node) const { return any(node); }
-    any Optimizer::visit(const CatchPatternExpr& node) const { return any(node); }
-    any Optimizer::visit(const CharacterExpr& node) const { return any(node); }
-    any Optimizer::visit(const ConsLeftExpr& node) const { return any(node); }
-    any Optimizer::visit(const ConsRightExpr& node) const { return any(node); }
-    any Optimizer::visit(const DictExpr& node) const { return any(node); }
-    any Optimizer::visit(const DictGeneratorExpr& node) const { return any(node); }
-    any Optimizer::visit(const DictGeneratorReducer& node) const { return any(node); }
-    any Optimizer::visit(const DictPattern& node) const { return any(node); }
-    any Optimizer::visit(const DivideExpr& node) const { return any(node); }
-    any Optimizer::visit(const DoExpr& node) const { return any(node); }
-    any Optimizer::visit(const EqExpr& node) const { return any(node); }
-    any Optimizer::visit(const FalseLiteralExpr& node) const { return any(node); }
-    any Optimizer::visit(const FieldAccessExpr& node) const { return any(node); }
-    any Optimizer::visit(const FieldUpdateExpr& node) const { return any(node); }
-    any Optimizer::visit(const FloatExpr& node) const { return any(node); }
-    any Optimizer::visit(const FqnAlias& node) const { return any(node); }
-    any Optimizer::visit(const FqnExpr& node) const { return any(node); }
-    any Optimizer::visit(const FunctionAlias& node) const { return any(node); }
-    any Optimizer::visit(const FunctionBody& node) const { return any(node); }
-    any Optimizer::visit(const FunctionExpr& node) const { return any(node); }
-    any Optimizer::visit(const FunctionsImport& node) const { return any(node); }
-    any Optimizer::visit(const GtExpr& node) const { return any(node); }
-    any Optimizer::visit(const GteExpr& node) const { return any(node); }
-    any Optimizer::visit(const HeadTailsHeadPattern& node) const { return any(node); }
-    any Optimizer::visit(const HeadTailsPattern& node) const { return any(node); }
-    any Optimizer::visit(const IdentifierExpr& node) const { return any(node); }
-    any Optimizer::visit(const IfExpr& node) const { return any(node); }
-    any Optimizer::visit(const ImportClauseExpr& node) const { return any(node); }
-    any Optimizer::visit(const ImportExpr& node) const { return any(node); }
-    any Optimizer::visit(const InExpr& node) const { return any(node); }
-    any Optimizer::visit(const IntegerExpr& node) const { return any(node); }
-    any Optimizer::visit(const JoinExpr& node) const { return any(node); }
-    any Optimizer::visit(const KeyValueCollectionExtractorExpr& node) const { return any(node); }
-    any Optimizer::visit(const LambdaAlias& node) const { return any(node); }
-    any Optimizer::visit(const LeftShiftExpr& node) const { return any(node); }
-    any Optimizer::visit(const LetExpr& node) const { return any(node); }
-    any Optimizer::visit(const LogicalAndExpr& node) const { return any(node); }
-    any Optimizer::visit(const LogicalNotOpExpr& node) const { return any(node); }
-    any Optimizer::visit(const LogicalOrExpr& node) const { return any(node); }
-    any Optimizer::visit(const LtExpr& node) const { return any(node); }
-    any Optimizer::visit(const LteExpr& node) const { return any(node); }
-    any Optimizer::visit(const ModuloExpr& node) const { return any(node); }
-    any Optimizer::visit(const ModuleAlias& node) const { return any(node); }
-    any Optimizer::visit(const ModuleCall& node) const { return any(node); }
-    any Optimizer::visit(const ModuleExpr& node) const { return any(node); }
-    any Optimizer::visit(const ModuleImport& node) const { return any(node); }
-    any Optimizer::visit(const MultiplyExpr& node) const { return any(node); }
-    any Optimizer::visit(const NameCall& node) const { return any(node); }
-    any Optimizer::visit(const NameExpr& node) const { return any(node); }
-    any Optimizer::visit(const NeqExpr& node) const { return any(node); }
-    any Optimizer::visit(const OpExpr& node) const { return any(node); }
-    any Optimizer::visit(const PackageNameExpr& node) const { return any(node); }
-    any Optimizer::visit(const PatternAlias& node) const { return any(node); }
-    any Optimizer::visit(const PatternExpr& node) const { return any(node); }
-    any Optimizer::visit(const PatternValue& node) const { return any(node); }
-    any Optimizer::visit(const PatternWithGuards& node) const { return any(node); }
-    any Optimizer::visit(const PatternWithoutGuards& node) const { return any(node); }
-    any Optimizer::visit(const PipeLeftExpr& node) const { return any(node); }
-    any Optimizer::visit(const PipeRightExpr& node) const { return any(node); }
-    any Optimizer::visit(const PowerExpr& node) const { return any(node); }
-    any Optimizer::visit(const RaiseExpr& node) const { return any(node); }
-    any Optimizer::visit(const RangeSequenceExpr& node) const { return any(node); }
-    any Optimizer::visit(const RecordInstanceExpr& node) const { return any(node); }
-    any Optimizer::visit(const RecordNode& node) const { return any(node); }
-    any Optimizer::visit(const RecordPattern& node) const { return any(node); }
-    any Optimizer::visit(const RightShiftExpr& node) const { return any(node); }
-    any Optimizer::visit(const SeqGeneratorExpr& node) const { return any(node); }
-    any Optimizer::visit(const SeqPattern& node) const { return any(node); }
-    any Optimizer::visit(const SequenceExpr& node) const { return any(node); }
-    any Optimizer::visit(const SetExpr& node) const { return any(node); }
-    any Optimizer::visit(const SetGeneratorExpr& node) const { return any(node); }
-    any Optimizer::visit(const StringExpr& node) const { return any(node); }
-    any Optimizer::visit(const SubtractExpr& node) const { return any(node); }
-    any Optimizer::visit(const SymbolExpr& node) const { return any(node); }
-    any Optimizer::visit(const TailsHeadPattern& node) const { return any(node); }
-    any Optimizer::visit(const TrueLiteralExpr& node) const { return any(node); }
-    any Optimizer::visit(const TryCatchExpr& node) const { return any(node); }
-    any Optimizer::visit(const TupleExpr& node) const { return any(node); }
-    any Optimizer::visit(const TuplePattern& node) const { return any(node); }
-    any Optimizer::visit(const UnderscoreNode& node) const { return any(node); }
-    any Optimizer::visit(const UnitExpr& node) const { return any(node); }
-    any Optimizer::visit(const ValueAlias& node) const { return any(node); }
-    any Optimizer::visit(const ValueCollectionExtractorExpr& node) const { return any(node); }
-    any Optimizer::visit(const ValueExpr& node) const { return any(node); }
-    any Optimizer::visit(const ValuesSequenceExpr& node) const { return any(node); }
-    any Optimizer::visit(const WithExpr& node) const { return any(node); }
-    any Optimizer::visit(const ZerofillRightShiftExpr& node) const { return any(node); }
-    any Optimizer::visit(const ExprNode& node) const { return AstVisitor::visit(node); }
-    any Optimizer::visit(const AstNode& node) const { return AstVisitor::visit(node); }
-    any Optimizer::visit(const ScopedNode& node) const { return AstVisitor::visit(node); }
-    any Optimizer::visit(const PatternNode& node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(AddExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(AliasCall* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(AliasExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ApplyExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(AsDataStructurePattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BinaryNotOpExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BitwiseAndExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BitwiseOrExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BitwiseXorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BodyWithGuards* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(BodyWithoutGuards* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ByteExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(CaseExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(CatchExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(CatchPatternExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(CharacterExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ConsLeftExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ConsRightExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DictExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DictGeneratorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DictGeneratorReducer* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DictPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DivideExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(DoExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(EqExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FalseLiteralExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FieldAccessExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FieldUpdateExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FloatExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FqnAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FqnExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FunctionAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FunctionBody* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FunctionExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(FunctionsImport* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(GtExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(GteExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(HeadTailsHeadPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(HeadTailsPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(IdentifierExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(IfExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ImportClauseExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ImportExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(InExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(IntegerExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(JoinExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(KeyValueCollectionExtractorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LambdaAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LeftShiftExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LetExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LogicalAndExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LogicalNotOpExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LogicalOrExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LtExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(LteExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ModuloExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ModuleAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ModuleCall* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ModuleExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ModuleImport* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(MultiplyExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(NameCall* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(NameExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(NeqExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(OpExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PackageNameExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PatternAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PatternExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PatternValue* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PatternWithGuards* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PatternWithoutGuards* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PipeLeftExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PipeRightExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(PowerExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RaiseExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RangeSequenceExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RecordInstanceExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RecordNode* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RecordPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(RightShiftExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SeqGeneratorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SeqPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SequenceExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SetExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SetGeneratorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(StringExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SubtractExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(SymbolExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(TailsHeadPattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(TrueLiteralExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(TryCatchExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(TupleExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(TuplePattern* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(UnderscoreNode* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(UnitExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ValueAlias* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ValueCollectionExtractorExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ValueExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ValuesSequenceExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(WithExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ZerofillRightShiftExpr* node) const { return any(expr_wrapper(node)); }
+    any Optimizer::visit(ExprNode* node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(AstNode* node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(ScopedNode* node) const { return AstVisitor::visit(node); }
+    any Optimizer::visit(PatternNode* node) const { return AstVisitor::visit(node); }
 }

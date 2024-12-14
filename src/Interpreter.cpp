@@ -5,116 +5,125 @@
 #include "Interpreter.h"
 #include <boost/log/trivial.hpp>
 
+#include "common.h"
+
 namespace yona::interp
 {
     Interpreter::Interpreter()
     {
         stack_ = stack<Frame>();
-        stack_.push(Frame());
+        stack_.emplace();
     }
-    any Interpreter::visit(const AddExpr& node) const {}
-    any Interpreter::visit(const AliasCall& node) const {}
-    any Interpreter::visit(const AliasExpr& node) const {}
-    any Interpreter::visit(const ApplyExpr& node) const {}
-    any Interpreter::visit(const AsDataStructurePattern& node) const {}
-    any Interpreter::visit(const BinaryNotOpExpr& node) const {}
-    any Interpreter::visit(const BitwiseAndExpr& node) const {}
-    any Interpreter::visit(const BitwiseOrExpr& node) const {}
-    any Interpreter::visit(const BitwiseXorExpr& node) const {}
-    any Interpreter::visit(const BodyWithGuards& node) const {}
-    any Interpreter::visit(const BodyWithoutGuards& node) const {}
-    any Interpreter::visit(const ByteExpr& node) const {}
-    any Interpreter::visit(const CaseExpr& node) const {}
-    any Interpreter::visit(const CatchExpr& node) const {}
-    any Interpreter::visit(const CatchPatternExpr& node) const {}
-    any Interpreter::visit(const CharacterExpr& node) const {}
-    any Interpreter::visit(const ConsLeftExpr& node) const {}
-    any Interpreter::visit(const ConsRightExpr& node) const {}
-    any Interpreter::visit(const DictExpr& node) const {}
-    any Interpreter::visit(const DictGeneratorExpr& node) const {}
-    any Interpreter::visit(const DictGeneratorReducer& node) const {}
-    any Interpreter::visit(const DictPattern& node) const {}
-    any Interpreter::visit(const DivideExpr& node) const {}
-    any Interpreter::visit(const DoExpr& node) const {}
-    any Interpreter::visit(const EqExpr& node) const {}
-    any Interpreter::visit(const FalseLiteralExpr& node) const {}
-    any Interpreter::visit(const FieldAccessExpr& node) const {}
-    any Interpreter::visit(const FieldUpdateExpr& node) const {}
-    any Interpreter::visit(const FloatExpr& node) const {}
-    any Interpreter::visit(const FqnAlias& node) const {}
-    any Interpreter::visit(const FqnExpr& node) const {}
-    any Interpreter::visit(const FunctionAlias& node) const {}
-    any Interpreter::visit(const FunctionBody& node) const {}
-    any Interpreter::visit(const FunctionExpr& node) const {}
-    any Interpreter::visit(const FunctionsImport& node) const {}
-    any Interpreter::visit(const GtExpr& node) const {}
-    any Interpreter::visit(const GteExpr& node) const {}
-    any Interpreter::visit(const HeadTailsHeadPattern& node) const {}
-    any Interpreter::visit(const HeadTailsPattern& node) const {}
-    any Interpreter::visit(const IdentifierExpr& node) const {}
-    any Interpreter::visit(const IfExpr& node) const {}
-    any Interpreter::visit(const ImportClauseExpr& node) const {}
-    any Interpreter::visit(const ImportExpr& node) const {}
-    any Interpreter::visit(const InExpr& node) const {}
-    any Interpreter::visit(const IntegerExpr& node) const { return node.value; }
-    any Interpreter::visit(const JoinExpr& node) const {}
-    any Interpreter::visit(const KeyValueCollectionExtractorExpr& node) const {}
-    any Interpreter::visit(const LambdaAlias& node) const {}
-    any Interpreter::visit(const LeftShiftExpr& node) const {}
-    any Interpreter::visit(const LetExpr& node) const {}
-    any Interpreter::visit(const LogicalAndExpr& node) const {}
-    any Interpreter::visit(const LogicalNotOpExpr& node) const {}
-    any Interpreter::visit(const LogicalOrExpr& node) const {}
-    any Interpreter::visit(const LtExpr& node) const {}
-    any Interpreter::visit(const LteExpr& node) const {}
-    any Interpreter::visit(const ModuloExpr& node) const {}
-    any Interpreter::visit(const ModuleAlias& node) const {}
-    any Interpreter::visit(const ModuleCall& node) const {}
-    any Interpreter::visit(const ModuleExpr& node) const {}
-    any Interpreter::visit(const ModuleImport& node) const {}
-    any Interpreter::visit(const MultiplyExpr& node) const {}
-    any Interpreter::visit(const NameCall& node) const {}
-    any Interpreter::visit(const NameExpr& node) const {}
-    any Interpreter::visit(const NeqExpr& node) const {}
-    any Interpreter::visit(const OpExpr& node) const {}
-    any Interpreter::visit(const PackageNameExpr& node) const {}
-    any Interpreter::visit(const PatternAlias& node) const {}
-    any Interpreter::visit(const PatternExpr& node) const {}
-    any Interpreter::visit(const PatternValue& node) const {}
-    any Interpreter::visit(const PatternWithGuards& node) const {}
-    any Interpreter::visit(const PatternWithoutGuards& node) const {}
-    any Interpreter::visit(const PipeLeftExpr& node) const {}
-    any Interpreter::visit(const PipeRightExpr& node) const {}
-    any Interpreter::visit(const PowerExpr& node) const {}
-    any Interpreter::visit(const RaiseExpr& node) const {}
-    any Interpreter::visit(const RangeSequenceExpr& node) const {}
-    any Interpreter::visit(const RecordInstanceExpr& node) const {}
-    any Interpreter::visit(const RecordNode& node) const {}
-    any Interpreter::visit(const RecordPattern& node) const {}
-    any Interpreter::visit(const RightShiftExpr& node) const {}
-    any Interpreter::visit(const SeqGeneratorExpr& node) const {}
-    any Interpreter::visit(const SeqPattern& node) const {}
-    any Interpreter::visit(const SequenceExpr& node) const {}
-    any Interpreter::visit(const SetExpr& node) const {}
-    any Interpreter::visit(const SetGeneratorExpr& node) const {}
-    any Interpreter::visit(const StringExpr& node) const {}
-    any Interpreter::visit(const SubtractExpr& node) const {}
-    any Interpreter::visit(const SymbolExpr& node) const {}
-    any Interpreter::visit(const TailsHeadPattern& node) const {}
-    any Interpreter::visit(const TrueLiteralExpr& node) const {}
-    any Interpreter::visit(const TryCatchExpr& node) const {}
-    any Interpreter::visit(const TupleExpr& node) const {}
-    any Interpreter::visit(const TuplePattern& node) const {}
-    any Interpreter::visit(const UnderscoreNode& node) const {}
-    any Interpreter::visit(const UnitExpr& node) const {}
-    any Interpreter::visit(const ValueAlias& node) const {}
-    any Interpreter::visit(const ValueCollectionExtractorExpr& node) const {}
-    any Interpreter::visit(const ValueExpr& node) const {}
-    any Interpreter::visit(const ValuesSequenceExpr& node) const {}
-    any Interpreter::visit(const WithExpr& node) const {}
-    any Interpreter::visit(const ZerofillRightShiftExpr& node) const {}
-    any Interpreter::visit(const ExprNode& node) const { return AstVisitor::visit(node); }
-    any Interpreter::visit(const AstNode& node) const { return AstVisitor::visit(node); }
-    any Interpreter::visit(const ScopedNode& node) const { return AstVisitor::visit(node); }
-    any Interpreter::visit(const PatternNode& node) const { return AstVisitor::visit(node); }
+
+    any Interpreter::visit(AddExpr* node) const
+    {
+        auto left = visit(node->left);
+        auto right = visit(node->right);
+        return any_cast<expr_wrapper>(left).get_node<IntegerExpr>()->value +
+            any_cast<expr_wrapper>(right).get_node<IntegerExpr>()->value;
+    }
+    any Interpreter::visit(AliasCall* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(AliasExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ApplyExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(AsDataStructurePattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BinaryNotOpExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BitwiseAndExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BitwiseOrExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BitwiseXorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BodyWithGuards* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(BodyWithoutGuards* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ByteExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(CaseExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(CatchExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(CatchPatternExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(CharacterExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ConsLeftExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ConsRightExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DictExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DictGeneratorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DictGeneratorReducer* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DictPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DivideExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(DoExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(EqExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FalseLiteralExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FieldAccessExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FieldUpdateExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FloatExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FqnAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FqnExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FunctionAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FunctionBody* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FunctionExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(FunctionsImport* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(GtExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(GteExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(HeadTailsHeadPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(HeadTailsPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(IdentifierExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(IfExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ImportClauseExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ImportExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(InExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(IntegerExpr* node) const { return node->value; }
+    any Interpreter::visit(JoinExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(KeyValueCollectionExtractorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LambdaAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LeftShiftExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LetExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LogicalAndExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LogicalNotOpExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LogicalOrExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LtExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(LteExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ModuloExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ModuleAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ModuleCall* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ModuleExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ModuleImport* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(MultiplyExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(NameCall* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(NameExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(NeqExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(OpExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PackageNameExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PatternAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PatternExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PatternValue* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PatternWithGuards* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PatternWithoutGuards* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PipeLeftExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PipeRightExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(PowerExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RaiseExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RangeSequenceExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RecordInstanceExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RecordNode* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RecordPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(RightShiftExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SeqGeneratorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SeqPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SequenceExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SetExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SetGeneratorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(StringExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SubtractExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(SymbolExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(TailsHeadPattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(TrueLiteralExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(TryCatchExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(TupleExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(TuplePattern* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(UnderscoreNode* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(UnitExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ValueAlias* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ValueCollectionExtractorExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ValueExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ValuesSequenceExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(WithExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ZerofillRightShiftExpr* node) const {return expr_wrapper(node);}
+    any Interpreter::visit(ExprNode* node) const { return AstVisitor::visit(node); }
+    any Interpreter::visit(AstNode* node) const { return AstVisitor::visit(node); }
+    any Interpreter::visit(ScopedNode* node) const { return AstVisitor::visit(node); }
+    any Interpreter::visit(PatternNode* node) const { return AstVisitor::visit(node); }
 } // yona::interp

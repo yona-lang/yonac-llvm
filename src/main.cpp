@@ -69,8 +69,20 @@ int main(const int argc, const char* argv[])
     compiler::Optimizer optimizer;
     interp::Interpreter interpreter;
     auto ast = yona_visitor.visitInput(tree);
-    auto optimized_ast = any_cast<expr_wrapper>(ast).get_node<AstNode>().accept(optimizer);
-    auto result = any_cast<AstNode>(optimized_ast).accept(interpreter);
+    auto typeCtx = TypeInferenceContext();
+    auto type = any_cast<expr_wrapper>(ast).get_node<AstNode>()->infer_type(typeCtx);
+
+    for (auto err : typeCtx.getErrors())
+    {
+        BOOST_LOG_TRIVIAL(error) << "Type error at " << err.token.getStart()->getLine() << ":"
+                                 << err.token.getStart()->getCharPositionInLine() << err.message;
+    }
+
+    BOOST_LOG_TRIVIAL(trace) << "Result expression type: " << typeid(type).name() << endl;
+
+    auto optimized_ast = any_cast<expr_wrapper>(ast).get_node<AstNode>()->accept(optimizer);
+    auto result = any_cast<expr_wrapper>(optimized_ast).get_node<AstNode>()->accept(interpreter);
+    cout << result.type().name() << endl;
 
     stream.close();
     return 0;
