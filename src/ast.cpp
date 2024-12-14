@@ -34,10 +34,7 @@ namespace yona::ast
                 {
                     return result;
                 }
-                else
-                {
-                    tmp = tmp->parent;
-                }
+                tmp = tmp->parent;
             }
             while (tmp != nullptr);
             return nullptr;
@@ -48,15 +45,15 @@ namespace yona::ast
 
     any OpExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    BinaryOpExpr::BinaryOpExpr(Token token, ExprNode left, ExprNode right) :
-        OpExpr(token), left(*left.with_parent<ExprNode>(this)), right(*right.with_parent<ExprNode>(this))
+    BinaryOpExpr::BinaryOpExpr(Token token, ExprNode* left, ExprNode* right) :
+        OpExpr(token), left(left->with_parent<ExprNode>(this)), right(right->with_parent<ExprNode>(this))
     {
     }
 
     Type BinaryOpExpr::infer_type(TypeInferenceContext& ctx) const
     {
-        const Type leftType = left.infer_type(ctx);
-        const Type rightType = left.infer_type(ctx);
+        const Type leftType = left->infer_type(ctx);
+        const Type rightType = left->infer_type(ctx);
 
         if (holds_alternative<ValueType>(leftType) != Int && holds_alternative<ValueType>(leftType) != Float)
         {
@@ -95,7 +92,7 @@ namespace yona::ast
     any FunctionBody::accept(const AstVisitor& visitor) { return AstNode::accept(visitor); }
 
     IdentifierExpr::IdentifierExpr(Token token, NameExpr name) :
-        ValueExpr(token), name(*name.with_parent<NameExpr>(this))
+        ValueExpr(token), name(name->with_parent<NameExpr>(this))
     {
     }
 
@@ -104,7 +101,7 @@ namespace yona::ast
     Type IdentifierExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     RecordNode::RecordNode(Token token, NameExpr recordType, const vector<IdentifierExpr>& identifiers) :
-        AstNode(token), recordType(*recordType.with_parent<NameExpr>(this)),
+        AstNode(token), recordType(recordType->with_parent<NameExpr>(this)),
         identifiers(nodes_with_parent(identifiers, this))
     {
     }
@@ -236,8 +233,8 @@ namespace yona::ast
     }
 
     RangeSequenceExpr::RangeSequenceExpr(Token token, ExprNode start, ExprNode end, ExprNode step) :
-        SequenceExpr(token), start(*start.with_parent<ExprNode>(this)), end(*end.with_parent<ExprNode>(this)),
-        step(*step.with_parent<ExprNode>(this))
+        SequenceExpr(token), start(start->with_parent<ExprNode>(this)), end(end->with_parent<ExprNode>(this)),
+        step(step->with_parent<ExprNode>(this))
     {
     }
 
@@ -303,8 +300,8 @@ namespace yona::ast
     Type PackageNameExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     FqnExpr::FqnExpr(Token token, PackageNameExpr packageName, NameExpr moduleName) :
-        ValueExpr(token), packageName(*packageName.with_parent<PackageNameExpr>(this)),
-        moduleName(*moduleName.with_parent<NameExpr>(this))
+        ValueExpr(token), packageName(packageName->with_parent<PackageNameExpr>(this)),
+        moduleName(moduleName->with_parent<NameExpr>(this))
     {
     }
 
@@ -330,7 +327,7 @@ namespace yona::ast
     }
 
     BodyWithGuards::BodyWithGuards(Token token, ExprNode guard, const vector<ExprNode>& expr) :
-        FunctionBody(token), guard(*guard.with_parent<ExprNode>(this)), exprs(nodes_with_parent(expr, this))
+        FunctionBody(token), guard(guard->with_parent<ExprNode>(this)), exprs(nodes_with_parent(expr, this))
     {
     }
 
@@ -349,7 +346,7 @@ namespace yona::ast
     }
 
     BodyWithoutGuards::BodyWithoutGuards(Token token, ExprNode expr) :
-        FunctionBody(token), expr(*expr.with_parent<ExprNode>(this))
+        FunctionBody(token), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -359,7 +356,7 @@ namespace yona::ast
 
     ModuleExpr::ModuleExpr(Token token, FqnExpr fqn, const vector<string>& exports, const vector<RecordNode>& records,
                            const vector<FunctionExpr>& functions) :
-        ValueExpr(token), fqn(*fqn.with_parent<FqnExpr>(this)), exports(exports),
+        ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
         records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this))
     {
     }
@@ -370,7 +367,7 @@ namespace yona::ast
 
     RecordInstanceExpr::RecordInstanceExpr(Token token, NameExpr recordType,
                                            const vector<pair<NameExpr, ExprNode>>& items) :
-        ValueExpr(token), recordType(*recordType.with_parent<NameExpr>(this)), items(nodes_with_parent(items, this))
+        ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(items, this))
     {
     }
 
@@ -386,7 +383,7 @@ namespace yona::ast
     }
 
     LogicalNotOpExpr::LogicalNotOpExpr(Token token, ExprNode expr) :
-        OpExpr(token), expr(*expr.with_parent<ExprNode>(this))
+        OpExpr(token), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -405,7 +402,7 @@ namespace yona::ast
     }
 
     BinaryNotOpExpr::BinaryNotOpExpr(Token token, ExprNode expr) :
-        OpExpr(token), expr(*expr.with_parent<ExprNode>(this))
+        OpExpr(token), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -423,43 +420,56 @@ namespace yona::ast
         return Bool;
     }
 
-    PowerExpr::PowerExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    PowerExpr::PowerExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any PowerExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type PowerExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    MultiplyExpr::MultiplyExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    MultiplyExpr::MultiplyExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any MultiplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type MultiplyExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    DivideExpr::DivideExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    DivideExpr::DivideExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right)
+    {
+    }
 
     any DivideExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type DivideExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    ModuloExpr::ModuloExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    ModuloExpr::ModuloExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right)
+    {
+    }
 
     any ModuloExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type ModuloExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    AddExpr::AddExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    AddExpr::AddExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any AddExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type AddExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    SubtractExpr::SubtractExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    SubtractExpr::SubtractExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any SubtractExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type SubtractExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    LeftShiftExpr::LeftShiftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    LeftShiftExpr::LeftShiftExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any LeftShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -481,7 +491,10 @@ namespace yona::ast
         return Int;
     }
 
-    RightShiftExpr::RightShiftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    RightShiftExpr::RightShiftExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any RightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -503,7 +516,7 @@ namespace yona::ast
         return Int;
     }
 
-    ZerofillRightShiftExpr::ZerofillRightShiftExpr(Token token, ExprNode left, ExprNode right) :
+    ZerofillRightShiftExpr::ZerofillRightShiftExpr(Token token, const ExprNode* left, const ExprNode* right) :
         BinaryOpExpr(token, left, right)
     {
     }
@@ -528,55 +541,61 @@ namespace yona::ast
         return Int;
     }
 
-    GteExpr::GteExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    GteExpr::GteExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any GteExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type GteExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    LteExpr::LteExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    LteExpr::LteExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any LteExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type LteExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    GtExpr::GtExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    GtExpr::GtExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any GtExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type GtExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    LtExpr::LtExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    LtExpr::LtExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any LtExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type LtExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    EqExpr::EqExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    EqExpr::EqExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any EqExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type EqExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    NeqExpr::NeqExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    NeqExpr::NeqExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any NeqExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type NeqExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    ConsLeftExpr::ConsLeftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    ConsLeftExpr::ConsLeftExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any ConsLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type ConsLeftExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    ConsRightExpr::ConsRightExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    ConsRightExpr::ConsRightExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any ConsRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type ConsRightExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
 
-    JoinExpr::JoinExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    JoinExpr::JoinExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any JoinExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -607,7 +626,10 @@ namespace yona::ast
         return leftType;
     }
 
-    BitwiseAndExpr::BitwiseAndExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    BitwiseAndExpr::BitwiseAndExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any BitwiseAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -629,7 +651,10 @@ namespace yona::ast
         return Bool;
     }
 
-    BitwiseXorExpr::BitwiseXorExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    BitwiseXorExpr::BitwiseXorExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any BitwiseXorExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -651,7 +676,10 @@ namespace yona::ast
         return Bool;
     }
 
-    BitwiseOrExpr::BitwiseOrExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    BitwiseOrExpr::BitwiseOrExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any BitwiseOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -673,7 +701,10 @@ namespace yona::ast
         return Bool;
     }
 
-    LogicalAndExpr::LogicalAndExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    LogicalAndExpr::LogicalAndExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any LogicalAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -695,7 +726,10 @@ namespace yona::ast
         return Bool;
     }
 
-    LogicalOrExpr::LogicalOrExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    LogicalOrExpr::LogicalOrExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any LogicalOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -717,7 +751,7 @@ namespace yona::ast
         return Bool;
     }
 
-    InExpr::InExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    InExpr::InExpr(Token token, const ExprNode* left, const ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any InExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -734,13 +768,19 @@ namespace yona::ast
         return Bool;
     }
 
-    PipeLeftExpr::PipeLeftExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    PipeLeftExpr::PipeLeftExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any PipeLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
     Type PipeLeftExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
-    PipeRightExpr::PipeRightExpr(Token token, ExprNode left, ExprNode right) : BinaryOpExpr(token, left, right) {}
+    PipeRightExpr::PipeRightExpr(Token token, const ExprNode* left, const ExprNode* right) :
+        BinaryOpExpr(token, left, right)
+    {
+    }
 
     any PipeRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -750,7 +790,7 @@ namespace yona::ast
     }
 
     LetExpr::LetExpr(Token token, const vector<AliasExpr>& aliases, ExprNode expr) :
-        ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(*expr.with_parent<ExprNode>(this))
+        ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -759,8 +799,8 @@ namespace yona::ast
     Type LetExpr::infer_type(TypeInferenceContext& ctx) const { return expr.infer_type(ctx); }
 
     IfExpr::IfExpr(Token token, ExprNode condition, ExprNode thenExpr, const optional<ExprNode>& elseExpr) :
-        ExprNode(token), condition(*condition.with_parent<ExprNode>(this)),
-        thenExpr(*thenExpr.with_parent<ExprNode>(this)), elseExpr(node_with_parent(elseExpr, this))
+        ExprNode(token), condition(condition->with_parent<ExprNode>(this)),
+        thenExpr(thenExpr->with_parent<ExprNode>(this)), elseExpr(node_with_parent(elseExpr, this))
     {
     }
 
@@ -785,7 +825,7 @@ namespace yona::ast
     }
 
     ApplyExpr::ApplyExpr(Token token, CallExpr call, const vector<variant<ExprNode, ValueExpr>>& args) :
-        ExprNode(token), call(*call.with_parent<CallExpr>(this)), args(nodes_with_parent(args, this))
+        ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(args, this))
     {
     }
 
@@ -803,7 +843,7 @@ namespace yona::ast
     Type DoExpr::infer_type(TypeInferenceContext& ctx) const { return steps.back().infer_type(ctx); }
 
     ImportExpr::ImportExpr(Token token, const vector<ImportClauseExpr>& clauses, ExprNode expr) :
-        ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(*expr.with_parent<ExprNode>(this))
+        ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -812,8 +852,8 @@ namespace yona::ast
     Type ImportExpr::infer_type(TypeInferenceContext& ctx) const { return expr.infer_type(ctx); }
 
     RaiseExpr::RaiseExpr(Token token, SymbolExpr symbol, LiteralExpr<string> message) :
-        ExprNode(token), symbol(*symbol.with_parent<SymbolExpr>(this)),
-        message(*message.with_parent<LiteralExpr<string>>(this))
+        ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)),
+        message(message->with_parent<LiteralExpr<string>>(this))
     {
     }
 
@@ -822,8 +862,8 @@ namespace yona::ast
     Type RaiseExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     WithExpr::WithExpr(Token token, ExprNode contextExpr, const optional<NameExpr>& name, ExprNode bodyExpr) :
-        ScopedNode(token), contextExpr(*contextExpr.with_parent<ExprNode>(this)), name(node_with_parent(name, this)),
-        bodyExpr(*bodyExpr.with_parent<ExprNode>(this))
+        ScopedNode(token), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(node_with_parent(name, this)),
+        bodyExpr(bodyExpr->with_parent<ExprNode>(this))
     {
     }
 
@@ -832,8 +872,8 @@ namespace yona::ast
     Type WithExpr::infer_type(TypeInferenceContext& ctx) const { return bodyExpr.infer_type(ctx); }
 
     FieldAccessExpr::FieldAccessExpr(Token token, IdentifierExpr identifier, NameExpr name) :
-        ExprNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
-        name(*name.with_parent<NameExpr>(this))
+        ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+        name(name->with_parent<NameExpr>(this))
     {
     }
 
@@ -846,7 +886,7 @@ namespace yona::ast
 
     FieldUpdateExpr::FieldUpdateExpr(Token token, IdentifierExpr identifier,
                                      const vector<pair<NameExpr, ExprNode>>& updates) :
-        ExprNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
+        ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
         updates(nodes_with_parent(updates, this))
     {
     }
@@ -859,7 +899,7 @@ namespace yona::ast
     }
 
     LambdaAlias::LambdaAlias(Token token, NameExpr name, FunctionExpr lambda) :
-        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), lambda(*lambda.with_parent<FunctionExpr>(this))
+        AliasExpr(token), name(name->with_parent<NameExpr>(this)), lambda(lambda->with_parent<FunctionExpr>(this))
     {
     }
 
@@ -868,7 +908,7 @@ namespace yona::ast
     Type LambdaAlias::infer_type(TypeInferenceContext& ctx) const { return lambda.infer_type(ctx); }
 
     ModuleAlias::ModuleAlias(Token token, NameExpr name, ModuleExpr module) :
-        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), module(*module.with_parent<ModuleExpr>(this))
+        AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this))
     {
     }
 
@@ -877,8 +917,8 @@ namespace yona::ast
     Type ModuleAlias::infer_type(TypeInferenceContext& ctx) const { return module.infer_type(ctx); }
 
     ValueAlias::ValueAlias(Token token, IdentifierExpr identifier, ExprNode expr) :
-        AliasExpr(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
-        expr(*expr.with_parent<ExprNode>(this))
+        AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+        expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -887,7 +927,7 @@ namespace yona::ast
     Type ValueAlias::infer_type(TypeInferenceContext& ctx) const { return expr.infer_type(ctx); }
 
     PatternAlias::PatternAlias(Token token, PatternNode pattern, ExprNode expr) :
-        AliasExpr(token), pattern(*pattern.with_parent<PatternNode>(this)), expr(*expr.with_parent<ExprNode>(this))
+        AliasExpr(token), pattern(pattern->with_parent<PatternNode>(this)), expr(expr->with_parent<ExprNode>(this))
     {
     }
 
@@ -896,7 +936,7 @@ namespace yona::ast
     Type PatternAlias::infer_type(TypeInferenceContext& ctx) const { return expr.infer_type(ctx); }
 
     FqnAlias::FqnAlias(Token token, NameExpr name, FqnExpr fqn) :
-        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), fqn(*fqn.with_parent<FqnExpr>(this))
+        AliasExpr(token), name(name->with_parent<NameExpr>(this)), fqn(fqn->with_parent<FqnExpr>(this))
     {
     }
 
@@ -905,7 +945,7 @@ namespace yona::ast
     Type FqnAlias::infer_type(TypeInferenceContext& ctx) const { return fqn.infer_type(ctx); }
 
     FunctionAlias::FunctionAlias(Token token, NameExpr name, NameExpr alias) :
-        AliasExpr(token), name(*name.with_parent<NameExpr>(this)), alias(*alias.with_parent<NameExpr>(this))
+        AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias->with_parent<NameExpr>(this))
     {
     }
 
@@ -917,7 +957,7 @@ namespace yona::ast
     }
 
     AliasCall::AliasCall(Token token, NameExpr alias, NameExpr funName) :
-        CallExpr(token), alias(*alias.with_parent<NameExpr>(this)), funName(*funName.with_parent<NameExpr>(this))
+        CallExpr(token), alias(alias->with_parent<NameExpr>(this)), funName(funName->with_parent<NameExpr>(this))
     {
     }
 
@@ -928,7 +968,7 @@ namespace yona::ast
         return nullptr; // TODO
     }
 
-    NameCall::NameCall(Token token, NameExpr name) : CallExpr(token), name(*name.with_parent<NameExpr>(this)) {}
+    NameCall::NameCall(Token token, NameExpr name) : CallExpr(token), name(name->with_parent<NameExpr>(this)) {}
 
     any NameCall::accept(const AstVisitor& visitor) { return visitor.visit(*this); }
 
@@ -938,7 +978,7 @@ namespace yona::ast
     }
 
     ModuleCall::ModuleCall(Token token, const variant<FqnExpr, ExprNode>& fqn, NameExpr funName) :
-        CallExpr(token), fqn(node_with_parent(fqn, this)), funName(*funName.with_parent<NameExpr>(this))
+        CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this))
     {
     }
 
@@ -950,7 +990,7 @@ namespace yona::ast
     }
 
     ModuleImport::ModuleImport(Token token, FqnExpr fqn, NameExpr name) :
-        ImportClauseExpr(token), fqn(*fqn.with_parent<FqnExpr>(this)), name(*name.with_parent<NameExpr>(this))
+        ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this))
     {
     }
 
@@ -962,7 +1002,7 @@ namespace yona::ast
     }
 
     FunctionsImport::FunctionsImport(Token token, const vector<FunctionAlias>& aliases, FqnExpr fromFqn) :
-        ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(*fromFqn.with_parent<FqnExpr>(this))
+        ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(fromFqn->with_parent<FqnExpr>(this))
     {
     }
 
@@ -975,9 +1015,9 @@ namespace yona::ast
 
     SeqGeneratorExpr::SeqGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
                                        ExprNode stepExpression) :
-        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<ExprNode>(this)),
-        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(*stepExpression.with_parent<ExprNode>(this))
+        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
+        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(stepExpression->with_parent<ExprNode>(this))
     {
     }
 
@@ -990,9 +1030,9 @@ namespace yona::ast
 
     SetGeneratorExpr::SetGeneratorExpr(Token token, ExprNode reducerExpr, CollectionExtractorExpr collectionExtractor,
                                        ExprNode stepExpression) :
-        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<ExprNode>(this)),
-        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(*stepExpression.with_parent<ExprNode>(this))
+        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
+        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(stepExpression->with_parent<ExprNode>(this))
     {
     }
 
@@ -1004,7 +1044,7 @@ namespace yona::ast
     }
 
     DictGeneratorReducer::DictGeneratorReducer(Token token, ExprNode key, ExprNode value) :
-        ExprNode(token), key(*key.with_parent<ExprNode>(this)), value(*value.with_parent<ExprNode>(this))
+        ExprNode(token), key(key->with_parent<ExprNode>(this)), value(value->with_parent<ExprNode>(this))
     {
     }
 
@@ -1014,9 +1054,9 @@ namespace yona::ast
 
     DictGeneratorExpr::DictGeneratorExpr(Token token, DictGeneratorReducer reducerExpr,
                                          CollectionExtractorExpr collectionExtractor, ExprNode stepExpression) :
-        GeneratorExpr(token), reducerExpr(*reducerExpr.with_parent<DictGeneratorReducer>(this)),
-        collectionExtractor(*collectionExtractor.with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(*stepExpression.with_parent<ExprNode>(this))
+        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<DictGeneratorReducer>(this)),
+        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+        stepExpression(stepExpression->with_parent<ExprNode>(this))
     {
     }
 
@@ -1048,7 +1088,7 @@ namespace yona::ast
     Type KeyValueCollectionExtractorExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     PatternWithGuards::PatternWithGuards(Token token, ExprNode guard, ExprNode exprNode) :
-        PatternNode(token), guard(*guard.with_parent<ExprNode>(this)), exprNode(*exprNode.with_parent<ExprNode>(this))
+        PatternNode(token), guard(guard->with_parent<ExprNode>(this)), exprNode(exprNode->with_parent<ExprNode>(this))
     {
     }
 
@@ -1057,7 +1097,7 @@ namespace yona::ast
     Type PatternWithGuards::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     PatternWithoutGuards::PatternWithoutGuards(Token token, ExprNode exprNode) :
-        PatternNode(token), exprNode(*exprNode.with_parent<ExprNode>(this))
+        PatternNode(token), exprNode(exprNode->with_parent<ExprNode>(this))
     {
     }
 
@@ -1080,7 +1120,7 @@ namespace yona::ast
 
     CatchPatternExpr::CatchPatternExpr(Token token, Pattern matchPattern,
                                        const variant<PatternWithoutGuards, vector<PatternWithGuards>>& pattern) :
-        ExprNode(token), matchPattern(*matchPattern.with_parent<Pattern>(this)), pattern(pattern)
+        ExprNode(token), matchPattern(matchPattern->with_parent<Pattern>(this)), pattern(pattern)
     {
         // std::visit({ [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
         //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
@@ -1101,8 +1141,8 @@ namespace yona::ast
     Type CatchExpr::infer_type(TypeInferenceContext& ctx) const { return patterns.back().infer_type(ctx); }
 
     TryCatchExpr::TryCatchExpr(Token token, ExprNode tryExpr, CatchExpr catchExpr) :
-        ExprNode(token), tryExpr(*tryExpr.with_parent<ExprNode>(this)),
-        catchExpr(*catchExpr.with_parent<CatchExpr>(this))
+        ExprNode(token), tryExpr(tryExpr->with_parent<ExprNode>(this)),
+        catchExpr(catchExpr->with_parent<CatchExpr>(this))
     {
     }
 
@@ -1125,8 +1165,8 @@ namespace yona::ast
 
     AsDataStructurePattern::AsDataStructurePattern(Token token, IdentifierExpr identifier,
                                                    DataStructurePattern pattern) :
-        PatternNode(token), identifier(*identifier.with_parent<IdentifierExpr>(this)),
-        pattern(*pattern.with_parent<DataStructurePattern>(this))
+        PatternNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+        pattern(pattern->with_parent<DataStructurePattern>(this))
     {
     }
 
@@ -1157,7 +1197,7 @@ namespace yona::ast
     Type SeqPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     HeadTailsPattern::HeadTailsPattern(Token token, const vector<PatternWithoutSequence>& heads, TailPattern tail) :
-        PatternNode(token), heads(nodes_with_parent(heads, this)), tail(*tail.with_parent<TailPattern>(this))
+        PatternNode(token), heads(nodes_with_parent(heads, this)), tail(tail->with_parent<TailPattern>(this))
     {
     }
 
@@ -1166,7 +1206,7 @@ namespace yona::ast
     Type HeadTailsPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     TailsHeadPattern::TailsHeadPattern(Token token, TailPattern tail, const vector<PatternWithoutSequence>& heads) :
-        PatternNode(token), tail(*tail.with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this))
+        PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this))
     {
     }
 
@@ -1176,7 +1216,7 @@ namespace yona::ast
 
     HeadTailsHeadPattern::HeadTailsHeadPattern(Token token, const vector<PatternWithoutSequence>& left,
                                                TailPattern tail, const vector<PatternWithoutSequence>& right) :
-        PatternNode(token), left(nodes_with_parent(left, this)), tail(*tail.with_parent<TailPattern>(this)),
+        PatternNode(token), left(nodes_with_parent(left, this)), tail(tail->with_parent<TailPattern>(this)),
         right(nodes_with_parent(right, this))
     {
     }
@@ -1204,7 +1244,7 @@ namespace yona::ast
     Type RecordPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
 
     CaseExpr::CaseExpr(Token token, ExprNode expr, const vector<PatternExpr>& patterns) :
-        ExprNode(token), expr(*expr.with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
+        ExprNode(token), expr(expr->with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
     {
     }
 
