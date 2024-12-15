@@ -11,7 +11,6 @@ using namespace std;
 using namespace yona;
 
 
-
 class AstTest : public testing::TestWithParam<tuple<string, string, string, unsigned int>> {};
 
 TEST_P(AstTest, MyTest)
