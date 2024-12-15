@@ -3,6 +3,8 @@
 //
 #include "YonaVisitor.h"
 
+#include <boost/algorithm/string.hpp>
+
 namespace yona
 {
     string YonaVisitor::nextLambdaName() { return "lambda_" + to_string(lambdaCount++); }
@@ -507,7 +509,9 @@ namespace yona
 
     any YonaVisitor::visitStringLiteral(YonaParser::StringLiteralContext* ctx)
     {
-        return wrap_expr<StringExpr>(*ctx, ctx->getText());
+        string text = ctx->getText();
+        trim_if(text, boost::is_any_of("\""));
+        return wrap_expr<StringExpr>(*ctx, text);
     }
 
     any YonaVisitor::visitInterpolatedStringPart(YonaParser::InterpolatedStringPartContext* ctx)
@@ -526,10 +530,7 @@ namespace yona
         {
             return wrap_expr<TrueLiteralExpr>(*ctx);
         }
-        else
-        {
-            return wrap_expr<FalseLiteralExpr>(*ctx);
-        }
+        return wrap_expr<FalseLiteralExpr>(*ctx);
     }
 
     any YonaVisitor::visitTuple(YonaParser::TupleContext* ctx)

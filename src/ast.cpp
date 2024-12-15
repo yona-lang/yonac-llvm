@@ -53,14 +53,14 @@ namespace yona::ast
     Type BinaryOpExpr::infer_type(TypeInferenceContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
-        const Type rightType = left->infer_type(ctx);
+        const Type rightType = right->infer_type(ctx);
 
-        if (holds_alternative<ValueType>(leftType) != Int && holds_alternative<ValueType>(leftType) != Float)
+        if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float)
         {
             ctx.addError(TypeError(token, "Binary expression must be numeric type"));
         }
 
-        if (holds_alternative<ValueType>(rightType) != Int && holds_alternative<ValueType>(rightType) != Float)
+        if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int && get<ValueType>(rightType) != Float)
         {
             ctx.addError(TypeError(token, "Binary expression must be numeric type"));
         }
@@ -167,7 +167,7 @@ namespace yona::ast
 
     Type ByteExpr::infer_type(TypeInferenceContext& ctx) const { return Byte; }
 
-    StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, value) {}
+    StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, move(value)) {}
 
     any StringExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 

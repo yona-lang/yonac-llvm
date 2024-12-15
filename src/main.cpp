@@ -23,6 +23,7 @@ void process_program_options(const int argc, const char* const argv[])
 {
     po::options_description desc("Allowed options");
     desc.add_options()("help", "Show brief usage message");
+    desc.add_options()("compile", "Compile the input file");
 
     po::variables_map args;
 
@@ -72,10 +73,15 @@ int main(const int argc, const char* argv[])
     auto typeCtx = TypeInferenceContext();
     auto type = any_cast<expr_wrapper>(ast).get_node<AstNode>()->infer_type(typeCtx);
 
-    for (auto err : typeCtx.getErrors())
+    if (!typeCtx.getErrors().empty())
     {
-        BOOST_LOG_TRIVIAL(error) << "Type error at " << err.token.getStart()->getLine() << ":"
-                                 << err.token.getStart()->getCharPositionInLine() << err.message;
+        BOOST_LOG_TRIVIAL(error) << typeCtx.getErrors().size() << " errors found. Please fix them and re-run.";
+        for (auto err : typeCtx.getErrors())
+        {
+            BOOST_LOG_TRIVIAL(error) << "Type error at " << err.token.getStart()->getLine() << ":"
+                                     << err.token.getStart()->getCharPositionInLine() << err.message;
+        }
+        return 1;
     }
 
     BOOST_LOG_TRIVIAL(trace) << "Result expression type: " << typeid(type).name() << endl;

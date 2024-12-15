@@ -29,6 +29,12 @@ set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost REQUIRED COMPONENTS program_options log) # header only libraries must not be added here
 
+find_package(LLVM CONFIG REQUIRED)
+
+list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+include(HandleLLVMOptions)
+add_definitions(${LLVM_DEFINITIONS})
+
 # generate lexer
  antlr4_generate(
    YONA_LEXER
@@ -64,10 +70,14 @@ target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR})
 target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_LEXER})
 target_include_directories(yona PRIVATE ${ANTLR4_INCLUDE_DIR_YONA_PARSER})
+target_include_directories(yona PRIVATE ${LLVM_INCLUDE_DIRS})
+
+# Find the libraries that correspond to the LLVM components that we wish to use
+llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
 
 add_dependencies(yona antlr4_static)
 
-target_link_libraries(yona PRIVATE antlr4_static Boost::boost Boost::program_options Boost::log)
+target_link_libraries(yona PRIVATE antlr4_static Boost::boost Boost::program_options Boost::log ${llvm_libs})
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET yona PROPERTY CXX_STANDARD 23)
