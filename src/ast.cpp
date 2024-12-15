@@ -4,6 +4,9 @@
 
 namespace yona::ast
 {
+
+    using yona::compiler::types::Type;
+
     template <typename T>
     LiteralExpr<T>::LiteralExpr(Token token, T value) : ValueExpr(token), value(std::move(value))
     {
@@ -17,7 +20,7 @@ namespace yona::ast
 
     any AstNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AstNode::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type AstNode::infer_type(AstContext& ctx) const { return nullptr; }
 
     ScopedNode* ScopedNode::getParentScopedNode() const
     {
@@ -50,19 +53,21 @@ namespace yona::ast
     {
     }
 
-    Type BinaryOpExpr::infer_type(TypeInferenceContext& ctx) const
+    Type BinaryOpExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
-        if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float)
+        if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int &&
+            get<ValueType>(leftType) != Float)
         {
-            ctx.addError(TypeError(token, "Binary expression must be numeric type"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
         }
 
-        if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int && get<ValueType>(rightType) != Float)
+        if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int &&
+            get<ValueType>(rightType) != Float)
         {
-            ctx.addError(TypeError(token, "Binary expression must be numeric type"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
         }
 
         return unordered_set{ leftType, rightType }.contains(Float) ? Float : Int;
@@ -79,13 +84,13 @@ namespace yona::ast
 
     any NameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type NameExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type NameExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    Type AliasExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type AliasExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     any AliasExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    Type CallExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type CallExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     any CallExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
     any ImportClauseExpr::accept(const AstVisitor& visitor) { return ScopedNode::accept(visitor); }
@@ -103,7 +108,7 @@ namespace yona::ast
 
     any IdentifierExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type IdentifierExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type IdentifierExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     IdentifierExpr::~IdentifierExpr() { delete name; }
 
@@ -115,7 +120,7 @@ namespace yona::ast
 
     any RecordNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RecordNode::infer_type(TypeInferenceContext& ctx) const
+    Type RecordNode::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -131,25 +136,25 @@ namespace yona::ast
 
     any TrueLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type TrueLiteralExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type TrueLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     FalseLiteralExpr::FalseLiteralExpr(Token) : LiteralExpr<bool>(token, false) {}
 
     any FalseLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FalseLiteralExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type FalseLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     FloatExpr::FloatExpr(Token token, float value) : LiteralExpr<float>(token, value) {}
 
     any FloatExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FloatExpr::infer_type(TypeInferenceContext& ctx) const { return Float; }
+    Type FloatExpr::infer_type(AstContext& ctx) const { return Float; }
 
     IntegerExpr::IntegerExpr(Token token, int value) : LiteralExpr<int>(token, value) {}
 
     any IntegerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type IntegerExpr::infer_type(TypeInferenceContext& ctx) const { return Int; }
+    Type IntegerExpr::infer_type(AstContext& ctx) const { return Int; }
 
     any ExprNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
@@ -157,7 +162,7 @@ namespace yona::ast
 
     any UnderscoreNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type UnderscoreNode::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type UnderscoreNode::infer_type(AstContext& ctx) const { return nullptr; }
 
     any ValueExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
@@ -165,25 +170,25 @@ namespace yona::ast
 
     any ByteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ByteExpr::infer_type(TypeInferenceContext& ctx) const { return Byte; }
+    Type ByteExpr::infer_type(AstContext& ctx) const { return Byte; }
 
     StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, std::move(value)) {}
 
     any StringExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type StringExpr::infer_type(TypeInferenceContext& ctx) const { return String; }
+    Type StringExpr::infer_type(AstContext& ctx) const { return String; }
 
     CharacterExpr::CharacterExpr(Token token, const char value) : LiteralExpr<char>(token, value) {}
 
     any CharacterExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type CharacterExpr::infer_type(TypeInferenceContext& ctx) const { return Char; }
+    Type CharacterExpr::infer_type(AstContext& ctx) const { return Char; }
 
     UnitExpr::UnitExpr(Token) : LiteralExpr<nullptr_t>(token, nullptr) {}
 
     any UnitExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type UnitExpr::infer_type(TypeInferenceContext& ctx) const { return Unit; }
+    Type UnitExpr::infer_type(AstContext& ctx) const { return Unit; }
 
     TupleExpr::TupleExpr(Token token, const vector<ExprNode*>& values) :
         ValueExpr(token), values(nodes_with_parent(values, this))
@@ -192,7 +197,7 @@ namespace yona::ast
 
     any TupleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type TupleExpr::infer_type(TypeInferenceContext& ctx) const
+    Type TupleExpr::infer_type(AstContext& ctx) const
     {
         vector<Type> fieldTypes;
         ranges::for_each(values, [&](const ExprNode* expr) { fieldTypes.push_back(expr->infer_type(ctx)); });
@@ -212,7 +217,7 @@ namespace yona::ast
 
     any DictExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DictExpr::infer_type(TypeInferenceContext& ctx) const
+    Type DictExpr::infer_type(AstContext& ctx) const
     {
         unordered_set<Type> keyTypes;
         unordered_set<Type> valueTypes;
@@ -225,7 +230,7 @@ namespace yona::ast
 
         if (keyTypes.size() > 1 || valueTypes.size() > 1)
         {
-            ctx.addError(TypeError(token, "Dictionary keys and values must have the same type"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Dictionary keys and values must have the same type"));
         }
 
         return make_shared<DictCollectionType>(values.front().first->infer_type(ctx),
@@ -248,14 +253,14 @@ namespace yona::ast
 
     any ValuesSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ValuesSequenceExpr::infer_type(TypeInferenceContext& ctx) const
+    Type ValuesSequenceExpr::infer_type(AstContext& ctx) const
     {
         unordered_set<Type> valueTypes;
         ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
         if (valueTypes.size() > 1)
         {
-            ctx.addError(TypeError(token, "Sequence values must have the same type"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Sequence values must have the same type"));
         }
 
         return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, values.front()->infer_type(ctx));
@@ -275,7 +280,7 @@ namespace yona::ast
 
     any RangeSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RangeSequenceExpr::infer_type(TypeInferenceContext& ctx) const
+    Type RangeSequenceExpr::infer_type(AstContext& ctx) const
     {
         Type startExprType = start->infer_type(ctx);
         Type endExprType = start->infer_type(ctx);
@@ -283,17 +288,17 @@ namespace yona::ast
 
         if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int)
         {
-            ctx.addError(TypeError(start->token, "Sequence start expression must be integer"));
+            ctx.addError(YonaError(start->token, YonaError::TYPE, "Sequence start expression must be integer"));
         }
 
         if (!holds_alternative<ValueType>(endExprType) || get<ValueType>(endExprType) != Int)
         {
-            ctx.addError(TypeError(end->token, "Sequence end expression must be integer"));
+            ctx.addError(YonaError(end->token, YonaError::TYPE, "Sequence end expression must be integer"));
         }
 
         if (!holds_alternative<ValueType>(stepExprType) || get<ValueType>(stepExprType) != Int)
         {
-            ctx.addError(TypeError(step->token, "Sequence step expression must be integer"));
+            ctx.addError(YonaError(step->token, YonaError::TYPE, "Sequence step expression must be integer"));
         }
 
         return nullptr;
@@ -313,14 +318,14 @@ namespace yona::ast
 
     any SetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SetExpr::infer_type(TypeInferenceContext& ctx) const
+    Type SetExpr::infer_type(AstContext& ctx) const
     {
         unordered_set<Type> valueTypes;
         ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
         if (valueTypes.size() > 1)
         {
-            ctx.addError(TypeError(token, "Set values must have the same type"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Set values must have the same type"));
         }
 
         return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, values.front()->infer_type(ctx));
@@ -336,7 +341,7 @@ namespace yona::ast
 
     any SymbolExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SymbolExpr::infer_type(TypeInferenceContext& ctx) const { return Symbol; }
+    Type SymbolExpr::infer_type(AstContext& ctx) const { return Symbol; }
 
     PackageNameExpr::PackageNameExpr(Token token, const vector<NameExpr*>& parts) :
         ValueExpr(token), parts(nodes_with_parent(parts, this))
@@ -345,7 +350,7 @@ namespace yona::ast
 
     any PackageNameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PackageNameExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PackageNameExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     PackageNameExpr::~PackageNameExpr()
     {
@@ -361,7 +366,7 @@ namespace yona::ast
 
     any FqnExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FqnExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type FqnExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     FqnExpr::~FqnExpr()
     {
@@ -378,7 +383,7 @@ namespace yona::ast
 
     any FunctionExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FunctionExpr::infer_type(TypeInferenceContext& ctx) const
+    Type FunctionExpr::infer_type(AstContext& ctx) const
     {
         unordered_set<Type> bodyTypes;
         ranges::for_each(bodies, [&](const FunctionBody* body) { bodyTypes.insert(body->infer_type(ctx)); });
@@ -401,13 +406,13 @@ namespace yona::ast
 
     any BodyWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BodyWithGuards::infer_type(TypeInferenceContext& ctx) const
+    Type BodyWithGuards::infer_type(AstContext& ctx) const
     {
         const Type guardType = guard->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool)
         {
-            ctx.addError(TypeError(guard->token, "Guard expression must be boolean"));
+            ctx.addError(YonaError(guard->token, YonaError::TYPE, "Guard expression must be boolean"));
         }
 
         return exprs.back()->infer_type(ctx);
@@ -426,7 +431,7 @@ namespace yona::ast
 
     any BodyWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BodyWithoutGuards::infer_type(TypeInferenceContext& ctx) const { return expr->infer_type(ctx); }
+    Type BodyWithoutGuards::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
     BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
@@ -439,7 +444,7 @@ namespace yona::ast
 
     any ModuleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuleExpr::infer_type(TypeInferenceContext& ctx) const { return Module; }
+    Type ModuleExpr::infer_type(AstContext& ctx) const { return Module; }
 
     ModuleExpr::~ModuleExpr()
     {
@@ -458,7 +463,7 @@ namespace yona::ast
 
     any RecordInstanceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RecordInstanceExpr::infer_type(TypeInferenceContext& ctx) const
+    Type RecordInstanceExpr::infer_type(AstContext& ctx) const
     {
         vector<Type> itemTypes{ Symbol };
         ranges::for_each(items,
@@ -481,13 +486,13 @@ namespace yona::ast
 
     any LogicalNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LogicalNotOpExpr::infer_type(TypeInferenceContext& ctx) const
+    Type LogicalNotOpExpr::infer_type(AstContext& ctx) const
     {
         const Type exprType = expr->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
         {
-            ctx.addError(TypeError(expr->token, "Expression for logical negation must be boolean"));
+            ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for logical negation must be boolean"));
         }
 
         return Bool;
@@ -502,13 +507,13 @@ namespace yona::ast
 
     any BinaryNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BinaryNotOpExpr::infer_type(TypeInferenceContext& ctx) const
+    Type BinaryNotOpExpr::infer_type(AstContext& ctx) const
     {
         Type exprType = expr->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
         {
-            ctx.addError(TypeError(expr->token, "Expression for binary negation must be boolean"));
+            ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for binary negation must be boolean"));
         }
 
         return Bool;
@@ -520,55 +525,55 @@ namespace yona::ast
 
     any PowerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PowerExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type PowerExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     MultiplyExpr::MultiplyExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any MultiplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type MultiplyExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type MultiplyExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     DivideExpr::DivideExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any DivideExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DivideExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type DivideExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     ModuloExpr::ModuloExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any ModuloExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuloExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type ModuloExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     AddExpr::AddExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any AddExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AddExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type AddExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     SubtractExpr::SubtractExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any SubtractExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SubtractExpr::infer_type(TypeInferenceContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+    Type SubtractExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
     LeftShiftExpr::LeftShiftExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any LeftShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LeftShiftExpr::infer_type(TypeInferenceContext& ctx) const
+    Type LeftShiftExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for left shift must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for left shift must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
         }
 
         return Int;
@@ -578,19 +583,19 @@ namespace yona::ast
 
     any RightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RightShiftExpr::infer_type(TypeInferenceContext& ctx) const
+    Type RightShiftExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for right shift must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for right shift must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
         }
 
         return Int;
@@ -603,19 +608,21 @@ namespace yona::ast
 
     any ZerofillRightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ZerofillRightShiftExpr::infer_type(TypeInferenceContext& ctx) const
+    Type ZerofillRightShiftExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for zerofill right shift must be integer"));
+            ctx.addError(
+                YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for zerofill right shift must be integer"));
+            ctx.addError(
+                YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
         }
 
         return Int;
@@ -625,55 +632,55 @@ namespace yona::ast
 
     any GteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type GteExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type GteExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     LteExpr::LteExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any LteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LteExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type LteExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     GtExpr::GtExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any GtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type GtExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type GtExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     LtExpr::LtExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any LtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LtExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type LtExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     EqExpr::EqExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any EqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type EqExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type EqExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     NeqExpr::NeqExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any NeqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type NeqExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type NeqExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     ConsLeftExpr::ConsLeftExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any ConsLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ConsLeftExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type ConsLeftExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     ConsRightExpr::ConsRightExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any ConsRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ConsRightExpr::infer_type(TypeInferenceContext& ctx) const { return Bool; }
+    Type ConsRightExpr::infer_type(AstContext& ctx) const { return Bool; }
 
     JoinExpr::JoinExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any JoinExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type JoinExpr::infer_type(TypeInferenceContext& ctx) const
+    Type JoinExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
@@ -682,19 +689,19 @@ namespace yona::ast
             !holds_alternative<shared_ptr<DictCollectionType>>(leftType) ||
             !holds_alternative<shared_ptr<TupleType>>(leftType))
         {
-            ctx.addError(TypeError(left->token, "Join expression can be used only for collections"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Join expression can be used only for collections"));
         }
 
         if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
             !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
             !holds_alternative<shared_ptr<TupleType>>(rightType))
         {
-            ctx.addError(TypeError(right->token, "Join expression can be used only for collections"));
+            ctx.addError(YonaError(right->token, YonaError::TYPE, "Join expression can be used only for collections"));
         }
 
         if (leftType != rightType)
         {
-            ctx.addError(TypeError(token, "Join expression can be used only on same types"));
+            ctx.addError(YonaError(token, YonaError::TYPE, "Join expression can be used only on same types"));
         }
 
         return leftType;
@@ -704,19 +711,19 @@ namespace yona::ast
 
     any BitwiseAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BitwiseAndExpr::infer_type(TypeInferenceContext& ctx) const
+    Type BitwiseAndExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise AND must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise AND must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
         }
 
         return Bool;
@@ -726,19 +733,19 @@ namespace yona::ast
 
     any BitwiseXorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BitwiseXorExpr::infer_type(TypeInferenceContext& ctx) const
+    Type BitwiseXorExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise XOR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise XOR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
         }
 
         return Bool;
@@ -748,19 +755,19 @@ namespace yona::ast
 
     any BitwiseOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type BitwiseOrExpr::infer_type(TypeInferenceContext& ctx) const
+    Type BitwiseOrExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise OR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
         {
-            ctx.addError(TypeError(left->token, "Expression for bitwise OR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
         }
 
         return Bool;
@@ -770,19 +777,19 @@ namespace yona::ast
 
     any LogicalAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LogicalAndExpr::infer_type(TypeInferenceContext& ctx) const
+    Type LogicalAndExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
         {
-            ctx.addError(TypeError(left->token, "Expression for logical AND must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
         {
-            ctx.addError(TypeError(left->token, "Expression for logical AND must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
         }
 
         return Bool;
@@ -792,19 +799,19 @@ namespace yona::ast
 
     any LogicalOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LogicalOrExpr::infer_type(TypeInferenceContext& ctx) const
+    Type LogicalOrExpr::infer_type(AstContext& ctx) const
     {
         const Type leftType = left->infer_type(ctx);
         const Type rightType = right->infer_type(ctx);
 
         if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
         {
-            ctx.addError(TypeError(left->token, "Expression for logical OR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
         }
 
         if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
         {
-            ctx.addError(TypeError(left->token, "Expression for logical OR must be integer"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
         }
 
         return Bool;
@@ -814,14 +821,14 @@ namespace yona::ast
 
     any InExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type InExpr::infer_type(TypeInferenceContext& ctx) const
+    Type InExpr::infer_type(AstContext& ctx) const
     {
         if (const Type rightType = right->infer_type(ctx);
             !holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
             !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
             !holds_alternative<shared_ptr<TupleType>>(rightType))
         {
-            ctx.addError(TypeError(left->token, "Expression for IN must be a collection"));
+            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for IN must be a collection"));
         }
 
         return Bool;
@@ -831,13 +838,13 @@ namespace yona::ast
 
     any PipeLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PipeLeftExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PipeLeftExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     PipeRightExpr::PipeRightExpr(Token token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
     any PipeRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PipeRightExpr::infer_type(TypeInferenceContext& ctx) const
+    Type PipeRightExpr::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -849,7 +856,7 @@ namespace yona::ast
 
     any LetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LetExpr::infer_type(TypeInferenceContext& ctx) const { return expr->infer_type(ctx); }
+    Type LetExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
     IfExpr::IfExpr(Token token, ExprNode* condition, ExprNode* thenExpr, ExprNode* elseExpr) :
         ExprNode(token), condition(condition->with_parent<ExprNode>(this)),
@@ -866,12 +873,12 @@ namespace yona::ast
 
     any IfExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type IfExpr::infer_type(TypeInferenceContext& ctx) const
+    Type IfExpr::infer_type(AstContext& ctx) const
     {
         if (const Type conditionType = condition->infer_type(ctx);
             !holds_alternative<ValueType>(conditionType) || get<ValueType>(conditionType) != Bool)
         {
-            ctx.addError(TypeError(condition->token, "If condition must be boolean"));
+            ctx.addError(YonaError(condition->token, YonaError::TYPE, "If condition must be boolean"));
         }
 
         unordered_set returnTypes{ thenExpr->infer_type(ctx) };
@@ -898,7 +905,7 @@ namespace yona::ast
 
     any ApplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ApplyExpr::infer_type(TypeInferenceContext& ctx) const
+    Type ApplyExpr::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -923,7 +930,7 @@ namespace yona::ast
 
     any DoExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DoExpr::infer_type(TypeInferenceContext& ctx) const { return steps.back()->infer_type(ctx); }
+    Type DoExpr::infer_type(AstContext& ctx) const { return steps.back()->infer_type(ctx); }
 
     DoExpr::~DoExpr()
     {
@@ -940,7 +947,7 @@ namespace yona::ast
 
     any ImportExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ImportExpr::infer_type(TypeInferenceContext& ctx) const { return expr->infer_type(ctx); }
+    Type ImportExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
     ImportExpr::~ImportExpr()
     {
@@ -958,7 +965,7 @@ namespace yona::ast
 
     any RaiseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RaiseExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type RaiseExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     RaiseExpr::~RaiseExpr()
     {
@@ -974,7 +981,7 @@ namespace yona::ast
 
     any WithExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type WithExpr::infer_type(TypeInferenceContext& ctx) const { return bodyExpr->infer_type(ctx); }
+    Type WithExpr::infer_type(AstContext& ctx) const { return bodyExpr->infer_type(ctx); }
 
     WithExpr::~WithExpr()
     {
@@ -991,7 +998,7 @@ namespace yona::ast
 
     any FieldAccessExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FieldAccessExpr::infer_type(TypeInferenceContext& ctx) const
+    Type FieldAccessExpr::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1011,7 +1018,7 @@ namespace yona::ast
 
     any FieldUpdateExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FieldUpdateExpr::infer_type(TypeInferenceContext& ctx) const
+    Type FieldUpdateExpr::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1033,7 +1040,7 @@ namespace yona::ast
 
     any LambdaAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LambdaAlias::infer_type(TypeInferenceContext& ctx) const { return lambda->infer_type(ctx); }
+    Type LambdaAlias::infer_type(AstContext& ctx) const { return lambda->infer_type(ctx); }
 
     LambdaAlias::~LambdaAlias()
     {
@@ -1048,7 +1055,7 @@ namespace yona::ast
 
     any ModuleAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuleAlias::infer_type(TypeInferenceContext& ctx) const { return module->infer_type(ctx); }
+    Type ModuleAlias::infer_type(AstContext& ctx) const { return module->infer_type(ctx); }
 
     ModuleAlias::~ModuleAlias()
     {
@@ -1064,7 +1071,7 @@ namespace yona::ast
 
     any ValueAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ValueAlias::infer_type(TypeInferenceContext& ctx) const { return expr->infer_type(ctx); }
+    Type ValueAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
     ValueAlias::~ValueAlias()
     {
@@ -1079,7 +1086,7 @@ namespace yona::ast
 
     any PatternAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PatternAlias::infer_type(TypeInferenceContext& ctx) const { return expr->infer_type(ctx); }
+    Type PatternAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
     PatternAlias::~PatternAlias()
     {
@@ -1094,7 +1101,7 @@ namespace yona::ast
 
     any FqnAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FqnAlias::infer_type(TypeInferenceContext& ctx) const { return fqn->infer_type(ctx); }
+    Type FqnAlias::infer_type(AstContext& ctx) const { return fqn->infer_type(ctx); }
 
     FqnAlias::~FqnAlias()
     {
@@ -1109,7 +1116,7 @@ namespace yona::ast
 
     any FunctionAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FunctionAlias::infer_type(TypeInferenceContext& ctx) const
+    Type FunctionAlias::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1127,7 +1134,7 @@ namespace yona::ast
 
     any AliasCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AliasCall::infer_type(TypeInferenceContext& ctx) const
+    Type AliasCall::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1142,7 +1149,7 @@ namespace yona::ast
 
     any NameCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type NameCall::infer_type(TypeInferenceContext& ctx) const
+    Type NameCall::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1156,7 +1163,7 @@ namespace yona::ast
 
     any ModuleCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuleCall::infer_type(TypeInferenceContext& ctx) const
+    Type ModuleCall::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1181,7 +1188,7 @@ namespace yona::ast
 
     any ModuleImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuleImport::infer_type(TypeInferenceContext& ctx) const
+    Type ModuleImport::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1199,7 +1206,7 @@ namespace yona::ast
 
     any FunctionsImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FunctionsImport::infer_type(TypeInferenceContext& ctx) const
+    Type FunctionsImport::infer_type(AstContext& ctx) const
     {
         return nullptr; // TODO
     }
@@ -1223,7 +1230,7 @@ namespace yona::ast
 
     any SeqGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SeqGeneratorExpr::infer_type(TypeInferenceContext& ctx) const
+    Type SeqGeneratorExpr::infer_type(AstContext& ctx) const
     {
         return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, reducerExpr->infer_type(ctx));
     }
@@ -1245,7 +1252,7 @@ namespace yona::ast
 
     any SetGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SetGeneratorExpr::infer_type(TypeInferenceContext& ctx) const
+    Type SetGeneratorExpr::infer_type(AstContext& ctx) const
     {
         return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, reducerExpr->infer_type(ctx));
     }
@@ -1264,7 +1271,7 @@ namespace yona::ast
 
     any DictGeneratorReducer::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DictGeneratorReducer::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type DictGeneratorReducer::infer_type(AstContext& ctx) const { return nullptr; }
 
     DictGeneratorReducer::~DictGeneratorReducer()
     {
@@ -1282,7 +1289,7 @@ namespace yona::ast
 
     any DictGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DictGeneratorExpr::infer_type(TypeInferenceContext& ctx) const
+    Type DictGeneratorExpr::infer_type(AstContext& ctx) const
     {
         return make_shared<DictCollectionType>(reducerExpr->key->infer_type(ctx), reducerExpr->value->infer_type(ctx));
     }
@@ -1301,7 +1308,7 @@ namespace yona::ast
 
     any ValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ValueCollectionExtractorExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type ValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     void release_identifier_or_underscore(IdentifierOrUnderscore expr)
     {
@@ -1326,7 +1333,7 @@ namespace yona::ast
 
     any KeyValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type KeyValueCollectionExtractorExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type KeyValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr()
     {
@@ -1341,7 +1348,7 @@ namespace yona::ast
 
     any PatternWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); };
 
-    Type PatternWithGuards::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PatternWithGuards::infer_type(AstContext& ctx) const { return nullptr; }
 
     PatternWithGuards::~PatternWithGuards()
     {
@@ -1356,7 +1363,7 @@ namespace yona::ast
 
     any PatternWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PatternWithoutGuards::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PatternWithoutGuards::infer_type(AstContext& ctx) const { return nullptr; }
 
     PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
 
@@ -1371,7 +1378,7 @@ namespace yona::ast
     }
     any PatternExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    Type PatternExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     PatternExpr::~PatternExpr()
     {
@@ -1403,7 +1410,7 @@ namespace yona::ast
 
     any CatchPatternExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type CatchPatternExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type CatchPatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     CatchPatternExpr::~CatchPatternExpr()
     {
@@ -1428,7 +1435,7 @@ namespace yona::ast
 
     any CatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type CatchExpr::infer_type(TypeInferenceContext& ctx) const { return patterns.back()->infer_type(ctx); }
+    Type CatchExpr::infer_type(AstContext& ctx) const { return patterns.back()->infer_type(ctx); }
 
     CatchExpr::~CatchExpr()
     {
@@ -1446,7 +1453,7 @@ namespace yona::ast
 
     any TryCatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type TryCatchExpr::infer_type(TypeInferenceContext& ctx) const
+    Type TryCatchExpr::infer_type(AstContext& ctx) const
     {
         return make_shared<SumType>(unordered_set{ tryExpr->infer_type(ctx), catchExpr->infer_type(ctx) });
     }
@@ -1465,7 +1472,7 @@ namespace yona::ast
 
     any PatternValue::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PatternValue::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type PatternValue::infer_type(AstContext& ctx) const { return nullptr; }
 
     PatternValue::~PatternValue()
     {
@@ -1492,7 +1499,7 @@ namespace yona::ast
 
     any AsDataStructurePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AsDataStructurePattern::infer_type(TypeInferenceContext& ctx) const { return pattern->infer_type(ctx); }
+    Type AsDataStructurePattern::infer_type(AstContext& ctx) const { return pattern->infer_type(ctx); }
 
     AsDataStructurePattern::~AsDataStructurePattern()
     {
@@ -1502,7 +1509,7 @@ namespace yona::ast
 
     any UnderscorePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type UnderscorePattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type UnderscorePattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     TuplePattern::TuplePattern(Token token, const vector<Pattern*>& patterns) :
         PatternNode(token), patterns(nodes_with_parent(patterns, this))
@@ -1511,7 +1518,7 @@ namespace yona::ast
 
     any TuplePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type TuplePattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type TuplePattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     TuplePattern::~TuplePattern()
     {
@@ -1528,7 +1535,7 @@ namespace yona::ast
 
     any SeqPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SeqPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type SeqPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     SeqPattern::~SeqPattern()
     {
@@ -1545,7 +1552,7 @@ namespace yona::ast
 
     any HeadTailsPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type HeadTailsPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type HeadTailsPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     HeadTailsPattern::~HeadTailsPattern()
     {
@@ -1563,7 +1570,7 @@ namespace yona::ast
 
     any TailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type TailsHeadPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type TailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     TailsHeadPattern::~TailsHeadPattern()
     {
@@ -1583,7 +1590,7 @@ namespace yona::ast
 
     any HeadTailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type HeadTailsHeadPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type HeadTailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     HeadTailsHeadPattern::~HeadTailsHeadPattern()
     {
@@ -1605,7 +1612,7 @@ namespace yona::ast
 
     any DictPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DictPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type DictPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     DictPattern::~DictPattern()
     {
@@ -1623,7 +1630,7 @@ namespace yona::ast
 
     any RecordPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RecordPattern::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type RecordPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
     RecordPattern::~RecordPattern()
     {
@@ -1641,7 +1648,7 @@ namespace yona::ast
 
     any CaseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type CaseExpr::infer_type(TypeInferenceContext& ctx) const { return nullptr; }
+    Type CaseExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
     CaseExpr::~CaseExpr()
     {

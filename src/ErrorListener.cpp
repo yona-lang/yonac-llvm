@@ -2,11 +2,10 @@
 // Created by akovari on 18.11.24.
 //
 
-#include <boost/log/trivial.hpp>
+#include <Token.h>
 
 #include "ErrorListener.h"
-
-#include <Token.h>
+#include "common.h"
 
 namespace yona::parser
 {
@@ -14,8 +13,9 @@ namespace yona::parser
     void ErrorListener::syntaxError(Recognizer* recognizer, antlr4::Token* offendingSymbol, size_t line,
                                     size_t charPositionInLine, const std::string& msg, std::exception_ptr e)
     {
-        BOOST_LOG_TRIVIAL(error) << "Syntax error at " << line << ":" << charPositionInLine << ": "
-                                 << offendingSymbol->getText() << endl
-                                 << "\t >>> " << msg;
+        ast_ctx.addError(YonaError(TokenLocation(line, charPositionInLine, line,
+                                                 charPositionInLine + offendingSymbol->getText().length(),
+                                                 offendingSymbol->getText(), e),
+                                   YonaError::SYNTAX, msg));
     }
 }

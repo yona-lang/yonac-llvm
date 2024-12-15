@@ -5,18 +5,20 @@
 #pragma once
 
 #include "ast.h"
+#include "common.h"
 
 namespace yona
 {
     using namespace std;
+    using namespace ast;
     using namespace compiler::types;
 
     struct ParseResult
     {
         bool success;
-        ast::AstNode* node;
+        AstNode* node;
         Type type;
-        TypeInferenceContext type_ctx;
+        AstContext ast_ctx;
     };
 
     ParseResult parse_input(istream& stream);

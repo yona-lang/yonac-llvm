@@ -8,10 +8,10 @@
 #include <boost/log/trivial.hpp>
 #include <boost/program_options.hpp>
 
+#include "ErrorListener.h"
 #include "YonaLexer.h"
 #include "YonaParser.h"
 #include "YonaVisitor.h"
-#include "ErrorListener.h"
 
 namespace yona
 {
@@ -24,7 +24,8 @@ namespace yona
         YonaLexer lexer(&input);
         CommonTokenStream tokens(&lexer);
         YonaParser parser(&tokens);
-        parser::ErrorListener error_listener;
+        auto ast_ctx = AstContext();
+        parser::ErrorListener error_listener(ast_ctx);
 
         lexer.removeErrorListeners();
         parser.removeErrorListeners();
@@ -38,9 +39,8 @@ namespace yona
         any ast = yona_visitor.visitInput(tree);
         auto node = any_cast<expr_wrapper>(ast).get_node<AstNode>();
 
-        auto typeCtx = TypeInferenceContext();
-        auto type = node->infer_type(typeCtx);
+        auto type = node->infer_type(ast_ctx);
 
-        return ParseResult{typeCtx.getErrors().empty(), node, type, typeCtx};
+        return ParseResult{ ast_ctx.getErrors().empty(), node, type, ast_ctx };
     }
 }

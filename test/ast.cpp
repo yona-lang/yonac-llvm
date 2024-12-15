@@ -11,9 +11,9 @@ using namespace std;
 using namespace yona;
 
 
-class AstTest : public testing::TestWithParam<tuple<string, string, string, unsigned int>> {};
+class AstTest : public testing::TestWithParam<tuple<string, string, optional<string>, unsigned int>> {};
 
-TEST_P(AstTest, MyTest)
+TEST_P(AstTest, YonaTest)
 {
     auto param = GetParam();
     auto input = get<1>(param);
@@ -25,7 +25,7 @@ TEST_P(AstTest, MyTest)
 
     // auto node = result.node;
     auto type = result.type;
-    auto type_ctx = result.type_ctx;
+    auto type_ctx = result.ast_ctx;
 
     ASSERT_EQ(expected_errors, type_ctx.getErrors().size());
     if (result.success)
@@ -35,6 +35,14 @@ TEST_P(AstTest, MyTest)
 }
 
 INSTANTIATE_TEST_SUITE_P(SyntaxTests, AstTest, testing::Values(
+    make_tuple("correct_addition_of_ints", "1+1", "2", 0),
+    make_tuple("failed_addition_of_int_with_char", "1+'1'", "2", 1)
+    ),
+    [](const testing::TestParamInfo<AstTest::ParamType>& info) {
+      return get<0>(info.param);
+    });
+
+INSTANTIATE_TEST_SUITE_P(TypeCheckTests, AstTest, testing::Values(
     make_tuple("correct_addition_of_ints", "1+1", "2", 0),
     make_tuple("failed_addition_of_int_with_char", "1+'1'", "2", 1)
     ),

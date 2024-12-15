@@ -5,12 +5,6 @@
 #pragma once
 
 #include <antlr4-runtime.h>
-#include <ostream>
-#include <string>
-
-#include "colors.h"
-
-using Token = const antlr4::ParserRuleContext&;
 
 namespace yona::compiler::types
 {
@@ -71,52 +65,5 @@ namespace yona::compiler::types
     struct SumType final
     {
         unordered_set<Type> types;
-    };
-
-    struct TokenLocation final
-    {
-        unsigned int start_line;
-        unsigned int start_col;
-        unsigned int stop_line;
-        unsigned int stop_col;
-        string text;
-
-        TokenLocation(Token token) :
-            start_line(token.getStart()->getLine()), start_col(token.getStart()->getCharPositionInLine()),
-            stop_line(token.getStop()->getLine()), stop_col(token.getStop()->getCharPositionInLine()),
-            text(token.getStart()->getText())
-        {
-        }
-    };
-
-    inline std::ostream& operator<<(std::ostream& os, const TokenLocation& rhs)
-    {
-        os << "[" << rhs.start_line << ":" << rhs.start_col << "-" << rhs.stop_line << ":" << rhs.stop_col << "] "
-           << rhs.text;
-        return os;
-    }
-
-    struct TypeError final
-    {
-        TokenLocation source_token;
-        string message;
-
-        explicit TypeError(Token token, string message) : source_token(token), message(std::move(message)) {}
-    };
-
-    inline std::ostream& operator<<(std::ostream& os, const TypeError& rhs)
-    {
-        os << ANSI_COLOR_RED << "Type error at " << rhs.source_token << ANSI_COLOR_RESET << ": " << rhs.message;
-        return os;
-    }
-
-    class TypeInferenceContext final
-    {
-    private:
-        vector<TypeError> errors;
-
-    public:
-        void addError(const TypeError& error) { errors.push_back(error); }
-        [[nodiscard]] const vector<TypeError>& getErrors() const { return errors; }
     };
 }

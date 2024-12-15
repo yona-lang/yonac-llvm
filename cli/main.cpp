@@ -60,12 +60,12 @@ int main(const int argc, const char* argv[])
     ifstream stream(fname);
     BOOST_LOG_TRIVIAL(info) << "Yona Parser started for input file: " << fname;
 
-    auto [success, node, type, type_ctx] = parse_input(stream);
+    auto [success, node, type, ast_ctx] = parse_input(stream);
 
     if (!success)
     {
-        BOOST_LOG_TRIVIAL(error) << type_ctx.getErrors().size() << " errors found. Please fix them and re-run.";
-        for (auto err : type_ctx.getErrors())
+        BOOST_LOG_TRIVIAL(error) << ast_ctx.getErrors().size() << " errors found. Please fix them and re-run.";
+        for (auto err : ast_ctx.getErrors())
         {
             BOOST_LOG_TRIVIAL(error) << err;
         }
