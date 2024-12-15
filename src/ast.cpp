@@ -167,7 +167,7 @@ namespace yona::ast
 
     Type ByteExpr::infer_type(TypeInferenceContext& ctx) const { return Byte; }
 
-    StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, move(value)) {}
+    StringExpr::StringExpr(Token token, string value) : LiteralExpr<string>(token, std::move(value)) {}
 
     any StringExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 

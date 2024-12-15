@@ -1,7 +1,8 @@
 {
   "dependencies": [
     "antlr4",
+    "boost-log",
     "boost-program-options",
-    "boost-log"
+    "gtest"
   ]
 }
