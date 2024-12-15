@@ -1,9 +1,13 @@
 ﻿// main.cpp : Defines the entry point for the application.
 
+#include <iostream>
+#include <fstream>
+
 #include <antlr4-runtime.h>
 #include <boost/log/trivial.hpp>
 #include <boost/program_options.hpp>
-#include <iostream>
+#include <boost/log/core.hpp>
+#include <boost/log/utility/setup/console.hpp>
 
 #include "utils.h"
 #include "types.h"
@@ -11,14 +15,10 @@
 #include "Interpreter.h"
 #include "Optimizer.h"
 
-namespace po = boost::program_options;
-using namespace antlr4;
-using namespace yona;
-using namespace std;
-using namespace yona::compiler::types;
-
 void process_program_options(const int argc, const char* const argv[])
 {
+    namespace po = boost::program_options;
+
     po::options_description desc("Allowed options");
     desc.add_options()("help", "Show brief usage message");
     desc.add_options()("compile", "Compile the input file");
@@ -31,14 +31,24 @@ void process_program_options(const int argc, const char* const argv[])
     }
     catch (po::error const& e)
     {
-        cerr << e.what() << '\n';
+        std::cerr << e.what() << '\n';
         exit(EXIT_FAILURE);
     }
     po::notify(args);
 }
 
+void init_logging()
+{
+    boost::log::add_console_log(std::cout);
+}
+
 int main(const int argc, const char* argv[])
 {
+    using namespace antlr4;
+    using namespace yona;
+    using namespace yona::compiler::types;
+
+    init_logging();
     process_program_options(argc, argv);
 
     string fname;
@@ -50,24 +60,24 @@ int main(const int argc, const char* argv[])
     ifstream stream(fname);
     BOOST_LOG_TRIVIAL(info) << "Yona Parser started for input file: " << fname;
 
-    ParseResult parse_result = parse_input(stream);
+    auto [success, node, type, type_ctx] = parse_input(stream);
 
-    if (!parse_result.success)
+    if (!success)
     {
-        BOOST_LOG_TRIVIAL(error) << parse_result.type_ctx.getErrors().size() << " errors found. Please fix them and re-run.";
-        for (auto err : parse_result.type_ctx.getErrors())
+        BOOST_LOG_TRIVIAL(error) << type_ctx.getErrors().size() << " errors found. Please fix them and re-run.";
+        for (auto err : type_ctx.getErrors())
         {
             BOOST_LOG_TRIVIAL(error) << err;
         }
         return 1;
     }
 
-    BOOST_LOG_TRIVIAL(trace) << "Result expression type: " << typeid(parse_result.type).name() << endl;
+    BOOST_LOG_TRIVIAL(trace) << "Result expression type: " << typeid(type).name() << endl;
 
     compiler::Optimizer optimizer;
     interp::Interpreter interpreter;
 
-    auto optimized_ast = any_cast<expr_wrapper>(parse_result.node->accept(optimizer)).get_node<AstNode>();
+    auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
     auto result = optimized_ast->accept(interpreter);
     cout << result.type().name() << endl;
     delete optimized_ast;
