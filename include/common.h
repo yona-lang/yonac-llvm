@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include <string>
 #include <antlr4-runtime.h>
+#include <string>
 
 #include "colors.h"
 
@@ -62,11 +62,12 @@ namespace yona
         }
     };
 
-    inline const char* ErrorTypes[] = {"Syntax", "Type", "Runtime"};
+    inline const char* ErrorTypes[] = { "Syntax", "Type", "Runtime" };
 
     inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
     {
-        os << ANSI_COLOR_RED << ErrorTypes[rhs.type] << " error at " << rhs.source_token << ANSI_COLOR_RESET << ": " << rhs.message;
+        os << ANSI_COLOR_RED << ErrorTypes[rhs.type] << " error at " << rhs.source_token << ANSI_COLOR_RESET << ": "
+           << rhs.message;
         return os;
     }
 
@@ -77,6 +78,15 @@ namespace yona
 
     public:
         void addError(const YonaError& error) { errors.push_back(error); }
-        [[nodiscard]] const vector<YonaError>& getErrors() const { return errors; }
+        [[nodiscard]] vector<YonaError> getErrors() const { return errors; }
+        [[nodiscard]] vector<YonaError> getErrors(YonaError::Type type) const
+        {
+            std::vector<YonaError> result;
+
+            ranges::copy_if(errors, std::back_inserter(result),
+                            [type](const YonaError& error) { return error.type == type; });
+
+            return result;
+        }
     };
 };
