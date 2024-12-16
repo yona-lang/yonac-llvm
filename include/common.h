@@ -12,8 +12,9 @@
 namespace yona
 {
     using namespace std;
+    using namespace antlr4;
 
-    using Token = const antlr4::ParserRuleContext&;
+    using SourceContext = const ParserRuleContext&;
 
     struct TokenLocation final
     {
@@ -22,18 +23,23 @@ namespace yona
         size_t stop_line;
         size_t stop_col;
         string text;
-        std::exception_ptr e;
 
-        TokenLocation(Token token) :
+        TokenLocation(SourceContext token) :
             start_line(token.getStart()->getLine()), start_col(token.getStart()->getCharPositionInLine()),
             stop_line(token.getStop()->getLine()), stop_col(token.getStop()->getCharPositionInLine()),
             text(token.getStart()->getText())
         {
         }
 
-        TokenLocation(size_t start_line, size_t start_col, size_t stop_line, size_t stop_col, const string& text,
-                      std::exception_ptr e) :
-            start_line(start_line), start_col(start_col), stop_line(stop_line), stop_col(stop_col), text(text), e(e)
+        TokenLocation(antlr4::Token& token, Recognizer& recognizer) :
+            start_line(token.getLine()), start_col(token.getCharPositionInLine()), stop_line(token.getLine()),
+            stop_col(token.getText().length() + start_col), text(recognizer.getTokenErrorDisplay(&token))
+        {
+        }
+
+        TokenLocation(size_t start_line, size_t start_col, size_t stop_line, size_t stop_col, string text) :
+            start_line(start_line), start_col(start_col), stop_line(stop_line), stop_col(stop_col),
+            text(std::move(text))
         {
         }
     };
@@ -41,7 +47,7 @@ namespace yona
     inline std::ostream& operator<<(std::ostream& os, const TokenLocation& rhs)
     {
         os << "[" << rhs.start_line << ":" << rhs.start_col << "-" << rhs.stop_line << ":" << rhs.stop_col << "] "
-           << "'" << rhs.text << "'";
+           <<  rhs.text;
         return os;
     }
 
@@ -57,7 +63,7 @@ namespace yona
         string message;
 
         explicit YonaError(TokenLocation source_token, Type type, string message) :
-            type(type), source_token(source_token), message(std::move(message))
+            type(type), source_token(std::move(source_token)), message(std::move(message))
         {
         }
     };
@@ -66,7 +72,7 @@ namespace yona
 
     inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
     {
-        os << ANSI_COLOR_RED << ErrorTypes[rhs.type] << " error at " << rhs.source_token << ANSI_COLOR_RESET << ": "
+        os << ANSI_COLOR_RED << ErrorTypes[rhs.type] << " error at " << rhs.source_token << ANSI_COLOR_RESET << ":\n"
            << rhs.message;
         return os;
     }
@@ -74,19 +80,12 @@ namespace yona
     class AstContext final
     {
     private:
-        vector<YonaError> errors;
+        unordered_multimap<YonaError::Type, YonaError> errors_;
 
     public:
-        void addError(const YonaError& error) { errors.push_back(error); }
-        [[nodiscard]] vector<YonaError> getErrors() const { return errors; }
-        [[nodiscard]] vector<YonaError> getErrors(YonaError::Type type) const
-        {
-            std::vector<YonaError> result;
-
-            ranges::copy_if(errors, std::back_inserter(result),
-                            [type](const YonaError& error) { return error.type == type; });
-
-            return result;
-        }
+        void addError(const YonaError& error) { errors_.insert({ error.type, error }); }
+        [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
+        [[nodiscard]] const unordered_multimap<YonaError::Type, YonaError>& getErrors() const { return errors_; }
+        [[nodiscard]] size_t errorCount() const { return errors_.size(); }
     };
 };

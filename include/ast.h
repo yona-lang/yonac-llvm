@@ -3,7 +3,6 @@
 #include <antlr4-runtime.h>
 #include <optional>
 #include <string>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -161,9 +160,9 @@ namespace yona::ast
     class AstNode
     {
     public:
-        Token token;
+        SourceContext token;
         AstNode* parent = nullptr;
-        explicit AstNode(Token token) : token(token) {};
+        explicit AstNode(SourceContext token) : token(token) {};
         virtual ~AstNode() = default;
         virtual any accept(const AstVisitor& visitor);
         [[nodiscard]] virtual Type infer_type(AstContext& ctx) const;
@@ -234,7 +233,7 @@ namespace yona::ast
     class ExprNode : public AstNode
     {
     public:
-        explicit ExprNode(Token token) : AstNode(token) {}
+        explicit ExprNode(SourceContext token) : AstNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_EXPR_NODE; };
     };
@@ -242,7 +241,7 @@ namespace yona::ast
     class PatternNode : public AstNode
     {
     public:
-        explicit PatternNode(Token token) : AstNode(token) {}
+        explicit PatternNode(SourceContext token) : AstNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_NODE; };
     };
@@ -250,7 +249,7 @@ namespace yona::ast
     class UnderscoreNode final : public PatternNode
     {
     public:
-        explicit UnderscoreNode(Token token) : PatternNode(token) {}
+        explicit UnderscoreNode(SourceContext token) : PatternNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_NODE; };
@@ -259,7 +258,7 @@ namespace yona::ast
     class ValueExpr : public ExprNode
     {
     public:
-        explicit ValueExpr(Token token) : ExprNode(token) {}
+        explicit ValueExpr(SourceContext token) : ExprNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_EXPR; };
     };
@@ -267,7 +266,7 @@ namespace yona::ast
     class ScopedNode : public AstNode
     {
     public:
-        explicit ScopedNode(Token token) : AstNode(token) {}
+        explicit ScopedNode(SourceContext token) : AstNode(token) {}
         ScopedNode* getParentScopedNode() const;
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SCOPED_NODE; };
@@ -279,7 +278,7 @@ namespace yona::ast
     public:
         const T value;
 
-        explicit LiteralExpr(Token token, T value);
+        explicit LiteralExpr(SourceContext token, T value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LITERAL_EXPR; };
     };
@@ -287,7 +286,7 @@ namespace yona::ast
     class OpExpr : public ExprNode
     {
     public:
-        explicit OpExpr(Token token) : ExprNode(token) {}
+        explicit OpExpr(SourceContext token) : ExprNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_OP_EXPR; };
     };
@@ -298,7 +297,7 @@ namespace yona::ast
         ExprNode* left;
         ExprNode* right;
 
-        explicit BinaryOpExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit BinaryOpExpr(SourceContext token, ExprNode* left, ExprNode* right);
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BINARY_OP_EXPR; };
@@ -308,7 +307,7 @@ namespace yona::ast
     class AliasExpr : public ExprNode
     {
     public:
-        explicit AliasExpr(Token token) : ExprNode(token) {}
+        explicit AliasExpr(SourceContext token) : ExprNode(token) {}
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_ALIAS_EXPR; };
@@ -317,7 +316,7 @@ namespace yona::ast
     class CallExpr : public ExprNode
     {
     public:
-        explicit CallExpr(Token token) : ExprNode(token) {}
+        explicit CallExpr(SourceContext token) : ExprNode(token) {}
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CALL_EXPR; };
@@ -326,7 +325,7 @@ namespace yona::ast
     class ImportClauseExpr : public ScopedNode
     {
     public:
-        explicit ImportClauseExpr(Token token) : ScopedNode(token) {}
+        explicit ImportClauseExpr(SourceContext token) : ScopedNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_CLAUSE_EXPR; };
     };
@@ -334,7 +333,7 @@ namespace yona::ast
     class GeneratorExpr : public ExprNode
     {
     public:
-        explicit GeneratorExpr(Token token) : ExprNode(token) {}
+        explicit GeneratorExpr(SourceContext token) : ExprNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_GENERATOR_EXPR; };
     };
@@ -342,7 +341,7 @@ namespace yona::ast
     class CollectionExtractorExpr : public ExprNode
     {
     public:
-        explicit CollectionExtractorExpr(Token token) : ExprNode(token) {}
+        explicit CollectionExtractorExpr(SourceContext token) : ExprNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_COLLECTION_EXTRACTOR_EXPR; };
     };
@@ -350,7 +349,7 @@ namespace yona::ast
     class SequenceExpr : public ExprNode
     {
     public:
-        explicit SequenceExpr(Token token) : ExprNode(token) {}
+        explicit SequenceExpr(SourceContext token) : ExprNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SEQUENCE_EXPR; };
     };
@@ -358,7 +357,7 @@ namespace yona::ast
     class FunctionBody : public AstNode
     {
     public:
-        explicit FunctionBody(Token token) : AstNode(token) {}
+        explicit FunctionBody(SourceContext token) : AstNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_BODY; };
     };
@@ -368,7 +367,7 @@ namespace yona::ast
     public:
         const string value;
 
-        explicit NameExpr(Token token, string value);
+        explicit NameExpr(SourceContext token, string value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_EXPR; };
@@ -379,7 +378,7 @@ namespace yona::ast
     public:
         NameExpr* name;
 
-        explicit IdentifierExpr(Token token, NameExpr* name);
+        explicit IdentifierExpr(SourceContext token, NameExpr* name);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_IDENTIFIER_EXPR; };
@@ -392,7 +391,7 @@ namespace yona::ast
         NameExpr* recordType;
         vector<IdentifierExpr*> identifiers;
 
-        explicit RecordNode(Token token, NameExpr* recordType, const vector<IdentifierExpr*>& identifiers);
+        explicit RecordNode(SourceContext token, NameExpr* recordType, const vector<IdentifierExpr*>& identifiers);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_NODE; };
@@ -402,7 +401,7 @@ namespace yona::ast
     class TrueLiteralExpr final : public LiteralExpr<bool>
     {
     public:
-        explicit TrueLiteralExpr(Token token);
+        explicit TrueLiteralExpr(SourceContext token);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_TRUE_LITERAL_EXPR; };
@@ -411,7 +410,7 @@ namespace yona::ast
     class FalseLiteralExpr final : public LiteralExpr<bool>
     {
     public:
-        explicit FalseLiteralExpr(Token token);
+        explicit FalseLiteralExpr(SourceContext token);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FALSE_LITERAL_EXPR; };
@@ -420,7 +419,7 @@ namespace yona::ast
     class FloatExpr final : public LiteralExpr<float>
     {
     public:
-        explicit FloatExpr(Token token, float value);
+        explicit FloatExpr(SourceContext token, float value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FLOAT_EXPR; };
@@ -429,7 +428,7 @@ namespace yona::ast
     class IntegerExpr final : public LiteralExpr<int>
     {
     public:
-        explicit IntegerExpr(Token token, int value);
+        explicit IntegerExpr(SourceContext token, int value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_INTEGER_EXPR; };
@@ -438,7 +437,7 @@ namespace yona::ast
     class ByteExpr final : public LiteralExpr<unsigned char>
     {
     public:
-        explicit ByteExpr(Token token, unsigned char value);
+        explicit ByteExpr(SourceContext token, unsigned char value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BYTE_EXPR; };
@@ -447,7 +446,7 @@ namespace yona::ast
     class StringExpr final : public LiteralExpr<string>
     {
     public:
-        explicit StringExpr(Token token, string value);
+        explicit StringExpr(SourceContext token, string value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_STRING_EXPR; };
@@ -456,7 +455,7 @@ namespace yona::ast
     class CharacterExpr final : public LiteralExpr<char>
     {
     public:
-        explicit CharacterExpr(Token token, char value);
+        explicit CharacterExpr(SourceContext token, char value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CHARACTER_EXPR; };
@@ -465,7 +464,7 @@ namespace yona::ast
     class UnitExpr final : public LiteralExpr<nullptr_t>
     {
     public:
-        explicit UnitExpr(Token token);
+        explicit UnitExpr(SourceContext token);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_UNIT_EXPR; };
@@ -476,7 +475,7 @@ namespace yona::ast
     public:
         vector<ExprNode*> values;
 
-        explicit TupleExpr(Token token, const vector<ExprNode*>& values);
+        explicit TupleExpr(SourceContext token, const vector<ExprNode*>& values);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_EXPR; };
@@ -488,7 +487,7 @@ namespace yona::ast
     public:
         vector<pair<ExprNode*, ExprNode*>> values;
 
-        explicit DictExpr(Token token, const vector<pair<ExprNode*, ExprNode*>>& values);
+        explicit DictExpr(SourceContext token, const vector<pair<ExprNode*, ExprNode*>>& values);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_EXPR; };
@@ -500,7 +499,7 @@ namespace yona::ast
     public:
         vector<ExprNode*> values;
 
-        explicit ValuesSequenceExpr(Token token, const vector<ExprNode*>& values);
+        explicit ValuesSequenceExpr(SourceContext token, const vector<ExprNode*>& values);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_VALUES_SEQUENCE_EXPR; };
@@ -515,7 +514,7 @@ namespace yona::ast
         ExprNode* end;
         ExprNode* step;
 
-        explicit RangeSequenceExpr(Token token, ExprNode* start, ExprNode* end, ExprNode* step);
+        explicit RangeSequenceExpr(SourceContext token, ExprNode* start, ExprNode* end, ExprNode* step);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RANGE_SEQUENCE_EXPR; };
@@ -527,7 +526,7 @@ namespace yona::ast
     public:
         vector<ExprNode*> values;
 
-        explicit SetExpr(Token token, const vector<ExprNode*>& values);
+        explicit SetExpr(SourceContext token, const vector<ExprNode*>& values);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SET_EXPR; };
@@ -539,7 +538,7 @@ namespace yona::ast
     public:
         string value;
 
-        explicit SymbolExpr(Token token, string value);
+        explicit SymbolExpr(SourceContext token, string value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SYMBOL_EXPR; };
@@ -550,7 +549,7 @@ namespace yona::ast
     public:
         vector<NameExpr*> parts;
 
-        explicit PackageNameExpr(Token token, const vector<NameExpr*>& parts);
+        explicit PackageNameExpr(SourceContext token, const vector<NameExpr*>& parts);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PACKAGE_NAME_EXPR; };
@@ -563,7 +562,7 @@ namespace yona::ast
         PackageNameExpr* packageName;
         NameExpr* moduleName;
 
-        explicit FqnExpr(Token token, PackageNameExpr* packageName, NameExpr* moduleName);
+        explicit FqnExpr(SourceContext token, PackageNameExpr* packageName, NameExpr* moduleName);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_EXPR; };
@@ -577,7 +576,7 @@ namespace yona::ast
         vector<PatternNode*> patterns;
         vector<FunctionBody*> bodies;
 
-        explicit FunctionExpr(Token token, string name, const vector<PatternNode*>& patterns,
+        explicit FunctionExpr(SourceContext token, string name, const vector<PatternNode*>& patterns,
                               const vector<FunctionBody*>& bodies);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -593,7 +592,7 @@ namespace yona::ast
         vector<RecordNode*> records;
         vector<FunctionExpr*> functions;
 
-        explicit ModuleExpr(Token token, FqnExpr* fqn, const vector<string>& exports,
+        explicit ModuleExpr(SourceContext token, FqnExpr* fqn, const vector<string>& exports,
                             const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -607,7 +606,8 @@ namespace yona::ast
         NameExpr* recordType;
         vector<pair<NameExpr*, ExprNode*>> items;
 
-        explicit RecordInstanceExpr(Token token, NameExpr* recordType, const vector<pair<NameExpr*, ExprNode*>>& items);
+        explicit RecordInstanceExpr(SourceContext token, NameExpr* recordType,
+                                    const vector<pair<NameExpr*, ExprNode*>>& items);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_INSTANCE_EXPR; };
@@ -620,7 +620,7 @@ namespace yona::ast
         ExprNode* guard;
         vector<ExprNode*> exprs;
 
-        explicit BodyWithGuards(Token token, ExprNode* guard, const vector<ExprNode*>& exprs);
+        explicit BodyWithGuards(SourceContext token, ExprNode* guard, const vector<ExprNode*>& exprs);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BODY_WITH_GUARDS; };
@@ -632,7 +632,7 @@ namespace yona::ast
     public:
         ExprNode* expr;
 
-        explicit BodyWithoutGuards(Token token, ExprNode* expr);
+        explicit BodyWithoutGuards(SourceContext token, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BODY_WITHOUT_GUARDS; };
@@ -644,7 +644,7 @@ namespace yona::ast
     public:
         ExprNode* expr;
 
-        explicit LogicalNotOpExpr(Token token, ExprNode* expr);
+        explicit LogicalNotOpExpr(SourceContext token, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_NOT_OP_EXPR; };
@@ -656,7 +656,7 @@ namespace yona::ast
     public:
         ExprNode* expr;
 
-        explicit BinaryNotOpExpr(Token token, ExprNode* expr);
+        explicit BinaryNotOpExpr(SourceContext token, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BINARY_NOT_OP_EXPR; };
@@ -666,7 +666,7 @@ namespace yona::ast
     class PowerExpr final : public BinaryOpExpr
     {
     public:
-        explicit PowerExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit PowerExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_POWER_EXPR; };
@@ -675,7 +675,7 @@ namespace yona::ast
     class MultiplyExpr final : public BinaryOpExpr
     {
     public:
-        explicit MultiplyExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit MultiplyExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_MULTIPLY_EXPR; };
@@ -684,7 +684,7 @@ namespace yona::ast
     class DivideExpr final : public BinaryOpExpr
     {
     public:
-        explicit DivideExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit DivideExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_DIVIDE_EXPR; };
@@ -693,7 +693,7 @@ namespace yona::ast
     class ModuloExpr final : public BinaryOpExpr
     {
     public:
-        explicit ModuloExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit ModuloExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_MODULO_EXPR; };
@@ -702,7 +702,7 @@ namespace yona::ast
     class AddExpr final : public BinaryOpExpr
     {
     public:
-        explicit AddExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit AddExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_ADD_EXPR; };
@@ -711,7 +711,7 @@ namespace yona::ast
     class SubtractExpr final : public BinaryOpExpr
     {
     public:
-        explicit SubtractExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit SubtractExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SUBTRACT_EXPR; };
@@ -720,7 +720,7 @@ namespace yona::ast
     class LeftShiftExpr final : public BinaryOpExpr
     {
     public:
-        explicit LeftShiftExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit LeftShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LEFT_SHIFT_EXPR; };
@@ -729,7 +729,7 @@ namespace yona::ast
     class RightShiftExpr final : public BinaryOpExpr
     {
     public:
-        explicit RightShiftExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit RightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RIGHT_SHIFT_EXPR; };
@@ -738,7 +738,7 @@ namespace yona::ast
     class ZerofillRightShiftExpr final : public BinaryOpExpr
     {
     public:
-        explicit ZerofillRightShiftExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit ZerofillRightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_ZEROFILL_RIGHT_SHIFT_EXPR; };
@@ -747,7 +747,7 @@ namespace yona::ast
     class GteExpr final : public BinaryOpExpr
     {
     public:
-        explicit GteExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit GteExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_GTE_EXPR; };
@@ -756,7 +756,7 @@ namespace yona::ast
     class LteExpr final : public BinaryOpExpr
     {
     public:
-        explicit LteExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit LteExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LTE_EXPR; };
@@ -765,7 +765,7 @@ namespace yona::ast
     class GtExpr final : public BinaryOpExpr
     {
     public:
-        explicit GtExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit GtExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_GT_EXPR; };
@@ -774,7 +774,7 @@ namespace yona::ast
     class LtExpr final : public BinaryOpExpr
     {
     public:
-        explicit LtExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit LtExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LT_EXPR; };
@@ -783,7 +783,7 @@ namespace yona::ast
     class EqExpr final : public BinaryOpExpr
     {
     public:
-        explicit EqExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit EqExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_EQ_EXPR; };
@@ -792,7 +792,7 @@ namespace yona::ast
     class NeqExpr final : public BinaryOpExpr
     {
     public:
-        explicit NeqExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit NeqExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_NEQ_EXPR; };
@@ -801,7 +801,7 @@ namespace yona::ast
     class ConsLeftExpr final : public BinaryOpExpr
     {
     public:
-        explicit ConsLeftExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit ConsLeftExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CONS_LEFT_EXPR; };
@@ -810,7 +810,7 @@ namespace yona::ast
     class ConsRightExpr final : public BinaryOpExpr
     {
     public:
-        explicit ConsRightExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit ConsRightExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CONS_RIGHT_EXPR; };
@@ -819,7 +819,7 @@ namespace yona::ast
     class JoinExpr final : public BinaryOpExpr
     {
     public:
-        explicit JoinExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit JoinExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_JOIN_EXPR; };
@@ -828,7 +828,7 @@ namespace yona::ast
     class BitwiseAndExpr final : public BinaryOpExpr
     {
     public:
-        explicit BitwiseAndExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit BitwiseAndExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_AND_EXPR; };
@@ -837,7 +837,7 @@ namespace yona::ast
     class BitwiseXorExpr final : public BinaryOpExpr
     {
     public:
-        explicit BitwiseXorExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit BitwiseXorExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_XOR_EXPR; };
@@ -846,7 +846,7 @@ namespace yona::ast
     class BitwiseOrExpr final : public BinaryOpExpr
     {
     public:
-        explicit BitwiseOrExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit BitwiseOrExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_OR_EXPR; };
@@ -855,7 +855,7 @@ namespace yona::ast
     class LogicalAndExpr final : public BinaryOpExpr
     {
     public:
-        explicit LogicalAndExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit LogicalAndExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_AND_EXPR; };
@@ -864,7 +864,7 @@ namespace yona::ast
     class LogicalOrExpr final : public BinaryOpExpr
     {
     public:
-        explicit LogicalOrExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit LogicalOrExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_OR_EXPR; };
@@ -873,7 +873,7 @@ namespace yona::ast
     class InExpr final : public BinaryOpExpr
     {
     public:
-        explicit InExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit InExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_IN_EXPR; };
@@ -882,7 +882,7 @@ namespace yona::ast
     class PipeLeftExpr final : public BinaryOpExpr
     {
     public:
-        explicit PipeLeftExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_LEFT_EXPR; };
@@ -891,7 +891,7 @@ namespace yona::ast
     class PipeRightExpr final : public BinaryOpExpr
     {
     public:
-        explicit PipeRightExpr(Token token, ExprNode* left, ExprNode* right);
+        explicit PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_RIGHT_EXPR; };
@@ -903,7 +903,7 @@ namespace yona::ast
         vector<AliasExpr*> aliases;
         ExprNode* expr;
 
-        explicit LetExpr(Token token, const vector<AliasExpr*>& aliases, ExprNode* expr);
+        explicit LetExpr(SourceContext token, const vector<AliasExpr*>& aliases, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LET_EXPR; };
@@ -917,7 +917,7 @@ namespace yona::ast
         ExprNode* thenExpr;
         ExprNode* elseExpr;
 
-        explicit IfExpr(Token token, ExprNode* condition, ExprNode* thenExpr, ExprNode* elseExpr);
+        explicit IfExpr(SourceContext token, ExprNode* condition, ExprNode* thenExpr, ExprNode* elseExpr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_IF_EXPR; };
@@ -930,7 +930,7 @@ namespace yona::ast
         CallExpr* call;
         vector<variant<ExprNode*, ValueExpr*>> args;
 
-        explicit ApplyExpr(Token token, CallExpr* call, const vector<variant<ExprNode*, ValueExpr*>>& args);
+        explicit ApplyExpr(SourceContext token, CallExpr* call, const vector<variant<ExprNode*, ValueExpr*>>& args);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_APPLY_EXPR; };
@@ -942,7 +942,7 @@ namespace yona::ast
     public:
         vector<ExprNode*> steps;
 
-        explicit DoExpr(Token token, const vector<ExprNode*>& steps);
+        explicit DoExpr(SourceContext token, const vector<ExprNode*>& steps);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_DO_EXPR; };
@@ -955,7 +955,7 @@ namespace yona::ast
         vector<ImportClauseExpr*> clauses;
         ExprNode* expr;
 
-        explicit ImportExpr(Token token, const vector<ImportClauseExpr*>& clauses, ExprNode* expr);
+        explicit ImportExpr(SourceContext token, const vector<ImportClauseExpr*>& clauses, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_EXPR; };
@@ -968,7 +968,7 @@ namespace yona::ast
         SymbolExpr* symbol;
         StringExpr* message;
 
-        explicit RaiseExpr(Token token, SymbolExpr* symbol, StringExpr* message);
+        explicit RaiseExpr(SourceContext token, SymbolExpr* symbol, StringExpr* message);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RAISE_EXPR; };
@@ -982,7 +982,7 @@ namespace yona::ast
         NameExpr* name;
         ExprNode* bodyExpr;
 
-        explicit WithExpr(Token token, ExprNode* contextExpr, NameExpr* name, ExprNode* bodyExpr);
+        explicit WithExpr(SourceContext token, ExprNode* contextExpr, NameExpr* name, ExprNode* bodyExpr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_WITH_EXPR; };
@@ -995,7 +995,7 @@ namespace yona::ast
         IdentifierExpr* identifier;
         NameExpr* name;
 
-        explicit FieldAccessExpr(Token token, IdentifierExpr* identifier, NameExpr* name);
+        explicit FieldAccessExpr(SourceContext token, IdentifierExpr* identifier, NameExpr* name);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FIELD_ACCESS_EXPR; };
@@ -1008,7 +1008,7 @@ namespace yona::ast
         IdentifierExpr* identifier;
         vector<pair<NameExpr*, ExprNode*>> updates;
 
-        explicit FieldUpdateExpr(Token token, IdentifierExpr* identifier,
+        explicit FieldUpdateExpr(SourceContext token, IdentifierExpr* identifier,
                                  const vector<pair<NameExpr*, ExprNode*>>& updates);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1022,7 +1022,7 @@ namespace yona::ast
         NameExpr* name;
         FunctionExpr* lambda;
 
-        explicit LambdaAlias(Token token, NameExpr* name, FunctionExpr* lambda);
+        explicit LambdaAlias(SourceContext token, NameExpr* name, FunctionExpr* lambda);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_LAMBDA_ALIAS; };
@@ -1035,7 +1035,7 @@ namespace yona::ast
         NameExpr* name;
         ModuleExpr* module;
 
-        explicit ModuleAlias(Token token, NameExpr* name, ModuleExpr* module);
+        explicit ModuleAlias(SourceContext token, NameExpr* name, ModuleExpr* module);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_ALIAS; };
@@ -1048,7 +1048,7 @@ namespace yona::ast
         IdentifierExpr* identifier;
         ExprNode* expr;
 
-        explicit ValueAlias(Token token, IdentifierExpr* identifier, ExprNode* expr);
+        explicit ValueAlias(SourceContext token, IdentifierExpr* identifier, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_ALIAS; };
@@ -1061,7 +1061,7 @@ namespace yona::ast
         PatternNode* pattern;
         ExprNode* expr;
 
-        explicit PatternAlias(Token token, PatternNode* pattern, ExprNode* expr);
+        explicit PatternAlias(SourceContext token, PatternNode* pattern, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_ALIAS; };
@@ -1074,7 +1074,7 @@ namespace yona::ast
         NameExpr* name;
         FqnExpr* fqn;
 
-        explicit FqnAlias(Token token, NameExpr* name, FqnExpr* fqn);
+        explicit FqnAlias(SourceContext token, NameExpr* name, FqnExpr* fqn);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_ALIAS; };
@@ -1087,7 +1087,7 @@ namespace yona::ast
         NameExpr* name;
         NameExpr* alias;
 
-        explicit FunctionAlias(Token token, NameExpr* name, NameExpr* alias);
+        explicit FunctionAlias(SourceContext token, NameExpr* name, NameExpr* alias);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_ALIAS; };
@@ -1100,7 +1100,7 @@ namespace yona::ast
         NameExpr* alias;
         NameExpr* funName;
 
-        explicit AliasCall(Token token, NameExpr* alias, NameExpr* funName);
+        explicit AliasCall(SourceContext token, NameExpr* alias, NameExpr* funName);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_ALIAS_CALL; };
@@ -1112,7 +1112,7 @@ namespace yona::ast
     public:
         NameExpr* name;
 
-        explicit NameCall(Token token, NameExpr* name);
+        explicit NameCall(SourceContext token, NameExpr* name);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_CALL; };
@@ -1125,7 +1125,7 @@ namespace yona::ast
         variant<FqnExpr*, ExprNode*> fqn;
         NameExpr* funName;
 
-        explicit ModuleCall(Token token, const variant<FqnExpr*, ExprNode*>& fqn, NameExpr* funName);
+        explicit ModuleCall(SourceContext token, const variant<FqnExpr*, ExprNode*>& fqn, NameExpr* funName);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_CALL; };
@@ -1138,7 +1138,7 @@ namespace yona::ast
         FqnExpr* fqn;
         NameExpr* name;
 
-        explicit ModuleImport(Token token, FqnExpr* fqn, NameExpr* name);
+        explicit ModuleImport(SourceContext token, FqnExpr* fqn, NameExpr* name);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_IMPORT; };
@@ -1151,7 +1151,7 @@ namespace yona::ast
         vector<FunctionAlias*> aliases;
         FqnExpr* fromFqn;
 
-        explicit FunctionsImport(Token token, const vector<FunctionAlias*>& aliases, FqnExpr* fromFqn);
+        explicit FunctionsImport(SourceContext token, const vector<FunctionAlias*>& aliases, FqnExpr* fromFqn);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTIONS_IMPORT; };
@@ -1165,8 +1165,8 @@ namespace yona::ast
         CollectionExtractorExpr* collectionExtractor;
         ExprNode* stepExpression;
 
-        explicit SeqGeneratorExpr(Token token, ExprNode* reducerExpr, CollectionExtractorExpr* collectionExtractor,
-                                  ExprNode* stepExpression);
+        explicit SeqGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
+                                  CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SEQ_GENERATOR_EXPR; };
@@ -1180,8 +1180,8 @@ namespace yona::ast
         CollectionExtractorExpr* collectionExtractor;
         ExprNode* stepExpression;
 
-        explicit SetGeneratorExpr(Token token, ExprNode* reducerExpr, CollectionExtractorExpr* collectionExtractor,
-                                  ExprNode* stepExpression);
+        explicit SetGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
+                                  CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SET_GENERATOR_EXPR; };
@@ -1194,7 +1194,7 @@ namespace yona::ast
         ExprNode* key;
         ExprNode* value;
 
-        explicit DictGeneratorReducer(Token token, ExprNode* key, ExprNode* value);
+        explicit DictGeneratorReducer(SourceContext token, ExprNode* key, ExprNode* value);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_GENERATOR_REDUCER; };
@@ -1208,7 +1208,7 @@ namespace yona::ast
         CollectionExtractorExpr* collectionExtractor;
         ExprNode* stepExpression;
 
-        explicit DictGeneratorExpr(Token token, DictGeneratorReducer* reducerExpr,
+        explicit DictGeneratorExpr(SourceContext token, DictGeneratorReducer* reducerExpr,
                                    CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1219,7 +1219,7 @@ namespace yona::ast
     class UnderscorePattern final : public PatternNode
     {
     public:
-        UnderscorePattern(Token token) : PatternNode(token) {}
+        UnderscorePattern(SourceContext token) : PatternNode(token) {}
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_PATTERN; };
@@ -1232,7 +1232,7 @@ namespace yona::ast
     public:
         IdentifierOrUnderscore expr;
 
-        explicit ValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore expr);
+        explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_COLLECTION_EXTRACTOR_EXPR; };
@@ -1245,7 +1245,7 @@ namespace yona::ast
         IdentifierOrUnderscore keyExpr;
         IdentifierOrUnderscore valueExpr;
 
-        explicit KeyValueCollectionExtractorExpr(Token token, IdentifierOrUnderscore keyExpr,
+        explicit KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr,
                                                  IdentifierOrUnderscore valueExpr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1267,7 +1267,7 @@ namespace yona::ast
         ExprNode* guard;
         ExprNode* expr;
 
-        explicit PatternWithGuards(Token token, ExprNode* guard, ExprNode* expr);
+        explicit PatternWithGuards(SourceContext token, ExprNode* guard, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_WITH_GUARDS; };
@@ -1279,7 +1279,7 @@ namespace yona::ast
     public:
         ExprNode* expr;
 
-        explicit PatternWithoutGuards(Token token, ExprNode* expr);
+        explicit PatternWithoutGuards(SourceContext token, ExprNode* expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_WITHOUT_GUARDS; };
@@ -1291,7 +1291,7 @@ namespace yona::ast
     public:
         variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>> patternExpr;
 
-        explicit PatternExpr(Token token,
+        explicit PatternExpr(SourceContext token,
                              const variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>>& patternExpr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1305,7 +1305,7 @@ namespace yona::ast
         Pattern* matchPattern;
         variant<PatternWithoutGuards*, vector<PatternWithGuards*>> pattern;
 
-        explicit CatchPatternExpr(Token token, Pattern* matchPattern,
+        explicit CatchPatternExpr(SourceContext token, Pattern* matchPattern,
                                   const variant<PatternWithoutGuards*, vector<PatternWithGuards*>>& pattern);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1318,7 +1318,7 @@ namespace yona::ast
     public:
         vector<CatchPatternExpr*> patterns;
 
-        explicit CatchExpr(Token token, const vector<CatchPatternExpr*>& patterns);
+        explicit CatchExpr(SourceContext token, const vector<CatchPatternExpr*>& patterns);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CATCH_EXPR; };
@@ -1331,7 +1331,7 @@ namespace yona::ast
         ExprNode* tryExpr;
         CatchExpr* catchExpr;
 
-        explicit TryCatchExpr(Token token, ExprNode* tryExpr, CatchExpr* catchExpr);
+        explicit TryCatchExpr(SourceContext token, ExprNode* tryExpr, CatchExpr* catchExpr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_TRY_CATCH_EXPR; };
@@ -1344,7 +1344,7 @@ namespace yona::ast
         variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*> expr;
 
         explicit PatternValue(
-            Token token,
+            SourceContext token,
             const variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*>& expr);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -1358,7 +1358,7 @@ namespace yona::ast
         IdentifierExpr* identifier;
         DataStructurePattern* pattern;
 
-        explicit AsDataStructurePattern(Token token, IdentifierExpr* identifier, DataStructurePattern* pattern);
+        explicit AsDataStructurePattern(SourceContext token, IdentifierExpr* identifier, DataStructurePattern* pattern);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_AS_DATA_STRUCTURE_PATTERN; };
@@ -1370,7 +1370,7 @@ namespace yona::ast
     public:
         vector<Pattern*> patterns;
 
-        explicit TuplePattern(Token token, const vector<Pattern*>& patterns);
+        explicit TuplePattern(SourceContext token, const vector<Pattern*>& patterns);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_PATTERN; };
@@ -1382,7 +1382,7 @@ namespace yona::ast
     public:
         vector<Pattern*> patterns;
 
-        explicit SeqPattern(Token token, const vector<Pattern*>& patterns);
+        explicit SeqPattern(SourceContext token, const vector<Pattern*>& patterns);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_SEQ_PATTERN; };
@@ -1395,7 +1395,7 @@ namespace yona::ast
         vector<PatternWithoutSequence*> heads;
         TailPattern* tail;
 
-        explicit HeadTailsPattern(Token token, const vector<PatternWithoutSequence*>& heads, TailPattern* tail);
+        explicit HeadTailsPattern(SourceContext token, const vector<PatternWithoutSequence*>& heads, TailPattern* tail);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_PATTERN; };
@@ -1408,7 +1408,7 @@ namespace yona::ast
         TailPattern* tail;
         vector<PatternWithoutSequence*> heads;
 
-        explicit TailsHeadPattern(Token token, TailPattern* tail, const vector<PatternWithoutSequence*>& heads);
+        explicit TailsHeadPattern(SourceContext token, TailPattern* tail, const vector<PatternWithoutSequence*>& heads);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_TAILS_HEAD_PATTERN; };
@@ -1422,8 +1422,8 @@ namespace yona::ast
         TailPattern* tail;
         vector<PatternWithoutSequence*> right;
 
-        explicit HeadTailsHeadPattern(Token token, const vector<PatternWithoutSequence*>& left, TailPattern* tail,
-                                      const vector<PatternWithoutSequence*>& right);
+        explicit HeadTailsHeadPattern(SourceContext token, const vector<PatternWithoutSequence*>& left,
+                                      TailPattern* tail, const vector<PatternWithoutSequence*>& right);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_HEAD_PATTERN; };
@@ -1435,7 +1435,7 @@ namespace yona::ast
     public:
         vector<pair<PatternValue*, Pattern*>> keyValuePairs;
 
-        explicit DictPattern(Token token, const vector<pair<PatternValue*, Pattern*>>& keyValuePairs);
+        explicit DictPattern(SourceContext token, const vector<pair<PatternValue*, Pattern*>>& keyValuePairs);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_PATTERN; };
@@ -1448,7 +1448,7 @@ namespace yona::ast
         const string recordType;
         vector<pair<NameExpr*, Pattern*>> items;
 
-        explicit RecordPattern(Token token, string recordType, const vector<pair<NameExpr*, Pattern*>>& items);
+        explicit RecordPattern(SourceContext token, string recordType, const vector<pair<NameExpr*, Pattern*>>& items);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_PATTERN; };
@@ -1461,7 +1461,7 @@ namespace yona::ast
         ExprNode* expr;
         vector<PatternExpr*> patterns;
 
-        explicit CaseExpr(Token token, ExprNode* expr, const vector<PatternExpr*>& patterns);
+        explicit CaseExpr(SourceContext token, ExprNode* expr, const vector<PatternExpr*>& patterns);
         any accept(const AstVisitor& visitor) override;
         [[nodiscard]] Type infer_type(AstContext& ctx) const override;
         [[nodiscard]] AstNodeType get_type() const override { return AST_CASE_EXPR; };

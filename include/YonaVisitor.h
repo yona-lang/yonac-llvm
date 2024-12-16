@@ -14,9 +14,9 @@ namespace yona
 
     template <typename T, typename... Args>
         requires derived_from<T, AstNode>
-    any wrap_expr(Token token, Args&&... args)
+    any wrap_expr(SourceContext source_ctx, Args&&... args)
     {
-        return any(expr_wrapper(new T(token, std::forward<Args>(args)...)));
+        return any(expr_wrapper(new T(source_ctx, std::forward<Args>(args)...)));
     }
 
     class YonaVisitor : public YonaParserBaseVisitor

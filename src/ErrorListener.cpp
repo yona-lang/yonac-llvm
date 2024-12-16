@@ -10,12 +10,9 @@
 namespace yona::parser
 {
     using namespace std;
-    void ErrorListener::syntaxError(Recognizer* recognizer, antlr4::Token* offendingSymbol, size_t line,
+    void ErrorListener::syntaxError(Recognizer* recognizer, Token* offendingSymbol, size_t line,
                                     size_t charPositionInLine, const std::string& msg, std::exception_ptr e)
     {
-        ast_ctx.addError(YonaError(TokenLocation(line, charPositionInLine, line,
-                                                 charPositionInLine + offendingSymbol->getText().length(),
-                                                 offendingSymbol->getText(), e),
-                                   YonaError::SYNTAX, msg));
+        ast_ctx.addError(YonaError(TokenLocation(*offendingSymbol, *recognizer), YonaError::SYNTAX, msg));
     }
 }

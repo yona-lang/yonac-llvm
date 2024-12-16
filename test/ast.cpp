@@ -36,10 +36,9 @@ TEST_P(AstTest, YonaTest)
     }
     else
     {
-        cout << type_ctx.getErrors().size() << endl;
         for (auto [type, cnt] : expected_errors)
         {
-            EXPECT_EQ(type_ctx.getErrors(type).size(), cnt);
+            EXPECT_EQ(type_ctx.getErrors().count(type), cnt);
         }
     }
 }

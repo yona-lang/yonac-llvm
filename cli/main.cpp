@@ -1,19 +1,20 @@
 ﻿// main.cpp : Defines the entry point for the application.
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include <type_traits>
 
 #include <antlr4-runtime.h>
-#include <boost/log/trivial.hpp>
-#include <boost/program_options.hpp>
 #include <boost/log/core.hpp>
+#include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/console.hpp>
+#include <boost/program_options.hpp>
 
-#include "utils.h"
-#include "types.h"
-#include "common.h"
 #include "Interpreter.h"
 #include "Optimizer.h"
+#include "common.h"
+#include "types.h"
+#include "utils.h"
 
 void process_program_options(const int argc, const char* const argv[])
 {
@@ -37,10 +38,7 @@ void process_program_options(const int argc, const char* const argv[])
     po::notify(args);
 }
 
-void init_logging()
-{
-    boost::log::add_console_log(std::cout);
-}
+void init_logging() { boost::log::add_console_log(std::cout); }
 
 int main(const int argc, const char* argv[])
 {
@@ -64,10 +62,10 @@ int main(const int argc, const char* argv[])
 
     if (!success)
     {
-        BOOST_LOG_TRIVIAL(error) << ast_ctx.getErrors().size() << " errors found. Please fix them and re-run.";
-        for (auto err : ast_ctx.getErrors())
+        BOOST_LOG_TRIVIAL(error) << ast_ctx.errorCount() << " errors found. Please fix them and re-run.";
+        for (auto [_type, error] : ast_ctx.getErrors())
         {
-            BOOST_LOG_TRIVIAL(error) << err;
+            BOOST_LOG_TRIVIAL(error) << error;
         }
         return 1;
     }
