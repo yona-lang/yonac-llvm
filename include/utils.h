@@ -17,18 +17,6 @@ namespace yona
     const vector<pair<string, string>> YONA_CTRL_CHARS_UNESCAPE = { { "\\b", "\b" }, { "\\n", "\n" }, { "\\t", "\t" },
                                                                     { "\\f", "\f" }, { "\\r", "\r" }, { "\\0", "\0" } };
 
-    struct ParseResult
-    {
-        bool success;
-        AstNode* node;
-        Type type;
-        AstContext ast_ctx;
-
-        ~ParseResult() { delete node; }
-    };
-
-    ParseResult parse_input(istream& stream);
-
     class CharSequenceTranslator
     {
     public:

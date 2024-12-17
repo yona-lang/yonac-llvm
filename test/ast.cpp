@@ -3,8 +3,8 @@
 //
 #include <boost/log/utility/setup/file.hpp>
 #include <gtest/gtest.h>
-#include <iostream>
 
+#include "Parser.h"
 #include "utils.h"
 
 using namespace std;
@@ -24,7 +24,8 @@ TEST_P(AstTest, YonaTest)
     auto expected_errors = get<3>(param);
 
     stringstream ss(input);
-    auto result = parse_input(ss);
+    parser::Parser parser;
+    auto result = parser.parse_input(ss);
 
     // auto node = result.node;
     auto type = result.type;

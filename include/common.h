@@ -15,6 +15,12 @@ namespace yona
     using namespace antlr4;
 
     using SourceContext = const ParserRuleContext&;
+    using ModuleImportQueue = shared_ptr<queue<vector<string>>>;
+
+    inline struct YonaEnvironment
+    {
+        vector<string> search_paths;
+    } YONA_ENVIRONMENT;
 
     struct TokenLocation final
     {
@@ -47,7 +53,7 @@ namespace yona
     inline std::ostream& operator<<(std::ostream& os, const TokenLocation& rhs)
     {
         os << "[" << rhs.start_line << ":" << rhs.start_col << "-" << rhs.stop_line << ":" << rhs.stop_col << "] "
-           <<  rhs.text;
+           << rhs.text;
         return os;
     }
 
@@ -72,7 +78,8 @@ namespace yona
 
     inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
     {
-        os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET << ":\n"
+        os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET
+           << ":\n"
            << rhs.message;
         return os;
     }

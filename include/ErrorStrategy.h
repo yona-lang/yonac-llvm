@@ -25,6 +25,6 @@ namespace yona::parser
         void handleRecognitionException(IntervalSet et, const std::string& message, const std::exception& cause,
                                         int line);
 
-        void reportNoViableAlternative(Parser* parser, const NoViableAltException& e) override;
+        void reportNoViableAlternative(Parser* parser, const NoViableAltException& e);
     };
 }

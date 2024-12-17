@@ -26,11 +26,11 @@ namespace yona
         int lambdaCount = 0;
 
         string nextLambdaName();
-        queue<vector<string>> module_imports;
+        ModuleImportQueue module_imports;
 
         template <typename T>
             requires derived_from<T, AstNode>
-        T* visit_expr(antlr4::tree::ParseTree* tree)
+        T* visit_expr(tree::ParseTree* tree)
         {
             return any_cast<expr_wrapper>(visit(tree)).get_node<T>();
         }
@@ -48,6 +48,8 @@ namespace yona
         }
 
     public:
+        explicit YonaVisitor(ModuleImportQueue module_imports) : module_imports(std::move(module_imports)) {}
+
         std::any visitInput(YonaParser::InputContext* ctx) override;
         std::any visitFunction(YonaParser::FunctionContext* ctx) override;
         std::any visitFunctionName(YonaParser::FunctionNameContext* ctx) override;

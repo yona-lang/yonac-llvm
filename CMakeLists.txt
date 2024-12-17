@@ -27,7 +27,7 @@ find_package(antlr4-generator REQUIRED)
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost REQUIRED COMPONENTS program_options log) # header only libraries must not be added here
+find_package(Boost REQUIRED COMPONENTS program_options log tokenizer) # header only libraries must not be added here
 
 find_package(LLVM CONFIG REQUIRED)
 
@@ -99,7 +99,7 @@ add_executable(yonac ${all_cli_SRCS})
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yonac PRIVATE ${ANTLR4_INCLUDE_DIR})
 
-target_link_libraries(yonac PRIVATE yona Boost::boost Boost::program_options Boost::log)
+target_link_libraries(yonac PRIVATE yona Boost::boost Boost::program_options Boost::log Boost::tokenizer)
 
 enable_testing()
 

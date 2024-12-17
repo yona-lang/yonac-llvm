@@ -3,6 +3,7 @@
     "antlr4",
     "boost-log",
     "boost-program-options",
+    "boost-tokenizer",
     "gtest"
   ]
 }
