@@ -68,11 +68,11 @@ namespace yona
         }
     };
 
-    inline const char* ErrorTypes[] = { "Syntax", "Type", "Runtime" };
+    inline const char* ErrorTypes[] = { "syntax", "type", "check" };
 
     inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
     {
-        os << ANSI_COLOR_RED << ErrorTypes[rhs.type] << " error at " << rhs.source_token << ANSI_COLOR_RESET << ":\n"
+        os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET << ":\n"
            << rhs.message;
         return os;
     }

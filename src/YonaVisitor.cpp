@@ -581,7 +581,31 @@ namespace yona
         return wrap_expr<SetExpr>(*ctx, elements);
     }
 
-    any YonaVisitor::visitFqn(YonaParser::FqnContext* ctx) { return visitModuleName(ctx->moduleName()); }
+    any YonaVisitor::visitFqn(YonaParser::FqnContext* ctx)
+    {
+        vector<NameExpr*> names;
+        vector<string> module_name;
+
+        if (ctx->packageName() != nullptr)
+        {
+
+            for (const auto package_name = visit_expr<PackageNameExpr>(ctx->packageName());
+                 auto name : package_name->parts)
+            {
+                names.push_back(name);
+                module_name.push_back(name->value);
+            }
+        }
+
+        auto name_expr = visit_expr<NameExpr>(ctx->moduleName());
+
+        names.push_back(name_expr);
+        module_name.push_back(name_expr->value);
+
+        module_imports.push(module_name);
+
+        return wrap_expr<PackageNameExpr>(*ctx, names);
+    }
 
     any YonaVisitor::visitPackageName(YonaParser::PackageNameContext* ctx)
     {

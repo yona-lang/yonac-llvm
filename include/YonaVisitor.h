@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/log/trivial.hpp>
+#include <queue>
 
 
 #include "YonaParserBaseVisitor.h"
@@ -25,6 +26,7 @@ namespace yona
         int lambdaCount = 0;
 
         string nextLambdaName();
+        queue<vector<string>> module_imports;
 
         template <typename T>
             requires derived_from<T, AstNode>
