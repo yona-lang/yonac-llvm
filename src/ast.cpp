@@ -20,7 +20,7 @@ namespace yona::ast
 
     any AstNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AstNode::infer_type(AstContext& ctx) const { return nullptr; }
+    Type AstNode::infer_type(AstContext& ctx) const { unreachable(); }
 
     ScopedNode* ScopedNode::getParentScopedNode() const
     {

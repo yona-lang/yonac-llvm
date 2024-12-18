@@ -23,7 +23,8 @@ namespace yona
     class YonaVisitor : public YonaParserBaseVisitor
     {
     private:
-        int lambdaCount = 0;
+        int lambda_count_ = 0;
+        stack<string> module_stack_;
 
         string nextLambdaName();
         ModuleImportQueue module_imports;

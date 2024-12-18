@@ -7,6 +7,8 @@
 #include "ast.h"
 #include "common.h"
 
+#define PACKAGE_DELIMITER "\\"
+
 namespace yona
 {
     using namespace std;

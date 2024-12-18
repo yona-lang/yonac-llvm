@@ -5,9 +5,11 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include "utils.h"
+
 namespace yona
 {
-    string YonaVisitor::nextLambdaName() { return "lambda_" + to_string(lambdaCount++); }
+    string YonaVisitor::nextLambdaName() { return "lambda_" + to_string(lambda_count_++); }
 
     any YonaVisitor::visitInput(YonaParser::InputContext* ctx) { return visit(ctx->expression()); }
 
@@ -479,7 +481,11 @@ namespace yona
         {
             functions.push_back(visit_expr<FunctionExpr>(function));
         }
-        return wrap_expr<ModuleExpr>(*ctx, visit_expr<FqnExpr>(ctx->fqn()), names, records, functions);
+
+        module_stack_.push(boost::algorithm::join(names, PACKAGE_DELIMITER));
+        auto result = wrap_expr<ModuleExpr>(*ctx, visit_expr<FqnExpr>(ctx->fqn()), names, records, functions);
+        module_stack_.pop();
+        return result;
     }
 
     any YonaVisitor::visitNonEmptyListOfNames(YonaParser::NonEmptyListOfNamesContext* ctx)

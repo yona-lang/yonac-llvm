@@ -66,4 +66,7 @@ namespace yona::compiler::types
     {
         unordered_set<Type> types;
     };
+
+    using FunctionTypes = unordered_map<string, Type>;  // FQN -> Type map
+    inline FunctionTypes FUNCTION_TYPES;
 }

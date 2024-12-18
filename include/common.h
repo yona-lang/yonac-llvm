@@ -20,6 +20,7 @@ namespace yona
     inline struct YonaEnvironment
     {
         vector<string> search_paths;
+        bool compile_mode;
     } YONA_ENVIRONMENT;
 
     struct TokenLocation final

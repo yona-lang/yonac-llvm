@@ -98,8 +98,8 @@ string process_program_options(const int argc, const char* const argv[])
 
     if (compile)
     {
-        BOOST_LOG_TRIVIAL(info) << "compile mode";
-        // TODO compile mode
+        BOOST_LOG_TRIVIAL(trace) << "compile mode";
+        yona::YONA_ENVIRONMENT.compile_mode = true;
     }
 
     return input_file;
