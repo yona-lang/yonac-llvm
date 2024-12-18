@@ -53,7 +53,7 @@ namespace yona
         string translate(const string& input) override;
     };
 
-    auto UNESCAPE_YONA = AggregateTranslator{
+    inline auto UNESCAPE_YONA = AggregateTranslator{
         // new OctalUnescaper(), // .between('\1', '\377')
         // new UnicodeUnescaper(),
         make_shared<LookupTranslator>(YONA_CTRL_CHARS_UNESCAPE),

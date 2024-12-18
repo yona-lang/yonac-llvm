@@ -5,6 +5,7 @@
 #pragma once
 
 #include <antlr4-runtime.h>
+#include <queue>
 #include <string>
 
 #include "colors.h"
