@@ -11,7 +11,7 @@
 
 namespace yona::compiler
 {
-    class LLVMCompiler
-    {
-    };
+  class LLVMCompiler
+  {
+  };
 }

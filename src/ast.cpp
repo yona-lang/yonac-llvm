@@ -5,1883 +5,1862 @@
 namespace yona::ast
 {
 
-    using yona::compiler::types::Type;
+  using yona::compiler::types::Type;
 
-    template <typename T>
-    LiteralExpr<T>::LiteralExpr(SourceContext token, T value) : ValueExpr(token), value(std::move(value))
+  template <typename T>
+  LiteralExpr<T>::LiteralExpr(SourceContext token, T value) : ValueExpr(token), value(std::move(value))
+  {
+  }
+
+  template <typename T>
+  any LiteralExpr<T>::accept(const AstVisitor& visitor)
+  {
+    return ValueExpr::accept(visitor);
+  }
+
+  any AstNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type AstNode::infer_type(AstContext& ctx) const { unreachable(); }
+
+  ScopedNode* ScopedNode::getParentScopedNode() const
+  {
+    if (parent == nullptr)
     {
+      return nullptr;
     }
-
-    template <typename T>
-    any LiteralExpr<T>::accept(const AstVisitor& visitor)
+    else
     {
-        return ValueExpr::accept(visitor);
-    }
-
-    any AstNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type AstNode::infer_type(AstContext& ctx) const { unreachable(); }
-
-    ScopedNode* ScopedNode::getParentScopedNode() const
-    {
-        if (parent == nullptr)
+      AstNode* tmp = parent;
+      do
+      {
+        if (const auto result = dynamic_cast<ScopedNode*>(tmp); result != nullptr)
         {
-            return nullptr;
+          return result;
         }
-        else
-        {
-            AstNode* tmp = parent;
-            do
-            {
-                if (const auto result = dynamic_cast<ScopedNode*>(tmp); result != nullptr)
-                {
-                    return result;
-                }
-                tmp = tmp->parent;
-            }
-            while (tmp != nullptr);
-            return nullptr;
-        }
+        tmp = tmp->parent;
+      }
+      while (tmp != nullptr);
+      return nullptr;
     }
+  }
 
-    any ScopedNode::accept(const AstVisitor& visitor) { return AstNode::accept(visitor); }
+  any ScopedNode::accept(const AstVisitor& visitor) { return AstNode::accept(visitor); }
 
-    any OpExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any OpExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    BinaryOpExpr::BinaryOpExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        OpExpr(token), left(left->with_parent<ExprNode>(this)), right(right->with_parent<ExprNode>(this))
+  BinaryOpExpr::BinaryOpExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      OpExpr(token), left(left->with_parent<ExprNode>(this)), right(right->with_parent<ExprNode>(this))
+  {
+  }
+
+  Type BinaryOpExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
+
+    if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float)
     {
+      ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
     }
 
-    Type BinaryOpExpr::infer_type(AstContext& ctx) const
+    if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int &&
+        get<ValueType>(rightType) != Float)
     {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+      ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
+    }
 
-        if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int &&
-            get<ValueType>(leftType) != Float)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
-        }
+    return unordered_set{ leftType, rightType }.contains(Float) ? Float : Int;
+  }
 
-        if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int &&
-            get<ValueType>(rightType) != Float)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
-        }
+  any BinaryOpExpr::accept(const AstVisitor& visitor) { return OpExpr::accept(visitor); }
+  BinaryOpExpr::~BinaryOpExpr()
+  {
+    delete left;
+    delete right;
+  }
 
-        return unordered_set{ leftType, rightType }.contains(Float) ? Float : Int;
-    }
+  NameExpr::NameExpr(SourceContext token, string value) : ExprNode(token), value(std::move(value)) {}
 
-    any BinaryOpExpr::accept(const AstVisitor& visitor) { return OpExpr::accept(visitor); }
-    BinaryOpExpr::~BinaryOpExpr()
-    {
-        delete left;
-        delete right;
-    }
+  any NameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    NameExpr::NameExpr(SourceContext token, string value) : ExprNode(token), value(std::move(value)) {}
+  Type NameExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    any NameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  Type AliasExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    Type NameExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any AliasExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    Type AliasExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type CallExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    any AliasExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any CallExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any ImportClauseExpr::accept(const AstVisitor& visitor) { return ScopedNode::accept(visitor); }
 
-    Type CallExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any GeneratorExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    any CallExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
-    any ImportClauseExpr::accept(const AstVisitor& visitor) { return ScopedNode::accept(visitor); }
+  any CollectionExtractorExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any SequenceExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any FunctionBody::accept(const AstVisitor& visitor) { return AstNode::accept(visitor); }
 
-    any GeneratorExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr* name) :
+      ValueExpr(token), name(name->with_parent<NameExpr>(this))
+  {
+  }
 
-    any CollectionExtractorExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
-    any SequenceExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
-    any FunctionBody::accept(const AstVisitor& visitor) { return AstNode::accept(visitor); }
+  any IdentifierExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr* name) :
-        ValueExpr(token), name(name->with_parent<NameExpr>(this))
-    {
-    }
+  Type IdentifierExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    any IdentifierExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  IdentifierExpr::~IdentifierExpr() { delete name; }
 
-    Type IdentifierExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  RecordNode::RecordNode(SourceContext token, NameExpr* recordType, const vector<IdentifierExpr*>& identifiers) :
+      AstNode(token), recordType(recordType->with_parent<NameExpr>(this)),
+      identifiers(nodes_with_parent(identifiers, this))
+  {
+  }
 
-    IdentifierExpr::~IdentifierExpr() { delete name; }
+  any RecordNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    RecordNode::RecordNode(SourceContext token, NameExpr* recordType, const vector<IdentifierExpr*>& identifiers) :
-        AstNode(token), recordType(recordType->with_parent<NameExpr>(this)),
-        identifiers(nodes_with_parent(identifiers, this))
-    {
-    }
+  Type RecordNode::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    any RecordNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  RecordNode::~RecordNode()
+  {
+    delete recordType;
+    for (auto p : identifiers)
+      delete p;
+  }
 
-    Type RecordNode::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  TrueLiteralExpr::TrueLiteralExpr(SourceContext) : LiteralExpr<bool>(token, true) {}
 
-    RecordNode::~RecordNode()
-    {
-        delete recordType;
-        for (auto p : identifiers)
-            delete p;
-    }
+  any TrueLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
 
-    TrueLiteralExpr::TrueLiteralExpr(SourceContext) : LiteralExpr<bool>(token, true) {}
+  Type TrueLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    any TrueLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
+  FalseLiteralExpr::FalseLiteralExpr(SourceContext) : LiteralExpr<bool>(token, false) {}
 
-    Type TrueLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
+  any FalseLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
 
-    FalseLiteralExpr::FalseLiteralExpr(SourceContext) : LiteralExpr<bool>(token, false) {}
+  Type FalseLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    any FalseLiteralExpr::accept(const ::yona::ast::AstVisitor& visitor) { return visitor.visit(this); }
+  FloatExpr::FloatExpr(SourceContext token, float value) : LiteralExpr<float>(token, value) {}
 
-    Type FalseLiteralExpr::infer_type(AstContext& ctx) const { return Bool; }
+  any FloatExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    FloatExpr::FloatExpr(SourceContext token, float value) : LiteralExpr<float>(token, value) {}
+  Type FloatExpr::infer_type(AstContext& ctx) const { return Float; }
 
-    any FloatExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  IntegerExpr::IntegerExpr(SourceContext token, int value) : LiteralExpr<int>(token, value) {}
 
-    Type FloatExpr::infer_type(AstContext& ctx) const { return Float; }
+  any IntegerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    IntegerExpr::IntegerExpr(SourceContext token, int value) : LiteralExpr<int>(token, value) {}
+  Type IntegerExpr::infer_type(AstContext& ctx) const { return Int; }
 
-    any IntegerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ExprNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type IntegerExpr::infer_type(AstContext& ctx) const { return Int; }
+  any PatternNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    any ExprNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any UnderscoreNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    any PatternNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  Type UnderscoreNode::infer_type(AstContext& ctx) const { return nullptr; }
 
-    any UnderscoreNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ValueExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-    Type UnderscoreNode::infer_type(AstContext& ctx) const { return nullptr; }
+  ByteExpr::ByteExpr(SourceContext token, unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
 
-    any ValueExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  any ByteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    ByteExpr::ByteExpr(SourceContext token, unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
+  Type ByteExpr::infer_type(AstContext& ctx) const { return Byte; }
 
-    any ByteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  StringExpr::StringExpr(SourceContext token, string value) : LiteralExpr<string>(token, std::move(value)) {}
 
-    Type ByteExpr::infer_type(AstContext& ctx) const { return Byte; }
+  any StringExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    StringExpr::StringExpr(SourceContext token, string value) : LiteralExpr<string>(token, std::move(value)) {}
+  Type StringExpr::infer_type(AstContext& ctx) const { return String; }
 
-    any StringExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  CharacterExpr::CharacterExpr(SourceContext token, const char value) : LiteralExpr<char>(token, value) {}
 
-    Type StringExpr::infer_type(AstContext& ctx) const { return String; }
+  any CharacterExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    CharacterExpr::CharacterExpr(SourceContext token, const char value) : LiteralExpr<char>(token, value) {}
+  Type CharacterExpr::infer_type(AstContext& ctx) const { return Char; }
 
-    any CharacterExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  UnitExpr::UnitExpr(SourceContext) : LiteralExpr<nullptr_t>(token, nullptr) {}
 
-    Type CharacterExpr::infer_type(AstContext& ctx) const { return Char; }
+  any UnitExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    UnitExpr::UnitExpr(SourceContext) : LiteralExpr<nullptr_t>(token, nullptr) {}
+  Type UnitExpr::infer_type(AstContext& ctx) const { return Unit; }
 
-    any UnitExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  TupleExpr::TupleExpr(SourceContext token, const vector<ExprNode*>& values) :
+      ValueExpr(token), values(nodes_with_parent(values, this))
+  {
+  }
 
-    Type UnitExpr::infer_type(AstContext& ctx) const { return Unit; }
+  any TupleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    TupleExpr::TupleExpr(SourceContext token, const vector<ExprNode*>& values) :
-        ValueExpr(token), values(nodes_with_parent(values, this))
-    {
-    }
+  Type TupleExpr::infer_type(AstContext& ctx) const
+  {
+    vector<Type> fieldTypes;
+    ranges::for_each(values, [&](const ExprNode* expr) { fieldTypes.push_back(expr->infer_type(ctx)); });
+    return make_shared<TupleType>(fieldTypes);
+  }
 
-    any TupleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  TupleExpr::~TupleExpr()
+  {
+    for (auto p : values)
+      delete p;
+  }
 
-    Type TupleExpr::infer_type(AstContext& ctx) const
-    {
-        vector<Type> fieldTypes;
-        ranges::for_each(values, [&](const ExprNode* expr) { fieldTypes.push_back(expr->infer_type(ctx)); });
-        return make_shared<TupleType>(fieldTypes);
-    }
+  DictExpr::DictExpr(SourceContext token, const vector<pair<ExprNode*, ExprNode*>>& values) :
+      ValueExpr(token), values(nodes_with_parent(values, this))
+  {
+  }
 
-    TupleExpr::~TupleExpr()
-    {
-        for (auto p : values)
-            delete p;
-    }
+  any DictExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type DictExpr::infer_type(AstContext& ctx) const
+  {
+    unordered_set<Type> keyTypes;
+    unordered_set<Type> valueTypes;
+    ranges::for_each(values,
+                     [&](pair<ExprNode*, ExprNode*> p)
+                     {
+                       keyTypes.insert(p.first->infer_type(ctx));
+                       valueTypes.insert(p.second->infer_type(ctx));
+                     });
 
-    DictExpr::DictExpr(SourceContext token, const vector<pair<ExprNode*, ExprNode*>>& values) :
-        ValueExpr(token), values(nodes_with_parent(values, this))
+    if (keyTypes.size() > 1 || valueTypes.size() > 1)
     {
+      ctx.addError(YonaError(token, YonaError::TYPE, "Dictionary keys and values must have the same type"));
     }
 
-    any DictExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return make_shared<DictCollectionType>(values.front().first->infer_type(ctx),
+                                           values.front().second->infer_type(ctx));
+  }
 
-    Type DictExpr::infer_type(AstContext& ctx) const
+  DictExpr::~DictExpr()
+  {
+    for (auto p : values)
     {
-        unordered_set<Type> keyTypes;
-        unordered_set<Type> valueTypes;
-        ranges::for_each(values,
-                         [&](pair<ExprNode*, ExprNode*> p)
-                         {
-                             keyTypes.insert(p.first->infer_type(ctx));
-                             valueTypes.insert(p.second->infer_type(ctx));
-                         });
+      delete p.first;
+      delete p.second;
+    }
+  }
 
-        if (keyTypes.size() > 1 || valueTypes.size() > 1)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Dictionary keys and values must have the same type"));
-        }
+  ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, const vector<ExprNode*>& values) :
+      SequenceExpr(token), values(nodes_with_parent(values, this))
+  {
+  }
 
-        return make_shared<DictCollectionType>(values.front().first->infer_type(ctx),
-                                               values.front().second->infer_type(ctx));
-    }
+  any ValuesSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    DictExpr::~DictExpr()
-    {
-        for (auto p : values)
-        {
-            delete p.first;
-            delete p.second;
-        }
-    }
+  Type ValuesSequenceExpr::infer_type(AstContext& ctx) const
+  {
+    unordered_set<Type> valueTypes;
+    ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
-    ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, const vector<ExprNode*>& values) :
-        SequenceExpr(token), values(nodes_with_parent(values, this))
+    if (valueTypes.size() > 1)
     {
+      ctx.addError(YonaError(token, YonaError::TYPE, "Sequence values must have the same type"));
     }
 
-    any ValuesSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, values.front()->infer_type(ctx));
+  }
 
-    Type ValuesSequenceExpr::infer_type(AstContext& ctx) const
-    {
-        unordered_set<Type> valueTypes;
-        ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
+  ValuesSequenceExpr::~ValuesSequenceExpr()
+  {
+    for (auto p : values)
+      delete p;
+  }
 
-        if (valueTypes.size() > 1)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Sequence values must have the same type"));
-        }
+  RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode* start, ExprNode* end, ExprNode* step) :
+      SequenceExpr(token), start(start->with_parent<ExprNode>(this)), end(end->with_parent<ExprNode>(this)),
+      step(step->with_parent<ExprNode>(this))
+  {
+  }
 
-        return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, values.front()->infer_type(ctx));
-    }
+  any RangeSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type RangeSequenceExpr::infer_type(AstContext& ctx) const
+  {
+    Type startExprType = start->infer_type(ctx);
+    Type endExprType = start->infer_type(ctx);
+    Type stepExprType = start->infer_type(ctx);
 
-    ValuesSequenceExpr::~ValuesSequenceExpr()
+    if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int)
     {
-        for (auto p : values)
-            delete p;
+      ctx.addError(YonaError(start->token, YonaError::TYPE, "Sequence start expression must be integer"));
     }
 
-    RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode* start, ExprNode* end, ExprNode* step) :
-        SequenceExpr(token), start(start->with_parent<ExprNode>(this)), end(end->with_parent<ExprNode>(this)),
-        step(step->with_parent<ExprNode>(this))
+    if (!holds_alternative<ValueType>(endExprType) || get<ValueType>(endExprType) != Int)
     {
+      ctx.addError(YonaError(end->token, YonaError::TYPE, "Sequence end expression must be integer"));
     }
 
-    any RangeSequenceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type RangeSequenceExpr::infer_type(AstContext& ctx) const
+    if (!holds_alternative<ValueType>(stepExprType) || get<ValueType>(stepExprType) != Int)
     {
-        Type startExprType = start->infer_type(ctx);
-        Type endExprType = start->infer_type(ctx);
-        Type stepExprType = start->infer_type(ctx);
+      ctx.addError(YonaError(step->token, YonaError::TYPE, "Sequence step expression must be integer"));
+    }
 
-        if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int)
-        {
-            ctx.addError(YonaError(start->token, YonaError::TYPE, "Sequence start expression must be integer"));
-        }
+    return nullptr;
+  }
 
-        if (!holds_alternative<ValueType>(endExprType) || get<ValueType>(endExprType) != Int)
-        {
-            ctx.addError(YonaError(end->token, YonaError::TYPE, "Sequence end expression must be integer"));
-        }
+  RangeSequenceExpr::~RangeSequenceExpr()
+  {
+    delete start;
+    delete end;
+    delete step;
+  }
 
-        if (!holds_alternative<ValueType>(stepExprType) || get<ValueType>(stepExprType) != Int)
-        {
-            ctx.addError(YonaError(step->token, YonaError::TYPE, "Sequence step expression must be integer"));
-        }
+  SetExpr::SetExpr(SourceContext token, const vector<ExprNode*>& values) :
+      ValueExpr(token), values(nodes_with_parent(values, this))
+  {
+  }
 
-        return nullptr;
-    }
+  any SetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    RangeSequenceExpr::~RangeSequenceExpr()
-    {
-        delete start;
-        delete end;
-        delete step;
-    }
+  Type SetExpr::infer_type(AstContext& ctx) const
+  {
+    unordered_set<Type> valueTypes;
+    ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
-    SetExpr::SetExpr(SourceContext token, const vector<ExprNode*>& values) :
-        ValueExpr(token), values(nodes_with_parent(values, this))
+    if (valueTypes.size() > 1)
     {
+      ctx.addError(YonaError(token, YonaError::TYPE, "Set values must have the same type"));
     }
 
-    any SetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, values.front()->infer_type(ctx));
+  }
 
-    Type SetExpr::infer_type(AstContext& ctx) const
-    {
-        unordered_set<Type> valueTypes;
-        ranges::for_each(values, [&](const ExprNode* expr) { valueTypes.insert(expr->infer_type(ctx)); });
+  SetExpr::~SetExpr()
+  {
+    for (auto p : values)
+      delete p;
+  }
 
-        if (valueTypes.size() > 1)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Set values must have the same type"));
-        }
+  SymbolExpr::SymbolExpr(SourceContext token, string value) : ValueExpr(token), value(std::move(value)) {}
 
-        return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, values.front()->infer_type(ctx));
-    }
+  any SymbolExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    SetExpr::~SetExpr()
-    {
-        for (auto p : values)
-            delete p;
-    }
+  Type SymbolExpr::infer_type(AstContext& ctx) const { return Symbol; }
 
-    SymbolExpr::SymbolExpr(SourceContext token, string value) : ValueExpr(token), value(std::move(value)) {}
+  PackageNameExpr::PackageNameExpr(SourceContext token, const vector<NameExpr*>& parts) :
+      ValueExpr(token), parts(nodes_with_parent(parts, this))
+  {
+  }
 
-    any SymbolExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any PackageNameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SymbolExpr::infer_type(AstContext& ctx) const { return Symbol; }
+  Type PackageNameExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    PackageNameExpr::PackageNameExpr(SourceContext token, const vector<NameExpr*>& parts) :
-        ValueExpr(token), parts(nodes_with_parent(parts, this))
-    {
-    }
+  PackageNameExpr::~PackageNameExpr()
+  {
+    for (auto p : parts)
+      delete p;
+  }
 
-    any PackageNameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  FqnExpr::FqnExpr(SourceContext token, PackageNameExpr* packageName, NameExpr* moduleName) :
+      ValueExpr(token), packageName(packageName->with_parent<PackageNameExpr>(this)),
+      moduleName(moduleName->with_parent<NameExpr>(this))
+  {
+  }
 
-    Type PackageNameExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any FqnExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    PackageNameExpr::~PackageNameExpr()
-    {
-        for (auto p : parts)
-            delete p;
-    }
+  Type FqnExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    FqnExpr::FqnExpr(SourceContext token, PackageNameExpr* packageName, NameExpr* moduleName) :
-        ValueExpr(token), packageName(packageName->with_parent<PackageNameExpr>(this)),
-        moduleName(moduleName->with_parent<NameExpr>(this))
-    {
-    }
+  FqnExpr::~FqnExpr()
+  {
+    delete packageName;
+    delete moduleName;
+  }
 
-    any FqnExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  FunctionExpr::FunctionExpr(SourceContext token, string name, const vector<PatternNode*>& patterns,
+                             const vector<FunctionBody*>& bodies) :
+      ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)),
+      bodies(nodes_with_parent(bodies, this))
+  {
+  }
 
-    Type FqnExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any FunctionExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    FqnExpr::~FqnExpr()
-    {
-        delete packageName;
-        delete moduleName;
-    }
+  Type FunctionExpr::infer_type(AstContext& ctx) const
+  {
+    unordered_set<Type> bodyTypes;
+    ranges::for_each(bodies, [&](const FunctionBody* body) { bodyTypes.insert(body->infer_type(ctx)); });
 
-    FunctionExpr::FunctionExpr(SourceContext token, string name, const vector<PatternNode*>& patterns,
-                               const vector<FunctionBody*>& bodies) :
-        ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)),
-        bodies(nodes_with_parent(bodies, this))
-    {
-    }
+    return make_shared<SumType>(bodyTypes);
+  }
 
-    any FunctionExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  FunctionExpr::~FunctionExpr()
+  {
+    for (auto p : patterns)
+      delete p;
+    for (auto p : bodies)
+      delete p;
+  }
 
-    Type FunctionExpr::infer_type(AstContext& ctx) const
-    {
-        unordered_set<Type> bodyTypes;
-        ranges::for_each(bodies, [&](const FunctionBody* body) { bodyTypes.insert(body->infer_type(ctx)); });
+  BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode* guard, const vector<ExprNode*>& expr) :
+      FunctionBody(token), guard(guard->with_parent<ExprNode>(this)), exprs(nodes_with_parent(expr, this))
+  {
+  }
 
-        return make_shared<SumType>(bodyTypes);
-    }
+  any BodyWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    FunctionExpr::~FunctionExpr()
-    {
-        for (auto p : patterns)
-            delete p;
-        for (auto p : bodies)
-            delete p;
-    }
+  Type BodyWithGuards::infer_type(AstContext& ctx) const
+  {
+    const Type guardType = guard->infer_type(ctx);
 
-    BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode* guard, const vector<ExprNode*>& expr) :
-        FunctionBody(token), guard(guard->with_parent<ExprNode>(this)), exprs(nodes_with_parent(expr, this))
+    if (!holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool)
     {
+      ctx.addError(YonaError(guard->token, YonaError::TYPE, "Guard expression must be boolean"));
     }
 
-    any BodyWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return exprs.back()->infer_type(ctx);
+  }
+  BodyWithGuards::~BodyWithGuards()
+  {
+    delete guard;
+    for (auto p : exprs)
+      delete p;
+  }
 
-    Type BodyWithGuards::infer_type(AstContext& ctx) const
-    {
-        const Type guardType = guard->infer_type(ctx);
+  BodyWithoutGuards::BodyWithoutGuards(SourceContext token, ExprNode* expr) :
+      FunctionBody(token), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-        if (!holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool)
-        {
-            ctx.addError(YonaError(guard->token, YonaError::TYPE, "Guard expression must be boolean"));
-        }
+  any BodyWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        return exprs.back()->infer_type(ctx);
-    }
-    BodyWithGuards::~BodyWithGuards()
-    {
-        delete guard;
-        for (auto p : exprs)
-            delete p;
-    }
+  Type BodyWithoutGuards::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
-    BodyWithoutGuards::BodyWithoutGuards(SourceContext token, ExprNode* expr) :
-        FunctionBody(token), expr(expr->with_parent<ExprNode>(this))
-    {
-    }
+  BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
-    any BodyWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  ModuleExpr::ModuleExpr(SourceContext token, FqnExpr* fqn, const vector<string>& exports,
+                         const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions) :
+      ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
+      records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this))
+  {
+  }
 
-    Type BodyWithoutGuards::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
+  any ModuleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
+  Type ModuleExpr::infer_type(AstContext& ctx) const { return Module; }
 
-    ModuleExpr::ModuleExpr(SourceContext token, FqnExpr* fqn, const vector<string>& exports,
-                           const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions) :
-        ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
-        records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this))
-    {
-    }
+  ModuleExpr::~ModuleExpr()
+  {
+    delete fqn;
+    for (auto p : records)
+      delete p;
+    for (auto p : functions)
+      delete p;
+  }
 
-    any ModuleExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr* recordType,
+                                         const vector<pair<NameExpr*, ExprNode*>>& items) :
+      ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(items, this))
+  {
+  }
 
-    Type ModuleExpr::infer_type(AstContext& ctx) const { return Module; }
+  any RecordInstanceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    ModuleExpr::~ModuleExpr()
-    {
-        delete fqn;
-        for (auto p : records)
-            delete p;
-        for (auto p : functions)
-            delete p;
-    }
+  Type RecordInstanceExpr::infer_type(AstContext& ctx) const
+  {
+    vector<Type> itemTypes{ Symbol };
+    ranges::for_each(items,
+                     [&](const pair<NameExpr*, ExprNode*>& p) { itemTypes.push_back(p.second->infer_type(ctx)); });
 
-    RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr* recordType,
-                                           const vector<pair<NameExpr*, ExprNode*>>& items) :
-        ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(items, this))
-    {
-    }
+    return make_shared<TupleType>(itemTypes);
+  }
 
-    any RecordInstanceExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  RecordInstanceExpr::~RecordInstanceExpr()
+  {
+    delete recordType;
+    for (auto p : items)
+      delete p.second;
+  }
 
-    Type RecordInstanceExpr::infer_type(AstContext& ctx) const
-    {
-        vector<Type> itemTypes{ Symbol };
-        ranges::for_each(items,
-                         [&](const pair<NameExpr*, ExprNode*>& p) { itemTypes.push_back(p.second->infer_type(ctx)); });
+  LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode* expr) :
+      OpExpr(token), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-        return make_shared<TupleType>(itemTypes);
-    }
+  any LogicalNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    RecordInstanceExpr::~RecordInstanceExpr()
-    {
-        delete recordType;
-        for (auto p : items)
-            delete p.second;
-    }
+  Type LogicalNotOpExpr::infer_type(AstContext& ctx) const
+  {
+    const Type exprType = expr->infer_type(ctx);
 
-    LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode* expr) :
-        OpExpr(token), expr(expr->with_parent<ExprNode>(this))
+    if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
     {
+      ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for logical negation must be boolean"));
     }
 
-    any LogicalNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type LogicalNotOpExpr::infer_type(AstContext& ctx) const
-    {
-        const Type exprType = expr->infer_type(ctx);
+  LogicalNotOpExpr::~LogicalNotOpExpr() { delete expr; }
 
-        if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
-        {
-            ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for logical negation must be boolean"));
-        }
+  BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode* expr) :
+      OpExpr(token), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-        return Bool;
-    }
+  any BinaryNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    LogicalNotOpExpr::~LogicalNotOpExpr() { delete expr; }
+  Type BinaryNotOpExpr::infer_type(AstContext& ctx) const
+  {
+    Type exprType = expr->infer_type(ctx);
 
-    BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode* expr) :
-        OpExpr(token), expr(expr->with_parent<ExprNode>(this))
+    if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
     {
+      ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for binary negation must be boolean"));
     }
 
-    any BinaryNotOpExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type BinaryNotOpExpr::infer_type(AstContext& ctx) const
-    {
-        Type exprType = expr->infer_type(ctx);
+  BinaryNotOpExpr::~BinaryNotOpExpr() { delete expr; }
 
-        if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
-        {
-            ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for binary negation must be boolean"));
-        }
+  PowerExpr::PowerExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-        return Bool;
-    }
+  any PowerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    BinaryNotOpExpr::~BinaryNotOpExpr() { delete expr; }
+  Type PowerExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    PowerExpr::PowerExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  MultiplyExpr::MultiplyExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any PowerExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any MultiplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PowerExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type MultiplyExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    MultiplyExpr::MultiplyExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
-    {
-    }
+  DivideExpr::DivideExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any MultiplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any DivideExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type MultiplyExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type DivideExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    DivideExpr::DivideExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  ModuloExpr::ModuloExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any DivideExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ModuloExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DivideExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type ModuloExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    ModuloExpr::ModuloExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  AddExpr::AddExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any ModuloExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any AddExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuloExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type AddExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    AddExpr::AddExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  SubtractExpr::SubtractExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any AddExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any SubtractExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AddExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type SubtractExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
-    SubtractExpr::SubtractExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
-    {
-    }
+  LeftShiftExpr::LeftShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
+  {
+  }
 
-    any SubtractExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any LeftShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type SubtractExpr::infer_type(AstContext& ctx) const { return BinaryOpExpr::infer_type(ctx); }
+  Type LeftShiftExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-    LeftShiftExpr::LeftShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
     }
-
-    any LeftShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LeftShiftExpr::infer_type(AstContext& ctx) const
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
+    }
+
+    return Int;
+  }
+
+  RightShiftExpr::RightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
-        }
+  any RightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
-        }
+  Type RightShiftExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Int;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
     }
 
-    RightShiftExpr::RightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
     }
 
-    any RightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Int;
+  }
 
-    Type RightShiftExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  ZerofillRightShiftExpr::ZerofillRightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
-        }
+  any ZerofillRightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
-        }
+  Type ZerofillRightShiftExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Int;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
     }
 
-    ZerofillRightShiftExpr::ZerofillRightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
     }
 
-    any ZerofillRightShiftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Int;
+  }
 
-    Type ZerofillRightShiftExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  GteExpr::GteExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(
-                YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
-        }
+  any GteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(
-                YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
-        }
-
-        return Int;
-    }
+  Type GteExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    GteExpr::GteExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  LteExpr::LteExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any GteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any LteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type GteExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type LteExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    LteExpr::LteExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  GtExpr::GtExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any LteExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any GtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LteExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type GtExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    GtExpr::GtExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  LtExpr::LtExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any GtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any LtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type GtExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type LtExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    LtExpr::LtExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  EqExpr::EqExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any LtExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any EqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LtExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type EqExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    EqExpr::EqExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  NeqExpr::NeqExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any EqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any NeqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type EqExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type NeqExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    NeqExpr::NeqExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+  ConsLeftExpr::ConsLeftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any NeqExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ConsLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type NeqExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type ConsLeftExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    ConsLeftExpr::ConsLeftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
-    {
-    }
+  ConsRightExpr::ConsRightExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
+  {
+  }
 
-    any ConsLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ConsRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ConsLeftExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type ConsRightExpr::infer_type(AstContext& ctx) const { return Bool; }
 
-    ConsRightExpr::ConsRightExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
-    {
-    }
+  JoinExpr::JoinExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    any ConsRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any JoinExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ConsRightExpr::infer_type(AstContext& ctx) const { return Bool; }
+  Type JoinExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-    JoinExpr::JoinExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+    if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(leftType) ||
+        !holds_alternative<shared_ptr<DictCollectionType>>(leftType) ||
+        !holds_alternative<shared_ptr<TupleType>>(leftType))
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Join expression can be used only for collections"));
+    }
 
-    any JoinExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
+        !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
+        !holds_alternative<shared_ptr<TupleType>>(rightType))
+    {
+      ctx.addError(YonaError(right->token, YonaError::TYPE, "Join expression can be used only for collections"));
+    }
 
-    Type JoinExpr::infer_type(AstContext& ctx) const
+    if (leftType != rightType)
     {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+      ctx.addError(YonaError(token, YonaError::TYPE, "Join expression can be used only on same types"));
+    }
+
+    return leftType;
+  }
 
-        if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(leftType) ||
-            !holds_alternative<shared_ptr<DictCollectionType>>(leftType) ||
-            !holds_alternative<shared_ptr<TupleType>>(leftType))
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Join expression can be used only for collections"));
-        }
+  BitwiseAndExpr::BitwiseAndExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
-            !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
-            !holds_alternative<shared_ptr<TupleType>>(rightType))
-        {
-            ctx.addError(YonaError(right->token, YonaError::TYPE, "Join expression can be used only for collections"));
-        }
+  any BitwiseAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (leftType != rightType)
-        {
-            ctx.addError(YonaError(token, YonaError::TYPE, "Join expression can be used only on same types"));
-        }
+  Type BitwiseAndExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return leftType;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
     }
 
-    BitwiseAndExpr::BitwiseAndExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
     }
 
-    any BitwiseAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type BitwiseAndExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  BitwiseXorExpr::BitwiseXorExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
-        }
+  any BitwiseXorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
-        }
+  Type BitwiseXorExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Bool;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
     }
 
-    BitwiseXorExpr::BitwiseXorExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
     }
 
-    any BitwiseXorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type BitwiseXorExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  BitwiseOrExpr::BitwiseOrExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
-        }
+  any BitwiseOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
-        }
+  Type BitwiseOrExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Bool;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
     }
 
-    BitwiseOrExpr::BitwiseOrExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
     }
 
-    any BitwiseOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type BitwiseOrExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  LogicalAndExpr::LogicalAndExpr(SourceContext token, ExprNode* left, ExprNode* right) :
+      BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
-        }
+  any LogicalAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
-        }
+  Type LogicalAndExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Bool;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
     }
 
-    LogicalAndExpr::LogicalAndExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
     }
 
-    any LogicalAndExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return Bool;
+  }
 
-    Type LogicalAndExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+  LogicalOrExpr::LogicalOrExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
+  {
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
-        }
+  any LogicalOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
-        }
+  Type LogicalOrExpr::infer_type(AstContext& ctx) const
+  {
+    const Type leftType = left->infer_type(ctx);
+    const Type rightType = right->infer_type(ctx);
 
-        return Bool;
+    if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
     }
 
-    LogicalOrExpr::LogicalOrExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
+    if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
     {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
     }
-
-    any LogicalOrExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LogicalOrExpr::infer_type(AstContext& ctx) const
-    {
-        const Type leftType = left->infer_type(ctx);
-        const Type rightType = right->infer_type(ctx);
+    return Bool;
+  }
 
-        if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
-        }
+  InExpr::InExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-        if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
-        }
+  any InExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        return Bool;
+  Type InExpr::infer_type(AstContext& ctx) const
+  {
+    if (const Type rightType = right->infer_type(ctx);
+        !holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
+        !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
+        !holds_alternative<shared_ptr<TupleType>>(rightType))
+    {
+      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for IN must be a collection"));
     }
 
-    InExpr::InExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
+    return Bool;
+  }
 
-    any InExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  PipeLeftExpr::PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
 
-    Type InExpr::infer_type(AstContext& ctx) const
-    {
-        if (const Type rightType = right->infer_type(ctx);
-            !holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
-            !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
-            !holds_alternative<shared_ptr<TupleType>>(rightType))
-        {
-            ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for IN must be a collection"));
-        }
+  any PipeLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        return Bool;
-    }
+  Type PipeLeftExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    PipeLeftExpr::PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
-    {
-    }
+  PipeRightExpr::PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
+  {
+  }
 
-    any PipeLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any PipeRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PipeLeftExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PipeRightExpr::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    PipeRightExpr::PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right) :
-        BinaryOpExpr(token, left, right)
-    {
-    }
+  LetExpr::LetExpr(SourceContext token, const vector<AliasExpr*>& aliases, ExprNode* expr) :
+      ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any PipeRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any LetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PipeRightExpr::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type LetExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
-    LetExpr::LetExpr(SourceContext token, const vector<AliasExpr*>& aliases, ExprNode* expr) :
-        ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(expr->with_parent<ExprNode>(this))
-    {
-    }
+  IfExpr::IfExpr(SourceContext token, ExprNode* condition, ExprNode* thenExpr, ExprNode* elseExpr) :
+      ExprNode(token), condition(condition->with_parent<ExprNode>(this)),
+      thenExpr(thenExpr->with_parent<ExprNode>(this)), elseExpr(elseExpr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any LetExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  LetExpr::~LetExpr()
+  {
+    for (auto p : aliases)
+      delete p;
+    delete expr;
+  }
 
-    Type LetExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
+  any IfExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    IfExpr::IfExpr(SourceContext token, ExprNode* condition, ExprNode* thenExpr, ExprNode* elseExpr) :
-        ExprNode(token), condition(condition->with_parent<ExprNode>(this)),
-        thenExpr(thenExpr->with_parent<ExprNode>(this)), elseExpr(elseExpr->with_parent<ExprNode>(this))
+  Type IfExpr::infer_type(AstContext& ctx) const
+  {
+    if (const Type conditionType = condition->infer_type(ctx);
+        !holds_alternative<ValueType>(conditionType) || get<ValueType>(conditionType) != Bool)
     {
+      ctx.addError(YonaError(condition->token, YonaError::TYPE, "If condition must be boolean"));
     }
 
-    LetExpr::~LetExpr()
+    unordered_set returnTypes{ thenExpr->infer_type(ctx) };
+
+    if (elseExpr != nullptr)
     {
-        for (auto p : aliases)
-            delete p;
-        delete expr;
+      returnTypes.insert(elseExpr->infer_type(ctx));
     }
 
-    any IfExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+    return make_shared<SumType>(returnTypes);
+  }
 
-    Type IfExpr::infer_type(AstContext& ctx) const
-    {
-        if (const Type conditionType = condition->infer_type(ctx);
-            !holds_alternative<ValueType>(conditionType) || get<ValueType>(conditionType) != Bool)
-        {
-            ctx.addError(YonaError(condition->token, YonaError::TYPE, "If condition must be boolean"));
-        }
+  IfExpr::~IfExpr()
+  {
+    delete condition;
+    delete thenExpr;
+    delete elseExpr;
+  }
 
-        unordered_set returnTypes{ thenExpr->infer_type(ctx) };
+  ApplyExpr::ApplyExpr(SourceContext token, CallExpr* call, const vector<variant<ExprNode*, ValueExpr*>>& args) :
+      ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(args, this))
+  {
+  }
 
-        if (elseExpr != nullptr)
-        {
-            returnTypes.insert(elseExpr->infer_type(ctx));
-        }
+  any ApplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-        return make_shared<SumType>(returnTypes);
-    }
+  Type ApplyExpr::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    IfExpr::~IfExpr()
+  ApplyExpr::~ApplyExpr()
+  {
+    delete call;
+    for (auto p : args)
     {
-        delete condition;
-        delete thenExpr;
-        delete elseExpr;
+      if (holds_alternative<ExprNode*>(p))
+      {
+        delete get<ExprNode*>(p);
+      }
+      else
+      {
+        delete get<ValueExpr*>(p);
+      }
     }
+  }
 
-    ApplyExpr::ApplyExpr(SourceContext token, CallExpr* call, const vector<variant<ExprNode*, ValueExpr*>>& args) :
-        ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(args, this))
-    {
-    }
+  DoExpr::DoExpr(SourceContext token, const vector<ExprNode*>& steps) : ExprNode(token), steps(steps) {}
 
-    any ApplyExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any DoExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ApplyExpr::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type DoExpr::infer_type(AstContext& ctx) const { return steps.back()->infer_type(ctx); }
 
-    ApplyExpr::~ApplyExpr()
+  DoExpr::~DoExpr()
+  {
+    for (auto p : steps)
     {
-        delete call;
-        for (auto p : args)
-        {
-            if (holds_alternative<ExprNode*>(p))
-            {
-                delete get<ExprNode*>(p);
-            }
-            else
-            {
-                delete get<ValueExpr*>(p);
-            }
-        }
+      delete p;
     }
+  }
 
-    DoExpr::DoExpr(SourceContext token, const vector<ExprNode*>& steps) : ExprNode(token), steps(steps) {}
+  ImportExpr::ImportExpr(SourceContext token, const vector<ImportClauseExpr*>& clauses, ExprNode* expr) :
+      ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any DoExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ImportExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type DoExpr::infer_type(AstContext& ctx) const { return steps.back()->infer_type(ctx); }
+  Type ImportExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
-    DoExpr::~DoExpr()
+  ImportExpr::~ImportExpr()
+  {
+    for (auto p : clauses)
     {
-        for (auto p : steps)
-        {
-            delete p;
-        }
+      delete p;
     }
+    delete expr;
+  }
 
-    ImportExpr::ImportExpr(SourceContext token, const vector<ImportClauseExpr*>& clauses, ExprNode* expr) :
-        ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(expr->with_parent<ExprNode>(this))
-    {
-    }
+  RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr* symbol, StringExpr* message) :
+      ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this))
+  {
+  }
 
-    any ImportExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any RaiseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ImportExpr::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
+  Type RaiseExpr::infer_type(AstContext& ctx) const { return nullptr; }
 
-    ImportExpr::~ImportExpr()
-    {
-        for (auto p : clauses)
-        {
-            delete p;
-        }
-        delete expr;
-    }
+  RaiseExpr::~RaiseExpr()
+  {
+    delete symbol;
+    delete message;
+  }
 
-    RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr* symbol, StringExpr* message) :
-        ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this))
-    {
-    }
+  WithExpr::WithExpr(SourceContext token, ExprNode* contextExpr, NameExpr* name, ExprNode* bodyExpr) :
+      ScopedNode(token), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(name->with_parent<NameExpr>(this)),
+      bodyExpr(bodyExpr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any RaiseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any WithExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type RaiseExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type WithExpr::infer_type(AstContext& ctx) const { return bodyExpr->infer_type(ctx); }
 
-    RaiseExpr::~RaiseExpr()
-    {
-        delete symbol;
-        delete message;
-    }
+  WithExpr::~WithExpr()
+  {
+    delete contextExpr;
+    delete name;
+    delete bodyExpr;
+  }
 
-    WithExpr::WithExpr(SourceContext token, ExprNode* contextExpr, NameExpr* name, ExprNode* bodyExpr) :
-        ScopedNode(token), contextExpr(contextExpr->with_parent<ExprNode>(this)),
-        name(name->with_parent<NameExpr>(this)), bodyExpr(bodyExpr->with_parent<ExprNode>(this))
-    {
-    }
+  FieldAccessExpr::FieldAccessExpr(SourceContext token, IdentifierExpr* identifier, NameExpr* name) :
+      ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+      name(name->with_parent<NameExpr>(this))
+  {
+  }
 
-    any WithExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any FieldAccessExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type WithExpr::infer_type(AstContext& ctx) const { return bodyExpr->infer_type(ctx); }
+  Type FieldAccessExpr::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    WithExpr::~WithExpr()
-    {
-        delete contextExpr;
-        delete name;
-        delete bodyExpr;
-    }
+  FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr* identifier,
+                                   const vector<pair<NameExpr*, ExprNode*>>& updates) :
+      ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+      updates(nodes_with_parent(updates, this))
+  {
+  }
 
-    FieldAccessExpr::FieldAccessExpr(SourceContext token, IdentifierExpr* identifier, NameExpr* name) :
-        ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
-        name(name->with_parent<NameExpr>(this))
-    {
-    }
+  FieldAccessExpr::~FieldAccessExpr()
+  {
+    delete identifier;
+    delete name;
+  }
 
-    any FieldAccessExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any FieldUpdateExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FieldAccessExpr::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type FieldUpdateExpr::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr* identifier,
-                                     const vector<pair<NameExpr*, ExprNode*>>& updates) :
-        ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
-        updates(nodes_with_parent(updates, this))
+  FieldUpdateExpr::~FieldUpdateExpr()
+  {
+    delete identifier;
+    for (auto p : updates)
     {
+      delete p.first;
+      delete p.second;
     }
+  }
 
-    FieldAccessExpr::~FieldAccessExpr()
-    {
-        delete identifier;
-        delete name;
-    }
+  LambdaAlias::LambdaAlias(SourceContext token, NameExpr* name, FunctionExpr* lambda) :
+      AliasExpr(token), name(name->with_parent<NameExpr>(this)), lambda(lambda->with_parent<FunctionExpr>(this))
+  {
+  }
 
-    any FieldUpdateExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any LambdaAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FieldUpdateExpr::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type LambdaAlias::infer_type(AstContext& ctx) const { return lambda->infer_type(ctx); }
 
-    FieldUpdateExpr::~FieldUpdateExpr()
-    {
-        delete identifier;
-        for (auto p : updates)
-        {
-            delete p.first;
-            delete p.second;
-        }
-    }
+  LambdaAlias::~LambdaAlias()
+  {
+    delete name;
+    delete lambda;
+  }
 
-    LambdaAlias::LambdaAlias(SourceContext token, NameExpr* name, FunctionExpr* lambda) :
-        AliasExpr(token), name(name->with_parent<NameExpr>(this)), lambda(lambda->with_parent<FunctionExpr>(this))
-    {
-    }
+  ModuleAlias::ModuleAlias(SourceContext token, NameExpr* name, ModuleExpr* module) :
+      AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this))
+  {
+  }
 
-    any LambdaAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ModuleAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type LambdaAlias::infer_type(AstContext& ctx) const { return lambda->infer_type(ctx); }
+  Type ModuleAlias::infer_type(AstContext& ctx) const { return module->infer_type(ctx); }
 
-    LambdaAlias::~LambdaAlias()
-    {
-        delete name;
-        delete lambda;
-    }
+  ModuleAlias::~ModuleAlias()
+  {
+    delete name;
+    delete module;
+  }
 
-    ModuleAlias::ModuleAlias(SourceContext token, NameExpr* name, ModuleExpr* module) :
-        AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this))
-    {
-    }
+  ValueAlias::ValueAlias(SourceContext token, IdentifierExpr* identifier, ExprNode* expr) :
+      AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+      expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any ModuleAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any ValueAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ModuleAlias::infer_type(AstContext& ctx) const { return module->infer_type(ctx); }
+  Type ValueAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
-    ModuleAlias::~ModuleAlias()
-    {
-        delete name;
-        delete module;
-    }
+  ValueAlias::~ValueAlias()
+  {
+    delete identifier;
+    delete expr;
+  }
 
-    ValueAlias::ValueAlias(SourceContext token, IdentifierExpr* identifier, ExprNode* expr) :
-        AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
-        expr(expr->with_parent<ExprNode>(this))
-    {
-    }
+  PatternAlias::PatternAlias(SourceContext token, PatternNode* pattern, ExprNode* expr) :
+      AliasExpr(token), pattern(pattern->with_parent<PatternNode>(this)), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
 
-    any ValueAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any PatternAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type ValueAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
+  Type PatternAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
-    ValueAlias::~ValueAlias()
-    {
-        delete identifier;
-        delete expr;
-    }
+  PatternAlias::~PatternAlias()
+  {
+    delete pattern;
+    delete expr;
+  }
 
-    PatternAlias::PatternAlias(SourceContext token, PatternNode* pattern, ExprNode* expr) :
-        AliasExpr(token), pattern(pattern->with_parent<PatternNode>(this)), expr(expr->with_parent<ExprNode>(this))
-    {
-    }
+  FqnAlias::FqnAlias(SourceContext token, NameExpr* name, FqnExpr* fqn) :
+      AliasExpr(token), name(name->with_parent<NameExpr>(this)), fqn(fqn->with_parent<FqnExpr>(this))
+  {
+  }
 
-    any PatternAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any FqnAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type PatternAlias::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
+  Type FqnAlias::infer_type(AstContext& ctx) const { return fqn->infer_type(ctx); }
 
-    PatternAlias::~PatternAlias()
-    {
-        delete pattern;
-        delete expr;
-    }
+  FqnAlias::~FqnAlias()
+  {
+    delete name;
+    delete fqn;
+  }
 
-    FqnAlias::FqnAlias(SourceContext token, NameExpr* name, FqnExpr* fqn) :
-        AliasExpr(token), name(name->with_parent<NameExpr>(this)), fqn(fqn->with_parent<FqnExpr>(this))
-    {
-    }
+  FunctionAlias::FunctionAlias(SourceContext token, NameExpr* name, NameExpr* alias) :
+      AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias->with_parent<NameExpr>(this))
+  {
+  }
 
-    any FqnAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any FunctionAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FqnAlias::infer_type(AstContext& ctx) const { return fqn->infer_type(ctx); }
+  Type FunctionAlias::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    FqnAlias::~FqnAlias()
-    {
-        delete name;
-        delete fqn;
-    }
+  FunctionAlias::~FunctionAlias()
+  {
+    delete name;
+    delete alias;
+  }
 
-    FunctionAlias::FunctionAlias(SourceContext token, NameExpr* name, NameExpr* alias) :
-        AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias->with_parent<NameExpr>(this))
-    {
-    }
+  AliasCall::AliasCall(SourceContext token, NameExpr* alias, NameExpr* funName) :
+      CallExpr(token), alias(alias->with_parent<NameExpr>(this)), funName(funName->with_parent<NameExpr>(this))
+  {
+  }
 
-    any FunctionAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any AliasCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type FunctionAlias::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type AliasCall::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    FunctionAlias::~FunctionAlias()
-    {
-        delete name;
-        delete alias;
-    }
+  AliasCall::~AliasCall()
+  {
+    delete alias;
+    delete funName;
+  }
 
-    AliasCall::AliasCall(SourceContext token, NameExpr* alias, NameExpr* funName) :
-        CallExpr(token), alias(alias->with_parent<NameExpr>(this)), funName(funName->with_parent<NameExpr>(this))
-    {
-    }
+  NameCall::NameCall(SourceContext token, NameExpr* name) : CallExpr(token), name(name->with_parent<NameExpr>(this)) {}
 
-    any AliasCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  any NameCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    Type AliasCall::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  Type NameCall::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
+
+  NameCall::~NameCall() { delete name; }
+
+  ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr*, ExprNode*>& fqn, NameExpr* funName) :
+      CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this))
+  {
+  }
 
-    AliasCall::~AliasCall()
+  any ModuleCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type ModuleCall::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
+
+  ModuleCall::~ModuleCall()
+  {
+    if (holds_alternative<FqnExpr*>(fqn))
     {
-        delete alias;
-        delete funName;
+      delete get<FqnExpr*>(fqn);
     }
-
-    NameCall::NameCall(SourceContext token, NameExpr* name) : CallExpr(token), name(name->with_parent<NameExpr>(this))
+    else
     {
+      delete get<ExprNode*>(fqn);
     }
+    delete funName;
+  }
 
-    any NameCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  ModuleImport::ModuleImport(SourceContext token, FqnExpr* fqn, NameExpr* name) :
+      ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this))
+  {
+  }
 
-    Type NameCall::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  any ModuleImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    NameCall::~NameCall() { delete name; }
+  Type ModuleImport::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr*, ExprNode*>& fqn, NameExpr* funName) :
-        CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this))
-    {
-    }
+  ModuleImport::~ModuleImport()
+  {
+    delete fqn;
+    delete name;
+  }
 
-    any ModuleCall::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  FunctionsImport::FunctionsImport(SourceContext token, const vector<FunctionAlias*>& aliases, FqnExpr* fromFqn) :
+      ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(fromFqn->with_parent<FqnExpr>(this))
+  {
+  }
 
-    Type ModuleCall::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  any FunctionsImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    ModuleCall::~ModuleCall()
-    {
-        if (holds_alternative<FqnExpr*>(fqn))
-        {
-            delete get<FqnExpr*>(fqn);
-        }
-        else
-        {
-            delete get<ExprNode*>(fqn);
-        }
-        delete funName;
-    }
+  Type FunctionsImport::infer_type(AstContext& ctx) const
+  {
+    return nullptr; // TODO
+  }
 
-    ModuleImport::ModuleImport(SourceContext token, FqnExpr* fqn, NameExpr* name) :
-        ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this))
+  FunctionsImport::~FunctionsImport()
+  {
+    for (auto p : aliases)
     {
+      delete p;
     }
+    delete fromFqn;
+  }
 
-    any ModuleImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
+                                     CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression) :
+      GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
+      collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+      stepExpression(stepExpression->with_parent<ExprNode>(this))
+  {
+  }
 
-    Type ModuleImport::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  any SeqGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    ModuleImport::~ModuleImport()
-    {
-        delete fqn;
-        delete name;
-    }
+  Type SeqGeneratorExpr::infer_type(AstContext& ctx) const
+  {
+    return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, reducerExpr->infer_type(ctx));
+  }
 
-    FunctionsImport::FunctionsImport(SourceContext token, const vector<FunctionAlias*>& aliases, FqnExpr* fromFqn) :
-        ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(fromFqn->with_parent<FqnExpr>(this))
-    {
-    }
+  SeqGeneratorExpr::~SeqGeneratorExpr()
+  {
+    delete reducerExpr;
+    delete collectionExtractor;
+    delete stepExpression;
+  }
 
-    any FunctionsImport::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
+                                     CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression) :
+      GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
+      collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+      stepExpression(stepExpression->with_parent<ExprNode>(this))
+  {
+  }
 
-    Type FunctionsImport::infer_type(AstContext& ctx) const
-    {
-        return nullptr; // TODO
-    }
+  any SetGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    FunctionsImport::~FunctionsImport()
-    {
-        for (auto p : aliases)
-        {
-            delete p;
-        }
-        delete fromFqn;
-    }
+  Type SetGeneratorExpr::infer_type(AstContext& ctx) const
+  {
+    return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, reducerExpr->infer_type(ctx));
+  }
+
+  SetGeneratorExpr::~SetGeneratorExpr()
+  {
+    delete reducerExpr;
+    delete collectionExtractor;
+    delete stepExpression;
+  }
+
+  DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode* key, ExprNode* value) :
+      ExprNode(token), key(key->with_parent<ExprNode>(this)), value(value->with_parent<ExprNode>(this))
+  {
+  }
+
+  any DictGeneratorReducer::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type DictGeneratorReducer::infer_type(AstContext& ctx) const { return nullptr; }
+
+  DictGeneratorReducer::~DictGeneratorReducer()
+  {
+    delete key;
+    delete value;
+  }
 
-    SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
+  DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer* reducerExpr,
                                        CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression) :
-        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
-        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(stepExpression->with_parent<ExprNode>(this))
+      GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<DictGeneratorReducer>(this)),
+      collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
+      stepExpression(stepExpression->with_parent<ExprNode>(this))
+  {
+  }
+
+  any DictGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type DictGeneratorExpr::infer_type(AstContext& ctx) const
+  {
+    return make_shared<DictCollectionType>(reducerExpr->key->infer_type(ctx), reducerExpr->value->infer_type(ctx));
+  }
+
+  DictGeneratorExpr::~DictGeneratorExpr()
+  {
+    delete reducerExpr;
+    delete collectionExtractor;
+    delete stepExpression;
+  }
+
+  ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr) :
+      CollectionExtractorExpr(token), expr(node_with_parent(expr, this))
+  {
+  }
+
+  any ValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type ValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+
+  void release_identifier_or_underscore(IdentifierOrUnderscore expr)
+  {
+    if (holds_alternative<IdentifierExpr*>(expr))
     {
+      delete get<IdentifierExpr*>(expr);
     }
-
-    any SeqGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type SeqGeneratorExpr::infer_type(AstContext& ctx) const
+    else
     {
-        return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, reducerExpr->infer_type(ctx));
+      delete get<UnderscoreNode*>(expr);
     }
+  }
 
-    SeqGeneratorExpr::~SeqGeneratorExpr()
+  ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() { release_identifier_or_underscore(expr); }
+
+  KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr,
+                                                                   IdentifierOrUnderscore valueExpr) :
+      CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)),
+      valueExpr(node_with_parent(valueExpr, this))
+  {
+  }
+
+  any KeyValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type KeyValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+
+  KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr()
+  {
+    release_identifier_or_underscore(keyExpr);
+    release_identifier_or_underscore(valueExpr);
+  }
+
+  PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode* guard, ExprNode* exprNode) :
+      PatternNode(token), guard(guard->with_parent<ExprNode>(this)), expr(exprNode->with_parent<ExprNode>(this))
+  {
+  }
+
+  any PatternWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); };
+
+  Type PatternWithGuards::infer_type(AstContext& ctx) const { return nullptr; }
+
+  PatternWithGuards::~PatternWithGuards()
+  {
+    delete guard;
+    delete expr;
+  }
+
+  PatternWithoutGuards::PatternWithoutGuards(SourceContext token, ExprNode* expr) :
+      PatternNode(token), expr(expr->with_parent<ExprNode>(this))
+  {
+  }
+
+  any PatternWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type PatternWithoutGuards::infer_type(AstContext& ctx) const { return nullptr; }
+
+  PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
+
+  PatternExpr::PatternExpr(SourceContext token,
+                           const variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>>& patternExpr) :
+      ExprNode(token), patternExpr(patternExpr) // TODO
+  {
+    // std::visit({ [this](Pattern& arg) { arg.with_parent<Pattern>(this); },
+    //              [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
+    //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
+    //            patternExpr); // TODO
+  }
+  any PatternExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+
+  Type PatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
+
+  PatternExpr::~PatternExpr()
+  {
+    if (holds_alternative<Pattern*>(patternExpr))
     {
-        delete reducerExpr;
-        delete collectionExtractor;
-        delete stepExpression;
+      delete get<Pattern*>(patternExpr);
     }
-
-    SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode* reducerExpr,
-                                       CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression) :
-        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
-        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(stepExpression->with_parent<ExprNode>(this))
+    else if (holds_alternative<PatternWithoutGuards*>(patternExpr))
     {
+      delete get<PatternWithoutGuards*>(patternExpr);
     }
-
-    any SetGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type SetGeneratorExpr::infer_type(AstContext& ctx) const
+    else
     {
-        return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, reducerExpr->infer_type(ctx));
+      for (auto p : get<vector<PatternWithGuards*>>(patternExpr))
+      {
+        delete p;
+      }
     }
+  }
 
-    SetGeneratorExpr::~SetGeneratorExpr()
+  CatchPatternExpr::CatchPatternExpr(SourceContext token, Pattern* matchPattern,
+                                     const variant<PatternWithoutGuards*, vector<PatternWithGuards*>>& pattern) :
+      ExprNode(token), matchPattern(matchPattern->with_parent<Pattern>(this)), pattern(pattern)
+  {
+    // std::visit({ [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
+    //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
+    //            pattern); // TODO
+  }
+
+  any CatchPatternExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type CatchPatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
+
+  CatchPatternExpr::~CatchPatternExpr()
+  {
+    delete matchPattern;
+    if (holds_alternative<PatternWithoutGuards*>(pattern))
     {
-        delete reducerExpr;
-        delete collectionExtractor;
-        delete stepExpression;
+      delete get<PatternWithoutGuards*>(pattern);
     }
-
-    DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode* key, ExprNode* value) :
-        ExprNode(token), key(key->with_parent<ExprNode>(this)), value(value->with_parent<ExprNode>(this))
+    else
     {
+      for (auto p : get<vector<PatternWithGuards*>>(pattern))
+      {
+        delete p;
+      }
     }
+  }
 
-    any DictGeneratorReducer::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  CatchExpr::CatchExpr(SourceContext token, const vector<CatchPatternExpr*>& patterns) :
+      ExprNode(token), patterns(nodes_with_parent(patterns, this))
+  {
+  }
 
-    Type DictGeneratorReducer::infer_type(AstContext& ctx) const { return nullptr; }
+  any CatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    DictGeneratorReducer::~DictGeneratorReducer()
+  Type CatchExpr::infer_type(AstContext& ctx) const { return patterns.back()->infer_type(ctx); }
+
+  CatchExpr::~CatchExpr()
+  {
+    for (auto p : patterns)
     {
-        delete key;
-        delete value;
+      delete p;
     }
+  }
 
-    DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer* reducerExpr,
-                                         CollectionExtractorExpr* collectionExtractor, ExprNode* stepExpression) :
-        GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<DictGeneratorReducer>(this)),
-        collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-        stepExpression(stepExpression->with_parent<ExprNode>(this))
+  TryCatchExpr::TryCatchExpr(SourceContext token, ExprNode* tryExpr, CatchExpr* catchExpr) :
+      ExprNode(token), tryExpr(tryExpr->with_parent<ExprNode>(this)), catchExpr(catchExpr->with_parent<CatchExpr>(this))
+  {
+  }
+
+  any TryCatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TryCatchExpr::infer_type(AstContext& ctx) const
+  {
+    return make_shared<SumType>(unordered_set{ tryExpr->infer_type(ctx), catchExpr->infer_type(ctx) });
+  }
+
+  TryCatchExpr::~TryCatchExpr()
+  {
+    delete tryExpr;
+    delete catchExpr;
+  }
+
+  PatternValue::PatternValue(
+      SourceContext token,
+      const variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*>& expr) :
+      PatternNode(token), expr(node_with_parent(expr, this))
+  {
+  }
+
+  any PatternValue::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type PatternValue::infer_type(AstContext& ctx) const { return nullptr; }
+
+  PatternValue::~PatternValue()
+  {
+    if (holds_alternative<LiteralExpr<nullptr_t>*>(expr))
     {
+      delete get<LiteralExpr<nullptr_t>*>(expr);
     }
-
-    any DictGeneratorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type DictGeneratorExpr::infer_type(AstContext& ctx) const
+    else if (holds_alternative<LiteralExpr<void*>*>(expr))
     {
-        return make_shared<DictCollectionType>(reducerExpr->key->infer_type(ctx), reducerExpr->value->infer_type(ctx));
+      delete get<LiteralExpr<void*>*>(expr);
     }
-
-    DictGeneratorExpr::~DictGeneratorExpr()
+    else if (holds_alternative<SymbolExpr*>(expr))
     {
-        delete reducerExpr;
-        delete collectionExtractor;
-        delete stepExpression;
+      delete get<SymbolExpr*>(expr);
     }
+  }
 
-    ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr) :
-        CollectionExtractorExpr(token), expr(node_with_parent(expr, this))
+  AsDataStructurePattern::AsDataStructurePattern(SourceContext token, IdentifierExpr* identifier,
+                                                 DataStructurePattern* pattern) :
+      PatternNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
+      pattern(pattern->with_parent<DataStructurePattern>(this))
+  {
+  }
+
+  any AsDataStructurePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type AsDataStructurePattern::infer_type(AstContext& ctx) const { return pattern->infer_type(ctx); }
+
+  AsDataStructurePattern::~AsDataStructurePattern()
+  {
+    delete identifier;
+    delete pattern;
+  }
+
+  any UnderscorePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type UnderscorePattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TuplePattern::TuplePattern(SourceContext token, const vector<Pattern*>& patterns) :
+      PatternNode(token), patterns(nodes_with_parent(patterns, this))
+  {
+  }
+
+  any TuplePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TuplePattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TuplePattern::~TuplePattern()
+  {
+    for (auto p : patterns)
     {
+      delete p;
     }
+  }
 
-    any ValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  SeqPattern::SeqPattern(SourceContext token, const vector<Pattern*>& patterns) :
+      PatternNode(token), patterns(nodes_with_parent(patterns, this))
+  {
+  }
 
-    Type ValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any SeqPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    void release_identifier_or_underscore(IdentifierOrUnderscore expr)
+  Type SeqPattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  SeqPattern::~SeqPattern()
+  {
+    for (auto p : patterns)
     {
-        if (holds_alternative<IdentifierExpr*>(expr))
-        {
-            delete get<IdentifierExpr*>(expr);
-        }
-        else
-        {
-            delete get<UnderscoreNode*>(expr);
-        }
+      delete p;
     }
+  }
 
-    ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() { release_identifier_or_underscore(expr); }
+  HeadTailsPattern::HeadTailsPattern(SourceContext token, const vector<PatternWithoutSequence*>& heads,
+                                     TailPattern* tail) :
+      PatternNode(token), heads(nodes_with_parent(heads, this)), tail(tail->with_parent<TailPattern>(this))
+  {
+  }
 
-    KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token,
-                                                                     IdentifierOrUnderscore keyExpr,
-                                                                     IdentifierOrUnderscore valueExpr) :
-        CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)),
-        valueExpr(node_with_parent(valueExpr, this))
+  any HeadTailsPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type HeadTailsPattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  HeadTailsPattern::~HeadTailsPattern()
+  {
+    for (auto p : heads)
     {
+      delete p;
     }
+    delete tail;
+  }
 
-    any KeyValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern* tail,
+                                     const vector<PatternWithoutSequence*>& heads) :
+      PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this))
+  {
+  }
 
-    Type KeyValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  any TailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr()
+  Type TailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TailsHeadPattern::~TailsHeadPattern()
+  {
+    delete tail;
+    for (auto p : heads)
     {
-        release_identifier_or_underscore(keyExpr);
-        release_identifier_or_underscore(valueExpr);
+      delete p;
     }
+  }
 
-    PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode* guard, ExprNode* exprNode) :
-        PatternNode(token), guard(guard->with_parent<ExprNode>(this)), expr(exprNode->with_parent<ExprNode>(this))
+  HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, const vector<PatternWithoutSequence*>& left,
+                                             TailPattern* tail, const vector<PatternWithoutSequence*>& right) :
+      PatternNode(token), left(nodes_with_parent(left, this)), tail(tail->with_parent<TailPattern>(this)),
+      right(nodes_with_parent(right, this))
+  {
+  }
+
+  any HeadTailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type HeadTailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  HeadTailsHeadPattern::~HeadTailsHeadPattern()
+  {
+    for (auto p : left)
     {
+      delete p;
     }
-
-    any PatternWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); };
-
-    Type PatternWithGuards::infer_type(AstContext& ctx) const { return nullptr; }
-
-    PatternWithGuards::~PatternWithGuards()
+    delete tail;
+    for (auto p : right)
     {
-        delete guard;
-        delete expr;
+      delete p;
     }
+  }
 
-    PatternWithoutGuards::PatternWithoutGuards(SourceContext token, ExprNode* expr) :
-        PatternNode(token), expr(expr->with_parent<ExprNode>(this))
+  DictPattern::DictPattern(SourceContext token, const vector<pair<PatternValue*, Pattern*>>& keyValuePairs) :
+      PatternNode(token), keyValuePairs(nodes_with_parent(keyValuePairs, this))
+  {
+  }
+
+  any DictPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type DictPattern::infer_type(AstContext& ctx) const { return nullptr; }
+
+  DictPattern::~DictPattern()
+  {
+    for (auto p : keyValuePairs)
     {
+      delete p.first;
+      delete p.second;
     }
+  }
 
-    any PatternWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+  RecordPattern::RecordPattern(SourceContext token, string recordType, const vector<pair<NameExpr*, Pattern*>>& items) :
+      PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(items, this))
+  {
+  }
 
-    Type PatternWithoutGuards::infer_type(AstContext& ctx) const { return nullptr; }
+  any RecordPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-    PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
+  Type RecordPattern::infer_type(AstContext& ctx) const { return nullptr; }
 
-    PatternExpr::PatternExpr(SourceContext token,
-                             const variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>>& patternExpr) :
-        ExprNode(token), patternExpr(patternExpr) // TODO
+  RecordPattern::~RecordPattern()
+  {
+    for (auto p : items)
     {
-        // std::visit({ [this](Pattern& arg) { arg.with_parent<Pattern>(this); },
-        //              [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
-        //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
-        //            patternExpr); // TODO
+      delete p.first;
+      delete p.second;
     }
-    any PatternExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
+  }
 
-    Type PatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  CaseExpr::CaseExpr(SourceContext token, ExprNode* expr, const vector<PatternExpr*>& patterns) :
+      ExprNode(token), expr(expr->with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
+  {
+  }
 
-    PatternExpr::~PatternExpr()
+  any CaseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type CaseExpr::infer_type(AstContext& ctx) const { return nullptr; }
+
+  CaseExpr::~CaseExpr()
+  {
+    delete expr;
+    for (auto p : patterns)
     {
-        if (holds_alternative<Pattern*>(patternExpr))
-        {
-            delete get<Pattern*>(patternExpr);
-        }
-        else if (holds_alternative<PatternWithoutGuards*>(patternExpr))
-        {
-            delete get<PatternWithoutGuards*>(patternExpr);
-        }
-        else
-        {
-            for (auto p : get<vector<PatternWithGuards*>>(patternExpr))
-            {
-                delete p;
-            }
-        }
+      delete p;
     }
+  }
 
-    CatchPatternExpr::CatchPatternExpr(SourceContext token, Pattern* matchPattern,
-                                       const variant<PatternWithoutGuards*, vector<PatternWithGuards*>>& pattern) :
-        ExprNode(token), matchPattern(matchPattern->with_parent<Pattern>(this)), pattern(pattern)
+  any AstVisitor::visit(ExprNode* node) const
+  {
+    if (auto derived = dynamic_cast<AliasExpr*>(node))
     {
-        // std::visit({ [this](PatternWithoutGuards& arg) { arg.with_parent<PatternWithGuards>(this); },
-        //              [this](vector<PatternWithGuards>& arg) { nodes_with_parent(arg, this); } },
-        //            pattern); // TODO
+      return visit(derived);
     }
-
-    any CatchPatternExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type CatchPatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
-
-    CatchPatternExpr::~CatchPatternExpr()
+    if (auto derived = dynamic_cast<ApplyExpr*>(node))
     {
-        delete matchPattern;
-        if (holds_alternative<PatternWithoutGuards*>(pattern))
-        {
-            delete get<PatternWithoutGuards*>(pattern);
-        }
-        else
-        {
-            for (auto p : get<vector<PatternWithGuards*>>(pattern))
-            {
-                delete p;
-            }
-        }
+      return visit(derived);
     }
-
-    CatchExpr::CatchExpr(SourceContext token, const vector<CatchPatternExpr*>& patterns) :
-        ExprNode(token), patterns(nodes_with_parent(patterns, this))
+    if (auto derived = dynamic_cast<CallExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any CatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type CatchExpr::infer_type(AstContext& ctx) const { return patterns.back()->infer_type(ctx); }
-
-    CatchExpr::~CatchExpr()
+    if (auto derived = dynamic_cast<CaseExpr*>(node))
     {
-        for (auto p : patterns)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    TryCatchExpr::TryCatchExpr(SourceContext token, ExprNode* tryExpr, CatchExpr* catchExpr) :
-        ExprNode(token), tryExpr(tryExpr->with_parent<ExprNode>(this)),
-        catchExpr(catchExpr->with_parent<CatchExpr>(this))
+    if (auto derived = dynamic_cast<CatchExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any TryCatchExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type TryCatchExpr::infer_type(AstContext& ctx) const
+    if (auto derived = dynamic_cast<CatchPatternExpr*>(node))
     {
-        return make_shared<SumType>(unordered_set{ tryExpr->infer_type(ctx), catchExpr->infer_type(ctx) });
+      return visit(derived);
     }
-
-    TryCatchExpr::~TryCatchExpr()
+    if (auto derived = dynamic_cast<CollectionExtractorExpr*>(node))
     {
-        delete tryExpr;
-        delete catchExpr;
+      return visit(derived);
     }
-
-    PatternValue::PatternValue(
-        SourceContext token,
-        const variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*>& expr) :
-        PatternNode(token), expr(node_with_parent(expr, this))
+    if (auto derived = dynamic_cast<DictGeneratorReducer*>(node))
     {
+      return visit(derived);
     }
-
-    any PatternValue::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type PatternValue::infer_type(AstContext& ctx) const { return nullptr; }
-
-    PatternValue::~PatternValue()
+    if (auto derived = dynamic_cast<DoExpr*>(node))
     {
-        if (holds_alternative<LiteralExpr<nullptr_t>*>(expr))
-        {
-            delete get<LiteralExpr<nullptr_t>*>(expr);
-        }
-        else if (holds_alternative<LiteralExpr<void*>*>(expr))
-        {
-            delete get<LiteralExpr<void*>*>(expr);
-        }
-        else if (holds_alternative<SymbolExpr*>(expr))
-        {
-            delete get<SymbolExpr*>(expr);
-        }
+      return visit(derived);
     }
-
-    AsDataStructurePattern::AsDataStructurePattern(SourceContext token, IdentifierExpr* identifier,
-                                                   DataStructurePattern* pattern) :
-        PatternNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)),
-        pattern(pattern->with_parent<DataStructurePattern>(this))
+    if (auto derived = dynamic_cast<FieldAccessExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any AsDataStructurePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type AsDataStructurePattern::infer_type(AstContext& ctx) const { return pattern->infer_type(ctx); }
-
-    AsDataStructurePattern::~AsDataStructurePattern()
+    if (auto derived = dynamic_cast<FieldUpdateExpr*>(node))
     {
-        delete identifier;
-        delete pattern;
+      return visit(derived);
     }
-
-    any UnderscorePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type UnderscorePattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    TuplePattern::TuplePattern(SourceContext token, const vector<Pattern*>& patterns) :
-        PatternNode(token), patterns(nodes_with_parent(patterns, this))
+    if (auto derived = dynamic_cast<GeneratorExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any TuplePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type TuplePattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    TuplePattern::~TuplePattern()
+    if (auto derived = dynamic_cast<IfExpr*>(node))
     {
-        for (auto p : patterns)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    SeqPattern::SeqPattern(SourceContext token, const vector<Pattern*>& patterns) :
-        PatternNode(token), patterns(nodes_with_parent(patterns, this))
+    if (auto derived = dynamic_cast<NameExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any SeqPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type SeqPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    SeqPattern::~SeqPattern()
+    if (auto derived = dynamic_cast<OpExpr*>(node))
     {
-        for (auto p : patterns)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    HeadTailsPattern::HeadTailsPattern(SourceContext token, const vector<PatternWithoutSequence*>& heads,
-                                       TailPattern* tail) :
-        PatternNode(token), heads(nodes_with_parent(heads, this)), tail(tail->with_parent<TailPattern>(this))
+    if (auto derived = dynamic_cast<PatternExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any HeadTailsPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type HeadTailsPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    HeadTailsPattern::~HeadTailsPattern()
+    if (auto derived = dynamic_cast<RaiseExpr*>(node))
     {
-        for (auto p : heads)
-        {
-            delete p;
-        }
-        delete tail;
+      return visit(derived);
     }
-
-    TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern* tail,
-                                       const vector<PatternWithoutSequence*>& heads) :
-        PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this))
+    if (auto derived = dynamic_cast<SequenceExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any TailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type TailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    TailsHeadPattern::~TailsHeadPattern()
+    if (auto derived = dynamic_cast<TryCatchExpr*>(node))
     {
-        delete tail;
-        for (auto p : heads)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, const vector<PatternWithoutSequence*>& left,
-                                               TailPattern* tail, const vector<PatternWithoutSequence*>& right) :
-        PatternNode(token), left(nodes_with_parent(left, this)), tail(tail->with_parent<TailPattern>(this)),
-        right(nodes_with_parent(right, this))
+    if (auto derived = dynamic_cast<ValueExpr*>(node))
     {
+      return visit(derived);
     }
+    unreachable();
+  }
 
-    any HeadTailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type HeadTailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    HeadTailsHeadPattern::~HeadTailsHeadPattern()
+  any AstVisitor::visit(AstNode* node) const
+  {
+    if (auto derived = dynamic_cast<ExprNode*>(node))
     {
-        for (auto p : left)
-        {
-            delete p;
-        }
-        delete tail;
-        for (auto p : right)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    DictPattern::DictPattern(SourceContext token, const vector<pair<PatternValue*, Pattern*>>& keyValuePairs) :
-        PatternNode(token), keyValuePairs(nodes_with_parent(keyValuePairs, this))
+    if (auto derived = dynamic_cast<PatternNode*>(node))
     {
+      return visit(derived);
     }
-
-    any DictPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type DictPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    DictPattern::~DictPattern()
+    if (auto derived = dynamic_cast<ScopedNode*>(node))
     {
-        for (auto p : keyValuePairs)
-        {
-            delete p.first;
-            delete p.second;
-        }
+      return visit(derived);
     }
-
-    RecordPattern::RecordPattern(SourceContext token, string recordType,
-                                 const vector<pair<NameExpr*, Pattern*>>& items) :
-        PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(items, this))
+    if (auto derived = dynamic_cast<FunctionBody*>(node))
     {
+      return visit(derived);
     }
-
-    any RecordPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type RecordPattern::infer_type(AstContext& ctx) const { return nullptr; }
-
-    RecordPattern::~RecordPattern()
+    if (auto derived = dynamic_cast<RecordNode*>(node))
     {
-        for (auto p : items)
-        {
-            delete p.first;
-            delete p.second;
-        }
+      return visit(derived);
     }
+    unreachable();
+  }
 
-    CaseExpr::CaseExpr(SourceContext token, ExprNode* expr, const vector<PatternExpr*>& patterns) :
-        ExprNode(token), expr(expr->with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this))
+  any AstVisitor::visit(ScopedNode* node) const
+  {
+    if (auto derived = dynamic_cast<ImportClauseExpr*>(node))
     {
+      return visit(derived);
     }
-
-    any CaseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-    Type CaseExpr::infer_type(AstContext& ctx) const { return nullptr; }
-
-    CaseExpr::~CaseExpr()
+    if (auto derived = dynamic_cast<FunctionExpr*>(node))
     {
-        delete expr;
-        for (auto p : patterns)
-        {
-            delete p;
-        }
+      return visit(derived);
     }
-
-    any AstVisitor::visit(ExprNode* node) const
+    if (auto derived = dynamic_cast<LetExpr*>(node))
     {
-        if (auto derived = dynamic_cast<AliasExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<ApplyExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<CallExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<CaseExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<CatchExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<CatchPatternExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<CollectionExtractorExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<DictGeneratorReducer*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<DoExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<FieldAccessExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<FieldUpdateExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<GeneratorExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<IfExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<NameExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<OpExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<PatternExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<RaiseExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<SequenceExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<TryCatchExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<ValueExpr*>(node))
-        {
-            return visit(derived);
-        }
-        unreachable();
+      return visit(derived);
     }
+    unreachable();
+  }
 
-    any AstVisitor::visit(AstNode* node) const
+  any AstVisitor::visit(PatternNode* node) const
+  {
+    if (auto derived = dynamic_cast<UnderscoreNode*>(node))
     {
-        if (auto derived = dynamic_cast<ExprNode*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<PatternNode*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<ScopedNode*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<FunctionBody*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<RecordNode*>(node))
-        {
-            return visit(derived);
-        }
-        unreachable();
+      return visit(derived);
     }
-
-    any AstVisitor::visit(ScopedNode* node) const
+    if (auto derived = dynamic_cast<UnderscorePattern*>(node))
     {
-        if (auto derived = dynamic_cast<ImportClauseExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<FunctionExpr*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<LetExpr*>(node))
-        {
-            return visit(derived);
-        }
-        unreachable();
+      return visit(derived);
     }
-
-    any AstVisitor::visit(PatternNode* node) const
+    if (auto derived = dynamic_cast<PatternWithGuards*>(node))
     {
-        if (auto derived = dynamic_cast<UnderscoreNode*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<UnderscorePattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<PatternWithGuards*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<PatternWithoutGuards*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<PatternValue*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<AsDataStructurePattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<TuplePattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<SeqPattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<HeadTailsPattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<TailsHeadPattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<HeadTailsHeadPattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<DictPattern*>(node))
-        {
-            return visit(derived);
-        }
-        if (auto derived = dynamic_cast<RecordPattern*>(node))
-        {
-            return visit(derived);
-        }
-        unreachable();
+      return visit(derived);
     }
+    if (auto derived = dynamic_cast<PatternWithoutGuards*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<PatternValue*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<AsDataStructurePattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<TuplePattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<SeqPattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<HeadTailsPattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<TailsHeadPattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<HeadTailsHeadPattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<DictPattern*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<RecordPattern*>(node))
+    {
+      return visit(derived);
+    }
+    unreachable();
+  }
 }

@@ -10,3 +10,9 @@ sudo dnf install llvm llvm-devel llvm-libs
 ```bash
 brew install llvm
 ```
+
+# Formatting
+```bash
+npm i antlr-format-cli
+./scripts/format.sh
+```

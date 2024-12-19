@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "antlr-format": "antlr-format -v -a false --config antlr-format.config parser/*.g4"
+  },
+  "dependencies": {
+    "antlr-format": "^2.1.5",
+    "antlr-format-cli": "^1.2.8"
+  }
+}

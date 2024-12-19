@@ -8,65 +8,69 @@
 
 namespace yona::compiler::types
 {
-    using namespace std;
+  using namespace std;
 
-    struct SingleItemCollectionType;
-    struct DictCollectionType;
-    struct DictCollectionType;
-    struct TupleType;
-    struct FunctionType;
-    struct SumType;
+  struct SingleItemCollectionType;
+  struct DictCollectionType;
+  struct DictCollectionType;
+  struct TupleType;
+  struct FunctionType;
+  struct SumType;
 
-    enum ValueType
+  enum ValueType
+  {
+    Int,
+    Float,
+    Byte,
+    Char,
+    String,
+    Bool,
+    Unit,
+    Symbol,
+    Module
+  };
+
+  // TODO implement comparators
+  using Type = variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>,
+                       shared_ptr<FunctionType>, shared_ptr<TupleType>, shared_ptr<SumType>, nullptr_t>;
+
+  struct SingleItemCollectionType final
+  {
+    enum CollectionKind
     {
-        Int,
-        Float,
-        Byte,
-        Char,
-        String,
-        Bool,
-        Unit,
-        Symbol,
-        Module
-    };
+      Set,
+      Seq
+    } kind;
+    Type valueType;
+  };
 
-    // TODO implement comparators
-    using Type = variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>,
-                         shared_ptr<FunctionType>, shared_ptr<TupleType>, shared_ptr<SumType>, nullptr_t>;
+  struct DictCollectionType final
+  {
+    Type keyType;
+    Type valueType;
+  };
 
-    struct SingleItemCollectionType final
-    {
-        enum CollectionKind
-        {
-            Set,
-            Seq
-        } kind;
-        Type valueType;
-    };
+  struct TupleType final
+  {
+    vector<Type> fieldTypes;
+  };
 
-    struct DictCollectionType final
-    {
-        Type keyType;
-        Type valueType;
-    };
+  struct FunctionType final
+  {
+    Type returnType;
+    Type argumentType;
+  };
 
-    struct TupleType final
-    {
-        vector<Type> fieldTypes;
-        explicit TupleType(const vector<Type>& field_types) : fieldTypes(field_types) {}
-    };
+  struct SumType final
+  {
+    unordered_set<Type> types;
+  };
 
-    struct FunctionType final
-    {
-        Type returnType;
-        Type argumentType;
-    };
+  struct RecordType final
+  {
+    string name;
+  };
 
-    struct SumType final
-    {
-        unordered_set<Type> types;
-    };
-
-    using FunctionTypes = unordered_map<string, Type>;  // FQN -> Type map
-    inline FunctionTypes FUNCTION_TYPES;
+  using FunctionTypes = unordered_map<string, Type>; // FQN -> Type map
+  inline FunctionTypes FUNCTION_TYPES;
 }

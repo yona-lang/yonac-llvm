@@ -18,30 +18,30 @@ class AstTest : public testing::TestWithParam<tuple<string, string, optional<str
 
 TEST_P(AstTest, YonaTest)
 {
-    auto param = GetParam();
-    auto input = get<1>(param);
-    auto expected = get<2>(param);
-    auto expected_errors = get<3>(param);
+  auto param = GetParam();
+  auto input = get<1>(param);
+  auto expected = get<2>(param);
+  auto expected_errors = get<3>(param);
 
-    stringstream ss(input);
-    parser::Parser parser;
-    auto result = parser.parse_input(ss);
+  stringstream ss(input);
+  parser::Parser parser;
+  auto result = parser.parse_input(ss);
 
-    // auto node = result.node;
-    auto type = result.type;
-    auto type_ctx = result.ast_ctx;
+  // auto node = result.node;
+  auto type = result.type;
+  auto type_ctx = result.ast_ctx;
 
-    if (result.success)
+  if (result.success)
+  {
+    // TODO
+  }
+  else
+  {
+    for (auto [type, cnt] : expected_errors)
     {
-        // TODO
+      EXPECT_EQ(type_ctx.getErrors().count(type), cnt);
     }
-    else
-    {
-        for (auto [type, cnt] : expected_errors)
-        {
-            EXPECT_EQ(type_ctx.getErrors().count(type), cnt);
-        }
-    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(SyntaxTests, AstTest,
@@ -60,7 +60,7 @@ void init_logging() { boost::log::add_file_log("tests.log"); }
 
 int main(int argc, char** argv)
 {
-    init_logging();
-    testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+  init_logging();
+  testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }

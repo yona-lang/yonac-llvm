@@ -10,25 +10,25 @@
 
 namespace yona::parser
 {
-    using namespace std;
-    using namespace ast;
+  using namespace std;
+  using namespace ast;
 
-    struct ParseResult
-    {
-        bool success;
-        AstNode* node;
-        Type type;
-        AstContext ast_ctx;
+  struct ParseResult
+  {
+    bool success;
+    AstNode* node;
+    Type type;
+    AstContext ast_ctx;
 
-        ~ParseResult() { delete node; }
-    };
+    ~ParseResult() { delete node; }
+  };
 
-    class Parser
-    {
-    private:
-        ModuleImportQueue module_import_queue;
+  class Parser
+  {
+private:
+    ModuleImportQueue module_import_queue;
 
-    public:
-        ParseResult parse_input(istream& stream);
-    };
+public:
+    ParseResult parse_input(istream& stream);
+  };
 }
