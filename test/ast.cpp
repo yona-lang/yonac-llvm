@@ -18,9 +18,9 @@ class AstTest : public testing::TestWithParam<tuple<string, string, optional<str
 
 TEST_P(AstTest, YonaTest)
 {
-  auto param = GetParam();
-  auto input = get<1>(param);
-  auto expected = get<2>(param);
+  auto param           = GetParam();
+  auto input           = get<1>(param);
+  auto expected        = get<2>(param);
   auto expected_errors = get<3>(param);
 
   stringstream ss(input);
@@ -28,7 +28,7 @@ TEST_P(AstTest, YonaTest)
   auto result = parser.parse_input(ss);
 
   // auto node = result.node;
-  auto type = result.type;
+  auto type     = result.type;
   auto type_ctx = result.ast_ctx;
 
   if (result.success)
@@ -45,15 +45,19 @@ TEST_P(AstTest, YonaTest)
 }
 
 INSTANTIATE_TEST_SUITE_P(SyntaxTests, AstTest,
-                         testing::Values(make_tuple("correct_addition_of_ints", "1+1", nullopt, ErrorMap{}),
+                         testing::Values(make_tuple("correct_addition_of_ints", "1+1", nullopt,
+                                                    ErrorMap{
+}),
                                          make_tuple("incomplete_addition", "1+", nullopt,
-                                                    ErrorMap{ { YonaError::SYNTAX, 1 } })),
+                                                    ErrorMap{{YonaError::SYNTAX, 1}})),
                          [](const testing::TestParamInfo<AstTest::ParamType>& info) { return get<0>(info.param); });
 
 INSTANTIATE_TEST_SUITE_P(TypeCheckTests, AstTest,
-                         testing::Values(make_tuple("correct_addition_of_ints", "1+1", "2", ErrorMap{}),
+                         testing::Values(make_tuple("correct_addition_of_ints", "1+1", "2",
+                                                    ErrorMap{
+}),
                                          make_tuple("failed_addition_of_int_with_char", "1+'1'", "2",
-                                                    ErrorMap{ { YonaError::TYPE, 1 } })),
+                                                    ErrorMap{{YonaError::TYPE, 1}})),
                          [](const testing::TestParamInfo<AstTest::ParamType>& info) { return get<0>(info.param); });
 
 void init_logging() { boost::log::add_file_log("tests.log"); }

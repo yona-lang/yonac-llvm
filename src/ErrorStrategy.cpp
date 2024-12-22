@@ -22,11 +22,11 @@ namespace yona::parser
 
   void ErrorStrategy::reportNoViableAlternative(Parser* parser, const NoViableAltException& e)
   {
-    Recognizer* recognizer = e.getRecognizer();
-    string msg = "Reason: * can't choose next alternative. ";
-    vector<string> stack = parser->getRuleInvocationStack();
+    Recognizer* recognizer     = e.getRecognizer();
+    string msg                 = "Reason: * can't choose next alternative. ";
+    vector<string> stack       = parser->getRuleInvocationStack();
     IntervalSet expectedTokens = e.getExpectedTokens();
-    Token* offendingToken = e.getOffendingToken();
+    Token* offendingToken      = e.getOffendingToken();
 
     reverse(stack.begin(), stack.end());
     recognizer->getTokenErrorDisplay(e.getOffendingToken());

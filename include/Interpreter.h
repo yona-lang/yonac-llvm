@@ -11,36 +11,36 @@ namespace yona::interp
   using namespace std;
   using namespace ast;
 
-  using any = any;
+  using any          = any;
   using symbol_ref_t = any;
 
   struct Symbol
   {
-private:
+  private:
     string name;
     symbol_ref_t reference;
   };
 
   struct Frame
   {
-private:
+  private:
     vector<symbol_ref_t> args_;
     unordered_map<string, Symbol> locals_;
 
-    int64_t ria{ 0 }, rib{ 0 };
-    double rda{ 0.0 }, rdb{ 0.0 };
-    wchar_t rca{ L'\0' }, rcb{ L'\0' };
-    bool rba{ false }, rbb{ false };
-    byte rya{ 0 }, ryb{ 0 };
+    int64_t ria{0}, rib{0};
+    double rda{0.0}, rdb{0.0};
+    wchar_t rca{L'\0'}, rcb{L'\0'};
+    bool rba{false}, rbb{false};
+    byte rya{0}, ryb{0};
     string rsa, rsb;
   };
 
   class Interpreter final : public AstVisitor
   {
-private:
+  private:
     stack<Frame> stack_;
 
-public:
+  public:
     explicit Interpreter();
     [[nodiscard]] any visit(AddExpr* node) const override;
     [[nodiscard]] any visit(AliasCall* node) const override;
@@ -143,6 +143,11 @@ public:
     [[nodiscard]] any visit(ValuesSequenceExpr* node) const override;
     [[nodiscard]] any visit(WithExpr* node) const override;
     [[nodiscard]] any visit(ZerofillRightShiftExpr* node) const override;
+    [[nodiscard]] any visit(FunctionDeclaration* node) const override;
+    [[nodiscard]] any visit(TypeDeclaration* node) const override;
+    [[nodiscard]] any visit(TypeDefinition* node) const override;
+    [[nodiscard]] any visit(TypeNode* node) const override;
+    [[nodiscard]] any visit(TypeInstance* node) const override;
     ~Interpreter() override = default;
     [[nodiscard]] any visit(ExprNode* node) const override;
     [[nodiscard]] any visit(AstNode* node) const override;

@@ -1,6 +1,9 @@
 #include "ast.h"
 
+#include <boost/algorithm/string/join.hpp>
 #include <variant>
+
+#include "utils.h"
 
 namespace yona::ast
 {
@@ -55,7 +58,7 @@ namespace yona::ast
 
   Type BinaryOpExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float)
@@ -69,7 +72,7 @@ namespace yona::ast
       ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
     }
 
-    return unordered_set{ leftType, rightType }.contains(Float) ? Float : Int;
+    return unordered_set{leftType, rightType}.contains(Float) ? Float : Int;
   }
 
   any BinaryOpExpr::accept(const AstVisitor& visitor) { return OpExpr::accept(visitor); }
@@ -200,7 +203,7 @@ namespace yona::ast
   {
     vector<Type> fieldTypes;
     ranges::for_each(values, [&](const ExprNode* expr) { fieldTypes.push_back(expr->infer_type(ctx)); });
-    return make_shared<TupleType>(fieldTypes);
+    return make_shared<ProductType>(fieldTypes);
   }
 
   TupleExpr::~TupleExpr()
@@ -282,8 +285,8 @@ namespace yona::ast
   Type RangeSequenceExpr::infer_type(AstContext& ctx) const
   {
     Type startExprType = start->infer_type(ctx);
-    Type endExprType = start->infer_type(ctx);
-    Type stepExprType = start->infer_type(ctx);
+    Type endExprType   = start->infer_type(ctx);
+    Type stepExprType  = start->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int)
     {
@@ -357,6 +360,17 @@ namespace yona::ast
       delete p;
   }
 
+  string PackageNameExpr::to_string() const
+  {
+    vector<string> names;
+    for (const auto part : parts)
+    {
+      names.push_back(part->value);
+    }
+
+    return boost::algorithm::join(names, PACKAGE_DELIMITER);
+  }
+
   FqnExpr::FqnExpr(SourceContext token, PackageNameExpr* packageName, NameExpr* moduleName) :
       ValueExpr(token), packageName(packageName->with_parent<PackageNameExpr>(this)),
       moduleName(moduleName->with_parent<NameExpr>(this))
@@ -372,6 +386,8 @@ namespace yona::ast
     delete packageName;
     delete moduleName;
   }
+
+  string FqnExpr::to_string() const { return packageName->to_string() + PACKAGE_DELIMITER + moduleName->value; }
 
   FunctionExpr::FunctionExpr(SourceContext token, string name, const vector<PatternNode*>& patterns,
                              const vector<FunctionBody*>& bodies) :
@@ -435,9 +451,11 @@ namespace yona::ast
   BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
   ModuleExpr::ModuleExpr(SourceContext token, FqnExpr* fqn, const vector<string>& exports,
-                         const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions) :
+                         const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions,
+                         const vector<FunctionDeclaration*>& function_declarations) :
       ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
-      records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this))
+      records(nodes_with_parent(records, this)), functions(nodes_with_parent(functions, this)),
+      functionDeclarations(nodes_with_parent(function_declarations, this))
   {
   }
 
@@ -452,6 +470,8 @@ namespace yona::ast
       delete p;
     for (auto p : functions)
       delete p;
+    for (auto p : functionDeclarations)
+      delete p;
   }
 
   RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr* recordType,
@@ -464,11 +484,11 @@ namespace yona::ast
 
   Type RecordInstanceExpr::infer_type(AstContext& ctx) const
   {
-    vector<Type> itemTypes{ Symbol };
+    vector<Type> itemTypes{Symbol};
     ranges::for_each(items,
                      [&](const pair<NameExpr*, ExprNode*>& p) { itemTypes.push_back(p.second->infer_type(ctx)); });
 
-    return make_shared<TupleType>(itemTypes);
+    return make_shared<ProductType>(itemTypes);
   }
 
   RecordInstanceExpr::~RecordInstanceExpr()
@@ -564,7 +584,7 @@ namespace yona::ast
 
   Type LeftShiftExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -589,7 +609,7 @@ namespace yona::ast
 
   Type RightShiftExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -614,7 +634,7 @@ namespace yona::ast
 
   Type ZerofillRightShiftExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -686,19 +706,19 @@ namespace yona::ast
 
   Type JoinExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(leftType) ||
         !holds_alternative<shared_ptr<DictCollectionType>>(leftType) ||
-        !holds_alternative<shared_ptr<TupleType>>(leftType))
+        !holds_alternative<shared_ptr<ProductType>>(leftType))
     {
       ctx.addError(YonaError(left->token, YonaError::TYPE, "Join expression can be used only for collections"));
     }
 
     if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
         !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
-        !holds_alternative<shared_ptr<TupleType>>(rightType))
+        !holds_alternative<shared_ptr<ProductType>>(rightType))
     {
       ctx.addError(YonaError(right->token, YonaError::TYPE, "Join expression can be used only for collections"));
     }
@@ -720,7 +740,7 @@ namespace yona::ast
 
   Type BitwiseAndExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -745,7 +765,7 @@ namespace yona::ast
 
   Type BitwiseXorExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -769,7 +789,7 @@ namespace yona::ast
 
   Type BitwiseOrExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
@@ -794,7 +814,7 @@ namespace yona::ast
 
   Type LogicalAndExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
@@ -818,7 +838,7 @@ namespace yona::ast
 
   Type LogicalOrExpr::infer_type(AstContext& ctx) const
   {
-    const Type leftType = left->infer_type(ctx);
+    const Type leftType  = left->infer_type(ctx);
     const Type rightType = right->infer_type(ctx);
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
@@ -843,7 +863,7 @@ namespace yona::ast
     if (const Type rightType = right->infer_type(ctx);
         !holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
         !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
-        !holds_alternative<shared_ptr<TupleType>>(rightType))
+        !holds_alternative<shared_ptr<ProductType>>(rightType))
     {
       ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for IN must be a collection"));
     }
@@ -900,7 +920,7 @@ namespace yona::ast
       ctx.addError(YonaError(condition->token, YonaError::TYPE, "If condition must be boolean"));
     }
 
-    unordered_set returnTypes{ thenExpr->infer_type(ctx) };
+    unordered_set returnTypes{thenExpr->infer_type(ctx)};
 
     if (elseExpr != nullptr)
     {
@@ -1473,7 +1493,7 @@ namespace yona::ast
 
   Type TryCatchExpr::infer_type(AstContext& ctx) const
   {
-    return make_shared<SumType>(unordered_set{ tryExpr->infer_type(ctx), catchExpr->infer_type(ctx) });
+    return make_shared<SumType>(unordered_set{tryExpr->infer_type(ctx), catchExpr->infer_type(ctx)});
   }
 
   TryCatchExpr::~TryCatchExpr()
@@ -1675,6 +1695,99 @@ namespace yona::ast
   {
     delete expr;
     for (auto p : patterns)
+    {
+      delete p;
+    }
+  }
+
+  TypeDeclaration::TypeDeclaration(SourceContext token, NameExpr* name, const vector<NameExpr*>& type_vars) :
+      AstNode(token), name(name->with_parent<NameExpr>(this)), typeVars(nodes_with_parent(type_vars, this))
+  {
+  }
+
+  any TypeDeclaration::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TypeDeclaration::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TypeDeclaration::~TypeDeclaration()
+  {
+    delete name;
+    for (auto p : typeVars)
+    {
+      delete p;
+    }
+  }
+
+  TypeDefinition::TypeDefinition(SourceContext token, NameExpr* name, const vector<NameExpr*>& type_names) :
+      AstNode(token), name(name->with_parent<NameExpr>(this)), typeNames(nodes_with_parent(type_names, this))
+  {
+  }
+
+  any TypeDefinition::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TypeDefinition::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TypeDefinition::~TypeDefinition()
+  {
+    delete name;
+    for (auto p : typeNames)
+    {
+      delete p;
+    }
+  }
+
+  TypeNode::TypeNode(SourceContext token, TypeDeclaration* declaration, const vector<TypeDeclaration*>& definitions) :
+      AstNode(token), declaration(declaration->with_parent<TypeDeclaration>(this)),
+      definitions(nodes_with_parent(definitions, this))
+  {
+  }
+
+  any TypeNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TypeNode::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TypeNode::~TypeNode()
+  {
+    delete declaration;
+    for (auto p : definitions)
+    {
+      delete p;
+    }
+  }
+
+  TypeInstance::TypeInstance(SourceContext token, NameExpr* name, const vector<ExprNode*>& exprs) :
+      AstNode(token), name(name->with_parent<NameExpr>(this)), exprs(nodes_with_parent(exprs, this))
+  {
+  }
+
+  any TypeInstance::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type TypeInstance::infer_type(AstContext& ctx) const { return nullptr; }
+
+  TypeInstance::~TypeInstance()
+  {
+    delete name;
+    for (auto p : exprs)
+    {
+      delete p;
+    }
+  }
+
+  FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr* function_name,
+                                           const vector<TypeDefinition*>& type_definitions) :
+      AstNode(token), functionName(function_name->with_parent<NameExpr>(this)),
+      typeDefinitions(nodes_with_parent(type_definitions, this))
+  {
+  }
+
+  any FunctionDeclaration::accept(const AstVisitor& visitor) { return visitor.visit(this); }
+
+  Type FunctionDeclaration::infer_type(AstContext& ctx) const { return nullptr; }
+
+  FunctionDeclaration::~FunctionDeclaration()
+  {
+    delete functionName;
+    for (auto p : typeDefinitions)
     {
       delete p;
     }

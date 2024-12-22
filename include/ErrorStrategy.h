@@ -14,14 +14,14 @@ namespace yona::parser
 
   class ErrorStrategy final : public DefaultErrorStrategy
   {
-private:
+  private:
     AstContext& ast_ctx;
 
-public:
+  public:
     explicit ErrorStrategy(AstContext& ast_ctx) : ast_ctx(ast_ctx) {}
     ~ErrorStrategy() override = default;
 
-protected:
+  protected:
     void handleRecognitionException(IntervalSet et, const std::string& message, const std::exception& cause, int line);
 
     void reportNoViableAlternative(Parser* parser, const NoViableAltException& e);

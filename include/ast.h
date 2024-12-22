@@ -11,6 +11,7 @@
 
 namespace yona::ast
 {
+  class FunctionDeclaration;
   class AstNode;
   class AsDataStructurePattern;
   class RecordPattern;
@@ -64,6 +65,7 @@ namespace yona::ast
     AST_PACKAGE_NAME_EXPR,
     AST_FQN_EXPR,
     AST_FUNCTION_EXPR,
+    AST_FUNCTION_DECLARATION,
     AST_MODULE_EXPR,
     AST_RECORD_INSTANCE_EXPR,
     AST_BODY_WITH_GUARDS,
@@ -132,6 +134,10 @@ namespace yona::ast
     AST_PATTERN_VALUE,
     AST_AS_DATA_STRUCTURE_PATTERN,
     AST_TUPLE_PATTERN,
+    AST_TYPE_DECLARATION,
+    AST_TYPE_DEFINITION,
+    AST_TYPE_INSTANCE,
+    AST_TYPE,
     AST_SEQ_PATTERN,
     AST_HEAD_TAILS_PATTERN,
     AST_TAILS_HEAD_PATTERN,
@@ -143,10 +149,10 @@ namespace yona::ast
 
   struct expr_wrapper
   {
-private:
+  private:
     AstNode* node;
 
-public:
+  public:
     explicit expr_wrapper(AstNode* node) : node(node) {}
 
     template <typename T>
@@ -159,7 +165,7 @@ public:
 
   class AstNode
   {
-public:
+  public:
     SourceContext token;
     AstNode* parent = nullptr;
     explicit AstNode(SourceContext token) : token(token) {};
@@ -194,7 +200,7 @@ public:
   {
     for (auto node : nodes)
     {
-      node.first->parent = parent;
+      node.first->parent  = parent;
       node.second->parent = parent;
     }
     return nodes;
@@ -232,7 +238,7 @@ public:
 
   class ExprNode : public AstNode
   {
-public:
+  public:
     explicit ExprNode(SourceContext token) : AstNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_EXPR_NODE; };
@@ -240,7 +246,7 @@ public:
 
   class PatternNode : public AstNode
   {
-public:
+  public:
     explicit PatternNode(SourceContext token) : AstNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_NODE; };
@@ -248,7 +254,7 @@ public:
 
   class UnderscoreNode final : public PatternNode
   {
-public:
+  public:
     explicit UnderscoreNode(SourceContext token) : PatternNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -257,7 +263,7 @@ public:
 
   class ValueExpr : public ExprNode
   {
-public:
+  public:
     explicit ValueExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_EXPR; };
@@ -265,7 +271,7 @@ public:
 
   class ScopedNode : public AstNode
   {
-public:
+  public:
     explicit ScopedNode(SourceContext token) : AstNode(token) {}
     ScopedNode* getParentScopedNode() const;
     any accept(const AstVisitor& visitor) override;
@@ -275,7 +281,7 @@ public:
   template <typename T>
   class LiteralExpr : public ValueExpr
   {
-public:
+  public:
     const T value;
 
     explicit LiteralExpr(SourceContext token, T value);
@@ -285,7 +291,7 @@ public:
 
   class OpExpr : public ExprNode
   {
-public:
+  public:
     explicit OpExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_OP_EXPR; };
@@ -293,7 +299,7 @@ public:
 
   class BinaryOpExpr : public OpExpr
   {
-public:
+  public:
     ExprNode* left;
     ExprNode* right;
 
@@ -306,7 +312,7 @@ public:
 
   class AliasExpr : public ExprNode
   {
-public:
+  public:
     explicit AliasExpr(SourceContext token) : ExprNode(token) {}
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     any accept(const AstVisitor& visitor) override;
@@ -315,7 +321,7 @@ public:
 
   class CallExpr : public ExprNode
   {
-public:
+  public:
     explicit CallExpr(SourceContext token) : ExprNode(token) {}
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     any accept(const AstVisitor& visitor) override;
@@ -324,7 +330,7 @@ public:
 
   class ImportClauseExpr : public ScopedNode
   {
-public:
+  public:
     explicit ImportClauseExpr(SourceContext token) : ScopedNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_CLAUSE_EXPR; };
@@ -332,7 +338,7 @@ public:
 
   class GeneratorExpr : public ExprNode
   {
-public:
+  public:
     explicit GeneratorExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_GENERATOR_EXPR; };
@@ -340,7 +346,7 @@ public:
 
   class CollectionExtractorExpr : public ExprNode
   {
-public:
+  public:
     explicit CollectionExtractorExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_COLLECTION_EXTRACTOR_EXPR; };
@@ -348,7 +354,7 @@ public:
 
   class SequenceExpr : public ExprNode
   {
-public:
+  public:
     explicit SequenceExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_SEQUENCE_EXPR; };
@@ -356,7 +362,7 @@ public:
 
   class FunctionBody : public AstNode
   {
-public:
+  public:
     explicit FunctionBody(SourceContext token) : AstNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_BODY; };
@@ -364,7 +370,7 @@ public:
 
   class NameExpr final : public ExprNode
   {
-public:
+  public:
     const string value;
 
     explicit NameExpr(SourceContext token, string value);
@@ -375,7 +381,7 @@ public:
 
   class IdentifierExpr final : public ValueExpr
   {
-public:
+  public:
     NameExpr* name;
 
     explicit IdentifierExpr(SourceContext token, NameExpr* name);
@@ -387,7 +393,7 @@ public:
 
   class RecordNode final : public AstNode
   {
-public:
+  public:
     NameExpr* recordType;
     vector<IdentifierExpr*> identifiers;
 
@@ -400,7 +406,7 @@ public:
 
   class TrueLiteralExpr final : public LiteralExpr<bool>
   {
-public:
+  public:
     explicit TrueLiteralExpr(SourceContext token);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -409,7 +415,7 @@ public:
 
   class FalseLiteralExpr final : public LiteralExpr<bool>
   {
-public:
+  public:
     explicit FalseLiteralExpr(SourceContext token);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -418,7 +424,7 @@ public:
 
   class FloatExpr final : public LiteralExpr<float>
   {
-public:
+  public:
     explicit FloatExpr(SourceContext token, float value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -427,7 +433,7 @@ public:
 
   class IntegerExpr final : public LiteralExpr<int>
   {
-public:
+  public:
     explicit IntegerExpr(SourceContext token, int value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -436,7 +442,7 @@ public:
 
   class ByteExpr final : public LiteralExpr<unsigned char>
   {
-public:
+  public:
     explicit ByteExpr(SourceContext token, unsigned char value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -445,7 +451,7 @@ public:
 
   class StringExpr final : public LiteralExpr<string>
   {
-public:
+  public:
     explicit StringExpr(SourceContext token, string value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -454,7 +460,7 @@ public:
 
   class CharacterExpr final : public LiteralExpr<char>
   {
-public:
+  public:
     explicit CharacterExpr(SourceContext token, char value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -463,7 +469,7 @@ public:
 
   class UnitExpr final : public LiteralExpr<nullptr_t>
   {
-public:
+  public:
     explicit UnitExpr(SourceContext token);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -472,7 +478,7 @@ public:
 
   class TupleExpr final : public ValueExpr
   {
-public:
+  public:
     vector<ExprNode*> values;
 
     explicit TupleExpr(SourceContext token, const vector<ExprNode*>& values);
@@ -484,7 +490,7 @@ public:
 
   class DictExpr final : public ValueExpr
   {
-public:
+  public:
     vector<pair<ExprNode*, ExprNode*>> values;
 
     explicit DictExpr(SourceContext token, const vector<pair<ExprNode*, ExprNode*>>& values);
@@ -496,7 +502,7 @@ public:
 
   class ValuesSequenceExpr final : public SequenceExpr
   {
-public:
+  public:
     vector<ExprNode*> values;
 
     explicit ValuesSequenceExpr(SourceContext token, const vector<ExprNode*>& values);
@@ -508,7 +514,7 @@ public:
 
   class RangeSequenceExpr final : public SequenceExpr
   {
-public:
+  public:
     // TODO make them optional
     ExprNode* start;
     ExprNode* end;
@@ -523,7 +529,7 @@ public:
 
   class SetExpr final : public ValueExpr
   {
-public:
+  public:
     vector<ExprNode*> values;
 
     explicit SetExpr(SourceContext token, const vector<ExprNode*>& values);
@@ -535,7 +541,7 @@ public:
 
   class SymbolExpr final : public ValueExpr
   {
-public:
+  public:
     string value;
 
     explicit SymbolExpr(SourceContext token, string value);
@@ -546,7 +552,7 @@ public:
 
   class PackageNameExpr final : public ValueExpr
   {
-public:
+  public:
     vector<NameExpr*> parts;
 
     explicit PackageNameExpr(SourceContext token, const vector<NameExpr*>& parts);
@@ -554,11 +560,12 @@ public:
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_PACKAGE_NAME_EXPR; };
     ~PackageNameExpr() override;
+    [[nodiscard]] string to_string() const;
   };
 
   class FqnExpr final : public ValueExpr
   {
-public:
+  public:
     PackageNameExpr* packageName;
     NameExpr* moduleName;
 
@@ -567,11 +574,12 @@ public:
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_EXPR; };
     ~FqnExpr() override;
+    [[nodiscard]] string to_string() const;
   };
 
   class FunctionExpr final : public ScopedNode
   {
-public:
+  public:
     const string name;
     vector<PatternNode*> patterns;
     vector<FunctionBody*> bodies;
@@ -586,14 +594,16 @@ public:
 
   class ModuleExpr final : public ValueExpr
   {
-public:
+  public:
     FqnExpr* fqn;
     vector<string> exports;
     vector<RecordNode*> records;
     vector<FunctionExpr*> functions;
+    vector<FunctionDeclaration*> functionDeclarations;
 
     explicit ModuleExpr(SourceContext token, FqnExpr* fqn, const vector<string>& exports,
-                        const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions);
+                        const vector<RecordNode*>& records, const vector<FunctionExpr*>& functions,
+                        const vector<FunctionDeclaration*>& function_declarations);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_EXPR; };
@@ -602,7 +612,7 @@ public:
 
   class RecordInstanceExpr final : public ValueExpr
   {
-public:
+  public:
     NameExpr* recordType;
     vector<pair<NameExpr*, ExprNode*>> items;
 
@@ -616,7 +626,7 @@ public:
 
   class BodyWithGuards final : public FunctionBody
   {
-public:
+  public:
     ExprNode* guard;
     vector<ExprNode*> exprs;
 
@@ -629,7 +639,7 @@ public:
 
   class BodyWithoutGuards final : public FunctionBody
   {
-public:
+  public:
     ExprNode* expr;
 
     explicit BodyWithoutGuards(SourceContext token, ExprNode* expr);
@@ -641,7 +651,7 @@ public:
 
   class LogicalNotOpExpr final : public OpExpr
   {
-public:
+  public:
     ExprNode* expr;
 
     explicit LogicalNotOpExpr(SourceContext token, ExprNode* expr);
@@ -653,7 +663,7 @@ public:
 
   class BinaryNotOpExpr final : public OpExpr
   {
-public:
+  public:
     ExprNode* expr;
 
     explicit BinaryNotOpExpr(SourceContext token, ExprNode* expr);
@@ -665,7 +675,7 @@ public:
 
   class PowerExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit PowerExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -674,7 +684,7 @@ public:
 
   class MultiplyExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit MultiplyExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -683,7 +693,7 @@ public:
 
   class DivideExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit DivideExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -692,7 +702,7 @@ public:
 
   class ModuloExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit ModuloExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -701,7 +711,7 @@ public:
 
   class AddExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit AddExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -710,7 +720,7 @@ public:
 
   class SubtractExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit SubtractExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -719,7 +729,7 @@ public:
 
   class LeftShiftExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit LeftShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -728,7 +738,7 @@ public:
 
   class RightShiftExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit RightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -737,7 +747,7 @@ public:
 
   class ZerofillRightShiftExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit ZerofillRightShiftExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -746,7 +756,7 @@ public:
 
   class GteExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit GteExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -755,7 +765,7 @@ public:
 
   class LteExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit LteExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -764,7 +774,7 @@ public:
 
   class GtExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit GtExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -773,7 +783,7 @@ public:
 
   class LtExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit LtExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -782,7 +792,7 @@ public:
 
   class EqExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit EqExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -791,7 +801,7 @@ public:
 
   class NeqExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit NeqExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -800,7 +810,7 @@ public:
 
   class ConsLeftExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit ConsLeftExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -809,7 +819,7 @@ public:
 
   class ConsRightExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit ConsRightExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -818,7 +828,7 @@ public:
 
   class JoinExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit JoinExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -827,7 +837,7 @@ public:
 
   class BitwiseAndExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit BitwiseAndExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -836,7 +846,7 @@ public:
 
   class BitwiseXorExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit BitwiseXorExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -845,7 +855,7 @@ public:
 
   class BitwiseOrExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit BitwiseOrExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -854,7 +864,7 @@ public:
 
   class LogicalAndExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit LogicalAndExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -863,7 +873,7 @@ public:
 
   class LogicalOrExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit LogicalOrExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -872,7 +882,7 @@ public:
 
   class InExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit InExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -881,7 +891,7 @@ public:
 
   class PipeLeftExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -890,7 +900,7 @@ public:
 
   class PipeRightExpr final : public BinaryOpExpr
   {
-public:
+  public:
     explicit PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
@@ -899,7 +909,7 @@ public:
 
   class LetExpr final : public ScopedNode
   {
-public:
+  public:
     vector<AliasExpr*> aliases;
     ExprNode* expr;
 
@@ -912,7 +922,7 @@ public:
 
   class IfExpr final : public ExprNode
   {
-public:
+  public:
     ExprNode* condition;
     ExprNode* thenExpr;
     ExprNode* elseExpr;
@@ -926,7 +936,7 @@ public:
 
   class ApplyExpr final : public ExprNode
   {
-public:
+  public:
     CallExpr* call;
     vector<variant<ExprNode*, ValueExpr*>> args;
 
@@ -939,7 +949,7 @@ public:
 
   class DoExpr final : public ExprNode
   {
-public:
+  public:
     vector<ExprNode*> steps;
 
     explicit DoExpr(SourceContext token, const vector<ExprNode*>& steps);
@@ -951,7 +961,7 @@ public:
 
   class ImportExpr final : public ScopedNode
   {
-public:
+  public:
     vector<ImportClauseExpr*> clauses;
     ExprNode* expr;
 
@@ -964,7 +974,7 @@ public:
 
   class RaiseExpr final : public ExprNode
   {
-public:
+  public:
     SymbolExpr* symbol;
     StringExpr* message;
 
@@ -977,7 +987,7 @@ public:
 
   class WithExpr final : public ScopedNode
   {
-public:
+  public:
     ExprNode* contextExpr;
     NameExpr* name;
     ExprNode* bodyExpr;
@@ -991,7 +1001,7 @@ public:
 
   class FieldAccessExpr final : public ExprNode
   {
-public:
+  public:
     IdentifierExpr* identifier;
     NameExpr* name;
 
@@ -1004,7 +1014,7 @@ public:
 
   class FieldUpdateExpr final : public ExprNode
   {
-public:
+  public:
     IdentifierExpr* identifier;
     vector<pair<NameExpr*, ExprNode*>> updates;
 
@@ -1018,7 +1028,7 @@ public:
 
   class LambdaAlias final : public AliasExpr
   {
-public:
+  public:
     NameExpr* name;
     FunctionExpr* lambda;
 
@@ -1031,7 +1041,7 @@ public:
 
   class ModuleAlias final : public AliasExpr
   {
-public:
+  public:
     NameExpr* name;
     ModuleExpr* module;
 
@@ -1044,7 +1054,7 @@ public:
 
   class ValueAlias final : public AliasExpr
   {
-public:
+  public:
     IdentifierExpr* identifier;
     ExprNode* expr;
 
@@ -1057,7 +1067,7 @@ public:
 
   class PatternAlias final : public AliasExpr
   {
-public:
+  public:
     PatternNode* pattern;
     ExprNode* expr;
 
@@ -1070,7 +1080,7 @@ public:
 
   class FqnAlias final : public AliasExpr
   {
-public:
+  public:
     NameExpr* name;
     FqnExpr* fqn;
 
@@ -1083,7 +1093,7 @@ public:
 
   class FunctionAlias final : public AliasExpr
   {
-public:
+  public:
     NameExpr* name;
     NameExpr* alias;
 
@@ -1096,7 +1106,7 @@ public:
 
   class AliasCall final : public CallExpr
   {
-public:
+  public:
     NameExpr* alias;
     NameExpr* funName;
 
@@ -1109,7 +1119,7 @@ public:
 
   class NameCall final : public CallExpr
   {
-public:
+  public:
     NameExpr* name;
 
     explicit NameCall(SourceContext token, NameExpr* name);
@@ -1121,7 +1131,7 @@ public:
 
   class ModuleCall final : public CallExpr
   {
-public:
+  public:
     variant<FqnExpr*, ExprNode*> fqn;
     NameExpr* funName;
 
@@ -1134,7 +1144,7 @@ public:
 
   class ModuleImport final : public ImportClauseExpr
   {
-public:
+  public:
     FqnExpr* fqn;
     NameExpr* name;
 
@@ -1147,7 +1157,7 @@ public:
 
   class FunctionsImport final : public ImportClauseExpr
   {
-public:
+  public:
     vector<FunctionAlias*> aliases;
     FqnExpr* fromFqn;
 
@@ -1160,7 +1170,7 @@ public:
 
   class SeqGeneratorExpr final : public GeneratorExpr
   {
-public:
+  public:
     ExprNode* reducerExpr;
     CollectionExtractorExpr* collectionExtractor;
     ExprNode* stepExpression;
@@ -1175,7 +1185,7 @@ public:
 
   class SetGeneratorExpr final : public GeneratorExpr
   {
-public:
+  public:
     ExprNode* reducerExpr;
     CollectionExtractorExpr* collectionExtractor;
     ExprNode* stepExpression;
@@ -1190,7 +1200,7 @@ public:
 
   class DictGeneratorReducer final : public ExprNode
   {
-public:
+  public:
     ExprNode* key;
     ExprNode* value;
 
@@ -1203,7 +1213,7 @@ public:
 
   class DictGeneratorExpr final : public GeneratorExpr
   {
-public:
+  public:
     DictGeneratorReducer* reducerExpr;
     CollectionExtractorExpr* collectionExtractor;
     ExprNode* stepExpression;
@@ -1218,8 +1228,8 @@ public:
 
   class UnderscorePattern final : public PatternNode
   {
-public:
-    UnderscorePattern(SourceContext token) : PatternNode(token) {}
+  public:
+    explicit UnderscorePattern(SourceContext token) : PatternNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_PATTERN; };
@@ -1229,7 +1239,7 @@ public:
 
   class ValueCollectionExtractorExpr final : public CollectionExtractorExpr
   {
-public:
+  public:
     IdentifierOrUnderscore expr;
 
     explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr);
@@ -1241,7 +1251,7 @@ public:
 
   class KeyValueCollectionExtractorExpr final : public CollectionExtractorExpr
   {
-public:
+  public:
     IdentifierOrUnderscore keyExpr;
     IdentifierOrUnderscore valueExpr;
 
@@ -1256,13 +1266,13 @@ public:
   using PatternWithoutSequence = PatternNode; // variant<UnderscorePattern, PatternValue, TuplePattern, DictPattern>;
   using SequencePattern = PatternNode; // variant<SeqPattern, HeadTailsPattern, TailsHeadPattern, HeadTailsHeadPattern>;
   using DataStructurePattern = PatternNode; // variant<TuplePattern, SequencePattern, DictPattern, RecordPattern>;
-  using Pattern = PatternNode; // variant<UnderscorePattern, PatternValue, DataStructurePattern,
-                               // AsDataStructurePattern>;
-  using TailPattern = PatternNode; // variant<IdentifierExpr, SequenceExpr, UnderscoreNode, StringExpr>;
+  using Pattern              = PatternNode; // variant<UnderscorePattern, PatternValue, DataStructurePattern,
+                                            // AsDataStructurePattern>;
+  using TailPattern = PatternNode;          // variant<IdentifierExpr, SequenceExpr, UnderscoreNode, StringExpr>;
 
   class PatternWithGuards final : public PatternNode
   {
-public:
+  public:
     ExprNode* guard;
     ExprNode* expr;
 
@@ -1275,7 +1285,7 @@ public:
 
   class PatternWithoutGuards final : public PatternNode
   {
-public:
+  public:
     ExprNode* expr;
 
     explicit PatternWithoutGuards(SourceContext token, ExprNode* expr);
@@ -1287,7 +1297,7 @@ public:
 
   class PatternExpr : public ExprNode
   {
-public:
+  public:
     variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>> patternExpr;
 
     explicit PatternExpr(SourceContext token,
@@ -1300,7 +1310,7 @@ public:
 
   class CatchPatternExpr final : public ExprNode
   {
-public:
+  public:
     Pattern* matchPattern;
     variant<PatternWithoutGuards*, vector<PatternWithGuards*>> pattern;
 
@@ -1314,7 +1324,7 @@ public:
 
   class CatchExpr final : public ExprNode
   {
-public:
+  public:
     vector<CatchPatternExpr*> patterns;
 
     explicit CatchExpr(SourceContext token, const vector<CatchPatternExpr*>& patterns);
@@ -1326,7 +1336,7 @@ public:
 
   class TryCatchExpr final : public ExprNode
   {
-public:
+  public:
     ExprNode* tryExpr;
     CatchExpr* catchExpr;
 
@@ -1339,7 +1349,7 @@ public:
 
   class PatternValue final : public PatternNode
   {
-public:
+  public:
     variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*> expr;
 
     explicit PatternValue(
@@ -1353,7 +1363,7 @@ public:
 
   class AsDataStructurePattern final : public PatternNode
   {
-public:
+  public:
     IdentifierExpr* identifier;
     DataStructurePattern* pattern;
 
@@ -1366,7 +1376,7 @@ public:
 
   class TuplePattern final : public PatternNode
   {
-public:
+  public:
     vector<Pattern*> patterns;
 
     explicit TuplePattern(SourceContext token, const vector<Pattern*>& patterns);
@@ -1378,7 +1388,7 @@ public:
 
   class SeqPattern final : public PatternNode
   {
-public:
+  public:
     vector<Pattern*> patterns;
 
     explicit SeqPattern(SourceContext token, const vector<Pattern*>& patterns);
@@ -1390,7 +1400,7 @@ public:
 
   class HeadTailsPattern final : public PatternNode
   {
-public:
+  public:
     vector<PatternWithoutSequence*> heads;
     TailPattern* tail;
 
@@ -1403,7 +1413,7 @@ public:
 
   class TailsHeadPattern final : public PatternNode
   {
-public:
+  public:
     TailPattern* tail;
     vector<PatternWithoutSequence*> heads;
 
@@ -1416,7 +1426,7 @@ public:
 
   class HeadTailsHeadPattern final : public PatternNode
   {
-public:
+  public:
     vector<PatternWithoutSequence*> left;
     TailPattern* tail;
     vector<PatternWithoutSequence*> right;
@@ -1431,7 +1441,7 @@ public:
 
   class DictPattern final : public PatternNode
   {
-public:
+  public:
     vector<pair<PatternValue*, Pattern*>> keyValuePairs;
 
     explicit DictPattern(SourceContext token, const vector<pair<PatternValue*, Pattern*>>& keyValuePairs);
@@ -1443,7 +1453,7 @@ public:
 
   class RecordPattern final : public PatternNode
   {
-public:
+  public:
     const string recordType;
     vector<pair<NameExpr*, Pattern*>> items;
 
@@ -1456,7 +1466,7 @@ public:
 
   class CaseExpr final : public ExprNode
   {
-public:
+  public:
     ExprNode* expr;
     vector<PatternExpr*> patterns;
 
@@ -1467,111 +1477,182 @@ public:
     ~CaseExpr() override;
   };
 
+  class TypeDeclaration final : public AstNode
+  {
+  public:
+    NameExpr* name{};
+    vector<NameExpr*> typeVars;
+
+    explicit TypeDeclaration(SourceContext token, NameExpr* name, const vector<NameExpr*>& type_vars);
+    any accept(const AstVisitor& visitor) override;
+    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DECLARATION; };
+    ~TypeDeclaration() override;
+  };
+
+  class TypeDefinition final : public AstNode
+  {
+  public:
+    NameExpr* name;
+    vector<NameExpr*> typeNames;
+
+    explicit TypeDefinition(SourceContext token, NameExpr* name, const vector<NameExpr*>& type_names);
+    any accept(const AstVisitor& visitor) override;
+    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DEFINITION; };
+    ~TypeDefinition() override;
+  };
+
+  class TypeNode final : public AstNode
+  {
+  public:
+    TypeDeclaration* declaration;
+    vector<TypeDeclaration*> definitions;
+
+    explicit TypeNode(SourceContext token, TypeDeclaration* declaration, const vector<TypeDeclaration*>& definitions);
+    any accept(const AstVisitor& visitor) override;
+    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE; };
+    ~TypeNode() override;
+  };
+
+  class TypeInstance final : public AstNode
+  {
+  public:
+    NameExpr* name;
+    vector<ExprNode*> exprs;
+
+    explicit TypeInstance(SourceContext token, NameExpr* name, const vector<ExprNode*>& exprs);
+    any accept(const AstVisitor& visitor) override;
+    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_INSTANCE; };
+    ~TypeInstance() override;
+  };
+
+  class FunctionDeclaration final : public AstNode
+  {
+  public:
+    NameExpr* functionName;
+    vector<TypeDefinition*> typeDefinitions;
+
+    explicit FunctionDeclaration(SourceContext token, NameExpr* function_name,
+                                 const vector<TypeDefinition*>& type_definitions);
+    any accept(const AstVisitor& visitor) override;
+    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
+    [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_DECLARATION; };
+    ~FunctionDeclaration() override;
+  };
+
   class AstVisitor
   {
-public:
-    virtual ~AstVisitor() = default;
-    virtual any visit(AddExpr* node) const = 0;
-    virtual any visit(AliasCall* node) const = 0;
-    virtual any visit(AliasExpr* node) const = 0;
-    virtual any visit(ApplyExpr* node) const = 0;
-    virtual any visit(AsDataStructurePattern* node) const = 0;
-    virtual any visit(BinaryNotOpExpr* node) const = 0;
-    virtual any visit(BitwiseAndExpr* node) const = 0;
-    virtual any visit(BitwiseOrExpr* node) const = 0;
-    virtual any visit(BitwiseXorExpr* node) const = 0;
-    virtual any visit(BodyWithGuards* node) const = 0;
-    virtual any visit(BodyWithoutGuards* node) const = 0;
-    virtual any visit(ByteExpr* node) const = 0;
-    virtual any visit(CaseExpr* node) const = 0;
-    virtual any visit(CatchExpr* node) const = 0;
-    virtual any visit(CatchPatternExpr* node) const = 0;
-    virtual any visit(CharacterExpr* node) const = 0;
-    virtual any visit(ConsLeftExpr* node) const = 0;
-    virtual any visit(ConsRightExpr* node) const = 0;
-    virtual any visit(DictExpr* node) const = 0;
-    virtual any visit(DictGeneratorExpr* node) const = 0;
-    virtual any visit(DictGeneratorReducer* node) const = 0;
-    virtual any visit(DictPattern* node) const = 0;
-    virtual any visit(DivideExpr* node) const = 0;
-    virtual any visit(DoExpr* node) const = 0;
-    virtual any visit(EqExpr* node) const = 0;
-    virtual any visit(FalseLiteralExpr* node) const = 0;
-    virtual any visit(FieldAccessExpr* node) const = 0;
-    virtual any visit(FieldUpdateExpr* node) const = 0;
-    virtual any visit(FloatExpr* node) const = 0;
-    virtual any visit(FqnAlias* node) const = 0;
-    virtual any visit(FqnExpr* node) const = 0;
-    virtual any visit(FunctionAlias* node) const = 0;
-    virtual any visit(FunctionBody* node) const = 0;
-    virtual any visit(FunctionExpr* node) const = 0;
-    virtual any visit(FunctionsImport* node) const = 0;
-    virtual any visit(GtExpr* node) const = 0;
-    virtual any visit(GteExpr* node) const = 0;
-    virtual any visit(HeadTailsHeadPattern* node) const = 0;
-    virtual any visit(HeadTailsPattern* node) const = 0;
-    virtual any visit(IdentifierExpr* node) const = 0;
-    virtual any visit(IfExpr* node) const = 0;
-    virtual any visit(ImportClauseExpr* node) const = 0;
-    virtual any visit(ImportExpr* node) const = 0;
-    virtual any visit(InExpr* node) const = 0;
-    virtual any visit(IntegerExpr* node) const = 0;
-    virtual any visit(JoinExpr* node) const = 0;
+  public:
+    virtual ~AstVisitor()                                          = default;
+    virtual any visit(AddExpr* node) const                         = 0;
+    virtual any visit(AliasCall* node) const                       = 0;
+    virtual any visit(AliasExpr* node) const                       = 0;
+    virtual any visit(ApplyExpr* node) const                       = 0;
+    virtual any visit(AsDataStructurePattern* node) const          = 0;
+    virtual any visit(BinaryNotOpExpr* node) const                 = 0;
+    virtual any visit(BitwiseAndExpr* node) const                  = 0;
+    virtual any visit(BitwiseOrExpr* node) const                   = 0;
+    virtual any visit(BitwiseXorExpr* node) const                  = 0;
+    virtual any visit(BodyWithGuards* node) const                  = 0;
+    virtual any visit(BodyWithoutGuards* node) const               = 0;
+    virtual any visit(ByteExpr* node) const                        = 0;
+    virtual any visit(CaseExpr* node) const                        = 0;
+    virtual any visit(CatchExpr* node) const                       = 0;
+    virtual any visit(CatchPatternExpr* node) const                = 0;
+    virtual any visit(CharacterExpr* node) const                   = 0;
+    virtual any visit(ConsLeftExpr* node) const                    = 0;
+    virtual any visit(ConsRightExpr* node) const                   = 0;
+    virtual any visit(DictExpr* node) const                        = 0;
+    virtual any visit(DictGeneratorExpr* node) const               = 0;
+    virtual any visit(DictGeneratorReducer* node) const            = 0;
+    virtual any visit(DictPattern* node) const                     = 0;
+    virtual any visit(DivideExpr* node) const                      = 0;
+    virtual any visit(DoExpr* node) const                          = 0;
+    virtual any visit(EqExpr* node) const                          = 0;
+    virtual any visit(FalseLiteralExpr* node) const                = 0;
+    virtual any visit(FieldAccessExpr* node) const                 = 0;
+    virtual any visit(FieldUpdateExpr* node) const                 = 0;
+    virtual any visit(FloatExpr* node) const                       = 0;
+    virtual any visit(FqnAlias* node) const                        = 0;
+    virtual any visit(FqnExpr* node) const                         = 0;
+    virtual any visit(FunctionAlias* node) const                   = 0;
+    virtual any visit(FunctionBody* node) const                    = 0;
+    virtual any visit(FunctionDeclaration* node) const             = 0;
+    virtual any visit(FunctionExpr* node) const                    = 0;
+    virtual any visit(FunctionsImport* node) const                 = 0;
+    virtual any visit(GtExpr* node) const                          = 0;
+    virtual any visit(GteExpr* node) const                         = 0;
+    virtual any visit(HeadTailsHeadPattern* node) const            = 0;
+    virtual any visit(HeadTailsPattern* node) const                = 0;
+    virtual any visit(IdentifierExpr* node) const                  = 0;
+    virtual any visit(IfExpr* node) const                          = 0;
+    virtual any visit(ImportClauseExpr* node) const                = 0;
+    virtual any visit(ImportExpr* node) const                      = 0;
+    virtual any visit(InExpr* node) const                          = 0;
+    virtual any visit(IntegerExpr* node) const                     = 0;
+    virtual any visit(JoinExpr* node) const                        = 0;
     virtual any visit(KeyValueCollectionExtractorExpr* node) const = 0;
-    virtual any visit(LambdaAlias* node) const = 0;
-    virtual any visit(LeftShiftExpr* node) const = 0;
-    virtual any visit(LetExpr* node) const = 0;
-    virtual any visit(LogicalAndExpr* node) const = 0;
-    virtual any visit(LogicalNotOpExpr* node) const = 0;
-    virtual any visit(LogicalOrExpr* node) const = 0;
-    virtual any visit(LtExpr* node) const = 0;
-    virtual any visit(LteExpr* node) const = 0;
-    virtual any visit(ModuloExpr* node) const = 0;
-    virtual any visit(ModuleAlias* node) const = 0;
-    virtual any visit(ModuleCall* node) const = 0;
-    virtual any visit(ModuleExpr* node) const = 0;
-    virtual any visit(ModuleImport* node) const = 0;
-    virtual any visit(MultiplyExpr* node) const = 0;
-    virtual any visit(NameCall* node) const = 0;
-    virtual any visit(NameExpr* node) const = 0;
-    virtual any visit(NeqExpr* node) const = 0;
-    virtual any visit(OpExpr* node) const = 0;
-    virtual any visit(PackageNameExpr* node) const = 0;
-    virtual any visit(PatternAlias* node) const = 0;
-    virtual any visit(PatternExpr* node) const = 0;
-    virtual any visit(PatternValue* node) const = 0;
-    virtual any visit(PatternWithGuards* node) const = 0;
-    virtual any visit(PatternWithoutGuards* node) const = 0;
-    virtual any visit(PipeLeftExpr* node) const = 0;
-    virtual any visit(PipeRightExpr* node) const = 0;
-    virtual any visit(PowerExpr* node) const = 0;
-    virtual any visit(RaiseExpr* node) const = 0;
-    virtual any visit(RangeSequenceExpr* node) const = 0;
-    virtual any visit(RecordInstanceExpr* node) const = 0;
-    virtual any visit(RecordNode* node) const = 0;
-    virtual any visit(RecordPattern* node) const = 0;
-    virtual any visit(RightShiftExpr* node) const = 0;
-    virtual any visit(SeqGeneratorExpr* node) const = 0;
-    virtual any visit(SeqPattern* node) const = 0;
-    virtual any visit(SequenceExpr* node) const = 0;
-    virtual any visit(SetExpr* node) const = 0;
-    virtual any visit(SetGeneratorExpr* node) const = 0;
-    virtual any visit(StringExpr* node) const = 0;
-    virtual any visit(SubtractExpr* node) const = 0;
-    virtual any visit(SymbolExpr* node) const = 0;
-    virtual any visit(TailsHeadPattern* node) const = 0;
-    virtual any visit(TrueLiteralExpr* node) const = 0;
-    virtual any visit(TryCatchExpr* node) const = 0;
-    virtual any visit(TupleExpr* node) const = 0;
-    virtual any visit(TuplePattern* node) const = 0;
-    virtual any visit(UnderscoreNode* node) const = 0;
-    virtual any visit(UnitExpr* node) const = 0;
-    virtual any visit(ValueAlias* node) const = 0;
-    virtual any visit(ValueCollectionExtractorExpr* node) const = 0;
-    virtual any visit(ValueExpr* node) const = 0;
-    virtual any visit(ValuesSequenceExpr* node) const = 0;
-    virtual any visit(WithExpr* node) const = 0;
-    virtual any visit(ZerofillRightShiftExpr* node) const = 0;
+    virtual any visit(LambdaAlias* node) const                     = 0;
+    virtual any visit(LeftShiftExpr* node) const                   = 0;
+    virtual any visit(LetExpr* node) const                         = 0;
+    virtual any visit(LogicalAndExpr* node) const                  = 0;
+    virtual any visit(LogicalNotOpExpr* node) const                = 0;
+    virtual any visit(LogicalOrExpr* node) const                   = 0;
+    virtual any visit(LtExpr* node) const                          = 0;
+    virtual any visit(LteExpr* node) const                         = 0;
+    virtual any visit(ModuloExpr* node) const                      = 0;
+    virtual any visit(ModuleAlias* node) const                     = 0;
+    virtual any visit(ModuleCall* node) const                      = 0;
+    virtual any visit(ModuleExpr* node) const                      = 0;
+    virtual any visit(ModuleImport* node) const                    = 0;
+    virtual any visit(MultiplyExpr* node) const                    = 0;
+    virtual any visit(NameCall* node) const                        = 0;
+    virtual any visit(NameExpr* node) const                        = 0;
+    virtual any visit(NeqExpr* node) const                         = 0;
+    virtual any visit(OpExpr* node) const                          = 0;
+    virtual any visit(PackageNameExpr* node) const                 = 0;
+    virtual any visit(PatternAlias* node) const                    = 0;
+    virtual any visit(PatternExpr* node) const                     = 0;
+    virtual any visit(PatternValue* node) const                    = 0;
+    virtual any visit(PatternWithGuards* node) const               = 0;
+    virtual any visit(PatternWithoutGuards* node) const            = 0;
+    virtual any visit(PipeLeftExpr* node) const                    = 0;
+    virtual any visit(PipeRightExpr* node) const                   = 0;
+    virtual any visit(PowerExpr* node) const                       = 0;
+    virtual any visit(RaiseExpr* node) const                       = 0;
+    virtual any visit(RangeSequenceExpr* node) const               = 0;
+    virtual any visit(RecordInstanceExpr* node) const              = 0;
+    virtual any visit(RecordNode* node) const                      = 0;
+    virtual any visit(RecordPattern* node) const                   = 0;
+    virtual any visit(RightShiftExpr* node) const                  = 0;
+    virtual any visit(SeqGeneratorExpr* node) const                = 0;
+    virtual any visit(SeqPattern* node) const                      = 0;
+    virtual any visit(SequenceExpr* node) const                    = 0;
+    virtual any visit(SetExpr* node) const                         = 0;
+    virtual any visit(SetGeneratorExpr* node) const                = 0;
+    virtual any visit(StringExpr* node) const                      = 0;
+    virtual any visit(SubtractExpr* node) const                    = 0;
+    virtual any visit(SymbolExpr* node) const                      = 0;
+    virtual any visit(TailsHeadPattern* node) const                = 0;
+    virtual any visit(TrueLiteralExpr* node) const                 = 0;
+    virtual any visit(TryCatchExpr* node) const                    = 0;
+    virtual any visit(TupleExpr* node) const                       = 0;
+    virtual any visit(TuplePattern* node) const                    = 0;
+    virtual any visit(TypeDeclaration* node) const                 = 0;
+    virtual any visit(TypeDefinition* node) const                  = 0;
+    virtual any visit(TypeNode* node) const                        = 0;
+    virtual any visit(TypeInstance* node) const                    = 0;
+    virtual any visit(UnderscoreNode* node) const                  = 0;
+    virtual any visit(UnitExpr* node) const                        = 0;
+    virtual any visit(ValueAlias* node) const                      = 0;
+    virtual any visit(ValueCollectionExtractorExpr* node) const    = 0;
+    virtual any visit(ValueExpr* node) const                       = 0;
+    virtual any visit(ValuesSequenceExpr* node) const              = 0;
+    virtual any visit(WithExpr* node) const                        = 0;
+    virtual any visit(ZerofillRightShiftExpr* node) const          = 0;
     virtual any visit(ExprNode* node) const;
     virtual any visit(AstNode* node) const;
     virtual any visit(ScopedNode* node) const;

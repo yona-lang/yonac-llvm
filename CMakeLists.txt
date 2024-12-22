@@ -21,14 +21,13 @@ set(YONAC_LLVM_VERSION_PATCH 0)
 # Set path to generator
 set(ANTLR4_JAR_LOCATION ${PROJECT_SOURCE_DIR}/lib/antlr-4.13.2-complete.jar)
 
-find_package(antlr4-runtime CONFIG REQUIRED)
-find_package(antlr4-generator REQUIRED)
-
 set(Boost_USE_STATIC_LIBS OFF)
 set(Boost_USE_MULTITHREADED ON)
 set(Boost_USE_STATIC_RUNTIME OFF)
-find_package(Boost REQUIRED COMPONENTS program_options log tokenizer) # header only libraries must not be added here
 
+find_package(antlr4-runtime CONFIG REQUIRED)
+find_package(antlr4-generator REQUIRED)
+find_package(Boost REQUIRED COMPONENTS program_options log tokenizer) # header only libraries must not be added here
 find_package(LLVM CONFIG REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")

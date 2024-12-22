@@ -145,7 +145,7 @@ int main(const int argc, const char* argv[])
   interp::Interpreter interpreter;
 
   auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
-  auto result = optimized_ast->accept(interpreter);
+  auto result        = optimized_ast->accept(interpreter);
   cout << result.type().name() << endl;
   delete optimized_ast;
 

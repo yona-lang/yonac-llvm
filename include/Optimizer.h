@@ -13,7 +13,7 @@ namespace yona::compiler
 
   class Optimizer final : public AstVisitor
   {
-public:
+  public:
     [[nodiscard]] any visit(AddExpr* node) const override;
     [[nodiscard]] any visit(AliasCall* node) const override;
     [[nodiscard]] any visit(AliasExpr* node) const override;
@@ -115,6 +115,11 @@ public:
     [[nodiscard]] any visit(ValuesSequenceExpr* node) const override;
     [[nodiscard]] any visit(WithExpr* node) const override;
     [[nodiscard]] any visit(ZerofillRightShiftExpr* node) const override;
+    [[nodiscard]] any visit(FunctionDeclaration* node) const override;
+    [[nodiscard]] any visit(TypeDeclaration* node) const override;
+    [[nodiscard]] any visit(TypeDefinition* node) const override;
+    [[nodiscard]] any visit(TypeNode* node) const override;
+    [[nodiscard]] any visit(TypeInstance* node) const override;
     ~Optimizer() override = default;
     [[nodiscard]] any visit(ExprNode* node) const override;
     [[nodiscard]] any visit(AstNode* node) const override;

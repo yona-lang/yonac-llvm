@@ -1,7 +1,6 @@
 #pragma once
 
 #include <antlr4-runtime.h>
-#include <iostream>
 #include <stack>
 
 namespace yona
@@ -10,11 +9,12 @@ namespace yona
 
   class YonaLexerBase : public antlr4::Lexer
   {
-private:
+  private:
     size_t interpolatedStringLevel = 0;
     stack<size_t> curlyLevels;
+    unordered_set<string> symbols;
 
-protected:
+  protected:
     void interpolationOpened();
     void interpolationClosed();
     void openCurly();
@@ -22,9 +22,10 @@ protected:
     void interpolatedCurlyOpened();
     void interpolatedDoubleCurlyOpened();
     void interpolatedDoubleCurlyClosed();
+    void addSymbol();
     unique_ptr<antlr4::CommonToken> curlyToken(string const& text);
 
-public:
+  public:
     YonaLexerBase(antlr4::CharStream* input);
   };
 

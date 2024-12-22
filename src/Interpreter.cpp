@@ -17,10 +17,10 @@ namespace yona::interp
 
   any Interpreter::visit(AddExpr* node) const
   {
-    auto left = visit(node->left);
+    auto left  = visit(node->left);
     auto right = visit(node->right);
     return any_cast<expr_wrapper>(left).get_node<IntegerExpr>()->value +
-        any_cast<expr_wrapper>(right).get_node<IntegerExpr>()->value;
+           any_cast<expr_wrapper>(right).get_node<IntegerExpr>()->value;
   }
   any Interpreter::visit(AliasCall* node) const { return expr_wrapper(node); }
   any Interpreter::visit(AliasExpr* node) const { return expr_wrapper(node); }
@@ -122,6 +122,11 @@ namespace yona::interp
   any Interpreter::visit(ValuesSequenceExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(WithExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ZerofillRightShiftExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(FunctionDeclaration* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(TypeDeclaration* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(TypeDefinition* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(TypeNode* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(TypeInstance* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ExprNode* node) const { return AstVisitor::visit(node); }
   any Interpreter::visit(AstNode* node) const { return AstVisitor::visit(node); }
   any Interpreter::visit(ScopedNode* node) const { return AstVisitor::visit(node); }

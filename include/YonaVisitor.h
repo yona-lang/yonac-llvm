@@ -22,17 +22,22 @@ namespace yona
 
   class YonaVisitor : public YonaParserBaseVisitor
   {
-private:
+  private:
     int lambda_count_ = 0;
     stack<string> module_stack_;
+    vector<string> names_;
 
     string nextLambdaName();
-    ModuleImportQueue module_imports;
+    ModuleImportQueue module_imports_;
 
     template <typename T>
       requires derived_from<T, AstNode>
     T* visit_expr(tree::ParseTree* tree)
     {
+      if (tree == nullptr)
+      {
+        return nullptr;
+      }
       return any_cast<expr_wrapper>(visit(tree)).get_node<T>();
     }
 
@@ -48,8 +53,10 @@ private:
       return exprs;
     }
 
-public:
-    explicit YonaVisitor(ModuleImportQueue module_imports) : module_imports(std::move(module_imports)) {}
+    [[nodiscard]] string fqn() const;
+
+  public:
+    explicit YonaVisitor(ModuleImportQueue module_imports) : module_imports_(std::move(module_imports)) {}
 
     std::any visitInput(YonaParser::InputContext* ctx) override;
     std::any visitFunction(YonaParser::FunctionContext* ctx) override;
@@ -178,5 +185,12 @@ public:
     std::any visitRecordType(YonaParser::RecordTypeContext* ctx) override;
     std::any visitFieldAccessExpr(YonaParser::FieldAccessExprContext* ctx) override;
     std::any visitFieldUpdateExpr(YonaParser::FieldUpdateExprContext* ctx) override;
+    std::any visitFunctionDecl(YonaParser::FunctionDeclContext* ctx) override;
+    std::any visitType(YonaParser::TypeContext* ctx) override;
+    std::any visitTypeDecl(YonaParser::TypeDeclContext* ctx) override;
+    std::any visitTypeDef(YonaParser::TypeDefContext* ctx) override;
+    std::any visitTypeName(YonaParser::TypeNameContext* ctx) override;
+    std::any visitTypeVar(YonaParser::TypeVarContext* ctx) override;
+    std::any visitTypeInstance(YonaParser::TypeInstanceContext* ctx) override;
   };
 }

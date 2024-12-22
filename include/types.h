@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <antlr4-runtime.h>
-
 namespace yona::compiler::types
 {
   using namespace std;
@@ -13,9 +11,11 @@ namespace yona::compiler::types
   struct SingleItemCollectionType;
   struct DictCollectionType;
   struct DictCollectionType;
-  struct TupleType;
+  struct NamedType;
   struct FunctionType;
   struct SumType;
+  struct ProductType;
+  struct UnionType;
 
   enum ValueType
   {
@@ -30,9 +30,9 @@ namespace yona::compiler::types
     Module
   };
 
-  // TODO implement comparators
-  using Type = variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>,
-                       shared_ptr<FunctionType>, shared_ptr<TupleType>, shared_ptr<SumType>, nullptr_t>;
+  using Type =
+      variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
+              shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, nullptr_t>;
 
   struct SingleItemCollectionType final
   {
@@ -50,11 +50,6 @@ namespace yona::compiler::types
     Type valueType;
   };
 
-  struct TupleType final
-  {
-    vector<Type> fieldTypes;
-  };
-
   struct FunctionType final
   {
     Type returnType;
@@ -66,11 +61,17 @@ namespace yona::compiler::types
     unordered_set<Type> types;
   };
 
-  struct RecordType final
+  struct ProductType final
   {
-    string name;
+    vector<Type> types;
   };
 
-  using FunctionTypes = unordered_map<string, Type>; // FQN -> Type map
+  struct NamedType final
+  {
+    string name;
+    Type type;
+  };
+
+  using FunctionTypes = unordered_map<string, FunctionType>; // FQN -> Type map
   inline FunctionTypes FUNCTION_TYPES;
 }

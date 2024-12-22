@@ -25,10 +25,10 @@ namespace yona::parser
 
   class Parser
   {
-private:
+  private:
     ModuleImportQueue module_import_queue;
 
-public:
+  public:
     ParseResult parse_input(istream& stream);
   };
 }

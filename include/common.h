@@ -15,13 +15,13 @@ namespace yona
   using namespace std;
   using namespace antlr4;
 
-  using SourceContext = const ParserRuleContext&;
+  using SourceContext     = const ParserRuleContext&;
   using ModuleImportQueue = shared_ptr<queue<vector<string>>>;
 
   inline struct YonaEnvironment
   {
     vector<string> search_paths;
-    bool compile_mode;
+    bool compile_mode = false;
   } YONA_ENVIRONMENT;
 
   struct TokenLocation final
@@ -76,7 +76,7 @@ namespace yona
     }
   };
 
-  inline const char* ErrorTypes[] = { "syntax", "type", "check" };
+  inline const char* ErrorTypes[] = {"syntax", "type", "check"};
 
   inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
   {
@@ -88,11 +88,11 @@ namespace yona
 
   class AstContext final
   {
-private:
+  private:
     unordered_multimap<YonaError::Type, YonaError> errors_;
 
-public:
-    void addError(const YonaError& error) { errors_.insert({ error.type, error }); }
+  public:
+    void addError(const YonaError& error) { errors_.insert({error.type, error}); }
     [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
     [[nodiscard]] const unordered_multimap<YonaError::Type, YonaError>& getErrors() const { return errors_; }
     [[nodiscard]] size_t errorCount() const { return errors_.size(); }

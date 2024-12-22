@@ -43,9 +43,11 @@ KW_TRY     : 'try';
 KW_CATCH   : 'catch';
 KW_RAISE   : 'raise';
 KW_RECORD  : 'record';
+KW_TYPE    : 'type';
 KW_WITH    : 'with';
 KW_DAEMON  : 'daemon';
 
+// Types
 KW_BYTE   : 'Byte';
 KW_BOOL   : 'Bool';
 KW_INT    : 'Int';
@@ -121,7 +123,7 @@ OP_JOIN   : '++';
 OP_PIPE_L : '<|';
 OP_PIPE_R : '|>';
 
-SYMBOL: COLON (LOWERCASE_NAME | UPPERCASE_NAME);
+SYMBOL: COLON LOWERCASE_NAME {addSymbol();};
 
 COMMENT: NEWLINE? WS? '#' InputCharacter* -> channel(COMMENTS_CHANNEL);
 

@@ -6,6 +6,8 @@ options {
 
 input: NEWLINE? expression NEWLINE? EOF;
 
+functionDecl
+  : NEWLINE* functionName DCOLON typeDef (OP_RIGHT_ARROW typeDef)* NEWLINE?;
 function: NEWLINE* functionName pattern* NEWLINE? functionBody;
 functionName: name;
 functionBody: bodyWithGuards+ | bodyWithoutGuard;
@@ -71,7 +73,8 @@ value
   | fqn
   | lambda
   | module
-  | recordInstance;
+  | recordInstance
+  | typeInstance;
 
 patternValue: unit | literal | symbol | identifier;
 
@@ -92,8 +95,10 @@ call: name | moduleCall | nameCall;
 moduleCall: (fqn | PARENS_L expression PARENS_R) DCOLON name;
 nameCall: varName = name DCOLON funName = name;
 module
-  : NEWLINE* KW_MODULE fqn KW_EXPORTS nonEmptyListOfNames KW_AS NEWLINE NEWLINE? record* NEWLINE? function+ NEWLINE?
-      KW_END;
+  : NEWLINE* KW_MODULE fqn KW_EXPORTS nonEmptyListOfNames KW_AS NEWLINE NEWLINE? (
+    record
+    | type
+  )* NEWLINE? functionDecl* (functionDecl? function)+ NEWLINE? KW_END;
 nonEmptyListOfNames: NEWLINE? name NEWLINE? (COMMA NEWLINE? name)* NEWLINE?;
 
 unit: UNIT;
@@ -252,8 +257,8 @@ keyValueCollectionExtractor
 identifierOrUnderscore: identifier | underscore;
 
 record
-  : KW_RECORD recordType OP_ASSIGN PARENS_L identifier (
-    NEWLINE? COMMA NEWLINE? identifier
+  : KW_RECORD recordType OP_ASSIGN PARENS_L identifier COLON typeDef (
+    NEWLINE? COMMA NEWLINE? identifier COLON typeName
   )* NEWLINE? PARENS_R NEWLINE;
 
 recordInstance
@@ -267,3 +272,18 @@ fieldUpdateExpr
   : identifier PARENS_L (name OP_ASSIGN expression) (
     NEWLINE? COMMA NEWLINE? name OP_ASSIGN expression
   )* NEWLINE? PARENS_R;
+
+type
+  : KW_TYPE declaration = typeDecl OP_ASSIGN typeDecl (
+    NEWLINE? VLINE NEWLINE? typeDecl
+  )* NEWLINE?;
+typeDecl: typeName typeVar*;
+typeDef: typeName typeName*;
+typeName: UPPERCASE_NAME;
+typeVar: LOWERCASE_NAME;
+typeInstance
+  : typeName (
+    PARENS_L NEWLINE? (
+      expression (NEWLINE? COMMA NEWLINE? expression)* NEWLINE?
+    )? PARENS_R
+  )?;

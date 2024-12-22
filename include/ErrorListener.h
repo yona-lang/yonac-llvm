@@ -14,7 +14,7 @@ namespace yona::parser
   {
     AstContext& ast_ctx;
 
-public:
+  public:
     explicit ErrorListener(AstContext& ast_ctx) : ast_ctx(ast_ctx) {}
     ~ErrorListener() override = default;
     void syntaxError(Recognizer* recognizer, antlr4::Token* offendingSymbol, size_t line, size_t charPositionInLine,

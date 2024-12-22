@@ -34,15 +34,15 @@ namespace yona::parser
 
     if (ast_ctx.hasErrors())
     {
-      return ParseResult{ !ast_ctx.hasErrors(), nullptr, nullptr, ast_ctx };
+      return ParseResult{!ast_ctx.hasErrors(), nullptr, nullptr, ast_ctx};
     }
 
     YonaVisitor yona_visitor(std::move(module_import_queue));
-    any ast = yona_visitor.visitInput(tree);
+    any ast   = yona_visitor.visitInput(tree);
     auto node = any_cast<expr_wrapper>(ast).get_node<AstNode>();
 
     auto type = node->infer_type(ast_ctx);
 
-    return ParseResult{ !ast_ctx.hasErrors(), node, type, ast_ctx };
+    return ParseResult{!ast_ctx.hasErrors(), node, type, ast_ctx};
   }
 }
