@@ -27,7 +27,9 @@ namespace yona::compiler::types
     Bool,
     Unit,
     Symbol,
-    Module
+    Module,
+    Record,
+    Exception
   };
 
   using Type =

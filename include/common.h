@@ -16,7 +16,7 @@ namespace yona
   using namespace antlr4;
 
   using SourceContext     = const ParserRuleContext&;
-  using ModuleImportQueue = shared_ptr<queue<vector<string>>>;
+  using ModuleImportQueue = queue<vector<string>>;
 
   inline struct YonaEnvironment
   {
@@ -92,9 +92,19 @@ namespace yona
     unordered_multimap<YonaError::Type, YonaError> errors_;
 
   public:
+    explicit AstContext(unordered_multimap<YonaError::Type, YonaError> errors) : errors_(std::move(errors)) {};
+    explicit AstContext() = default;
+
     void addError(const YonaError& error) { errors_.insert({error.type, error}); }
     [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
     [[nodiscard]] const unordered_multimap<YonaError::Type, YonaError>& getErrors() const { return errors_; }
     [[nodiscard]] size_t errorCount() const { return errors_.size(); }
+
+    AstContext operator+(const AstContext& other) const
+    {
+      unordered_multimap new_errors(errors_);
+      new_errors.insert(other.errors_.begin(), other.errors_.end());
+      return AstContext(new_errors);
+    }
   };
 };

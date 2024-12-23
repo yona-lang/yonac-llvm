@@ -4,11 +4,13 @@
 #include "utils.h"
 
 #include <antlr4-runtime.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/program_options.hpp>
+#include <filesystem>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace yona
@@ -42,4 +44,15 @@ namespace yona
   }
 
   string unescapeYonaString(const string& rawString) { return UNESCAPE_YONA.translate(rawString); }
+
+  string module_location(const vector<string>& module_name)
+  {
+    filesystem::path result;
+    for (const auto& component : module_name)
+    {
+      result /= component;
+    }
+    result.replace_extension(".yona");
+    return result;
+  }
 }

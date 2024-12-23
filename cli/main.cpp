@@ -1,5 +1,6 @@
 ﻿// main.cpp : Defines the entry point for the application.
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <type_traits>
@@ -25,13 +26,17 @@ struct search_paths
   vector<string> values;
 };
 
+struct path
+{
+  vector<string> values;
+};
+
 #ifdef _WIN32
 #define PATH_SEPARATOR ";"
 #else
 #define PATH_SEPARATOR ":"
 #endif
 
-// Function which validates additional tokens from command line.
 static void validate(boost::any& v, vector<string> const& tokens, search_paths* target_type, int)
 {
   if (v.empty())
@@ -43,39 +48,47 @@ static void validate(boost::any& v, vector<string> const& tokens, search_paths* 
   const boost::char_separator sep(PATH_SEPARATOR);
   for (string const& t : tokens)
   {
-    if (t.find(","))
-    {
-      // tokenize values and push them back onto p->values
-      boost::tokenizer tok(t, sep);
-      ranges::copy(tok, back_inserter(p->values));
-    }
-    else
-    {
-      // store value as is
-      p->values.push_back(t);
-    }
+    // tokenize values and push them back onto p->values
+    boost::tokenizer tok(t, sep);
+    ranges::copy(tok, back_inserter(p->values));
   }
 }
 
-string process_program_options(const int argc, const char* const argv[])
+static void validate(boost::any& v, vector<string> const& tokens, path* target_type, int)
+{
+  if (v.empty())
+    v = boost::any(path());
+
+  path* p = boost::any_cast<path>(&v);
+  BOOST_ASSERT(p);
+
+  for (string const& t : tokens)
+  {
+    p->values.push_back(filesystem::path(t));
+  }
+}
+
+vector<string> process_program_options(const int argc, const char* const argv[])
 {
   namespace po = boost::program_options;
 
   bool compile;
-  string input_file;
   search_paths sp;
+  path mp;
 
   po::options_description desc("Allowed options");
   desc.add_options()("help", "Show brief usage message");
   desc.add_options()("compile", po::bool_switch(&compile)->default_value(false), "Compile the input file");
-  desc.add_options()("input-file", po::value<string>(&input_file), "Input file");
+  desc.add_options()("module", po::value<path>(&mp),
+                     "Input module file (lookup-able in YONA_PATH, separated by system specific path separator, "
+                     "without .yona extension)");
 
   po::options_description desc_env;
   desc_env.add_options()("yona-path", po::value<search_paths>(&sp)->multitoken(),
                          "Yona search paths (colon-separated list)");
 
   po::positional_options_description p;
-  p.add("input-file", 1);
+  p.add("module", 1);
 
   po::variables_map args, env_args;
 
@@ -88,7 +101,7 @@ string process_program_options(const int argc, const char* const argv[])
   }
   catch (po::error const& e)
   {
-    std::cerr << e.what() << '\n';
+    BOOST_LOG_TRIVIAL(error) << e.what();
     exit(EXIT_FAILURE);
   }
   po::notify(args);
@@ -108,7 +121,7 @@ string process_program_options(const int argc, const char* const argv[])
     yona::YONA_ENVIRONMENT.compile_mode = true;
   }
 
-  return input_file;
+  return mp.values;
 }
 
 void init_logging() { boost::log::add_console_log(std::cout); }
@@ -121,13 +134,10 @@ int main(const int argc, const char* argv[])
   using namespace yona::compiler::types;
 
   init_logging();
-  auto input_file = process_program_options(argc, argv);
-
-  ifstream stream(input_file);
-  BOOST_LOG_TRIVIAL(info) << "Yona Parser started for input file: " << input_file;
+  auto module = process_program_options(argc, argv);
 
   parser::Parser parser;
-  auto [success, node, type, ast_ctx] = parser.parse_input(stream);
+  auto [success, node, type, ast_ctx] = parser.parse_input(module);
 
   if (!success)
   {
@@ -146,9 +156,6 @@ int main(const int argc, const char* argv[])
 
   auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
   auto result        = optimized_ast->accept(interpreter);
-  cout << result.type().name() << endl;
-  delete optimized_ast;
 
-  stream.close();
   return EXIT_SUCCESS;
 }

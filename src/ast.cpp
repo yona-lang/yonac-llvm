@@ -86,13 +86,13 @@ namespace yona::ast
 
   any NameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type NameExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type NameExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
-  Type AliasExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type AliasExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   any AliasExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-  Type CallExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type CallExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   any CallExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
   any ImportClauseExpr::accept(const AstVisitor& visitor) { return ScopedNode::accept(visitor); }
@@ -110,7 +110,7 @@ namespace yona::ast
 
   any IdentifierExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type IdentifierExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type IdentifierExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   IdentifierExpr::~IdentifierExpr() { delete name; }
 
@@ -164,7 +164,7 @@ namespace yona::ast
 
   any UnderscoreNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type UnderscoreNode::infer_type(AstContext& ctx) const { return nullptr; }
+  Type UnderscoreNode::infer_type(AstContext& ctx) const { unreachable(); }
 
   any ValueExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
@@ -352,7 +352,7 @@ namespace yona::ast
 
   any PackageNameExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type PackageNameExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PackageNameExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   PackageNameExpr::~PackageNameExpr()
   {
@@ -379,7 +379,7 @@ namespace yona::ast
 
   any FqnExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type FqnExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type FqnExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   FqnExpr::~FqnExpr()
   {
@@ -484,11 +484,7 @@ namespace yona::ast
 
   Type RecordInstanceExpr::infer_type(AstContext& ctx) const
   {
-    vector<Type> itemTypes{Symbol};
-    ranges::for_each(items,
-                     [&](const pair<NameExpr*, ExprNode*>& p) { itemTypes.push_back(p.second->infer_type(ctx)); });
-
-    return make_shared<ProductType>(itemTypes);
+    return make_shared<NamedType>(recordType->value, Record);
   }
 
   RecordInstanceExpr::~RecordInstanceExpr()
@@ -871,23 +867,6 @@ namespace yona::ast
     return Bool;
   }
 
-  PipeLeftExpr::PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right) {}
-
-  any PipeLeftExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-  Type PipeLeftExpr::infer_type(AstContext& ctx) const { return nullptr; }
-
-  PipeRightExpr::PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right) : BinaryOpExpr(token, left, right)
-  {
-  }
-
-  any PipeRightExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
-
-  Type PipeRightExpr::infer_type(AstContext& ctx) const
-  {
-    return nullptr; // TODO
-  }
-
   LetExpr::LetExpr(SourceContext token, const vector<AliasExpr*>& aliases, ExprNode* expr) :
       ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(expr->with_parent<ExprNode>(this))
   {
@@ -1004,7 +983,7 @@ namespace yona::ast
 
   any RaiseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type RaiseExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type RaiseExpr::infer_type(AstContext& ctx) const { return Exception; }
 
   RaiseExpr::~RaiseExpr()
   {
@@ -1155,10 +1134,7 @@ namespace yona::ast
 
   any FunctionAlias::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type FunctionAlias::infer_type(AstContext& ctx) const
-  {
-    return nullptr; // TODO
-  }
+  Type FunctionAlias::infer_type(AstContext& ctx) const { return alias->infer_type(ctx); }
 
   FunctionAlias::~FunctionAlias()
   {
@@ -1310,7 +1286,7 @@ namespace yona::ast
 
   any DictGeneratorReducer::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type DictGeneratorReducer::infer_type(AstContext& ctx) const { return nullptr; }
+  Type DictGeneratorReducer::infer_type(AstContext& ctx) const { unreachable(); }
 
   DictGeneratorReducer::~DictGeneratorReducer()
   {
@@ -1340,14 +1316,30 @@ namespace yona::ast
     delete stepExpression;
   }
 
-  ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr) :
-      CollectionExtractorExpr(token), expr(node_with_parent(expr, this))
+  ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token,
+                                                             IdentifierOrUnderscore identifier_or_underscore) :
+      CollectionExtractorExpr(token), expr(node_with_parent(identifier_or_underscore, this))
   {
   }
 
   any ValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type ValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type ValueCollectionExtractorExpr::infer_type_identifier_or_underscore(AstContext& ctx) const
+  {
+    if (holds_alternative<IdentifierExpr*>(expr))
+    {
+      return get<IdentifierExpr*>(expr)->infer_type(ctx);
+    }
+    else
+    {
+      return get<UnderscoreNode*>(expr)->infer_type(ctx);
+    }
+  }
+
+  Type ValueCollectionExtractorExpr::infer_type(AstContext& ctx) const
+  {
+    return infer_type_identifier_or_underscore(ctx);
+  }
 
   void release_identifier_or_underscore(IdentifierOrUnderscore expr)
   {
@@ -1372,7 +1364,7 @@ namespace yona::ast
 
   any KeyValueCollectionExtractorExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type KeyValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type KeyValueCollectionExtractorExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr()
   {
@@ -1387,7 +1379,7 @@ namespace yona::ast
 
   any PatternWithGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); };
 
-  Type PatternWithGuards::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PatternWithGuards::infer_type(AstContext& ctx) const { unreachable(); }
 
   PatternWithGuards::~PatternWithGuards()
   {
@@ -1402,7 +1394,7 @@ namespace yona::ast
 
   any PatternWithoutGuards::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type PatternWithoutGuards::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PatternWithoutGuards::infer_type(AstContext& ctx) const { return expr->infer_type(ctx); }
 
   PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
 
@@ -1417,7 +1409,7 @@ namespace yona::ast
   }
   any PatternExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
-  Type PatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PatternExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   PatternExpr::~PatternExpr()
   {
@@ -1449,7 +1441,7 @@ namespace yona::ast
 
   any CatchPatternExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type CatchPatternExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type CatchPatternExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   CatchPatternExpr::~CatchPatternExpr()
   {
@@ -1511,7 +1503,7 @@ namespace yona::ast
 
   any PatternValue::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type PatternValue::infer_type(AstContext& ctx) const { return nullptr; }
+  Type PatternValue::infer_type(AstContext& ctx) const { unreachable(); }
 
   PatternValue::~PatternValue()
   {
@@ -1548,7 +1540,7 @@ namespace yona::ast
 
   any UnderscorePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type UnderscorePattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type UnderscorePattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   TuplePattern::TuplePattern(SourceContext token, const vector<Pattern*>& patterns) :
       PatternNode(token), patterns(nodes_with_parent(patterns, this))
@@ -1557,7 +1549,7 @@ namespace yona::ast
 
   any TuplePattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TuplePattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TuplePattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   TuplePattern::~TuplePattern()
   {
@@ -1574,7 +1566,7 @@ namespace yona::ast
 
   any SeqPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type SeqPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type SeqPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   SeqPattern::~SeqPattern()
   {
@@ -1592,7 +1584,7 @@ namespace yona::ast
 
   any HeadTailsPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type HeadTailsPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type HeadTailsPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   HeadTailsPattern::~HeadTailsPattern()
   {
@@ -1611,7 +1603,7 @@ namespace yona::ast
 
   any TailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TailsHeadPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   TailsHeadPattern::~TailsHeadPattern()
   {
@@ -1631,7 +1623,7 @@ namespace yona::ast
 
   any HeadTailsHeadPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type HeadTailsHeadPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type HeadTailsHeadPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   HeadTailsHeadPattern::~HeadTailsHeadPattern()
   {
@@ -1653,7 +1645,7 @@ namespace yona::ast
 
   any DictPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type DictPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type DictPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   DictPattern::~DictPattern()
   {
@@ -1671,7 +1663,7 @@ namespace yona::ast
 
   any RecordPattern::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type RecordPattern::infer_type(AstContext& ctx) const { return nullptr; }
+  Type RecordPattern::infer_type(AstContext& ctx) const { unreachable(); }
 
   RecordPattern::~RecordPattern()
   {
@@ -1689,7 +1681,15 @@ namespace yona::ast
 
   any CaseExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type CaseExpr::infer_type(AstContext& ctx) const { return nullptr; }
+  Type CaseExpr::infer_type(AstContext& ctx) const
+  {
+    unordered_set<Type> types;
+    for (auto p : patterns)
+    {
+      types.insert(p->infer_type(ctx));
+    }
+    return make_shared<SumType>(types);
+  }
 
   CaseExpr::~CaseExpr()
   {
@@ -1707,7 +1707,7 @@ namespace yona::ast
 
   any TypeDeclaration::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TypeDeclaration::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TypeDeclaration::infer_type(AstContext& ctx) const { unreachable(); }
 
   TypeDeclaration::~TypeDeclaration()
   {
@@ -1725,7 +1725,7 @@ namespace yona::ast
 
   any TypeDefinition::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TypeDefinition::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TypeDefinition::infer_type(AstContext& ctx) const { unreachable(); }
 
   TypeDefinition::~TypeDefinition()
   {
@@ -1744,7 +1744,7 @@ namespace yona::ast
 
   any TypeNode::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TypeNode::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TypeNode::infer_type(AstContext& ctx) const { unreachable(); }
 
   TypeNode::~TypeNode()
   {
@@ -1762,7 +1762,7 @@ namespace yona::ast
 
   any TypeInstance::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type TypeInstance::infer_type(AstContext& ctx) const { return nullptr; }
+  Type TypeInstance::infer_type(AstContext& ctx) const { unreachable(); }
 
   TypeInstance::~TypeInstance()
   {
@@ -1782,7 +1782,7 @@ namespace yona::ast
 
   any FunctionDeclaration::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
-  Type FunctionDeclaration::infer_type(AstContext& ctx) const { return nullptr; }
+  Type FunctionDeclaration::infer_type(AstContext& ctx) const { unreachable(); }
 
   FunctionDeclaration::~FunctionDeclaration()
   {

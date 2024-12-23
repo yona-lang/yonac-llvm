@@ -74,4 +74,5 @@ namespace yona
   };
 
   string unescapeYonaString(const string& rawString);
+  string module_location(const vector<string>& module_name);
 }

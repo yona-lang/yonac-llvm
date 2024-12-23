@@ -92,8 +92,6 @@ namespace yona::interp
   any Interpreter::visit(PatternValue* node) const { return expr_wrapper(node); }
   any Interpreter::visit(PatternWithGuards* node) const { return expr_wrapper(node); }
   any Interpreter::visit(PatternWithoutGuards* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(PipeLeftExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(PipeRightExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(PowerExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(RaiseExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(RangeSequenceExpr* node) const { return expr_wrapper(node); }

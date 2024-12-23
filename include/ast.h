@@ -889,24 +889,6 @@ namespace yona::ast
     [[nodiscard]] AstNodeType get_type() const override { return AST_IN_EXPR; };
   };
 
-  class PipeLeftExpr final : public BinaryOpExpr
-  {
-  public:
-    explicit PipeLeftExpr(SourceContext token, ExprNode* left, ExprNode* right);
-    any accept(const AstVisitor& visitor) override;
-    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
-    [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_LEFT_EXPR; };
-  };
-
-  class PipeRightExpr final : public BinaryOpExpr
-  {
-  public:
-    explicit PipeRightExpr(SourceContext token, ExprNode* left, ExprNode* right);
-    any accept(const AstVisitor& visitor) override;
-    [[nodiscard]] Type infer_type(AstContext& ctx) const override;
-    [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_RIGHT_EXPR; };
-  };
-
   class LetExpr final : public ScopedNode
   {
   public:
@@ -1242,8 +1224,9 @@ namespace yona::ast
   public:
     IdentifierOrUnderscore expr;
 
-    explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore expr);
+    explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore identifier_or_underscore);
     any accept(const AstVisitor& visitor) override;
+    Type infer_type_identifier_or_underscore(AstContext& ctx) const;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_COLLECTION_EXTRACTOR_EXPR; };
     ~ValueCollectionExtractorExpr() override;
@@ -1619,8 +1602,6 @@ namespace yona::ast
     virtual any visit(PatternValue* node) const                    = 0;
     virtual any visit(PatternWithGuards* node) const               = 0;
     virtual any visit(PatternWithoutGuards* node) const            = 0;
-    virtual any visit(PipeLeftExpr* node) const                    = 0;
-    virtual any visit(PipeRightExpr* node) const                   = 0;
     virtual any visit(PowerExpr* node) const                       = 0;
     virtual any visit(RaiseExpr* node) const                       = 0;
     virtual any visit(RangeSequenceExpr* node) const               = 0;

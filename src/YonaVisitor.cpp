@@ -74,11 +74,6 @@ namespace yona
     }
   }
 
-  any YonaVisitor::visitPipeRightExpression(YonaParser::PipeRightExpressionContext* ctx)
-  {
-    return wrap_expr<PipeRightExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
-  }
-
   any YonaVisitor::visitBinaryShiftExpression(YonaParser::BinaryShiftExpressionContext* ctx)
   {
     if (ctx->OP_LEFTSHIFT() != nullptr)
@@ -190,7 +185,14 @@ namespace yona
 
   any YonaVisitor::visitPipeLeftExpression(YonaParser::PipeLeftExpressionContext* ctx)
   {
-    return wrap_expr<PipeLeftExpr>(*ctx, visit_expr<ExprNode>(ctx->left), visit_expr<ExprNode>(ctx->right));
+    return wrap_expr<ApplyExpr>(*ctx, visit_expr<CallExpr>(ctx->left),
+                                vector<variant<ExprNode*, ValueExpr*>>{visit_expr<ExprNode>(ctx->right)});
+  }
+
+  any YonaVisitor::visitPipeRightExpression(YonaParser::PipeRightExpressionContext* ctx)
+  {
+    return wrap_expr<ApplyExpr>(*ctx, visit_expr<CallExpr>(ctx->right),
+                                vector<variant<ExprNode*, ValueExpr*>>{visit_expr<ExprNode>(ctx->left)});
   }
 
   any YonaVisitor::visitComparativeExpression(YonaParser::ComparativeExpressionContext* ctx)
@@ -484,7 +486,7 @@ namespace yona
       function_declarations.push_back(visit_expr<FunctionDeclaration>(declaration));
     }
 
-    auto fqn   = visit_expr<FqnExpr>(ctx->fqn());
+    auto fqn             = visit_expr<FqnExpr>(ctx->fqn());
     const string fqn_str = fqn->to_string();
     module_stack_.push(fqn_str);
     names_.push_back(fqn_str);
@@ -613,7 +615,7 @@ namespace yona
     name_exprs.push_back(name_expr);
     fqn_parts.push_back(name_expr->value);
 
-    module_imports_->push(fqn_parts);
+    module_imports_.push(fqn_parts);
 
     return wrap_expr<PackageNameExpr>(*ctx, name_exprs);
   }

@@ -113,8 +113,6 @@ namespace yona::interp
     [[nodiscard]] any visit(PatternValue* node) const override;
     [[nodiscard]] any visit(PatternWithGuards* node) const override;
     [[nodiscard]] any visit(PatternWithoutGuards* node) const override;
-    [[nodiscard]] any visit(PipeLeftExpr* node) const override;
-    [[nodiscard]] any visit(PipeRightExpr* node) const override;
     [[nodiscard]] any visit(PowerExpr* node) const override;
     [[nodiscard]] any visit(RaiseExpr* node) const override;
     [[nodiscard]] any visit(RangeSequenceExpr* node) const override;

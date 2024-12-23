@@ -57,6 +57,7 @@ namespace yona
 
   public:
     explicit YonaVisitor(ModuleImportQueue module_imports) : module_imports_(std::move(module_imports)) {}
+    ~YonaVisitor() override = default;
 
     std::any visitInput(YonaParser::InputContext* ctx) override;
     std::any visitFunction(YonaParser::FunctionContext* ctx) override;

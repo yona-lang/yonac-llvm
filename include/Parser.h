@@ -16,19 +16,18 @@ namespace yona::parser
   struct ParseResult
   {
     bool success;
-    AstNode* node;
+    shared_ptr<AstNode> node;
     Type type;
     AstContext ast_ctx;
-
-    ~ParseResult() { delete node; }
   };
 
   class Parser
   {
   private:
-    ModuleImportQueue module_import_queue;
+    ModuleImportQueue module_import_queue_;
 
   public:
-    ParseResult parse_input(istream& stream);
+    ParseResult parse_input(const vector<string>& module_name);
+    ParseResult parse_input(istream& stream) const;
   };
 }

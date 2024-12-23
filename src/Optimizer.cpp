@@ -79,8 +79,6 @@ namespace yona::compiler
   any Optimizer::visit(PatternValue* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(PatternWithGuards* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(PatternWithoutGuards* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(PipeLeftExpr* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(PipeRightExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(PowerExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(RaiseExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(RangeSequenceExpr* node) const { return any(expr_wrapper(node)); }
