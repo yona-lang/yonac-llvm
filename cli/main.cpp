@@ -17,6 +17,7 @@
 #include "Optimizer.h"
 #include "Parser.h"
 #include "common.h"
+#include "terminal.h"
 #include "types.h"
 
 using namespace std;
@@ -149,13 +150,16 @@ int main(const int argc, const char* argv[])
     return EXIT_FAILURE;
   }
 
-  BOOST_LOG_TRIVIAL(trace) << "Result expression type: " << typeid(type).name() << endl;
-
   compiler::Optimizer optimizer;
   interp::Interpreter interpreter;
 
-  auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
-  auto result        = optimized_ast->accept(interpreter);
+  auto optimized_ast             = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
+  auto result                    = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
+
+  auto [term_width, term_height] = get_terminal_size();
+
+  BOOST_LOG_TRIVIAL(info) << ANSI_COLOR_BOLD_GREEN << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl
+                          << *result;
 
   return EXIT_SUCCESS;
 }

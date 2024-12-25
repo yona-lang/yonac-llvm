@@ -32,24 +32,37 @@ namespace yona::interp
   any Interpreter::visit(BitwiseXorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(BodyWithGuards* node) const { return expr_wrapper(node); }
   any Interpreter::visit(BodyWithoutGuards* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(ByteExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(ByteExpr* node) const { return make_shared<RuntimeObject>(Byte, node->value); }
   any Interpreter::visit(CaseExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(CatchExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(CatchPatternExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(CharacterExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(CharacterExpr* node) const { return make_shared<RuntimeObject>(Char, node->value); }
   any Interpreter::visit(ConsLeftExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ConsRightExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(DictExpr* node) const { return expr_wrapper(node); }
+
+  any Interpreter::visit(DictExpr* node) const
+  {
+    vector<pair<shared_ptr<RuntimeObject>, shared_ptr<RuntimeObject>>> fields;
+
+    fields.reserve(node->values.size());
+    for (const auto [fst, snd] : node->values)
+    {
+      fields.emplace_back(any_cast<shared_ptr<RuntimeObject>>(visit(fst)),
+                          any_cast<shared_ptr<RuntimeObject>>(visit(snd)));
+    }
+
+    return make_shared<RuntimeObject>(Dict, make_shared<DictValue>(fields));
+  }
   any Interpreter::visit(DictGeneratorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DictGeneratorReducer* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DictPattern* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DivideExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DoExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(EqExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(FalseLiteralExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(FalseLiteralExpr* node) const { return make_shared<RuntimeObject>(Bool, false); }
   any Interpreter::visit(FieldAccessExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(FieldUpdateExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(FloatExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(FloatExpr* node) const { return make_shared<RuntimeObject>(Float, node->value); }
   any Interpreter::visit(FqnAlias* node) const { return expr_wrapper(node); }
   any Interpreter::visit(FqnExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(FunctionAlias* node) const { return expr_wrapper(node); }
@@ -65,7 +78,7 @@ namespace yona::interp
   any Interpreter::visit(ImportClauseExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ImportExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(InExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(IntegerExpr* node) const { return node->value; }
+  any Interpreter::visit(IntegerExpr* node) const { return make_shared<RuntimeObject>(Int, node->value); }
   any Interpreter::visit(JoinExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(KeyValueCollectionExtractorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(LambdaAlias* node) const { return expr_wrapper(node); }
@@ -101,23 +114,63 @@ namespace yona::interp
   any Interpreter::visit(RightShiftExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(SeqGeneratorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(SeqPattern* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(SequenceExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(SetExpr* node) const { return expr_wrapper(node); }
+
+  any Interpreter::visit(SetExpr* node) const
+  {
+    vector<shared_ptr<RuntimeObject>> fields;
+
+    fields.reserve(node->values.size());
+    for (const auto value : node->values)
+    {
+      fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    }
+
+    return make_shared<RuntimeObject>(Set, make_shared<SetValue>(fields));
+  }
+
   any Interpreter::visit(SetGeneratorExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(StringExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(StringExpr* node) const { return make_shared<RuntimeObject>(String, node->value); }
   any Interpreter::visit(SubtractExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(SymbolExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(SymbolExpr* node) const
+  {
+    return make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(node->value));
+  }
   any Interpreter::visit(TailsHeadPattern* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(TrueLiteralExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(TrueLiteralExpr* node) const { return make_shared<RuntimeObject>(Bool, true); }
   any Interpreter::visit(TryCatchExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(TupleExpr* node) const { return expr_wrapper(node); }
+
+  any Interpreter::visit(TupleExpr* node) const
+  {
+    vector<shared_ptr<RuntimeObject>> fields;
+
+    fields.reserve(node->values.size());
+    for (const auto value : node->values)
+    {
+      fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    }
+
+    return make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields));
+  }
+
   any Interpreter::visit(TuplePattern* node) const { return expr_wrapper(node); }
   any Interpreter::visit(UnderscoreNode* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(UnitExpr* node) const { return expr_wrapper(node); }
+  any Interpreter::visit(UnitExpr* node) const { return make_shared<RuntimeObject>(Unit, nullptr); }
   any Interpreter::visit(ValueAlias* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ValueCollectionExtractorExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(ValueExpr* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(ValuesSequenceExpr* node) const { return expr_wrapper(node); }
+
+  any Interpreter::visit(ValuesSequenceExpr* node) const
+  {
+    vector<shared_ptr<RuntimeObject>> fields;
+
+    fields.reserve(node->values.size());
+    for (const auto value : node->values)
+    {
+      fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    }
+
+    return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(fields));
+  }
+
   any Interpreter::visit(WithExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ZerofillRightShiftExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(FunctionDeclaration* node) const { return expr_wrapper(node); }
@@ -129,4 +182,6 @@ namespace yona::interp
   any Interpreter::visit(AstNode* node) const { return AstVisitor::visit(node); }
   any Interpreter::visit(ScopedNode* node) const { return AstVisitor::visit(node); }
   any Interpreter::visit(PatternNode* node) const { return AstVisitor::visit(node); }
+  any Interpreter::visit(ValueExpr* node) const { return AstVisitor::visit(node); }
+  any Interpreter::visit(SequenceExpr* node) const { return AstVisitor::visit(node); }
 } // yona::interp

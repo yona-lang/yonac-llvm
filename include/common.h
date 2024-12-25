@@ -8,7 +8,7 @@
 #include <queue>
 #include <string>
 
-#include "colors.h"
+#include "terminal.h"
 
 namespace yona
 {

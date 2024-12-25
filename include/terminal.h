@@ -23,5 +23,26 @@
 #define ANSI_COLOR_BOLD_CYAN    "\033[1;36m"
 #define ANSI_COLOR_BOLD_WHITE   "\033[1;37m"
 
-// Example usage:
-// printf(ANSI_COLOR_RED "This text is red!" ANSI_COLOR_RESET "\n");
+#define FULL_BLOCK              L'\u2588'
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define VC_EXTRALEAN
+#include <Windows.h>
+#else
+#include <sys/ioctl.h>
+#endif
+
+inline std::pair<size_t, size_t> get_terminal_size()
+{
+#if defined(_WIN32)
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+  return std::make_pair((size_t)(csbi.srWindow.Right - csbi.srWindow.Left + 1),
+                        (size_t)(csbi.srWindow.Bottom - csbi.srWindow.Top + 1));
+#else
+  winsize w{};
+  ioctl(fileno(stdout), TIOCGWINSZ, &w);
+  return std::make_pair(w.ws_col, w.ws_row);
+#endif
+}

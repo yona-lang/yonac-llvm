@@ -94,7 +94,6 @@ namespace yona::compiler
     [[nodiscard]] any visit(RightShiftExpr* node) const override;
     [[nodiscard]] any visit(SeqGeneratorExpr* node) const override;
     [[nodiscard]] any visit(SeqPattern* node) const override;
-    [[nodiscard]] any visit(SequenceExpr* node) const override;
     [[nodiscard]] any visit(SetExpr* node) const override;
     [[nodiscard]] any visit(SetGeneratorExpr* node) const override;
     [[nodiscard]] any visit(StringExpr* node) const override;
@@ -109,7 +108,6 @@ namespace yona::compiler
     [[nodiscard]] any visit(UnitExpr* node) const override;
     [[nodiscard]] any visit(ValueAlias* node) const override;
     [[nodiscard]] any visit(ValueCollectionExtractorExpr* node) const override;
-    [[nodiscard]] any visit(ValueExpr* node) const override;
     [[nodiscard]] any visit(ValuesSequenceExpr* node) const override;
     [[nodiscard]] any visit(WithExpr* node) const override;
     [[nodiscard]] any visit(ZerofillRightShiftExpr* node) const override;
@@ -123,5 +121,7 @@ namespace yona::compiler
     [[nodiscard]] any visit(AstNode* node) const override;
     [[nodiscard]] any visit(ScopedNode* node) const override;
     [[nodiscard]] any visit(PatternNode* node) const override;
+    [[nodiscard]] any visit(ValueExpr* node) const override;
+    [[nodiscard]] any visit(SequenceExpr* node) const override;
   };
 }

@@ -88,7 +88,6 @@ namespace yona::compiler
   any Optimizer::visit(RightShiftExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(SeqGeneratorExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(SeqPattern* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(SequenceExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(SetExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(SetGeneratorExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(StringExpr* node) const { return any(expr_wrapper(node)); }
@@ -103,7 +102,6 @@ namespace yona::compiler
   any Optimizer::visit(UnitExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ValueAlias* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ValueCollectionExtractorExpr* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(ValueExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ValuesSequenceExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(WithExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ZerofillRightShiftExpr* node) const { return any(expr_wrapper(node)); }
@@ -116,4 +114,6 @@ namespace yona::compiler
   any Optimizer::visit(AstNode* node) const { return AstVisitor::visit(node); }
   any Optimizer::visit(ScopedNode* node) const { return AstVisitor::visit(node); }
   any Optimizer::visit(PatternNode* node) const { return AstVisitor::visit(node); }
+  any Optimizer::visit(ValueExpr* node) const { return AstVisitor::visit(node); }
+  any Optimizer::visit(SequenceExpr* node) const { return AstVisitor::visit(node); }
 }

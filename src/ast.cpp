@@ -95,7 +95,7 @@ namespace yona::ast
   Type CallExpr::infer_type(AstContext& ctx) const { unreachable(); }
 
   any CallExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
-  any ImportClauseExpr::accept(const AstVisitor& visitor) { return ScopedNode::accept(visitor); }
+  any ImportClauseExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
   any GeneratorExpr::accept(const AstVisitor& visitor) { return ExprNode::accept(visitor); }
 
@@ -180,7 +180,7 @@ namespace yona::ast
 
   Type StringExpr::infer_type(AstContext& ctx) const { return String; }
 
-  CharacterExpr::CharacterExpr(SourceContext token, const char value) : LiteralExpr<char>(token, value) {}
+  CharacterExpr::CharacterExpr(SourceContext token, const wchar_t value) : LiteralExpr<wchar_t>(token, value) {}
 
   any CharacterExpr::accept(const AstVisitor& visitor) { return visitor.visit(this); }
 
@@ -1971,6 +1971,92 @@ namespace yona::ast
       return visit(derived);
     }
     if (auto derived = dynamic_cast<RecordPattern*>(node))
+    {
+      return visit(derived);
+    }
+    unreachable();
+  }
+
+  any AstVisitor::visit(ValueExpr* node) const
+  {
+    if (auto derived = dynamic_cast<DictExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<FqnExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<IdentifierExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<ByteExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<CharacterExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<FalseLiteralExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<FloatExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<IntegerExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<StringExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<TrueLiteralExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<UnitExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<ModuleExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<PackageNameExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<RecordInstanceExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<SetExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<SymbolExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<TupleExpr*>(node))
+    {
+      return visit(derived);
+    }
+    unreachable();
+  }
+
+  any AstVisitor::visit(SequenceExpr* node) const
+  {
+    if (auto derived = dynamic_cast<RangeSequenceExpr*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<ValuesSequenceExpr*>(node))
     {
       return visit(derived);
     }

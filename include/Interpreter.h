@@ -5,34 +5,21 @@
 #pragma once
 
 #include "ast.h"
+#include "runtime.h"
 
 namespace yona::interp
 {
   using namespace std;
   using namespace ast;
+  using namespace runtime;
 
-  using any          = any;
-  using symbol_ref_t = any;
-
-  struct Symbol
-  {
-  private:
-    string name;
-    symbol_ref_t reference;
-  };
+  using symbol_ref_t = unique_ptr<RuntimeObjectData>;
 
   struct Frame
   {
   private:
     vector<symbol_ref_t> args_;
-    unordered_map<string, Symbol> locals_;
-
-    int64_t ria{0}, rib{0};
-    double rda{0.0}, rdb{0.0};
-    wchar_t rca{L'\0'}, rcb{L'\0'};
-    bool rba{false}, rbb{false};
-    byte rya{0}, ryb{0};
-    string rsa, rsb;
+    unordered_map<string, symbol_ref_t> locals_;
   };
 
   class Interpreter final : public AstVisitor
@@ -122,7 +109,6 @@ namespace yona::interp
     [[nodiscard]] any visit(RightShiftExpr* node) const override;
     [[nodiscard]] any visit(SeqGeneratorExpr* node) const override;
     [[nodiscard]] any visit(SeqPattern* node) const override;
-    [[nodiscard]] any visit(SequenceExpr* node) const override;
     [[nodiscard]] any visit(SetExpr* node) const override;
     [[nodiscard]] any visit(SetGeneratorExpr* node) const override;
     [[nodiscard]] any visit(StringExpr* node) const override;
@@ -137,7 +123,6 @@ namespace yona::interp
     [[nodiscard]] any visit(UnitExpr* node) const override;
     [[nodiscard]] any visit(ValueAlias* node) const override;
     [[nodiscard]] any visit(ValueCollectionExtractorExpr* node) const override;
-    [[nodiscard]] any visit(ValueExpr* node) const override;
     [[nodiscard]] any visit(ValuesSequenceExpr* node) const override;
     [[nodiscard]] any visit(WithExpr* node) const override;
     [[nodiscard]] any visit(ZerofillRightShiftExpr* node) const override;
@@ -151,6 +136,8 @@ namespace yona::interp
     [[nodiscard]] any visit(AstNode* node) const override;
     [[nodiscard]] any visit(ScopedNode* node) const override;
     [[nodiscard]] any visit(PatternNode* node) const override;
+    [[nodiscard]] any visit(ValueExpr* node) const override;
+    [[nodiscard]] any visit(SequenceExpr* node) const override;
   };
 
 } // yonac::interp

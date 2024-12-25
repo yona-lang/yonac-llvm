@@ -273,7 +273,7 @@ namespace yona::ast
   {
   public:
     explicit ScopedNode(SourceContext token) : AstNode(token) {}
-    ScopedNode* getParentScopedNode() const;
+    [[nodiscard]] ScopedNode* getParentScopedNode() const;
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_SCOPED_NODE; };
   };
@@ -328,10 +328,10 @@ namespace yona::ast
     [[nodiscard]] AstNodeType get_type() const override { return AST_CALL_EXPR; };
   };
 
-  class ImportClauseExpr : public ScopedNode
+  class ImportClauseExpr : public ExprNode
   {
   public:
-    explicit ImportClauseExpr(SourceContext token) : ScopedNode(token) {}
+    explicit ImportClauseExpr(SourceContext token) : ExprNode(token) {}
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_CLAUSE_EXPR; };
   };
@@ -458,10 +458,10 @@ namespace yona::ast
     [[nodiscard]] AstNodeType get_type() const override { return AST_STRING_EXPR; };
   };
 
-  class CharacterExpr final : public LiteralExpr<char>
+  class CharacterExpr final : public LiteralExpr<wchar_t>
   {
   public:
-    explicit CharacterExpr(SourceContext token, char value);
+    explicit CharacterExpr(SourceContext token, wchar_t value);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_CHARACTER_EXPR; };
@@ -1611,7 +1611,6 @@ namespace yona::ast
     virtual any visit(RightShiftExpr* node) const                  = 0;
     virtual any visit(SeqGeneratorExpr* node) const                = 0;
     virtual any visit(SeqPattern* node) const                      = 0;
-    virtual any visit(SequenceExpr* node) const                    = 0;
     virtual any visit(SetExpr* node) const                         = 0;
     virtual any visit(SetGeneratorExpr* node) const                = 0;
     virtual any visit(StringExpr* node) const                      = 0;
@@ -1630,7 +1629,6 @@ namespace yona::ast
     virtual any visit(UnitExpr* node) const                        = 0;
     virtual any visit(ValueAlias* node) const                      = 0;
     virtual any visit(ValueCollectionExtractorExpr* node) const    = 0;
-    virtual any visit(ValueExpr* node) const                       = 0;
     virtual any visit(ValuesSequenceExpr* node) const              = 0;
     virtual any visit(WithExpr* node) const                        = 0;
     virtual any visit(ZerofillRightShiftExpr* node) const          = 0;
@@ -1638,5 +1636,7 @@ namespace yona::ast
     virtual any visit(AstNode* node) const;
     virtual any visit(ScopedNode* node) const;
     virtual any visit(PatternNode* node) const;
+    virtual any visit(ValueExpr* node) const;
+    virtual any visit(SequenceExpr* node) const;
   };
 }

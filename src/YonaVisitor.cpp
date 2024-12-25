@@ -637,7 +637,7 @@ namespace yona
 
   any YonaVisitor::visitSymbol(YonaParser::SymbolContext* ctx)
   {
-    return wrap_expr<SymbolExpr>(*ctx, ctx->SYMBOL()->getText());
+    return wrap_expr<SymbolExpr>(*ctx, ctx->SYMBOL()->getText().substr(1));
   }
 
   any YonaVisitor::visitIdentifier(YonaParser::IdentifierContext* ctx)
