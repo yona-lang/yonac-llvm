@@ -46,14 +46,12 @@ namespace yona::compiler
     [[nodiscard]] any visit(FqnAlias* node) const override;
     [[nodiscard]] any visit(FqnExpr* node) const override;
     [[nodiscard]] any visit(FunctionAlias* node) const override;
-    [[nodiscard]] any visit(FunctionBody* node) const override;
     [[nodiscard]] any visit(FunctionExpr* node) const override;
     [[nodiscard]] any visit(FunctionsImport* node) const override;
     [[nodiscard]] any visit(GtExpr* node) const override;
     [[nodiscard]] any visit(GteExpr* node) const override;
     [[nodiscard]] any visit(HeadTailsHeadPattern* node) const override;
     [[nodiscard]] any visit(HeadTailsPattern* node) const override;
-    [[nodiscard]] any visit(IdentifierExpr* node) const override;
     [[nodiscard]] any visit(IfExpr* node) const override;
     [[nodiscard]] any visit(ImportClauseExpr* node) const override;
     [[nodiscard]] any visit(ImportExpr* node) const override;
@@ -123,5 +121,7 @@ namespace yona::compiler
     [[nodiscard]] any visit(PatternNode* node) const override;
     [[nodiscard]] any visit(ValueExpr* node) const override;
     [[nodiscard]] any visit(SequenceExpr* node) const override;
+    [[nodiscard]] any visit(FunctionBody* node) const override;
+    [[nodiscard]] any visit(IdentifierExpr* node) const override;
   };
 }

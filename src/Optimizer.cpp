@@ -40,14 +40,12 @@ namespace yona::compiler
   any Optimizer::visit(FqnAlias* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(FqnExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(FunctionAlias* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(FunctionBody* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(FunctionExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(FunctionsImport* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(GtExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(GteExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(HeadTailsHeadPattern* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(HeadTailsPattern* node) const { return any(expr_wrapper(node)); }
-  any Optimizer::visit(IdentifierExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(IfExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ImportClauseExpr* node) const { return any(expr_wrapper(node)); }
   any Optimizer::visit(ImportExpr* node) const { return any(expr_wrapper(node)); }
@@ -116,4 +114,6 @@ namespace yona::compiler
   any Optimizer::visit(PatternNode* node) const { return AstVisitor::visit(node); }
   any Optimizer::visit(ValueExpr* node) const { return AstVisitor::visit(node); }
   any Optimizer::visit(SequenceExpr* node) const { return AstVisitor::visit(node); }
+  any Optimizer::visit(FunctionBody* node) const { return AstVisitor::visit(node); }
+  any Optimizer::visit(IdentifierExpr* node) const { return any(AstVisitor::visit(node)); }
 }

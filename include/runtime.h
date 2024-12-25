@@ -54,6 +54,9 @@ namespace yona::interp::runtime
     Function
   };
 
+  inline string RuntimeObjectTypes[] = {"Int",    "Float", "Byte", "Char", "String", "Bool",   "Unit",
+                                        "Symbol", "Dict",  "Seq",  "Set",  "Tuple",  "Module", "Function"};
+
   struct SymbolValue
   {
     string name;

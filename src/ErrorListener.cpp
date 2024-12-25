@@ -13,6 +13,6 @@ namespace yona::parser
   void ErrorListener::syntaxError(Recognizer* recognizer, Token* offendingSymbol, size_t line,
                                   size_t charPositionInLine, const std::string& msg, std::exception_ptr e)
   {
-    ast_ctx.addError(YonaError(TokenLocation(*offendingSymbol, *recognizer), YonaError::SYNTAX, msg));
+    ast_ctx.addError(yona_error(TokenLocation(*offendingSymbol, *recognizer), yona_error::SYNTAX, msg));
   }
 }

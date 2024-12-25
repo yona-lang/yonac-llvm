@@ -33,9 +33,11 @@ namespace yona
     string text;
 
     TokenLocation(SourceContext token) :
-        start_line(token.getStart()->getLine()), start_col(token.getStart()->getCharPositionInLine()),
-        stop_line(token.getStop()->getLine()), stop_col(token.getStop()->getCharPositionInLine()),
-        text(token.getStart()->getText())
+        start_line(token.getStart() ? token.getStart()->getLine() : 0),
+        start_col(token.getStart() ? token.getStart()->getCharPositionInLine() : 0),
+        stop_line(token.getStop() ? token.getStop()->getLine() : 0),
+        stop_col(token.getStop() ? token.getStop()->getCharPositionInLine() : 0),
+        text(token.getStart() ? token.getStart()->getText() : "?")
     {
     }
 
@@ -59,7 +61,7 @@ namespace yona
     return os;
   }
 
-  struct YonaError final
+  struct yona_error final : std::runtime_error
   {
     enum Type
     {
@@ -70,18 +72,17 @@ namespace yona
     TokenLocation source_token;
     string message;
 
-    explicit YonaError(TokenLocation source_token, Type type, string message) :
-        type(type), source_token(std::move(source_token)), message(std::move(message))
+    explicit yona_error(TokenLocation source_token, Type type, string message) :
+        runtime_error(message), type(type), source_token(std::move(source_token)), message(std::move(message))
     {
     }
   };
 
   inline const char* ErrorTypes[] = {"syntax", "type", "check"};
 
-  inline std::ostream& operator<<(std::ostream& os, const YonaError& rhs)
+  inline std::ostream& operator<<(std::ostream& os, const yona_error& rhs)
   {
-    os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET
-       << ":\n"
+    os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET << ": "
        << rhs.message;
     return os;
   }
@@ -89,15 +90,15 @@ namespace yona
   class AstContext final
   {
   private:
-    unordered_multimap<YonaError::Type, YonaError> errors_;
+    unordered_multimap<yona_error::Type, yona_error> errors_;
 
   public:
-    explicit AstContext(unordered_multimap<YonaError::Type, YonaError> errors) : errors_(std::move(errors)) {};
+    explicit AstContext(unordered_multimap<yona_error::Type, yona_error> errors) : errors_(std::move(errors)) {};
     explicit AstContext() = default;
 
-    void addError(const YonaError& error) { errors_.insert({error.type, error}); }
+    void addError(const yona_error& error) { errors_.insert({error.type, error}); }
     [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
-    [[nodiscard]] const unordered_multimap<YonaError::Type, YonaError>& getErrors() const { return errors_; }
+    [[nodiscard]] const unordered_multimap<yona_error::Type, yona_error>& getErrors() const { return errors_; }
     [[nodiscard]] size_t errorCount() const { return errors_.size(); }
 
     AstContext operator+(const AstContext& other) const

@@ -10,7 +10,7 @@
 using namespace std;
 using namespace yona;
 
-using ErrorMap = unordered_map<YonaError::Type, unsigned int>;
+using ErrorMap = unordered_map<yona_error::Type, unsigned int>;
 
 class AstTest : public testing::TestWithParam<tuple<string, string, optional<string>, ErrorMap>>
 {
@@ -49,7 +49,7 @@ INSTANTIATE_TEST_SUITE_P(SyntaxTests, AstTest,
                                                     ErrorMap{
 }),
                                          make_tuple("incomplete_addition", "1+", nullopt,
-                                                    ErrorMap{{YonaError::SYNTAX, 1}})),
+                                                    ErrorMap{{yona_error::SYNTAX, 1}})),
                          [](const testing::TestParamInfo<AstTest::ParamType>& info) { return get<0>(info.param); });
 
 INSTANTIATE_TEST_SUITE_P(TypeCheckTests, AstTest,
@@ -57,7 +57,7 @@ INSTANTIATE_TEST_SUITE_P(TypeCheckTests, AstTest,
                                                     ErrorMap{
 }),
                                          make_tuple("failed_addition_of_int_with_char", "1+'1'", "2",
-                                                    ErrorMap{{YonaError::TYPE, 1}})),
+                                                    ErrorMap{{yona_error::TYPE, 1}})),
                          [](const testing::TestParamInfo<AstTest::ParamType>& info) { return get<0>(info.param); });
 
 void init_logging() { boost::log::add_file_log("tests.log"); }

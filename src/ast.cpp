@@ -63,13 +63,13 @@ namespace yona::ast
 
     if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Binary expression must be numeric type"));
     }
 
     if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int &&
         get<ValueType>(rightType) != Float)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Binary expression must be numeric type"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Binary expression must be numeric type"));
     }
 
     return unordered_set{leftType, rightType}.contains(Float) ? Float : Int;
@@ -232,7 +232,7 @@ namespace yona::ast
 
     if (keyTypes.size() > 1 || valueTypes.size() > 1)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Dictionary keys and values must have the same type"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Dictionary keys and values must have the same type"));
     }
 
     return make_shared<DictCollectionType>(values.front().first->infer_type(ctx),
@@ -262,7 +262,7 @@ namespace yona::ast
 
     if (valueTypes.size() > 1)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Sequence values must have the same type"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Sequence values must have the same type"));
     }
 
     return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, values.front()->infer_type(ctx));
@@ -290,17 +290,17 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int)
     {
-      ctx.addError(YonaError(start->token, YonaError::TYPE, "Sequence start expression must be integer"));
+      ctx.addError(yona_error(start->token, yona_error::TYPE, "Sequence start expression must be integer"));
     }
 
     if (!holds_alternative<ValueType>(endExprType) || get<ValueType>(endExprType) != Int)
     {
-      ctx.addError(YonaError(end->token, YonaError::TYPE, "Sequence end expression must be integer"));
+      ctx.addError(yona_error(end->token, yona_error::TYPE, "Sequence end expression must be integer"));
     }
 
     if (!holds_alternative<ValueType>(stepExprType) || get<ValueType>(stepExprType) != Int)
     {
-      ctx.addError(YonaError(step->token, YonaError::TYPE, "Sequence step expression must be integer"));
+      ctx.addError(yona_error(step->token, yona_error::TYPE, "Sequence step expression must be integer"));
     }
 
     return nullptr;
@@ -327,7 +327,7 @@ namespace yona::ast
 
     if (valueTypes.size() > 1)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Set values must have the same type"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Set values must have the same type"));
     }
 
     return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, values.front()->infer_type(ctx));
@@ -427,7 +427,7 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool)
     {
-      ctx.addError(YonaError(guard->token, YonaError::TYPE, "Guard expression must be boolean"));
+      ctx.addError(yona_error(guard->token, yona_error::TYPE, "Guard expression must be boolean"));
     }
 
     return exprs.back()->infer_type(ctx);
@@ -507,7 +507,7 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
     {
-      ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for logical negation must be boolean"));
+      ctx.addError(yona_error(expr->token, yona_error::TYPE, "Expression for logical negation must be boolean"));
     }
 
     return Bool;
@@ -528,7 +528,7 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool)
     {
-      ctx.addError(YonaError(expr->token, YonaError::TYPE, "Expression for binary negation must be boolean"));
+      ctx.addError(yona_error(expr->token, yona_error::TYPE, "Expression for binary negation must be boolean"));
     }
 
     return Bool;
@@ -585,12 +585,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for left shift must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for left shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for left shift must be integer"));
     }
 
     return Int;
@@ -610,12 +610,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for right shift must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for right shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for right shift must be integer"));
     }
 
     return Int;
@@ -635,12 +635,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for zerofill right shift must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
     }
 
     return Int;
@@ -709,19 +709,19 @@ namespace yona::ast
         !holds_alternative<shared_ptr<DictCollectionType>>(leftType) ||
         !holds_alternative<shared_ptr<ProductType>>(leftType))
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Join expression can be used only for collections"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Join expression can be used only for collections"));
     }
 
     if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rightType) ||
         !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
         !holds_alternative<shared_ptr<ProductType>>(rightType))
     {
-      ctx.addError(YonaError(right->token, YonaError::TYPE, "Join expression can be used only for collections"));
+      ctx.addError(yona_error(right->token, yona_error::TYPE, "Join expression can be used only for collections"));
     }
 
     if (leftType != rightType)
     {
-      ctx.addError(YonaError(token, YonaError::TYPE, "Join expression can be used only on same types"));
+      ctx.addError(yona_error(token, yona_error::TYPE, "Join expression can be used only on same types"));
     }
 
     return leftType;
@@ -741,12 +741,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise AND must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise AND must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise AND must be integer"));
     }
 
     return Bool;
@@ -766,12 +766,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise XOR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
     }
 
     return Bool;
@@ -790,12 +790,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise OR must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for bitwise OR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for bitwise OR must be integer"));
     }
 
     return Bool;
@@ -815,12 +815,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for logical AND must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical AND must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for logical AND must be integer"));
     }
 
     return Bool;
@@ -839,12 +839,12 @@ namespace yona::ast
 
     if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for logical OR must be integer"));
     }
 
     if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool)
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for logical OR must be integer"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for logical OR must be integer"));
     }
 
     return Bool;
@@ -861,7 +861,7 @@ namespace yona::ast
         !holds_alternative<shared_ptr<DictCollectionType>>(rightType) ||
         !holds_alternative<shared_ptr<ProductType>>(rightType))
     {
-      ctx.addError(YonaError(left->token, YonaError::TYPE, "Expression for IN must be a collection"));
+      ctx.addError(yona_error(left->token, yona_error::TYPE, "Expression for IN must be a collection"));
     }
 
     return Bool;
@@ -896,7 +896,7 @@ namespace yona::ast
     if (const Type conditionType = condition->infer_type(ctx);
         !holds_alternative<ValueType>(conditionType) || get<ValueType>(conditionType) != Bool)
     {
-      ctx.addError(YonaError(condition->token, YonaError::TYPE, "If condition must be boolean"));
+      ctx.addError(yona_error(condition->token, yona_error::TYPE, "If condition must be boolean"));
     }
 
     unordered_set returnTypes{thenExpr->infer_type(ctx)};
@@ -2062,4 +2062,19 @@ namespace yona::ast
     }
     unreachable();
   }
+
+  any AstVisitor::visit(FunctionBody* node) const
+  {
+    if (auto derived = dynamic_cast<BodyWithGuards*>(node))
+    {
+      return visit(derived);
+    }
+    if (auto derived = dynamic_cast<BodyWithoutGuards*>(node))
+    {
+      return visit(derived);
+    }
+    unreachable();
+  }
+
+  any AstVisitor::visit(IdentifierExpr* node) const { return visit(node->name); }
 }

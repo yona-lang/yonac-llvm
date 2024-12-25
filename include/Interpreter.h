@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <utility>
+
 #include "ast.h"
 #include "runtime.h"
 
@@ -13,22 +15,32 @@ namespace yona::interp
   using namespace ast;
   using namespace runtime;
 
-  using symbol_ref_t = unique_ptr<RuntimeObjectData>;
+  using symbol_ref_t = shared_ptr<RuntimeObjectData>;
 
   struct Frame
   {
   private:
+    Frame* parent_;
     vector<symbol_ref_t> args_;
     unordered_map<string, symbol_ref_t> locals_;
+
+  public:
+    explicit Frame(Frame* parent) : parent_(parent) {}
+
+    void write(const string& name, symbol_ref_t value);
+    symbol_ref_t lookup(const string& name);
   };
 
   class Interpreter final : public AstVisitor
   {
   private:
-    stack<Frame> stack_;
+    Frame frame_;
+
+    template <RuntimeObjectType ROT, typename VT>
+    VT& get_value(AstNode* node) const;
 
   public:
-    explicit Interpreter();
+    explicit Interpreter() : frame_(Frame(nullptr)) {};
     [[nodiscard]] any visit(AddExpr* node) const override;
     [[nodiscard]] any visit(AliasCall* node) const override;
     [[nodiscard]] any visit(AliasExpr* node) const override;
@@ -61,14 +73,12 @@ namespace yona::interp
     [[nodiscard]] any visit(FqnAlias* node) const override;
     [[nodiscard]] any visit(FqnExpr* node) const override;
     [[nodiscard]] any visit(FunctionAlias* node) const override;
-    [[nodiscard]] any visit(FunctionBody* node) const override;
     [[nodiscard]] any visit(FunctionExpr* node) const override;
     [[nodiscard]] any visit(FunctionsImport* node) const override;
     [[nodiscard]] any visit(GtExpr* node) const override;
     [[nodiscard]] any visit(GteExpr* node) const override;
     [[nodiscard]] any visit(HeadTailsHeadPattern* node) const override;
     [[nodiscard]] any visit(HeadTailsPattern* node) const override;
-    [[nodiscard]] any visit(IdentifierExpr* node) const override;
     [[nodiscard]] any visit(IfExpr* node) const override;
     [[nodiscard]] any visit(ImportClauseExpr* node) const override;
     [[nodiscard]] any visit(ImportExpr* node) const override;
@@ -138,6 +148,8 @@ namespace yona::interp
     [[nodiscard]] any visit(PatternNode* node) const override;
     [[nodiscard]] any visit(ValueExpr* node) const override;
     [[nodiscard]] any visit(SequenceExpr* node) const override;
+    [[nodiscard]] any visit(FunctionBody* node) const override;
+    [[nodiscard]] any visit(IdentifierExpr* node) const override;
   };
 
 } // yonac::interp

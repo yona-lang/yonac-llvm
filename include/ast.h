@@ -1562,7 +1562,6 @@ namespace yona::ast
     virtual any visit(FqnAlias* node) const                        = 0;
     virtual any visit(FqnExpr* node) const                         = 0;
     virtual any visit(FunctionAlias* node) const                   = 0;
-    virtual any visit(FunctionBody* node) const                    = 0;
     virtual any visit(FunctionDeclaration* node) const             = 0;
     virtual any visit(FunctionExpr* node) const                    = 0;
     virtual any visit(FunctionsImport* node) const                 = 0;
@@ -1570,7 +1569,6 @@ namespace yona::ast
     virtual any visit(GteExpr* node) const                         = 0;
     virtual any visit(HeadTailsHeadPattern* node) const            = 0;
     virtual any visit(HeadTailsPattern* node) const                = 0;
-    virtual any visit(IdentifierExpr* node) const                  = 0;
     virtual any visit(IfExpr* node) const                          = 0;
     virtual any visit(ImportClauseExpr* node) const                = 0;
     virtual any visit(ImportExpr* node) const                      = 0;
@@ -1638,5 +1636,7 @@ namespace yona::ast
     virtual any visit(PatternNode* node) const;
     virtual any visit(ValueExpr* node) const;
     virtual any visit(SequenceExpr* node) const;
+    virtual any visit(FunctionBody* node) const;
+    virtual any visit(IdentifierExpr* node) const;
   };
 }

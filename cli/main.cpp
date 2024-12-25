@@ -134,6 +134,8 @@ int main(const int argc, const char* argv[])
   using namespace yona::ast;
   using namespace yona::compiler::types;
 
+  auto [term_width, term_height] = get_terminal_size();
+
   init_logging();
   auto module = process_program_options(argc, argv);
 
@@ -153,13 +155,20 @@ int main(const int argc, const char* argv[])
   compiler::Optimizer optimizer;
   interp::Interpreter interpreter;
 
-  auto optimized_ast             = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
-  auto result                    = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
+  try
+  {
+    auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
+    auto result        = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
 
-  auto [term_width, term_height] = get_terminal_size();
 
-  BOOST_LOG_TRIVIAL(info) << ANSI_COLOR_BOLD_GREEN << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl
-                          << *result;
+    BOOST_LOG_TRIVIAL(info) << ANSI_COLOR_BOLD_GREEN << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl
+                            << *result;
+  }
+  catch (yona_error const& error)
+  {
+    BOOST_LOG_TRIVIAL(error) << ANSI_COLOR_BOLD_RED << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl
+                             << error;
+  }
 
   return EXIT_SUCCESS;
 }
