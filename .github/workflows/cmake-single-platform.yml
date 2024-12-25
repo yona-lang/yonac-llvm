@@ -78,7 +78,7 @@ jobs:
       run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_DEFAULT_TRIPLET_OUT }}'"
 
     - name: Run CMake consuming CMakePreset.json and run vcpkg to build packages
-      uses: lukka/run-cmake@v10
+      uses: lukka/run-cmake@v10.8
       with:
         # This is the default path to the CMakeLists.txt along side the
         # CMakePresets.json. Change if you need have CMakeLists.txt and CMakePresets.json
