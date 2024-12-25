@@ -74,8 +74,8 @@ jobs:
         # `**/path/from/root/of/repo/to/vcpkg.json` to match the desired `vcpkg.json`.
         # vcpkgJsonGlob: '**/vcpkg.json'
 
-    - name: Prints output of run-vcpkg's action
-      run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_DEFAULT_TRIPLET_OUT }}'"
+#    - name: Prints output of run-vcpkg's action
+#      run: echo "root='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_ROOT_OUT }}', triplet='${{ steps.runvcpkg.outputs.RUNVCPKG_VCPKG_DEFAULT_TRIPLET_OUT }}'"
 
     - name: Run CMake consuming CMakePreset.json and run vcpkg to build packages
       uses: lukka/run-cmake@v10
@@ -88,26 +88,26 @@ jobs:
         # You could use CMake workflow presets defined in the CMakePresets.json
         # with just this line below. Note this one cannot be used with any other
         # preset input, it is mutually exclusive.
-#       workflowPreset: 'x64-release-llvm'
+       # workflowPreset: 'x64-release-llvm'
 
         # This is the name of the CMakePresets.json's configuration to use to generate
         # the project files. This configuration leverages the vcpkg.cmake toolchain file to
         # run vcpkg and install all dependencies specified in vcpkg.json.
-#        configurePreset: 'x64-release-llvm'
+        configurePreset: 'x64-release-llvm'
         # Additional arguments can be appended to the cmake command.
         # This is useful to reduce the number of CMake's Presets since you can reuse
         # an existing preset with different variables.
         # configurePresetAdditionalArgs: "['-DENABLE_YOUR_FEATURE=1']"
 
         # This is the name of the CMakePresets.json's configuration to build the project.
-        buildPreset: 'x64-release-llvm'
+#        buildPreset: 'x64-release-llvm'
         # Additional arguments can be appended when building, for example to specify the
         # configuration to build.
         # This is useful to reduce the number of CMake's Presets you need in CMakePresets.json.
 #        buildPresetAdditionalArgs: "['--config Release']"
 
         # This is the name of the CMakePresets.json's configuration to test the project with.
-        testPreset: 'x64-release-llvm'
+#        testPreset: 'x64-release-llvm'
         # Additional arguments can be appended when testing, for example to specify the config
         # to test.
         # This is useful to reduce the number of CMake's Presets you need in CMakePresets.json.
