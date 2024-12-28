@@ -13,7 +13,8 @@ int main() {
 
     // Create a function named "main"
     FunctionType *FT = FunctionType::get(Type::getInt32Ty(Context), false);
-    Function *F = Function::Create(FT, Function::ExternalLinkage, "main", Module);
+    Function *F = Function::Create(FT, Function::ExternalLinkage, "main",
+Module);
 
     // Create a basic block
     BasicBlock *BB = BasicBlock::Create(Context, "entry", F);

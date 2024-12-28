@@ -8,10 +8,6 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 
-
-namespace yona::compiler::codegen
-{
-  class Codegen
-  {
-  };
-}
+namespace yona::compiler::codegen {
+class Codegen {};
+} // namespace yona::compiler::codegen
