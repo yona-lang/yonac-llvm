@@ -166,9 +166,9 @@ namespace yona::ast
   class AstNode
   {
   public:
-    SourceContext token;
+    SourceInfo source_context;
     AstNode* parent = nullptr;
-    explicit AstNode(SourceContext token) : token(token) {};
+    explicit AstNode(SourceContext token) : source_context(token) {};
     virtual ~AstNode() = default;
     virtual any accept(const AstVisitor& visitor);
     [[nodiscard]] virtual Type infer_type(AstContext& ctx) const;
@@ -628,9 +628,9 @@ namespace yona::ast
   {
   public:
     ExprNode* guard;
-    vector<ExprNode*> exprs;
+    ExprNode* expr;
 
-    explicit BodyWithGuards(SourceContext token, ExprNode* guard, const vector<ExprNode*>& exprs);
+    explicit BodyWithGuards(SourceContext token, ExprNode* guard, ExprNode* expr);
     any accept(const AstVisitor& visitor) override;
     [[nodiscard]] Type infer_type(AstContext& ctx) const override;
     [[nodiscard]] AstNodeType get_type() const override { return AST_BODY_WITH_GUARDS; };

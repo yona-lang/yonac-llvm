@@ -36,11 +36,18 @@ namespace yona::interp
   private:
     Frame frame_;
 
-    template <RuntimeObjectType ROT, typename VT>
-    VT& get_value(AstNode* node) const;
-
   public:
     explicit Interpreter() : frame_(Frame(nullptr)) {};
+
+    template <RuntimeObjectType ROT, typename VT>
+    optional<VT> get_value(AstNode* node) const;
+
+    template <RuntimeObjectType ROT, typename VT>
+    optional<any> map_value(initializer_list<AstNode*> nodes, function<VT(vector<VT>)> cb) const;
+
+    template <RuntimeObjectType actual, RuntimeObjectType... expected>
+    static void type_error(AstNode* node);
+
     [[nodiscard]] any visit(AddExpr* node) const override;
     [[nodiscard]] any visit(AliasCall* node) const override;
     [[nodiscard]] any visit(AliasExpr* node) const override;

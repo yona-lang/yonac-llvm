@@ -47,7 +47,7 @@ namespace yona::parser
     msg.append("]. Valid alternatives are: ");
     msg.append(expectedTokens.toString(recognizer->getVocabulary()));
 
-    ast_ctx.addError(yona_error(TokenLocation(*offendingToken, *recognizer), yona_error::Type::SYNTAX, msg));
+    ast_ctx.addError(yona_error(SourceInfo(*offendingToken, *recognizer), yona_error::Type::SYNTAX, msg));
 
     recognizer->getErrorListenerDispatch().syntaxError(recognizer, offendingToken, offendingToken->getLine(),
                                                        offendingToken->getCharPositionInLine(), msg,

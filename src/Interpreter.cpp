@@ -3,12 +3,34 @@
 //
 
 #include "Interpreter.h"
+
 #include <boost/log/trivial.hpp>
+#include <numeric>
 
 #include "common.h"
+#include "utils.h"
+
+#define BINARY_OP_EXTRACTION(ROT, VT, start, offset, op)                  \
+  map_value<ROT, VT>({node->left, node->right}, [node](vector<VT> values) \
+                     { return reduce(values.begin() + offset, values.end(), offset ? values[0] : start, op<VT>()); })
+
+#define BINARY_OP(T, err, ...)                                                                                  \
+  any Interpreter::visit(T* node) const                                                                         \
+  {                                                                                                             \
+    if (auto result = first_defined_optional({__VA_ARGS__}); result.has_value())                                \
+    {                                                                                                           \
+      return result.value();                                                                                    \
+    }                                                                                                           \
+    else                                                                                                        \
+    {                                                                                                           \
+      throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected " + string(err)); \
+    }                                                                                                           \
+  }
 
 namespace yona::interp
 {
+  using namespace std::placeholders;
+
   void Frame::write(const string& name, symbol_ref_t value) { locals_[name] = std::move(value); }
 
   symbol_ref_t Frame::lookup(const string& name)
@@ -25,25 +47,60 @@ namespace yona::interp
   }
 
   template <RuntimeObjectType ROT, typename VT>
-  VT& Interpreter::get_value(AstNode* node) const
+  optional<VT> Interpreter::get_value(AstNode* node) const
   {
-    const shared_ptr<RuntimeObject> runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node));
-    if (runtime_object->type != ROT)
+    const auto runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node));
+    if (runtime_object->type == ROT)
     {
-      throw yona_error(node->token, yona_error::Type::TYPE,
-                       "Type mismatch: expected " + RuntimeObjectTypes[ROT] + ", got " +
-                           RuntimeObjectTypes[runtime_object->type]);
+      return make_optional(runtime_object->get<VT>());
     }
-    return runtime_object->get<VT>();
+    else
+    {
+      return nullopt;
+    }
   }
 
-  any Interpreter::visit(AddExpr* node) const
+  template <RuntimeObjectType ROT, typename VT>
+  optional<any> Interpreter::map_value(initializer_list<AstNode*> nodes, function<VT(vector<VT>)> cb) const
   {
-    const auto left  = get_value<Int, int>(node->left);
-    const auto right = get_value<Int, int>(node->right);
+    vector<VT> values;
 
-    return make_shared<RuntimeObject>(Int, left + right);
+    for (const auto node : nodes)
+    {
+      if (const auto value = get_value<ROT, VT>(node))
+      {
+        values.push_back(value.value());
+      }
+      else
+      {
+        return nullopt;
+      }
+    }
+
+    return make_shared<RuntimeObject>(ROT, cb(values));
   }
+
+  template <RuntimeObjectType actual, RuntimeObjectType... expected>
+  void Interpreter::type_error(AstNode* node)
+  {
+    static constexpr auto expected_types = {expected...};
+    if (!expected_types.contains(actual))
+    {
+      throw yona_error(node->source_context, yona_error::Type::TYPE,
+                       "Type mismatch: expected " + std::string(expected_types) + ", got " +
+                           std::string(RuntimeObjectTypes[actual]));
+    }
+  }
+
+  BINARY_OP(AddExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 0, plus),
+            BINARY_OP_EXTRACTION(Float, double, 0.0, 0, plus))
+  BINARY_OP(MultiplyExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 1, 0, multiplies),
+            BINARY_OP_EXTRACTION(Float, double, 1.0, 0, multiplies))
+  BINARY_OP(SubtractExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, minus),
+            BINARY_OP_EXTRACTION(Float, double, 0.0, 1, minus))
+  BINARY_OP(DivideExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, divides),
+            BINARY_OP_EXTRACTION(Float, double, 0.0, 1, divides))
+
   any Interpreter::visit(AliasCall* node) const { return expr_wrapper(node); }
   any Interpreter::visit(AliasExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ApplyExpr* node) const { return expr_wrapper(node); }
@@ -78,7 +135,6 @@ namespace yona::interp
   any Interpreter::visit(DictGeneratorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DictGeneratorReducer* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DictPattern* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(DivideExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(DoExpr* node) const
   {
     any result;
@@ -122,7 +178,6 @@ namespace yona::interp
   any Interpreter::visit(ModuleCall* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ModuleExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(ModuleImport* node) const { return expr_wrapper(node); }
-  any Interpreter::visit(MultiplyExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(NameCall* node) const { return expr_wrapper(node); }
   any Interpreter::visit(NameExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(NeqExpr* node) const { return expr_wrapper(node); }
@@ -158,7 +213,7 @@ namespace yona::interp
 
   any Interpreter::visit(SetGeneratorExpr* node) const { return expr_wrapper(node); }
   any Interpreter::visit(StringExpr* node) const { return make_shared<RuntimeObject>(String, node->value); }
-  any Interpreter::visit(SubtractExpr* node) const { return expr_wrapper(node); }
+
   any Interpreter::visit(SymbolExpr* node) const
   {
     return make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(node->value));

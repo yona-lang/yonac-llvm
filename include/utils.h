@@ -75,4 +75,7 @@ namespace yona
 
   string unescapeYonaString(const string& rawString);
   string module_location(const vector<string>& module_name);
+
+  template <typename T>
+  optional<T> first_defined_optional(initializer_list<optional<T>> optionals);
 }

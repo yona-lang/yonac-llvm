@@ -9,9 +9,9 @@
 #include <llvm/IR/Module.h>
 
 
-namespace yona::compiler
+namespace yona::compiler::codegen
 {
-  class LLVMCompiler
+  class Codegen
   {
   };
 }

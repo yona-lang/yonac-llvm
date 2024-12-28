@@ -43,7 +43,7 @@ namespace yona
 
   any YonaVisitor::visitBodyWithGuards(YonaParser::BodyWithGuardsContext* ctx)
   {
-    return wrap_expr<BodyWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard), visit_exprs<ExprNode>(ctx->expression()));
+    return wrap_expr<BodyWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard), visit_expr<ExprNode>(ctx->expr));
   }
 
   any YonaVisitor::visitNegationExpression(YonaParser::NegationExpressionContext* ctx)

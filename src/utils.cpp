@@ -55,4 +55,19 @@ namespace yona
     result.replace_extension(".yona");
     return result;
   }
+
+  template <typename T>
+  optional<T> first_defined_optional(initializer_list<optional<T>> optionals)
+  {
+    for (const auto& optional : optionals)
+    {
+      if (optional.has_value())
+      {
+        return optional;
+      }
+    }
+    return nullopt;
+  }
+
+  template optional<any> first_defined_optional(initializer_list<optional<any>> optionals);
 }

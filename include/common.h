@@ -24,7 +24,7 @@ namespace yona
     bool compile_mode = false;
   } YONA_ENVIRONMENT;
 
-  struct TokenLocation final
+  struct SourceInfo final
   {
     size_t start_line;
     size_t start_col;
@@ -32,7 +32,7 @@ namespace yona
     size_t stop_col;
     string text;
 
-    TokenLocation(SourceContext token) :
+    SourceInfo(SourceContext token) :
         start_line(token.getStart() ? token.getStart()->getLine() : 0),
         start_col(token.getStart() ? token.getStart()->getCharPositionInLine() : 0),
         stop_line(token.getStop() ? token.getStop()->getLine() : 0),
@@ -41,20 +41,20 @@ namespace yona
     {
     }
 
-    TokenLocation(antlr4::Token& token, Recognizer& recognizer) :
+    SourceInfo(antlr4::Token& token, Recognizer& recognizer) :
         start_line(token.getLine()), start_col(token.getCharPositionInLine()), stop_line(token.getLine()),
         stop_col(token.getText().length() + start_col), text(recognizer.getTokenErrorDisplay(&token))
     {
     }
 
-    TokenLocation(const size_t start_line, const size_t start_col, const size_t stop_line, const size_t stop_col,
-                  string text) :
+    SourceInfo(const size_t start_line, const size_t start_col, const size_t stop_line, const size_t stop_col,
+               string text) :
         start_line(start_line), start_col(start_col), stop_line(stop_line), stop_col(stop_col), text(std::move(text))
     {
     }
   };
 
-  inline std::ostream& operator<<(std::ostream& os, const TokenLocation& rhs)
+  inline std::ostream& operator<<(std::ostream& os, const SourceInfo& rhs)
   {
     os << "[" << rhs.start_line << ":" << rhs.start_col << "-" << rhs.stop_line << ":" << rhs.stop_col << "] "
        << rhs.text;
@@ -69,10 +69,10 @@ namespace yona
       TYPE,
       RUNTIME
     } type;
-    TokenLocation source_token;
+    SourceInfo source_token;
     string message;
 
-    explicit yona_error(TokenLocation source_token, Type type, string message) :
+    explicit yona_error(SourceInfo source_token, Type type, string message) :
         runtime_error(message), type(type), source_token(std::move(source_token)), message(std::move(message))
     {
     }
