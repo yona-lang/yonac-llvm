@@ -135,6 +135,56 @@
       }
     }
   ],
+  "buildPresets": [
+    {
+      "name": "build-debug",
+      "displayName": "Build Debug",
+      "configurePreset": "x64-debug",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-release",
+      "displayName": "Build Release",
+      "configurePreset": "x64-release",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-debug-linux",
+      "displayName": "Build Debug Linux",
+      "configurePreset": "x64-debug-linux",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-release-linux",
+      "displayName": "Build Release Linux",
+      "configurePreset": "x64-release-linux",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-debug-macos",
+      "displayName": "Build Debug macOS",
+      "configurePreset": "x64-debug-macos",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-release-macos",
+      "displayName": "Build Release macOS",
+      "configurePreset": "x64-release-macos",
+      "targets": [
+        "all"
+      ]
+    }
+  ],
   "testPresets": [
     {
       "name": "unit-tests-windows",
