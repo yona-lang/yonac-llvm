@@ -13,9 +13,10 @@ using namespace ast;
 using namespace runtime;
 
 using symbol_ref_t = shared_ptr<RuntimeObject>;
+using InterepterFrame = Frame<symbol_ref_t>;
 
 inline struct {
-  shared_ptr<Frame<symbol_ref_t>> frame;
+  shared_ptr<InterepterFrame> frame;
 } InterpreterState;
 
 class Interpreter final : public AstVisitor {

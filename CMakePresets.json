@@ -22,7 +22,7 @@
       }
     },
     {
-      "name": "llvm-base",
+      "name": "linux-base",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
@@ -34,21 +34,32 @@
           "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
           "type": "FILEPATH"
         }
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
       }
+
     },
     {
-      "name": "gcc-base",
+      "name": "macos-base",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "cc",
-        "CMAKE_CXX_COMPILER": "c++",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_TOOLCHAIN_FILE": {
           "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
           "type": "FILEPATH"
         }
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
       }
     },
     {
@@ -66,55 +77,19 @@
     {
       "name": "x64-release",
       "displayName": "x64 Release",
-      "inherits": "x64-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "x86-debug",
-      "displayName": "x86 Debug",
       "inherits": "windows-base",
       "architecture": {
-        "value": "x86",
+        "value": "x64",
         "strategy": "external"
       },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "x86-release",
-      "displayName": "x86 Release",
-      "inherits": "x86-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "arm64-debug",
-      "displayName": "arm64 Debug",
-      "inherits": "llvm-base",
-      "architecture": {
-        "value": "arm64",
-        "strategy": "external"
-      },
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "arm64-release",
-      "displayName": "arm64 Release",
-      "inherits": "arm64-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "x64-debug-gcc",
-      "displayName": "x64 Debug GCC",
-      "inherits": "gcc-base",
+      "name": "x64-debug-linux",
+      "displayName": "x64 Debug Linux",
+      "inherits": "linux-base",
       "architecture": {
         "value": "x64",
         "strategy": "external"
@@ -124,17 +99,21 @@
       }
     },
     {
-      "name": "x64-release-gcc",
-      "displayName": "x64 Release GCC",
-      "inherits": "x64-debug-gcc",
+      "name": "x64-release-linux",
+      "displayName": "x64 Release Linux",
+      "inherits": "linux-base",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
-      "name": "x64-debug-llvm",
-      "displayName": "x64 Debug LLVM",
-      "inherits": "llvm-base",
+      "name": "x64-debug-macos",
+      "displayName": "x64 Debug macOS",
+      "inherits": "macos-base",
       "architecture": {
         "value": "x64",
         "strategy": "external"
@@ -144,11 +123,41 @@
       }
     },
     {
-      "name": "x64-release-llvm",
-      "displayName": "x64 Release LLVM",
-      "inherits": "x64-debug-llvm",
+      "name": "x64-release-macos",
+      "displayName": "x64 Release macOS",
+      "inherits": "macos-base",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "unit-tests-windows",
+      "displayName": "Unit Tests (Windows)",
+      "configurePreset": "x64-debug",
+      "environment": {
+        "CTEST_OUTPUT_ON_FAILURE": "1"
+      }
+    },
+    {
+      "name": "unit-tests-linux",
+      "displayName": "Unit Tests (Linux)",
+      "configurePreset": "x64-debug-linux",
+      "environment": {
+        "CTEST_OUTPUT_ON_FAILURE": "1"
+      }
+    },
+    {
+      "name": "unit-tests-macos",
+      "displayName": "Unit Tests (macOS)",
+      "configurePreset": "x64-debug-macos",
+      "environment": {
+        "CTEST_OUTPUT_ON_FAILURE": "1"
       }
     }
   ]

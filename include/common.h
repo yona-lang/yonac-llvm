@@ -94,7 +94,7 @@ public:
   explicit Frame(shared_ptr<Frame> parent) : parent(std::move(parent)) {}
 
   void write(const string &name, T value);
-  static void write(const string &name, any value);
+  void write(const string &name, any value);
   T lookup(SourceInfo source_token, const string &name);
 };
 }; // namespace yona

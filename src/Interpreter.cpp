@@ -229,7 +229,7 @@ any Interpreter::visit(TypeInstance *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ExprNode *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(AstNode *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(ScopedNode *node) const {
-  InterpreterState.frame = make_shared<Frame>(InterpreterState.frame);
+  InterpreterState.frame = make_shared<InterepterFrame>(InterpreterState.frame);
   auto result = AstVisitor::visit(node);
   InterpreterState.frame = InterpreterState.frame->parent;
   return result;
@@ -243,7 +243,7 @@ any Interpreter::visit(AliasExpr *node) const { return AstVisitor::visit(node); 
 any Interpreter::visit(OpExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(MainNode *node) const {
-  InterpreterState.frame = make_shared<Frame>(InterpreterState.frame);
+  InterpreterState.frame = make_shared<InterepterFrame>(InterpreterState.frame);
   auto result = visit(node->node);
   InterpreterState.frame = InterpreterState.frame->parent;
   return result;
