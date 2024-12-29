@@ -40,7 +40,6 @@
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       }
-
     },
     {
       "name": "macos-base",
