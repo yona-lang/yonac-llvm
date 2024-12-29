@@ -26,7 +26,7 @@ struct SymbolValue;
 struct ApplyValue;
 struct RuntimeObject;
 
-inline wstring_convert<codecvt_utf8<wchar_t>, wchar_t> STRING_CONVERTER;
+inline wstring_convert<codecvt_utf8<wchar_t>> STRING_CONVERTER;
 
 using RuntimeObjectData = variant<int /*Int*/, double /*Float*/, byte /*Byte*/, wchar_t /*Char*/, string /*String*/, bool /*Bool*/,
                                   nullptr_t /*Unit*/, shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple/Record*/,

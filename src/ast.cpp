@@ -85,7 +85,7 @@ IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr *name) : ValueExpr(
 
 any IdentifierExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type IdentifierExpr::infer_type(AstContext &ctx) const { unreachable(); }
+Type IdentifierExpr::infer_type(AstContext &ctx) const { return nullptr; }
 
 IdentifierExpr::~IdentifierExpr() { delete name; }
 
@@ -1625,4 +1625,115 @@ any AstVisitor::visit(FunctionBody *node) const {
 }
 
 any AstVisitor::visit(IdentifierExpr *node) const { return visit(node->name); }
+
+any AstVisitor::visit(AliasExpr *node) const {
+  if (auto derived = dynamic_cast<ValueAlias *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LambdaAlias *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<ModuleAlias *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<PatternAlias *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<FqnAlias *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<FunctionAlias *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
+any AstVisitor::visit(OpExpr *node) const {
+  if (auto derived = dynamic_cast<BinaryOpExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LogicalNotOpExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<BinaryNotOpExpr *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
+any AstVisitor::visit(BinaryOpExpr *node) const {
+  if (auto derived = dynamic_cast<PowerExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<MultiplyExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<DivideExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<ModuloExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<AddExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<SubtractExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LeftShiftExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<RightShiftExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<ZerofillRightShiftExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<GteExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LteExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<GtExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LtExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<EqExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<NeqExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<ConsLeftExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<ConsRightExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<JoinExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<BitwiseAndExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<BitwiseXorExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<BitwiseOrExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LogicalAndExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<LogicalOrExpr *>(node)) {
+    return visit(derived);
+  }
+  if (auto derived = dynamic_cast<InExpr *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
 } // namespace yona::ast

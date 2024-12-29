@@ -229,7 +229,7 @@ any YonaVisitor::visitName(YonaParser::NameContext *ctx) { return wrap_expr<Name
 any YonaVisitor::visitLet(YonaParser::LetContext *ctx) {
   vector<AliasExpr *> aliases;
   for (const auto &alias : ctx->alias()) {
-    aliases.push_back(any_cast<AliasExpr *>(visitAlias(alias)));
+    aliases.push_back(visit_expr<AliasExpr>(alias));
   }
   return wrap_expr<LetExpr>(*ctx, aliases, visit_expr<ExprNode>(ctx->expression()));
 }

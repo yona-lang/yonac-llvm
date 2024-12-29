@@ -14,7 +14,6 @@ class Optimizer final : public AstVisitor {
 public:
   [[nodiscard]] any visit(AddExpr *node) const override;
   [[nodiscard]] any visit(AliasCall *node) const override;
-  [[nodiscard]] any visit(AliasExpr *node) const override;
   [[nodiscard]] any visit(ApplyExpr *node) const override;
   [[nodiscard]] any visit(AsDataStructurePattern *node) const override;
   [[nodiscard]] any visit(BinaryNotOpExpr *node) const override;
@@ -74,7 +73,6 @@ public:
   [[nodiscard]] any visit(NameCall *node) const override;
   [[nodiscard]] any visit(NameExpr *node) const override;
   [[nodiscard]] any visit(NeqExpr *node) const override;
-  [[nodiscard]] any visit(OpExpr *node) const override;
   [[nodiscard]] any visit(PackageNameExpr *node) const override;
   [[nodiscard]] any visit(PatternAlias *node) const override;
   [[nodiscard]] any visit(PatternExpr *node) const override;
@@ -121,5 +119,8 @@ public:
   [[nodiscard]] any visit(SequenceExpr *node) const override;
   [[nodiscard]] any visit(FunctionBody *node) const override;
   [[nodiscard]] any visit(IdentifierExpr *node) const override;
+  [[nodiscard]] any visit(AliasExpr *node) const override;
+  [[nodiscard]] any visit(OpExpr *node) const override;
+  [[nodiscard]] any visit(BinaryOpExpr *node) const override;
 };
 } // namespace yona::compiler

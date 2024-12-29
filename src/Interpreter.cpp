@@ -12,7 +12,7 @@
 
 #define BINARY_OP_EXTRACTION(ROT, VT, start, offset, op)                                                                                             \
   map_value<ROT, VT>({node->left, node->right},                                                                                                      \
-                     [](vector<VT> values) { return reduce(values.begin() + offset, values.end(), offset ? values[0] : start, op<>()); })
+                     [](vector<VT> values) { return reduce(values.begin() + offset, values.end(), offset ? values[0] : start, op()); })
 
 #define BINARY_OP(T, err, ...)                                                                                                                       \
   any Interpreter::visit(T *node) const {                                                                                                            \
@@ -23,31 +23,37 @@
     }                                                                                                                                                \
   }
 
+#define BITWISE_OP(T, op)                                                                                                                            \
+  struct T##_op {                                                                                                                                    \
+    int operator()(const int &x, const int &y) const { return x op y; }                                                                              \
+  };                                                                                                                                                 \
+  BINARY_OP(T, "Int", BINARY_OP_EXTRACTION(Int, int, 0, 1, T##_op))
+
 namespace yona::interp {
 using namespace std::placeholders;
 
 void Frame::write(const string &name, symbol_ref_t value) { locals_[name] = std::move(value); }
 
-symbol_ref_t Frame::lookup(const string &name) {
+void Frame::write(const string &name, any value) { write(name, any_cast<shared_ptr<RuntimeObject>>(value)); }
+
+symbol_ref_t Frame::lookup(SourceInfo source_token, const string &name) {
   if (locals_.contains(name)) {
     return locals_[name];
-  } else if (parent_) {
-    return parent_->lookup(name);
+  } else if (parent) {
+    return parent->lookup(source_token, name);
   }
-  return nullptr;
+  throw yona_error(source_token, yona_error::RUNTIME, "Undefined variable: " + name);
 }
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
-  const auto runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node));
-  if (runtime_object->type == ROT) {
+  if (const auto runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node)); runtime_object->type == ROT) {
     return make_optional(runtime_object->get<VT>());
-  } else {
-    return nullopt;
   }
+  return nullopt;
 }
 
 template <RuntimeObjectType ROT, typename VT>
-optional<any> Interpreter::map_value(initializer_list<AstNode *> nodes, function<VT(vector<VT>)> cb) const {
+optional<any> Interpreter::map_value(const initializer_list<AstNode *> nodes, function<VT(vector<VT>)> cb) const {
   vector<VT> values;
 
   for (const auto node : nodes) {
@@ -74,14 +80,19 @@ BINARY_OP(MultiplyExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 1, 0, mul
 BINARY_OP(SubtractExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, minus), BINARY_OP_EXTRACTION(Float, double, 0.0, 1, minus))
 BINARY_OP(DivideExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, divides), BINARY_OP_EXTRACTION(Float, double, 0.0, 1, divides))
 
+BITWISE_OP(BitwiseAndExpr, &)
+BITWISE_OP(BitwiseOrExpr, |)
+BITWISE_OP(BitwiseXorExpr, ^)
+
+BITWISE_OP(LeftShiftExpr, <<)
+BITWISE_OP(RightShiftExpr, >>)
+BITWISE_OP(ZerofillRightShiftExpr, >>) // TODO https://stackoverflow.com/questions/8422424/can-you-control-what-a-bitwise-right-shift-will-fill-in-c
+
 any Interpreter::visit(AliasCall *node) const { return expr_wrapper(node); }
-any Interpreter::visit(AliasExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ApplyExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(AsDataStructurePattern *node) const { return expr_wrapper(node); }
 any Interpreter::visit(BinaryNotOpExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(BitwiseAndExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(BitwiseOrExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(BitwiseXorExpr *node) const { return expr_wrapper(node); }
+
 any Interpreter::visit(BodyWithGuards *node) const { return expr_wrapper(node); }
 any Interpreter::visit(BodyWithoutGuards *node) const { return visit(node->expr); }
 any Interpreter::visit(ByteExpr *node) const { return make_shared<RuntimeObject>(Byte, node->value); }
@@ -133,8 +144,19 @@ any Interpreter::visit(IntegerExpr *node) const { return make_shared<RuntimeObje
 any Interpreter::visit(JoinExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(KeyValueCollectionExtractorExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(LambdaAlias *node) const { return expr_wrapper(node); }
-any Interpreter::visit(LeftShiftExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(LetExpr *node) const { return expr_wrapper(node); }
+
+any Interpreter::visit(LetExpr *node) const {
+  frame = make_shared<Frame>(frame);
+
+  for (auto &alias : node->aliases) {
+    visit(alias);
+  }
+
+  any result = visit(node->expr);
+  frame = frame->parent;
+  return result;
+}
+
 any Interpreter::visit(LogicalAndExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(LogicalNotOpExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(LogicalOrExpr *node) const { return expr_wrapper(node); }
@@ -146,9 +168,8 @@ any Interpreter::visit(ModuleCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleImport *node) const { return expr_wrapper(node); }
 any Interpreter::visit(NameCall *node) const { return expr_wrapper(node); }
-any Interpreter::visit(NameExpr *node) const { return expr_wrapper(node); }
+any Interpreter::visit(NameExpr *node) const { return frame->lookup(node->source_context, node->value); }
 any Interpreter::visit(NeqExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(OpExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PackageNameExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PatternAlias *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PatternExpr *node) const { return expr_wrapper(node); }
@@ -161,7 +182,6 @@ any Interpreter::visit(RangeSequenceExpr *node) const { return expr_wrapper(node
 any Interpreter::visit(RecordInstanceExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(RecordNode *node) const { return expr_wrapper(node); }
 any Interpreter::visit(RecordPattern *node) const { return expr_wrapper(node); }
-any Interpreter::visit(RightShiftExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(SeqGeneratorExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(SeqPattern *node) const { return expr_wrapper(node); }
 
@@ -178,7 +198,6 @@ any Interpreter::visit(SetExpr *node) const {
 
 any Interpreter::visit(SetGeneratorExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(StringExpr *node) const { return make_shared<RuntimeObject>(String, node->value); }
-
 any Interpreter::visit(SymbolExpr *node) const { return make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(node->value)); }
 any Interpreter::visit(TailsHeadPattern *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TrueLiteralExpr *node) const { return make_shared<RuntimeObject>(Bool, true); }
@@ -198,7 +217,13 @@ any Interpreter::visit(TupleExpr *node) const {
 any Interpreter::visit(TuplePattern *node) const { return expr_wrapper(node); }
 any Interpreter::visit(UnderscoreNode *node) const { return make_shared<RuntimeObject>(Bool, true); }
 any Interpreter::visit(UnitExpr *node) const { return make_shared<RuntimeObject>(Unit, nullptr); }
-any Interpreter::visit(ValueAlias *node) const { return expr_wrapper(node); }
+
+any Interpreter::visit(ValueAlias *node) const {
+  auto result = visit(node->expr);
+  frame->write(node->identifier->name->value, result);
+  return result;
+}
+
 any Interpreter::visit(ValueCollectionExtractorExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(ValuesSequenceExpr *node) const {
@@ -213,7 +238,6 @@ any Interpreter::visit(ValuesSequenceExpr *node) const {
 }
 
 any Interpreter::visit(WithExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(ZerofillRightShiftExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(FunctionDeclaration *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeDeclaration *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeDefinition *node) const { return expr_wrapper(node); }
@@ -227,4 +251,7 @@ any Interpreter::visit(ValueExpr *node) const { return AstVisitor::visit(node); 
 any Interpreter::visit(SequenceExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(FunctionBody *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(IdentifierExpr *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(AliasExpr *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(OpExpr *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
 } // namespace yona::interp

@@ -9,7 +9,6 @@ namespace yona::compiler {
 using namespace std;
 any Optimizer::visit(AddExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(AliasCall *node) const { return any(expr_wrapper(node)); }
-any Optimizer::visit(AliasExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ApplyExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(AsDataStructurePattern *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(BinaryNotOpExpr *node) const { return any(expr_wrapper(node)); }
@@ -69,7 +68,6 @@ any Optimizer::visit(MultiplyExpr *node) const { return any(expr_wrapper(node));
 any Optimizer::visit(NameCall *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(NameExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(NeqExpr *node) const { return any(expr_wrapper(node)); }
-any Optimizer::visit(OpExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PackageNameExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PatternAlias *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PatternExpr *node) const { return any(expr_wrapper(node)); }
@@ -115,4 +113,7 @@ any Optimizer::visit(ValueExpr *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(SequenceExpr *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(FunctionBody *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(IdentifierExpr *node) const { return any(AstVisitor::visit(node)); }
+any Optimizer::visit(AliasExpr *node) const { return any(AstVisitor::visit(node)); }
+any Optimizer::visit(OpExpr *node) const { return any(AstVisitor::visit(node)); }
+any Optimizer::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
 } // namespace yona::compiler

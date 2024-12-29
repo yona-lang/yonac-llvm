@@ -1394,7 +1394,6 @@ public:
   virtual ~AstVisitor() = default;
   virtual any visit(AddExpr *node) const = 0;
   virtual any visit(AliasCall *node) const = 0;
-  virtual any visit(AliasExpr *node) const = 0;
   virtual any visit(ApplyExpr *node) const = 0;
   virtual any visit(AsDataStructurePattern *node) const = 0;
   virtual any visit(BinaryNotOpExpr *node) const = 0;
@@ -1455,7 +1454,6 @@ public:
   virtual any visit(NameCall *node) const = 0;
   virtual any visit(NameExpr *node) const = 0;
   virtual any visit(NeqExpr *node) const = 0;
-  virtual any visit(OpExpr *node) const = 0;
   virtual any visit(PackageNameExpr *node) const = 0;
   virtual any visit(PatternAlias *node) const = 0;
   virtual any visit(PatternExpr *node) const = 0;
@@ -1500,5 +1498,8 @@ public:
   virtual any visit(SequenceExpr *node) const;
   virtual any visit(FunctionBody *node) const;
   virtual any visit(IdentifierExpr *node) const;
+  virtual any visit(AliasExpr *node) const;
+  virtual any visit(OpExpr *node) const;
+  virtual any visit(BinaryOpExpr *node) const;
 };
 } // namespace yona::ast

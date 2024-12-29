@@ -56,7 +56,7 @@ struct yona_error final : std::runtime_error {
       : runtime_error(message), type(type), source_token(std::move(source_token)), message(std::move(message)) {}
 };
 
-inline const char *ErrorTypes[] = {"syntax", "type", "check"};
+inline const char *ErrorTypes[] = {"syntax", "type", "runtime check"};
 
 inline std::ostream &operator<<(std::ostream &os, const yona_error &rhs) {
   os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET << ": " << rhs.message;
