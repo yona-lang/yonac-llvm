@@ -105,6 +105,8 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 include(GoogleTest)
 
+gtest_discover_tests(tests)
+
 add_executable(
         tests
         ${all_TESTS}
@@ -112,5 +114,3 @@ add_executable(
 target_link_libraries(tests PRIVATE yona GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main Boost::boost Boost::log)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(tests PRIVATE ${ANTLR4_INCLUDE_DIR})
-
-gtest_discover_tests(tests)
