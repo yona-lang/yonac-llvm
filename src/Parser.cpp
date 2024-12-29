@@ -76,7 +76,7 @@ ParseResult Parser::parse_input(istream &stream) const {
   parser.setErrorHandler(make_shared<ErrorStrategy>(ast_ctx));
 
   YonaParser::InputContext *tree = parser.input();
-  BOOST_LOG_TRIVIAL(debug) << "Parse tree: " << tree->toStringTree();
+  // BOOST_LOG_TRIVIAL(trace) << "Parse tree: " << tree->toStringTree();
 
   if (ast_ctx.hasErrors()) {
     return {!ast_ctx.hasErrors(), nullptr, nullptr, ast_ctx};

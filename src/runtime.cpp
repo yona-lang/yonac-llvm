@@ -127,7 +127,7 @@ std::ostream &printModule(std::ostream &strm, const RuntimeObject &obj) {
 
   for (const auto &record : records) {
     strm << *record->fields[0];
-    if (i++ < functions.size() - 1) {
+    if (i++ < record->fields.size() - 1) {
       strm << ", ";
     }
   }

@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <utility>
-
 #include "ast.h"
 #include "runtime.h"
 
@@ -16,22 +14,9 @@ using namespace runtime;
 
 using symbol_ref_t = shared_ptr<RuntimeObject>;
 
-struct Frame {
-private:
-  vector<symbol_ref_t> args_;
-  unordered_map<string, symbol_ref_t> locals_;
-
-public:
-  shared_ptr<Frame> parent;
-
-  explicit Frame(shared_ptr<Frame> parent) : parent(std::move(parent)) {}
-
-  void write(const string &name, symbol_ref_t value);
-  void write(const string &name, any value);
-  symbol_ref_t lookup(SourceInfo source_token, const string &name);
-};
-
-inline shared_ptr<Frame> frame(nullptr);
+inline struct {
+  shared_ptr<Frame<symbol_ref_t>> frame;
+} InterpreterState;
 
 class Interpreter final : public AstVisitor {
 public:
@@ -151,5 +136,6 @@ public:
   any visit(AliasExpr *node) const override;
   any visit(OpExpr *node) const override;
   any visit(BinaryOpExpr *node) const override;
+  any visit(MainNode *node) const override;
 };
 } // namespace yona::interp

@@ -32,19 +32,6 @@
 namespace yona::interp {
 using namespace std::placeholders;
 
-void Frame::write(const string &name, symbol_ref_t value) { locals_[name] = std::move(value); }
-
-void Frame::write(const string &name, any value) { write(name, any_cast<shared_ptr<RuntimeObject>>(value)); }
-
-symbol_ref_t Frame::lookup(SourceInfo source_token, const string &name) {
-  if (locals_.contains(name)) {
-    return locals_[name];
-  } else if (parent) {
-    return parent->lookup(source_token, name);
-  }
-  throw yona_error(source_token, yona_error::RUNTIME, "Undefined variable: " + name);
-}
-
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
   if (const auto runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node)); runtime_object->type == ROT) {
     return make_optional(runtime_object->get<VT>());
@@ -146,15 +133,11 @@ any Interpreter::visit(KeyValueCollectionExtractorExpr *node) const { return exp
 any Interpreter::visit(LambdaAlias *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(LetExpr *node) const {
-  frame = make_shared<Frame>(frame);
-
-  for (auto &alias : node->aliases) {
+  for (const auto alias : node->aliases) {
     visit(alias);
   }
 
-  any result = visit(node->expr);
-  frame = frame->parent;
-  return result;
+  return visit(node->expr);
 }
 
 any Interpreter::visit(LogicalAndExpr *node) const { return expr_wrapper(node); }
@@ -168,7 +151,7 @@ any Interpreter::visit(ModuleCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleImport *node) const { return expr_wrapper(node); }
 any Interpreter::visit(NameCall *node) const { return expr_wrapper(node); }
-any Interpreter::visit(NameExpr *node) const { return frame->lookup(node->source_context, node->value); }
+any Interpreter::visit(NameExpr *node) const { return InterpreterState.frame->lookup(node->source_context, node->value); }
 any Interpreter::visit(NeqExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PackageNameExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PatternAlias *node) const { return expr_wrapper(node); }
@@ -220,7 +203,7 @@ any Interpreter::visit(UnitExpr *node) const { return make_shared<RuntimeObject>
 
 any Interpreter::visit(ValueAlias *node) const {
   auto result = visit(node->expr);
-  frame->write(node->identifier->name->value, result);
+  InterpreterState.frame->write(node->identifier->name->value, result);
   return result;
 }
 
@@ -245,7 +228,12 @@ any Interpreter::visit(TypeNode *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeInstance *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ExprNode *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(AstNode *node) const { return AstVisitor::visit(node); }
-any Interpreter::visit(ScopedNode *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(ScopedNode *node) const {
+  InterpreterState.frame = make_shared<Frame>(InterpreterState.frame);
+  auto result = AstVisitor::visit(node);
+  InterpreterState.frame = InterpreterState.frame->parent;
+  return result;
+}
 any Interpreter::visit(PatternNode *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(ValueExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(SequenceExpr *node) const { return AstVisitor::visit(node); }
@@ -254,4 +242,10 @@ any Interpreter::visit(IdentifierExpr *node) const { return AstVisitor::visit(no
 any Interpreter::visit(AliasExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(OpExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(MainNode *node) const {
+  InterpreterState.frame = make_shared<Frame>(InterpreterState.frame);
+  auto result = visit(node->node);
+  InterpreterState.frame = InterpreterState.frame->parent;
+  return result;
+}
 } // namespace yona::interp

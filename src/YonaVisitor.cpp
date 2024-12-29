@@ -11,7 +11,7 @@
 namespace yona {
 string YonaVisitor::nextLambdaName() { return fqn() + "_lambda_" + to_string(lambda_count_++); }
 
-any YonaVisitor::visitInput(YonaParser::InputContext *ctx) { return visit(ctx->expression()); }
+any YonaVisitor::visitInput(YonaParser::InputContext *ctx) { return wrap_expr<MainNode>(*ctx, visit_expr<ExprNode>(ctx->expression())); }
 
 any YonaVisitor::visitFunction(YonaParser::FunctionContext *ctx) {
   vector<FunctionBody *> bodies;
@@ -31,6 +31,7 @@ any YonaVisitor::visitFunction(YonaParser::FunctionContext *ctx) {
 
   return result;
 }
+
 std::any YonaVisitor::visitFunctionName(YonaParser::FunctionNameContext *ctx) { return visitName(ctx->name()); }
 
 any YonaVisitor::visitBodyWithoutGuard(YonaParser::BodyWithoutGuardContext *ctx) { return visit(ctx->expression()); }

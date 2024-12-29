@@ -82,4 +82,19 @@ public:
     return AstContext(new_errors);
   }
 };
+
+template <typename T> struct Frame {
+private:
+  vector<T> args_;
+  unordered_map<string, T> locals_;
+
+public:
+  shared_ptr<Frame> parent;
+
+  explicit Frame(shared_ptr<Frame> parent) : parent(std::move(parent)) {}
+
+  void write(const string &name, T value);
+  static void write(const string &name, any value);
+  T lookup(SourceInfo source_token, const string &name);
+};
 }; // namespace yona

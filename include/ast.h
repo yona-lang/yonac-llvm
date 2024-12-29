@@ -113,6 +113,7 @@ enum AstNodeType {
   AST_FUNCTION_ALIAS,
   AST_ALIAS_CALL,
   AST_NAME_CALL,
+  AST_MAIN,
   AST_MODULE_CALL,
   AST_MODULE_IMPORT,
   AST_FUNCTIONS_IMPORT,
@@ -817,6 +818,17 @@ public:
   ~LetExpr() override;
 };
 
+class MainNode final : public ScopedNode {
+public:
+  AstNode *node;
+
+  explicit MainNode(SourceContext token, AstNode *node);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_MAIN; };
+  ~MainNode() override;
+};
+
 class IfExpr final : public ExprNode {
 public:
   ExprNode *condition;
@@ -1490,6 +1502,7 @@ public:
   virtual any visit(ValuesSequenceExpr *node) const = 0;
   virtual any visit(WithExpr *node) const = 0;
   virtual any visit(ZerofillRightShiftExpr *node) const = 0;
+  virtual any visit(MainNode *node) const = 0;
   virtual any visit(ExprNode *node) const;
   virtual any visit(AstNode *node) const;
   virtual any visit(ScopedNode *node) const;

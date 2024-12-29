@@ -709,15 +709,23 @@ any LetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type LetExpr::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
 
-IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, ExprNode *elseExpr)
-    : ExprNode(token), condition(condition->with_parent<ExprNode>(this)), thenExpr(thenExpr->with_parent<ExprNode>(this)),
-      elseExpr(elseExpr->with_parent<ExprNode>(this)) {}
-
 LetExpr::~LetExpr() {
   for (auto p : aliases)
     delete p;
   delete expr;
 }
+
+MainNode::MainNode(SourceContext token, AstNode *node) : ScopedNode(token), node(node->with_parent<AstNode>(this)) {}
+
+any MainNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+Type MainNode::infer_type(AstContext &ctx) const { return node->infer_type(ctx); }
+
+MainNode::~MainNode() { delete node; }
+
+IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, ExprNode *elseExpr)
+    : ExprNode(token), condition(condition->with_parent<ExprNode>(this)), thenExpr(thenExpr->with_parent<ExprNode>(this)),
+      elseExpr(elseExpr->with_parent<ExprNode>(this)) {}
 
 any IfExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1503,6 +1511,9 @@ any AstVisitor::visit(ScopedNode *node) const {
   if (auto derived = dynamic_cast<LetExpr *>(node)) {
     return visit(derived);
   }
+  if (auto derived = dynamic_cast<MainNode *>(node)) {
+    return visit(derived);
+  }
   unreachable();
 }
 
@@ -1624,7 +1635,7 @@ any AstVisitor::visit(FunctionBody *node) const {
   unreachable();
 }
 
-any AstVisitor::visit(IdentifierExpr *node) const { return visit(node->name); }
+any AstVisitor::visit(IdentifierExpr *node) const { return node->name->accept(*this); }
 
 any AstVisitor::visit(AliasExpr *node) const {
   if (auto derived = dynamic_cast<ValueAlias *>(node)) {

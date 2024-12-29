@@ -105,6 +105,7 @@ any Optimizer::visit(TypeDeclaration *node) const { return expr_wrapper(node); }
 any Optimizer::visit(TypeDefinition *node) const { return expr_wrapper(node); }
 any Optimizer::visit(TypeNode *node) const { return expr_wrapper(node); }
 any Optimizer::visit(TypeInstance *node) const { return expr_wrapper(node); }
+any Optimizer::visit(MainNode *node) const { return expr_wrapper(node); }
 any Optimizer::visit(ExprNode *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(AstNode *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(ScopedNode *node) const { return AstVisitor::visit(node); }
