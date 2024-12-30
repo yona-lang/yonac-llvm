@@ -106,6 +106,7 @@ any Optimizer::visit(TypeDefinition *node) const { return expr_wrapper(node); }
 any Optimizer::visit(TypeNode *node) const { return expr_wrapper(node); }
 any Optimizer::visit(TypeInstance *node) const { return expr_wrapper(node); }
 any Optimizer::visit(MainNode *node) const { return expr_wrapper(node); }
+any Optimizer::visit(IdentifierExpr *node) const { return expr_wrapper(node); }
 any Optimizer::visit(ExprNode *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(AstNode *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(ScopedNode *node) const { return AstVisitor::visit(node); }
@@ -113,7 +114,6 @@ any Optimizer::visit(PatternNode *node) const { return AstVisitor::visit(node); 
 any Optimizer::visit(ValueExpr *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(SequenceExpr *node) const { return AstVisitor::visit(node); }
 any Optimizer::visit(FunctionBody *node) const { return AstVisitor::visit(node); }
-any Optimizer::visit(IdentifierExpr *node) const { return any(AstVisitor::visit(node)); }
 any Optimizer::visit(AliasExpr *node) const { return any(AstVisitor::visit(node)); }
 any Optimizer::visit(OpExpr *node) const { return any(AstVisitor::visit(node)); }
 any Optimizer::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }

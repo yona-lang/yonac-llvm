@@ -101,9 +101,21 @@ std::ostream &printTuple(std::ostream &strm, const RuntimeObject &obj) {
   return strm;
 }
 
+std::ostream &printFQN(std::ostream &strm, const RuntimeObject &obj) {
+  const auto parts = obj.get<std::shared_ptr<FqnValue>>()->parts;
+  size_t i = 0;
+  for (const auto &part : parts) {
+    strm << part;
+    if (i++ < parts.size() - 1) {
+      strm << "::";
+    }
+  }
+  return strm;
+}
+
 std::ostream &printFunction(std::ostream &strm, const RuntimeObject &obj) {
   const auto &function = obj.get<std::shared_ptr<FunctionValue>>();
-  strm << function->name;
+  strm << function->fqn;
   return strm;
 }
 
@@ -116,7 +128,7 @@ std::ostream &printModule(std::ostream &strm, const RuntimeObject &obj) {
   strm << module->fqn << "(functions=";
 
   for (const auto &function : functions) {
-    strm << function->name;
+    strm << function->fqn;
     if (i++ < functions.size() - 1) {
       strm << ", ";
     }
@@ -162,6 +174,8 @@ std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj) {
     return printSet(strm, obj);
   case Tuple:
     return printTuple(strm, obj);
+  case FQN:
+    return printFQN(strm, obj);
   case Module:
     return printModule(strm, obj);
   case Function:

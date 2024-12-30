@@ -1635,8 +1635,6 @@ any AstVisitor::visit(FunctionBody *node) const {
   unreachable();
 }
 
-any AstVisitor::visit(IdentifierExpr *node) const { return node->name->accept(*this); }
-
 any AstVisitor::visit(AliasExpr *node) const {
   if (auto derived = dynamic_cast<ValueAlias *>(node)) {
     return visit(derived);

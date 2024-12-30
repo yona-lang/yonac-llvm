@@ -1503,6 +1503,7 @@ public:
   virtual any visit(WithExpr *node) const = 0;
   virtual any visit(ZerofillRightShiftExpr *node) const = 0;
   virtual any visit(MainNode *node) const = 0;
+  virtual any visit(IdentifierExpr *node) const = 0;
   virtual any visit(ExprNode *node) const;
   virtual any visit(AstNode *node) const;
   virtual any visit(ScopedNode *node) const;
@@ -1510,7 +1511,6 @@ public:
   virtual any visit(ValueExpr *node) const;
   virtual any visit(SequenceExpr *node) const;
   virtual any visit(FunctionBody *node) const;
-  virtual any visit(IdentifierExpr *node) const;
   virtual any visit(AliasExpr *node) const;
   virtual any visit(OpExpr *node) const;
   virtual any visit(BinaryOpExpr *node) const;

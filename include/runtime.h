@@ -25,18 +25,20 @@ struct ModuleValue;
 struct SymbolValue;
 struct ApplyValue;
 struct RuntimeObject;
+struct FqnValue;
 
 inline wstring_convert<codecvt_utf8<wchar_t>> STRING_CONVERTER;
 
-using RuntimeObjectData = variant<int /*Int*/, double /*Float*/, byte /*Byte*/, wchar_t /*Char*/, string /*String*/, bool /*Bool*/,
-                                  nullptr_t /*Unit*/, shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple/Record*/,
-                                  shared_ptr<DictValue> /*Dict*/, shared_ptr<SeqValue> /*Seq*/, shared_ptr<SetValue> /*Set*/,
-                                  shared_ptr<ModuleValue> /*Module*/, shared_ptr<FunctionValue> /*Function*/, shared_ptr<ApplyValue> /*Apply*/>;
+using RuntimeObjectData =
+    variant<int /*Int*/, double /*Float*/, byte /*Byte*/, wchar_t /*Char*/, string /*String*/, bool /*Bool*/, nullptr_t /*Unit*/,
+            shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple/Record*/, shared_ptr<DictValue> /*Dict*/, shared_ptr<SeqValue> /*Seq*/,
+            shared_ptr<SetValue> /*Set*/, shared_ptr<FqnValue> /*FQN*/, shared_ptr<ModuleValue> /*Module*/, shared_ptr<FunctionValue> /*Function*/,
+            shared_ptr<ApplyValue> /*Apply*/>;
 
-enum RuntimeObjectType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Dict, Seq, Set, Tuple, Module, Function };
+enum RuntimeObjectType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Dict, Seq, Set, Tuple, FQN, Module, Function };
 
-inline string RuntimeObjectTypes[] = {"Int",    "Float", "Byte", "Char", "String", "Bool",   "Unit",
-                                      "Symbol", "Dict",  "Seq",  "Set",  "Tuple",  "Module", "Function"};
+inline string RuntimeObjectTypes[] = {"Int",  "Float", "Byte", "Char",  "String", "Bool",   "Unit",    "Symbol",
+                                      "Dict", "Seq",   "Set",  "Tuple", "FQN",    "Module", "Function"};
 
 struct SymbolValue {
   string name;
@@ -63,13 +65,17 @@ struct TupleValue {
   vector<shared_ptr<RuntimeObject>> fields{};
 };
 
+struct FqnValue {
+  vector<string> parts;
+};
+
 struct FunctionValue {
-  string name;
+  shared_ptr<FqnValue> fqn;
   function<shared_ptr<RuntimeObject>(shared_ptr<RuntimeObject>)> code;
 };
 
 struct ModuleValue {
-  string fqn;
+  shared_ptr<FqnValue> fqn;
   vector<shared_ptr<FunctionValue>> functions;
   vector<shared_ptr<TupleValue>> records;
 };

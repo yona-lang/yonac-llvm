@@ -14,14 +14,19 @@ using namespace runtime;
 
 using symbol_ref_t = shared_ptr<RuntimeObject>;
 using InterepterFrame = Frame<symbol_ref_t>;
+using ModuleItem = pair<shared_ptr<FqnValue>, shared_ptr<ModuleValue>>;
 
 inline struct {
   shared_ptr<InterepterFrame> frame;
-} InterpreterState;
+  stack<ModuleItem> module_stack;
+} IS;
 
 class Interpreter final : public AstVisitor {
 public:
   template <RuntimeObjectType ROT, typename VT> optional<VT> get_value(AstNode *node) const;
+  template <RuntimeObjectType ROT, typename VT, class T>
+    requires derived_from<T, AstNode>
+  optional<vector<VT>> get_value(const vector<T *> &nodes) const;
 
   template <RuntimeObjectType ROT, typename VT> optional<any> map_value(initializer_list<AstNode *> nodes, function<VT(vector<VT>)> cb) const;
 
