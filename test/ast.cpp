@@ -64,7 +64,11 @@ INSTANTIATE_TEST_SUITE_P(
                     make_tuple("correct_multiplication_of_floats", "3.0 * 1.5", make_pair(interp::RuntimeObjectType::Float, "4.5"), ErrorMap{}),
                     make_tuple("correct_division_of_ints", "10/2", make_pair(interp::RuntimeObjectType::Int, "5"), ErrorMap{}),
                     make_tuple("correct_division_of_floats", "3.0/2.0", make_pair(interp::RuntimeObjectType::Float, "1.5"), ErrorMap{}),
-                    make_tuple("correct_let_value", "let test = 3+5 in test", make_pair(interp::RuntimeObjectType::Int, "8"), ErrorMap{})));
+                    make_tuple("correct_let_value", "let test = 3+5 in test", make_pair(interp::RuntimeObjectType::Int, "8"), ErrorMap{}),
+                    make_tuple("correct_logical_and_1", "true && false", make_pair(interp::RuntimeObjectType::Bool, "false"), ErrorMap{}),
+                    make_tuple("correct_logical_and_2", "true && true", make_pair(interp::RuntimeObjectType::Bool, "true"), ErrorMap{}),
+                    make_tuple("correct_logical_or_1", "true || false", make_pair(interp::RuntimeObjectType::Bool, "true"), ErrorMap{}),
+                    make_tuple("correct_logical_or_2", "false || false", make_pair(interp::RuntimeObjectType::Bool, "false"), ErrorMap{})));
 
 void init_logging() { boost::log::add_file_log("tests.log"); }
 

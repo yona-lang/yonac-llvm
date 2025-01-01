@@ -47,6 +47,9 @@ KW_TYPE    : 'type';
 KW_WITH    : 'with';
 KW_DAEMON  : 'daemon';
 
+KW_YONA_1 : 'Yona';
+KW_YONA_2 : 'yona';
+
 // Types
 KW_BYTE   : 'Byte';
 KW_BOOL   : 'Bool';

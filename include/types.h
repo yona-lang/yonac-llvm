@@ -48,7 +48,4 @@ struct NamedType final {
   string name;
   Type type;
 };
-
-using FunctionTypes = unordered_map<string, FunctionType>; // FQN -> Type map
-inline FunctionTypes FUNCTION_TYPES;
 } // namespace yona::compiler::types

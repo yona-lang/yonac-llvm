@@ -22,6 +22,9 @@ class DictPattern;
 class TuplePattern;
 class PatternValue;
 class AstVisitor;
+class TypeDefinition;
+class ModuleExpr;
+class FunctionExpr;
 
 using namespace std;
 using namespace compiler::types;
@@ -153,10 +156,16 @@ private:
 public:
   explicit expr_wrapper(AstNode *node) : node(node) {}
 
-  template <typename T>
+  template <class T>
     requires derived_from<T, AstNode>
   T *get_node() {
     return static_cast<T *>(node);
+  }
+
+  template <class T>
+    requires derived_from<T, AstNode>
+  T *get_node_dynamic() {
+    return dynamic_cast<T *>(node);
   }
 };
 
@@ -170,7 +179,11 @@ public:
   [[nodiscard]] virtual Type infer_type(AstContext &ctx) const;
   [[nodiscard]] virtual AstNodeType get_type() const { return AST_NODE; };
 
-  template <typename T>
+  template <class T>
+    requires derived_from<T, AstNode>
+  [[nodiscard]] T *parent_of_type();
+
+  template <class T>
     requires derived_from<T, AstNode>
   T *with_parent(AstNode *parent) {
     this->parent = parent;
@@ -178,7 +191,7 @@ public:
   }
 };
 
-template <typename T>
+template <class T>
   requires derived_from<T, AstNode>
 vector<T *> nodes_with_parent(vector<T *> nodes, AstNode *parent) {
   for (auto node : nodes) {
@@ -187,7 +200,7 @@ vector<T *> nodes_with_parent(vector<T *> nodes, AstNode *parent) {
   return nodes;
 }
 
-template <typename T1, typename T2>
+template <class T1, class T2>
   requires derived_from<T1, AstNode> && derived_from<T2, AstNode>
 vector<pair<T1 *, T2 *>> nodes_with_parent(vector<pair<T1 *, T2 *>> nodes, AstNode *parent) {
   for (auto node : nodes) {
@@ -197,23 +210,23 @@ vector<pair<T1 *, T2 *>> nodes_with_parent(vector<pair<T1 *, T2 *>> nodes, AstNo
   return nodes;
 }
 
-template <typename... Types>
+template <class... Types>
   requires(derived_from<Types, AstNode> && ...)
 variant<Types *...> node_with_parent(variant<Types *...> node, AstNode *parent) {
   visit([parent](auto arg) { arg->parent = parent; }, node);
   return node;
 }
 
-template <typename T>
+template <class T>
   requires derived_from<T, AstNode>
-optional<T> node_with_parent(optional<T> node, AstNode *parent) {
+optional<T *> node_with_parent(optional<T *> node, AstNode *parent) {
   if (node.has_value()) {
-    node.value().parent = parent;
+    node.value()->parent = parent;
   }
   return node;
 }
 
-template <typename... Types>
+template <class... Types>
   requires(derived_from<Types, AstNode> && ...)
 vector<variant<Types *...>> nodes_with_parent(vector<variant<Types *...>> nodes, AstNode *parent) {
   for (auto node : nodes) {
@@ -254,7 +267,6 @@ public:
 class ScopedNode : public AstNode {
 public:
   explicit ScopedNode(SourceContext token) : AstNode(token) {}
-  [[nodiscard]] ScopedNode *getParentScopedNode() const;
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SCOPED_NODE; };
 };
@@ -362,9 +374,9 @@ public:
 class RecordNode final : public AstNode {
 public:
   NameExpr *recordType;
-  vector<IdentifierExpr *> identifiers;
+  vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers;
 
-  explicit RecordNode(SourceContext token, NameExpr *recordType, const vector<IdentifierExpr *> &identifiers);
+  explicit RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_NODE; };
@@ -439,7 +451,7 @@ class TupleExpr final : public ValueExpr {
 public:
   vector<ExprNode *> values;
 
-  explicit TupleExpr(SourceContext token, const vector<ExprNode *> &values);
+  explicit TupleExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_EXPR; };
@@ -450,7 +462,7 @@ class DictExpr final : public ValueExpr {
 public:
   vector<pair<ExprNode *, ExprNode *>> values;
 
-  explicit DictExpr(SourceContext token, const vector<pair<ExprNode *, ExprNode *>> &values);
+  explicit DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> values);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_EXPR; };
@@ -461,7 +473,7 @@ class ValuesSequenceExpr final : public SequenceExpr {
 public:
   vector<ExprNode *> values;
 
-  explicit ValuesSequenceExpr(SourceContext token, const vector<ExprNode *> &values);
+  explicit ValuesSequenceExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUES_SEQUENCE_EXPR; };
@@ -486,7 +498,7 @@ class SetExpr final : public ValueExpr {
 public:
   vector<ExprNode *> values;
 
-  explicit SetExpr(SourceContext token, const vector<ExprNode *> &values);
+  explicit SetExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SET_EXPR; };
@@ -507,7 +519,7 @@ class PackageNameExpr final : public ValueExpr {
 public:
   vector<NameExpr *> parts;
 
-  explicit PackageNameExpr(SourceContext token, const vector<NameExpr *> &parts);
+  explicit PackageNameExpr(SourceContext token, vector<NameExpr *> parts);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PACKAGE_NAME_EXPR; };
@@ -517,10 +529,10 @@ public:
 
 class FqnExpr final : public ValueExpr {
 public:
-  PackageNameExpr *packageName;
+  optional<PackageNameExpr *> packageName;
   NameExpr *moduleName;
 
-  explicit FqnExpr(SourceContext token, PackageNameExpr *packageName, NameExpr *moduleName);
+  explicit FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, NameExpr *moduleName);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_EXPR; };
@@ -534,7 +546,7 @@ public:
   vector<PatternNode *> patterns;
   vector<FunctionBody *> bodies;
 
-  explicit FunctionExpr(SourceContext token, string name, const vector<PatternNode *> &patterns, const vector<FunctionBody *> &bodies);
+  explicit FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_EXPR; };
@@ -549,8 +561,8 @@ public:
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
 
-  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
-                      const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations);
+  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, vector<string> &exports, vector<RecordNode *> records, vector<FunctionExpr *> &functions,
+                      vector<FunctionDeclaration *> function_declarations);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_EXPR; };
@@ -562,7 +574,7 @@ public:
   NameExpr *recordType;
   vector<pair<NameExpr *, ExprNode *>> items;
 
-  explicit RecordInstanceExpr(SourceContext token, NameExpr *recordType, const vector<pair<NameExpr *, ExprNode *>> &items);
+  explicit RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_INSTANCE_EXPR; };
@@ -811,7 +823,7 @@ public:
   vector<AliasExpr *> aliases;
   ExprNode *expr;
 
-  explicit LetExpr(SourceContext token, const vector<AliasExpr *> &aliases, ExprNode *expr);
+  explicit LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LET_EXPR; };
@@ -847,7 +859,7 @@ public:
   CallExpr *call;
   vector<variant<ExprNode *, ValueExpr *>> args;
 
-  explicit ApplyExpr(SourceContext token, CallExpr *call, const vector<variant<ExprNode *, ValueExpr *>> &args);
+  explicit ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_APPLY_EXPR; };
@@ -858,7 +870,7 @@ class DoExpr final : public ExprNode {
 public:
   vector<ExprNode *> steps;
 
-  explicit DoExpr(SourceContext token, const vector<ExprNode *> &steps);
+  explicit DoExpr(SourceContext token, vector<ExprNode *> steps);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DO_EXPR; };
@@ -870,7 +882,7 @@ public:
   vector<ImportClauseExpr *> clauses;
   ExprNode *expr;
 
-  explicit ImportExpr(SourceContext token, const vector<ImportClauseExpr *> &clauses, ExprNode *expr);
+  explicit ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_EXPR; };
@@ -919,7 +931,7 @@ public:
   IdentifierExpr *identifier;
   vector<pair<NameExpr *, ExprNode *>> updates;
 
-  explicit FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, const vector<pair<NameExpr *, ExprNode *>> &updates);
+  explicit FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FIELD_UPDATE_EXPR; };
@@ -1050,7 +1062,7 @@ public:
   vector<FunctionAlias *> aliases;
   FqnExpr *fromFqn;
 
-  explicit FunctionsImport(SourceContext token, const vector<FunctionAlias *> &aliases, FqnExpr *fromFqn);
+  explicit FunctionsImport(SourceContext token, vector<FunctionAlias *> aliases, FqnExpr *fromFqn);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTIONS_IMPORT; };
@@ -1204,7 +1216,7 @@ class CatchExpr final : public ExprNode {
 public:
   vector<CatchPatternExpr *> patterns;
 
-  explicit CatchExpr(SourceContext token, const vector<CatchPatternExpr *> &patterns);
+  explicit CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CATCH_EXPR; };
@@ -1250,7 +1262,7 @@ class TuplePattern final : public PatternNode {
 public:
   vector<Pattern *> patterns;
 
-  explicit TuplePattern(SourceContext token, const vector<Pattern *> &patterns);
+  explicit TuplePattern(SourceContext token, vector<Pattern *> patterns);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_PATTERN; };
@@ -1261,7 +1273,7 @@ class SeqPattern final : public PatternNode {
 public:
   vector<Pattern *> patterns;
 
-  explicit SeqPattern(SourceContext token, const vector<Pattern *> &patterns);
+  explicit SeqPattern(SourceContext token, vector<Pattern *> patterns);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SEQ_PATTERN; };
@@ -1273,7 +1285,7 @@ public:
   vector<PatternWithoutSequence *> heads;
   TailPattern *tail;
 
-  explicit HeadTailsPattern(SourceContext token, const vector<PatternWithoutSequence *> &heads, TailPattern *tail);
+  explicit HeadTailsPattern(SourceContext token, vector<PatternWithoutSequence *> heads, TailPattern *tail);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_PATTERN; };
@@ -1285,7 +1297,7 @@ public:
   TailPattern *tail;
   vector<PatternWithoutSequence *> heads;
 
-  explicit TailsHeadPattern(SourceContext token, TailPattern *tail, const vector<PatternWithoutSequence *> &heads);
+  explicit TailsHeadPattern(SourceContext token, TailPattern *tail, vector<PatternWithoutSequence *> heads);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TAILS_HEAD_PATTERN; };
@@ -1298,8 +1310,8 @@ public:
   TailPattern *tail;
   vector<PatternWithoutSequence *> right;
 
-  explicit HeadTailsHeadPattern(SourceContext token, const vector<PatternWithoutSequence *> &left, TailPattern *tail,
-                                const vector<PatternWithoutSequence *> &right);
+  explicit HeadTailsHeadPattern(SourceContext token, vector<PatternWithoutSequence *> left, TailPattern *tail,
+                                vector<PatternWithoutSequence *> right);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_HEAD_PATTERN; };
@@ -1310,7 +1322,7 @@ class DictPattern final : public PatternNode {
 public:
   vector<pair<PatternValue *, Pattern *>> keyValuePairs;
 
-  explicit DictPattern(SourceContext token, const vector<pair<PatternValue *, Pattern *>> &keyValuePairs);
+  explicit DictPattern(SourceContext token, vector<pair<PatternValue *, Pattern *>> keyValuePairs);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_PATTERN; };
@@ -1322,7 +1334,7 @@ public:
   const string recordType;
   vector<pair<NameExpr *, Pattern *>> items;
 
-  explicit RecordPattern(SourceContext token, string recordType, const vector<pair<NameExpr *, Pattern *>> &items);
+  explicit RecordPattern(SourceContext token, string recordType, vector<pair<NameExpr *, Pattern *>> items);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_PATTERN; };
@@ -1334,7 +1346,7 @@ public:
   ExprNode *expr;
   vector<PatternExpr *> patterns;
 
-  explicit CaseExpr(SourceContext token, ExprNode *expr, const vector<PatternExpr *> &patterns);
+  explicit CaseExpr(SourceContext token, ExprNode *expr, vector<PatternExpr *> patterns);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CASE_EXPR; };
@@ -1346,7 +1358,7 @@ public:
   NameExpr *name{};
   vector<NameExpr *> typeVars;
 
-  explicit TypeDeclaration(SourceContext token, NameExpr *name, const vector<NameExpr *> &type_vars);
+  explicit TypeDeclaration(SourceContext token, NameExpr *name, vector<NameExpr *> type_vars);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DECLARATION; };
@@ -1355,10 +1367,10 @@ public:
 
 class TypeDefinition final : public AstNode {
 public:
-  NameExpr *name;
-  vector<NameExpr *> typeNames;
+  variant<NameExpr *, UnitExpr *> name;
+  vector<variant<NameExpr *, UnitExpr *>> typeNames;
 
-  explicit TypeDefinition(SourceContext token, NameExpr *name, const vector<NameExpr *> &type_names);
+  explicit TypeDefinition(SourceContext token, const variant<NameExpr *, UnitExpr *> &name, vector<variant<NameExpr *, UnitExpr *>> type_names);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DEFINITION; };
@@ -1370,7 +1382,7 @@ public:
   TypeDeclaration *declaration;
   vector<TypeDeclaration *> definitions;
 
-  explicit TypeNode(SourceContext token, TypeDeclaration *declaration, const vector<TypeDeclaration *> &definitions);
+  explicit TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE; };
@@ -1382,7 +1394,7 @@ public:
   NameExpr *name;
   vector<ExprNode *> exprs;
 
-  explicit TypeInstance(SourceContext token, NameExpr *name, const vector<ExprNode *> &exprs);
+  explicit TypeInstance(SourceContext token, NameExpr *name, vector<ExprNode *> exprs);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_INSTANCE; };
@@ -1394,7 +1406,7 @@ public:
   NameExpr *functionName;
   vector<TypeDefinition *> typeDefinitions;
 
-  explicit FunctionDeclaration(SourceContext token, NameExpr *function_name, const vector<TypeDefinition *> &type_definitions);
+  explicit FunctionDeclaration(SourceContext token, NameExpr *function_name, vector<TypeDefinition *> type_definitions);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_DECLARATION; };

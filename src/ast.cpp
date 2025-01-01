@@ -7,7 +7,23 @@
 
 namespace yona::ast {
 
-using yona::compiler::types::Type;
+using compiler::types::Type;
+
+template <class T>
+  requires derived_from<T, AstNode>
+T *AstNode::parent_of_type() {
+  if (parent == nullptr) {
+    return nullptr;
+  }
+  AstNode *tmp = parent;
+  do {
+    if (const auto result = dynamic_cast<T *>(tmp); result != nullptr) {
+      return result;
+    }
+    tmp = tmp->parent;
+  } while (tmp != nullptr);
+  return nullptr;
+}
 
 template <typename T> LiteralExpr<T>::LiteralExpr(SourceContext token, T value) : ValueExpr(token), value(std::move(value)) {}
 
@@ -16,21 +32,6 @@ template <typename T> any LiteralExpr<T>::accept(const AstVisitor &visitor) { re
 any AstNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type AstNode::infer_type(AstContext &ctx) const { unreachable(); }
-
-ScopedNode *ScopedNode::getParentScopedNode() const {
-  if (parent == nullptr) {
-    return nullptr;
-  } else {
-    AstNode *tmp = parent;
-    do {
-      if (const auto result = dynamic_cast<ScopedNode *>(tmp); result != nullptr) {
-        return result;
-      }
-      tmp = tmp->parent;
-    } while (tmp != nullptr);
-    return nullptr;
-  }
-}
 
 any ScopedNode::accept(const AstVisitor &visitor) { return AstNode::accept(visitor); }
 
@@ -89,7 +90,7 @@ Type IdentifierExpr::infer_type(AstContext &ctx) const { return nullptr; }
 
 IdentifierExpr::~IdentifierExpr() { delete name; }
 
-RecordNode::RecordNode(SourceContext token, NameExpr *recordType, const vector<IdentifierExpr *> &identifiers)
+RecordNode::RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers)
     : AstNode(token), recordType(recordType->with_parent<NameExpr>(this)), identifiers(nodes_with_parent(identifiers, this)) {}
 
 any RecordNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -100,29 +101,31 @@ Type RecordNode::infer_type(AstContext &ctx) const {
 
 RecordNode::~RecordNode() {
   delete recordType;
-  for (auto p : identifiers)
-    delete p;
+  for (const auto [fst, snd] : identifiers) {
+    delete fst;
+    delete snd;
+  }
 }
 
 TrueLiteralExpr::TrueLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, true) {}
 
-any TrueLiteralExpr::accept(const ::yona::ast::AstVisitor &visitor) { return visitor.visit(this); }
+any TrueLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type TrueLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
 
 FalseLiteralExpr::FalseLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, false) {}
 
-any FalseLiteralExpr::accept(const ::yona::ast::AstVisitor &visitor) { return visitor.visit(this); }
+any FalseLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type FalseLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
 
-FloatExpr::FloatExpr(SourceContext token, float value) : LiteralExpr<float>(token, value) {}
+FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float>(token, value) {}
 
 any FloatExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type FloatExpr::infer_type(AstContext &ctx) const { return Float; }
 
-IntegerExpr::IntegerExpr(SourceContext token, int value) : LiteralExpr<int>(token, value) {}
+IntegerExpr::IntegerExpr(SourceContext token, const int value) : LiteralExpr<int>(token, value) {}
 
 any IntegerExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -138,7 +141,7 @@ Type UnderscoreNode::infer_type(AstContext &ctx) const { unreachable(); }
 
 any ValueExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
-ByteExpr::ByteExpr(SourceContext token, unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
+ByteExpr::ByteExpr(SourceContext token, const unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
 
 any ByteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -162,7 +165,7 @@ any UnitExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type UnitExpr::infer_type(AstContext &ctx) const { return Unit; }
 
-TupleExpr::TupleExpr(SourceContext token, const vector<ExprNode *> &values) : ValueExpr(token), values(nodes_with_parent(values, this)) {}
+TupleExpr::TupleExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(values, this)) {}
 
 any TupleExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -173,19 +176,18 @@ Type TupleExpr::infer_type(AstContext &ctx) const {
 }
 
 TupleExpr::~TupleExpr() {
-  for (auto p : values)
+  for (const auto p : values)
     delete p;
 }
 
-DictExpr::DictExpr(SourceContext token, const vector<pair<ExprNode *, ExprNode *>> &values)
-    : ValueExpr(token), values(nodes_with_parent(values, this)) {}
+DictExpr::DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> values) : ValueExpr(token), values(nodes_with_parent(values, this)) {}
 
 any DictExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type DictExpr::infer_type(AstContext &ctx) const {
   unordered_set<Type> keyTypes;
   unordered_set<Type> valueTypes;
-  ranges::for_each(values, [&](pair<ExprNode *, ExprNode *> p) {
+  ranges::for_each(values, [&](const pair<ExprNode *, ExprNode *> &p) {
     keyTypes.insert(p.first->infer_type(ctx));
     valueTypes.insert(p.second->infer_type(ctx));
   });
@@ -198,13 +200,13 @@ Type DictExpr::infer_type(AstContext &ctx) const {
 }
 
 DictExpr::~DictExpr() {
-  for (auto p : values) {
-    delete p.first;
-    delete p.second;
+  for (const auto [fst, snd] : values) {
+    delete fst;
+    delete snd;
   }
 }
 
-ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, const vector<ExprNode *> &values)
+ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, vector<ExprNode *> values)
     : SequenceExpr(token), values(nodes_with_parent(values, this)) {}
 
 any ValuesSequenceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -221,7 +223,7 @@ Type ValuesSequenceExpr::infer_type(AstContext &ctx) const {
 }
 
 ValuesSequenceExpr::~ValuesSequenceExpr() {
-  for (auto p : values)
+  for (const auto p : values)
     delete p;
 }
 
@@ -257,7 +259,7 @@ RangeSequenceExpr::~RangeSequenceExpr() {
   delete step;
 }
 
-SetExpr::SetExpr(SourceContext token, const vector<ExprNode *> &values) : ValueExpr(token), values(nodes_with_parent(values, this)) {}
+SetExpr::SetExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(values, this)) {}
 
 any SetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -273,7 +275,7 @@ Type SetExpr::infer_type(AstContext &ctx) const {
 }
 
 SetExpr::~SetExpr() {
-  for (auto p : values)
+  for (const auto p : values)
     delete p;
 }
 
@@ -283,19 +285,20 @@ any SymbolExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); 
 
 Type SymbolExpr::infer_type(AstContext &ctx) const { return Symbol; }
 
-PackageNameExpr::PackageNameExpr(SourceContext token, const vector<NameExpr *> &parts) : ValueExpr(token), parts(nodes_with_parent(parts, this)) {}
+PackageNameExpr::PackageNameExpr(SourceContext token, vector<NameExpr *> parts) : ValueExpr(token), parts(nodes_with_parent(parts, this)) {}
 
 any PackageNameExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type PackageNameExpr::infer_type(AstContext &ctx) const { unreachable(); }
 
 PackageNameExpr::~PackageNameExpr() {
-  for (auto p : parts)
+  for (const auto p : parts)
     delete p;
 }
 
 string PackageNameExpr::to_string() const {
   vector<string> names;
+  names.reserve(parts.size());
   for (const auto part : parts) {
     names.push_back(part->value);
   }
@@ -303,21 +306,24 @@ string PackageNameExpr::to_string() const {
   return boost::algorithm::join(names, PACKAGE_DELIMITER);
 }
 
-FqnExpr::FqnExpr(SourceContext token, PackageNameExpr *packageName, NameExpr *moduleName)
-    : ValueExpr(token), packageName(packageName->with_parent<PackageNameExpr>(this)), moduleName(moduleName->with_parent<NameExpr>(this)) {}
+FqnExpr::FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, NameExpr *moduleName)
+    : ValueExpr(token), packageName(node_with_parent<PackageNameExpr>(packageName, this)), moduleName(moduleName->with_parent<NameExpr>(this)) {}
 
 any FqnExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type FqnExpr::infer_type(AstContext &ctx) const { unreachable(); }
 
 FqnExpr::~FqnExpr() {
-  delete packageName;
+  if (packageName.has_value())
+    delete packageName.value();
   delete moduleName;
 }
 
-string FqnExpr::to_string() const { return packageName->to_string() + PACKAGE_DELIMITER + moduleName->value; }
+string FqnExpr::to_string() const {
+  return packageName.transform([](auto val) { return val->to_string(); }).value_or("") + PACKAGE_DELIMITER + moduleName->value;
+}
 
-FunctionExpr::FunctionExpr(SourceContext token, string name, const vector<PatternNode *> &patterns, const vector<FunctionBody *> &bodies)
+FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies)
     : ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(patterns, this)), bodies(nodes_with_parent(bodies, this)) {}
 
 any FunctionExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -330,9 +336,9 @@ Type FunctionExpr::infer_type(AstContext &ctx) const {
 }
 
 FunctionExpr::~FunctionExpr() {
-  for (auto p : patterns)
+  for (const auto p : patterns)
     delete p;
-  for (auto p : bodies)
+  for (const auto p : bodies)
     delete p;
 }
 
@@ -342,9 +348,7 @@ BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *e
 any BodyWithGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type BodyWithGuards::infer_type(AstContext &ctx) const {
-  const Type guardType = guard->infer_type(ctx);
-
-  if (!holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool) {
+  if (const Type guardType = guard->infer_type(ctx); !holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool) {
     ctx.addError(yona_error(guard->source_context, yona_error::TYPE, "Guard expression must be boolean"));
   }
 
@@ -363,8 +367,8 @@ Type BodyWithoutGuards::infer_type(AstContext &ctx) const { return expr->infer_t
 
 BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
-ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
-                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations)
+ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, vector<string> &exports, const vector<RecordNode *> records,
+                       vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> function_declarations)
     : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), records(nodes_with_parent(records, this)),
       functions(nodes_with_parent(functions, this)), functionDeclarations(nodes_with_parent(function_declarations, this)) {}
 
@@ -374,15 +378,15 @@ Type ModuleExpr::infer_type(AstContext &ctx) const { return Module; }
 
 ModuleExpr::~ModuleExpr() {
   delete fqn;
-  for (auto p : records)
+  for (const auto p : records)
     delete p;
-  for (auto p : functions)
+  for (const auto p : functions)
     delete p;
-  for (auto p : functionDeclarations)
+  for (const auto p : functionDeclarations)
     delete p;
 }
 
-RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType, const vector<pair<NameExpr *, ExprNode *>> &items)
+RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items)
     : ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(items, this)) {}
 
 any RecordInstanceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -391,8 +395,10 @@ Type RecordInstanceExpr::infer_type(AstContext &ctx) const { return make_shared<
 
 RecordInstanceExpr::~RecordInstanceExpr() {
   delete recordType;
-  for (auto p : items)
-    delete p.second;
+  for (const auto [fst, snd] : items) {
+    delete fst;
+    delete snd;
+  }
 }
 
 LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
@@ -400,9 +406,7 @@ LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr
 any LogicalNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type LogicalNotOpExpr::infer_type(AstContext &ctx) const {
-  const Type exprType = expr->infer_type(ctx);
-
-  if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
+  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
     ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for logical negation must be boolean"));
   }
 
@@ -416,9 +420,7 @@ BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(t
 any BinaryNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type BinaryNotOpExpr::infer_type(AstContext &ctx) const {
-  Type exprType = expr->infer_type(ctx);
-
-  if (!holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
+  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
     ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for binary negation must be boolean"));
   }
 
@@ -702,7 +704,7 @@ Type InExpr::infer_type(AstContext &ctx) const {
   return Bool;
 }
 
-LetExpr::LetExpr(SourceContext token, const vector<AliasExpr *> &aliases, ExprNode *expr)
+LetExpr::LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr)
     : ScopedNode(token), aliases(nodes_with_parent(aliases, this)), expr(expr->with_parent<ExprNode>(this)) {}
 
 any LetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -710,7 +712,7 @@ any LetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 Type LetExpr::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
 
 LetExpr::~LetExpr() {
-  for (auto p : aliases)
+  for (const auto p : aliases)
     delete p;
   delete expr;
 }
@@ -749,7 +751,7 @@ IfExpr::~IfExpr() {
   delete elseExpr;
 }
 
-ApplyExpr::ApplyExpr(SourceContext token, CallExpr *call, const vector<variant<ExprNode *, ValueExpr *>> &args)
+ApplyExpr::ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args)
     : ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(args, this)) {}
 
 any ApplyExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -760,7 +762,7 @@ Type ApplyExpr::infer_type(AstContext &ctx) const {
 
 ApplyExpr::~ApplyExpr() {
   delete call;
-  for (auto p : args) {
+  for (const auto p : args) {
     if (holds_alternative<ExprNode *>(p)) {
       delete get<ExprNode *>(p);
     } else {
@@ -769,19 +771,19 @@ ApplyExpr::~ApplyExpr() {
   }
 }
 
-DoExpr::DoExpr(SourceContext token, const vector<ExprNode *> &steps) : ExprNode(token), steps(steps) {}
+DoExpr::DoExpr(SourceContext token, vector<ExprNode *> steps) : ExprNode(token), steps(steps) {}
 
 any DoExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type DoExpr::infer_type(AstContext &ctx) const { return steps.back()->infer_type(ctx); }
 
 DoExpr::~DoExpr() {
-  for (auto p : steps) {
+  for (const auto p : steps) {
     delete p;
   }
 }
 
-ImportExpr::ImportExpr(SourceContext token, const vector<ImportClauseExpr *> &clauses, ExprNode *expr)
+ImportExpr::ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, ExprNode *expr)
     : ScopedNode(token), clauses(nodes_with_parent(clauses, this)), expr(expr->with_parent<ExprNode>(this)) {}
 
 any ImportExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -789,7 +791,7 @@ any ImportExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); 
 Type ImportExpr::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
 
 ImportExpr::~ImportExpr() {
-  for (auto p : clauses) {
+  for (const auto p : clauses) {
     delete p;
   }
   delete expr;
@@ -830,7 +832,7 @@ Type FieldAccessExpr::infer_type(AstContext &ctx) const {
   return nullptr; // TODO
 }
 
-FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, const vector<pair<NameExpr *, ExprNode *>> &updates)
+FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates)
     : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), updates(nodes_with_parent(updates, this)) {}
 
 FieldAccessExpr::~FieldAccessExpr() {
@@ -846,9 +848,9 @@ Type FieldUpdateExpr::infer_type(AstContext &ctx) const {
 
 FieldUpdateExpr::~FieldUpdateExpr() {
   delete identifier;
-  for (auto p : updates) {
-    delete p.first;
-    delete p.second;
+  for (const auto [fst, snd] : updates) {
+    delete fst;
+    delete snd;
   }
 }
 
@@ -980,7 +982,7 @@ ModuleImport::~ModuleImport() {
   delete name;
 }
 
-FunctionsImport::FunctionsImport(SourceContext token, const vector<FunctionAlias *> &aliases, FqnExpr *fromFqn)
+FunctionsImport::FunctionsImport(SourceContext token, vector<FunctionAlias *> aliases, FqnExpr *fromFqn)
     : ImportClauseExpr(token), aliases(nodes_with_parent(aliases, this)), fromFqn(fromFqn->with_parent<FqnExpr>(this)) {}
 
 any FunctionsImport::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -990,7 +992,7 @@ Type FunctionsImport::infer_type(AstContext &ctx) const {
 }
 
 FunctionsImport::~FunctionsImport() {
-  for (auto p : aliases) {
+  for (const auto p : aliases) {
     delete p;
   }
   delete fromFqn;
@@ -1060,7 +1062,7 @@ DictGeneratorExpr::~DictGeneratorExpr() {
   delete stepExpression;
 }
 
-ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore identifier_or_underscore)
+ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore identifier_or_underscore)
     : CollectionExtractorExpr(token), expr(node_with_parent(identifier_or_underscore, this)) {}
 
 any ValueCollectionExtractorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1075,7 +1077,7 @@ Type ValueCollectionExtractorExpr::infer_type_identifier_or_underscore(AstContex
 
 Type ValueCollectionExtractorExpr::infer_type(AstContext &ctx) const { return infer_type_identifier_or_underscore(ctx); }
 
-void release_identifier_or_underscore(IdentifierOrUnderscore expr) {
+void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
   if (holds_alternative<IdentifierExpr *>(expr)) {
     delete get<IdentifierExpr *>(expr);
   } else {
@@ -1085,8 +1087,8 @@ void release_identifier_or_underscore(IdentifierOrUnderscore expr) {
 
 ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() { release_identifier_or_underscore(expr); }
 
-KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr,
-                                                                 IdentifierOrUnderscore valueExpr)
+KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore keyExpr,
+                                                                 const IdentifierOrUnderscore valueExpr)
     : CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)), valueExpr(node_with_parent(valueExpr, this)) {}
 
 any KeyValueCollectionExtractorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1098,8 +1100,8 @@ KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr() {
   release_identifier_or_underscore(valueExpr);
 }
 
-PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode *guard, ExprNode *exprNode)
-    : PatternNode(token), guard(guard->with_parent<ExprNode>(this)), expr(exprNode->with_parent<ExprNode>(this)) {}
+PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr)
+    : PatternNode(token), guard(guard->with_parent<ExprNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
 any PatternWithGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); };
 
@@ -1138,7 +1140,7 @@ PatternExpr::~PatternExpr() {
   } else if (holds_alternative<PatternWithoutGuards *>(patternExpr)) {
     delete get<PatternWithoutGuards *>(patternExpr);
   } else {
-    for (auto p : get<vector<PatternWithGuards *>>(patternExpr)) {
+    for (const auto p : get<vector<PatternWithGuards *>>(patternExpr)) {
       delete p;
     }
   }
@@ -1163,21 +1165,20 @@ CatchPatternExpr::~CatchPatternExpr() {
   if (holds_alternative<PatternWithoutGuards *>(pattern)) {
     delete get<PatternWithoutGuards *>(pattern);
   } else {
-    for (auto p : get<vector<PatternWithGuards *>>(pattern)) {
+    for (const auto p : get<vector<PatternWithGuards *>>(pattern)) {
       delete p;
     }
   }
 }
 
-CatchExpr::CatchExpr(SourceContext token, const vector<CatchPatternExpr *> &patterns)
-    : ExprNode(token), patterns(nodes_with_parent(patterns, this)) {}
+CatchExpr::CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns) : ExprNode(token), patterns(nodes_with_parent(patterns, this)) {}
 
 any CatchExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type CatchExpr::infer_type(AstContext &ctx) const { return patterns.back()->infer_type(ctx); }
 
 CatchExpr::~CatchExpr() {
-  for (auto p : patterns) {
+  for (const auto p : patterns) {
     delete p;
   }
 }
@@ -1229,32 +1230,31 @@ any UnderscorePattern::accept(const AstVisitor &visitor) { return visitor.visit(
 
 Type UnderscorePattern::infer_type(AstContext &ctx) const { unreachable(); }
 
-TuplePattern::TuplePattern(SourceContext token, const vector<Pattern *> &patterns)
-    : PatternNode(token), patterns(nodes_with_parent(patterns, this)) {}
+TuplePattern::TuplePattern(SourceContext token, vector<Pattern *> patterns) : PatternNode(token), patterns(nodes_with_parent(patterns, this)) {}
 
 any TuplePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type TuplePattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 TuplePattern::~TuplePattern() {
-  for (auto p : patterns) {
+  for (const auto p : patterns) {
     delete p;
   }
 }
 
-SeqPattern::SeqPattern(SourceContext token, const vector<Pattern *> &patterns) : PatternNode(token), patterns(nodes_with_parent(patterns, this)) {}
+SeqPattern::SeqPattern(SourceContext token, vector<Pattern *> patterns) : PatternNode(token), patterns(nodes_with_parent(patterns, this)) {}
 
 any SeqPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type SeqPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 SeqPattern::~SeqPattern() {
-  for (auto p : patterns) {
+  for (const auto p : patterns) {
     delete p;
   }
 }
 
-HeadTailsPattern::HeadTailsPattern(SourceContext token, const vector<PatternWithoutSequence *> &heads, TailPattern *tail)
+HeadTailsPattern::HeadTailsPattern(SourceContext token, vector<PatternWithoutSequence *> heads, TailPattern *tail)
     : PatternNode(token), heads(nodes_with_parent(heads, this)), tail(tail->with_parent<TailPattern>(this)) {}
 
 any HeadTailsPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1262,13 +1262,13 @@ any HeadTailsPattern::accept(const AstVisitor &visitor) { return visitor.visit(t
 Type HeadTailsPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 HeadTailsPattern::~HeadTailsPattern() {
-  for (auto p : heads) {
+  for (const auto p : heads) {
     delete p;
   }
   delete tail;
 }
 
-TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern *tail, const vector<PatternWithoutSequence *> &heads)
+TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern *tail, vector<PatternWithoutSequence *> heads)
     : PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(heads, this)) {}
 
 any TailsHeadPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1277,13 +1277,13 @@ Type TailsHeadPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 TailsHeadPattern::~TailsHeadPattern() {
   delete tail;
-  for (auto p : heads) {
+  for (const auto p : heads) {
     delete p;
   }
 }
 
-HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, const vector<PatternWithoutSequence *> &left, TailPattern *tail,
-                                           const vector<PatternWithoutSequence *> &right)
+HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, vector<PatternWithoutSequence *> left, TailPattern *tail,
+                                           vector<PatternWithoutSequence *> right)
     : PatternNode(token), left(nodes_with_parent(left, this)), tail(tail->with_parent<TailPattern>(this)), right(nodes_with_parent(right, this)) {}
 
 any HeadTailsHeadPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1291,16 +1291,16 @@ any HeadTailsHeadPattern::accept(const AstVisitor &visitor) { return visitor.vis
 Type HeadTailsHeadPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 HeadTailsHeadPattern::~HeadTailsHeadPattern() {
-  for (auto p : left) {
+  for (const auto p : left) {
     delete p;
   }
   delete tail;
-  for (auto p : right) {
+  for (const auto p : right) {
     delete p;
   }
 }
 
-DictPattern::DictPattern(SourceContext token, const vector<pair<PatternValue *, Pattern *>> &keyValuePairs)
+DictPattern::DictPattern(SourceContext token, vector<pair<PatternValue *, Pattern *>> keyValuePairs)
     : PatternNode(token), keyValuePairs(nodes_with_parent(keyValuePairs, this)) {}
 
 any DictPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1308,13 +1308,13 @@ any DictPattern::accept(const AstVisitor &visitor) { return visitor.visit(this);
 Type DictPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 DictPattern::~DictPattern() {
-  for (auto p : keyValuePairs) {
-    delete p.first;
-    delete p.second;
+  for (const auto [fst, snd] : keyValuePairs) {
+    delete fst;
+    delete snd;
   }
 }
 
-RecordPattern::RecordPattern(SourceContext token, string recordType, const vector<pair<NameExpr *, Pattern *>> &items)
+RecordPattern::RecordPattern(SourceContext token, string recordType, vector<pair<NameExpr *, Pattern *>> items)
     : PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(items, this)) {}
 
 any RecordPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1322,20 +1322,20 @@ any RecordPattern::accept(const AstVisitor &visitor) { return visitor.visit(this
 Type RecordPattern::infer_type(AstContext &ctx) const { unreachable(); }
 
 RecordPattern::~RecordPattern() {
-  for (auto p : items) {
-    delete p.first;
-    delete p.second;
+  for (const auto [fst, snd] : items) {
+    delete fst;
+    delete snd;
   }
 }
 
-CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, const vector<PatternExpr *> &patterns)
+CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<PatternExpr *> patterns)
     : ExprNode(token), expr(expr->with_parent<ExprNode>(this)), patterns(nodes_with_parent(patterns, this)) {}
 
 any CaseExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type CaseExpr::infer_type(AstContext &ctx) const {
   unordered_set<Type> types;
-  for (auto p : patterns) {
+  for (const auto p : patterns) {
     types.insert(p->infer_type(ctx));
   }
   return make_shared<SumType>(types);
@@ -1343,12 +1343,12 @@ Type CaseExpr::infer_type(AstContext &ctx) const {
 
 CaseExpr::~CaseExpr() {
   delete expr;
-  for (auto p : patterns) {
+  for (const auto p : patterns) {
     delete p;
   }
 }
 
-TypeDeclaration::TypeDeclaration(SourceContext token, NameExpr *name, const vector<NameExpr *> &type_vars)
+TypeDeclaration::TypeDeclaration(SourceContext token, NameExpr *name, vector<NameExpr *> type_vars)
     : AstNode(token), name(name->with_parent<NameExpr>(this)), typeVars(nodes_with_parent(type_vars, this)) {}
 
 any TypeDeclaration::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1362,21 +1362,44 @@ TypeDeclaration::~TypeDeclaration() {
   }
 }
 
-TypeDefinition::TypeDefinition(SourceContext token, NameExpr *name, const vector<NameExpr *> &type_names)
-    : AstNode(token), name(name->with_parent<NameExpr>(this)), typeNames(nodes_with_parent(type_names, this)) {}
+TypeDefinition::TypeDefinition(SourceContext token, const variant<NameExpr *, UnitExpr *> &name, vector<variant<NameExpr *, UnitExpr *>> type_names)
+    : AstNode(token), name(node_with_parent(name, this)), typeNames(nodes_with_parent(type_names, this)) {}
 
 any TypeDefinition::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TypeDefinition::infer_type(AstContext &ctx) const { unreachable(); }
-
-TypeDefinition::~TypeDefinition() {
-  delete name;
-  for (auto p : typeNames) {
-    delete p;
+Type TypeDefinition::infer_type(AstContext &ctx) const {
+  vector<Type> type_names;
+  type_names.reserve(typeNames.size());
+  for (const auto t : typeNames) {
+    if (holds_alternative<NameExpr *>(t)) {
+      type_names.push_back(get<NameExpr *>(t)->infer_type(ctx));
+    } else {
+      type_names.push_back(get<UnitExpr *>(t)->infer_type(ctx));
+    }
+  }
+  if (holds_alternative<NameExpr *>(name)) {
+    return make_shared<NamedType>(get<NameExpr *>(name)->value, make_shared<ProductType>(type_names));
+  } else {
+    return nullptr;
   }
 }
 
-TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, const vector<TypeDeclaration *> &definitions)
+TypeDefinition::~TypeDefinition() {
+  if (holds_alternative<NameExpr *>(name)) {
+    delete get<NameExpr *>(name);
+  } else {
+    delete get<UnitExpr *>(name);
+  }
+  for (const auto p : typeNames) {
+    if (holds_alternative<NameExpr *>(p)) {
+      delete get<NameExpr *>(p);
+    } else {
+      delete get<UnitExpr *>(p);
+    }
+  }
+}
+
+TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions)
     : AstNode(token), declaration(declaration->with_parent<TypeDeclaration>(this)), definitions(nodes_with_parent(definitions, this)) {}
 
 any TypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1385,12 +1408,12 @@ Type TypeNode::infer_type(AstContext &ctx) const { unreachable(); }
 
 TypeNode::~TypeNode() {
   delete declaration;
-  for (auto p : definitions) {
+  for (const auto p : definitions) {
     delete p;
   }
 }
 
-TypeInstance::TypeInstance(SourceContext token, NameExpr *name, const vector<ExprNode *> &exprs)
+TypeInstance::TypeInstance(SourceContext token, NameExpr *name, vector<ExprNode *> exprs)
     : AstNode(token), name(name->with_parent<NameExpr>(this)), exprs(nodes_with_parent(exprs, this)) {}
 
 any TypeInstance::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1399,12 +1422,12 @@ Type TypeInstance::infer_type(AstContext &ctx) const { unreachable(); }
 
 TypeInstance::~TypeInstance() {
   delete name;
-  for (auto p : exprs) {
+  for (const auto p : exprs) {
     delete p;
   }
 }
 
-FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr *function_name, const vector<TypeDefinition *> &type_definitions)
+FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr *function_name, vector<TypeDefinition *> type_definitions)
     : AstNode(token), functionName(function_name->with_parent<NameExpr>(this)), typeDefinitions(nodes_with_parent(type_definitions, this)) {}
 
 any FunctionDeclaration::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1413,334 +1436,337 @@ Type FunctionDeclaration::infer_type(AstContext &ctx) const { unreachable(); }
 
 FunctionDeclaration::~FunctionDeclaration() {
   delete functionName;
-  for (auto p : typeDefinitions) {
+  for (const auto p : typeDefinitions) {
     delete p;
   }
 }
 
 any AstVisitor::visit(ExprNode *node) const {
-  if (auto derived = dynamic_cast<AliasExpr *>(node)) {
+  if (const auto derived = dynamic_cast<AliasExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ApplyExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ApplyExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CallExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CallExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CaseExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CaseExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CatchExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CatchExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CatchPatternExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CatchPatternExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CollectionExtractorExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CollectionExtractorExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<DictGeneratorReducer *>(node)) {
+  if (const auto derived = dynamic_cast<DictGeneratorReducer *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<DoExpr *>(node)) {
+  if (const auto derived = dynamic_cast<DoExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FieldAccessExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FieldAccessExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FieldUpdateExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FieldUpdateExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<GeneratorExpr *>(node)) {
+  if (const auto derived = dynamic_cast<GeneratorExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<IfExpr *>(node)) {
+  if (const auto derived = dynamic_cast<IfExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<NameExpr *>(node)) {
+  if (const auto derived = dynamic_cast<NameExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<OpExpr *>(node)) {
+  if (const auto derived = dynamic_cast<OpExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternExpr *>(node)) {
+  if (const auto derived = dynamic_cast<PatternExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<RaiseExpr *>(node)) {
+  if (const auto derived = dynamic_cast<RaiseExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<SequenceExpr *>(node)) {
+  if (const auto derived = dynamic_cast<SequenceExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<TryCatchExpr *>(node)) {
+  if (const auto derived = dynamic_cast<TryCatchExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ValueExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ValueExpr *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(AstNode *node) const {
-  if (auto derived = dynamic_cast<ExprNode *>(node)) {
+  if (const auto derived = dynamic_cast<ExprNode *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternNode *>(node)) {
+  if (const auto derived = dynamic_cast<PatternNode *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ScopedNode *>(node)) {
+  if (const auto derived = dynamic_cast<ScopedNode *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FunctionBody *>(node)) {
+  if (const auto derived = dynamic_cast<FunctionBody *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<RecordNode *>(node)) {
+  if (const auto derived = dynamic_cast<RecordNode *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(ScopedNode *node) const {
-  if (auto derived = dynamic_cast<ImportClauseExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ImportClauseExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FunctionExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FunctionExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LetExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LetExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<MainNode *>(node)) {
+  if (const auto derived = dynamic_cast<MainNode *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<WithExpr *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(PatternNode *node) const {
-  if (auto derived = dynamic_cast<UnderscoreNode *>(node)) {
+  if (const auto derived = dynamic_cast<UnderscoreNode *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<UnderscorePattern *>(node)) {
+  if (const auto derived = dynamic_cast<UnderscorePattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternWithGuards *>(node)) {
+  if (const auto derived = dynamic_cast<PatternWithGuards *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternWithoutGuards *>(node)) {
+  if (const auto derived = dynamic_cast<PatternWithoutGuards *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternValue *>(node)) {
+  if (const auto derived = dynamic_cast<PatternValue *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<AsDataStructurePattern *>(node)) {
+  if (const auto derived = dynamic_cast<AsDataStructurePattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<TuplePattern *>(node)) {
+  if (const auto derived = dynamic_cast<TuplePattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<SeqPattern *>(node)) {
+  if (const auto derived = dynamic_cast<SeqPattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<HeadTailsPattern *>(node)) {
+  if (const auto derived = dynamic_cast<HeadTailsPattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<TailsHeadPattern *>(node)) {
+  if (const auto derived = dynamic_cast<TailsHeadPattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<HeadTailsHeadPattern *>(node)) {
+  if (const auto derived = dynamic_cast<HeadTailsHeadPattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<DictPattern *>(node)) {
+  if (const auto derived = dynamic_cast<DictPattern *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<RecordPattern *>(node)) {
+  if (const auto derived = dynamic_cast<RecordPattern *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(ValueExpr *node) const {
-  if (auto derived = dynamic_cast<DictExpr *>(node)) {
+  if (const auto derived = dynamic_cast<DictExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FqnExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FqnExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<IdentifierExpr *>(node)) {
+  if (const auto derived = dynamic_cast<IdentifierExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ByteExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ByteExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<CharacterExpr *>(node)) {
+  if (const auto derived = dynamic_cast<CharacterExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FalseLiteralExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FalseLiteralExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FloatExpr *>(node)) {
+  if (const auto derived = dynamic_cast<FloatExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<IntegerExpr *>(node)) {
+  if (const auto derived = dynamic_cast<IntegerExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<StringExpr *>(node)) {
+  if (const auto derived = dynamic_cast<StringExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<TrueLiteralExpr *>(node)) {
+  if (const auto derived = dynamic_cast<TrueLiteralExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<UnitExpr *>(node)) {
+  if (const auto derived = dynamic_cast<UnitExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ModuleExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ModuleExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PackageNameExpr *>(node)) {
+  if (const auto derived = dynamic_cast<PackageNameExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<RecordInstanceExpr *>(node)) {
+  if (const auto derived = dynamic_cast<RecordInstanceExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<SetExpr *>(node)) {
+  if (const auto derived = dynamic_cast<SetExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<SymbolExpr *>(node)) {
+  if (const auto derived = dynamic_cast<SymbolExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<TupleExpr *>(node)) {
+  if (const auto derived = dynamic_cast<TupleExpr *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(SequenceExpr *node) const {
-  if (auto derived = dynamic_cast<RangeSequenceExpr *>(node)) {
+  if (const auto derived = dynamic_cast<RangeSequenceExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ValuesSequenceExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ValuesSequenceExpr *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(FunctionBody *node) const {
-  if (auto derived = dynamic_cast<BodyWithGuards *>(node)) {
+  if (const auto derived = dynamic_cast<BodyWithGuards *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<BodyWithoutGuards *>(node)) {
+  if (const auto derived = dynamic_cast<BodyWithoutGuards *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(AliasExpr *node) const {
-  if (auto derived = dynamic_cast<ValueAlias *>(node)) {
+  if (const auto derived = dynamic_cast<ValueAlias *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LambdaAlias *>(node)) {
+  if (const auto derived = dynamic_cast<LambdaAlias *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ModuleAlias *>(node)) {
+  if (const auto derived = dynamic_cast<ModuleAlias *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<PatternAlias *>(node)) {
+  if (const auto derived = dynamic_cast<PatternAlias *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FqnAlias *>(node)) {
+  if (const auto derived = dynamic_cast<FqnAlias *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<FunctionAlias *>(node)) {
+  if (const auto derived = dynamic_cast<FunctionAlias *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(OpExpr *node) const {
-  if (auto derived = dynamic_cast<BinaryOpExpr *>(node)) {
+  if (const auto derived = dynamic_cast<BinaryOpExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LogicalNotOpExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LogicalNotOpExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<BinaryNotOpExpr *>(node)) {
+  if (const auto derived = dynamic_cast<BinaryNotOpExpr *>(node)) {
     return visit(derived);
   }
   unreachable();
 }
 
 any AstVisitor::visit(BinaryOpExpr *node) const {
-  if (auto derived = dynamic_cast<PowerExpr *>(node)) {
+  if (const auto derived = dynamic_cast<PowerExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<MultiplyExpr *>(node)) {
+  if (const auto derived = dynamic_cast<MultiplyExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<DivideExpr *>(node)) {
+  if (const auto derived = dynamic_cast<DivideExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ModuloExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ModuloExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<AddExpr *>(node)) {
+  if (const auto derived = dynamic_cast<AddExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<SubtractExpr *>(node)) {
+  if (const auto derived = dynamic_cast<SubtractExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LeftShiftExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LeftShiftExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<RightShiftExpr *>(node)) {
+  if (const auto derived = dynamic_cast<RightShiftExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ZerofillRightShiftExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ZerofillRightShiftExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<GteExpr *>(node)) {
+  if (const auto derived = dynamic_cast<GteExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LteExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LteExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<GtExpr *>(node)) {
+  if (const auto derived = dynamic_cast<GtExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LtExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LtExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<EqExpr *>(node)) {
+  if (const auto derived = dynamic_cast<EqExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<NeqExpr *>(node)) {
+  if (const auto derived = dynamic_cast<NeqExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ConsLeftExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ConsLeftExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<ConsRightExpr *>(node)) {
+  if (const auto derived = dynamic_cast<ConsRightExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<JoinExpr *>(node)) {
+  if (const auto derived = dynamic_cast<JoinExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<BitwiseAndExpr *>(node)) {
+  if (const auto derived = dynamic_cast<BitwiseAndExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<BitwiseXorExpr *>(node)) {
+  if (const auto derived = dynamic_cast<BitwiseXorExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<BitwiseOrExpr *>(node)) {
+  if (const auto derived = dynamic_cast<BitwiseOrExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LogicalAndExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LogicalAndExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<LogicalOrExpr *>(node)) {
+  if (const auto derived = dynamic_cast<LogicalOrExpr *>(node)) {
     return visit(derived);
   }
-  if (auto derived = dynamic_cast<InExpr *>(node)) {
+  if (const auto derived = dynamic_cast<InExpr *>(node)) {
     return visit(derived);
   }
   unreachable();

@@ -89,11 +89,15 @@ BITWISE_OP(LeftShiftExpr, Int, int, <<)
 BITWISE_OP(RightShiftExpr, Int, int, >>)
 BITWISE_OP(ZerofillRightShiftExpr, Int, int,
            >>) // TODO https://stackoverflow.com/questions/8422424/can-you-control-what-a-bitwise-right-shift-will-fill-in-c
+BITWISE_OP(LogicalAndExpr, Bool, bool, &&)
+BITWISE_OP(LogicalOrExpr, Bool, bool, ||)
+
+any Interpreter::visit(LogicalNotOpExpr *node) const { return expr_wrapper(node); }
+any Interpreter::visit(BinaryNotOpExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(AliasCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ApplyExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(AsDataStructurePattern *node) const { return expr_wrapper(node); }
-any Interpreter::visit(BinaryNotOpExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(BodyWithGuards *node) const { return expr_wrapper(node); }
 any Interpreter::visit(BodyWithoutGuards *node) const { return visit(node->expr); }
@@ -137,12 +141,23 @@ any Interpreter::visit(FqnAlias *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(FqnExpr *node) const {
   vector<string> fqn;
+  if (node->packageName.has_value()) {
+    for (auto name : node->packageName.value()->parts) {
+      fqn.push_back(name->value);
+    }
+  }
+  fqn.push_back(node->moduleName->value);
 
-  return make_shared<RuntimeObject>(FQN, make_shared<FqnValue>());
+  return make_shared<RuntimeObject>(FQN, make_shared<FqnValue>(fqn));
 }
 
 any Interpreter::visit(FunctionAlias *node) const { return expr_wrapper(node); }
-any Interpreter::visit(FunctionExpr *node) const { return expr_wrapper(node); }
+
+any Interpreter::visit(FunctionExpr *node) const {
+  return make_shared<RuntimeObject>(Function,
+                                    make_shared<FunctionValue>(make_shared<FqnValue>(vector{node->name}), [](auto obj) { return obj; })); // TODO
+}
+
 any Interpreter::visit(FunctionsImport *node) const { return expr_wrapper(node); }
 any Interpreter::visit(GtExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(GteExpr *node) const { return expr_wrapper(node); }
@@ -165,10 +180,6 @@ any Interpreter::visit(LetExpr *node) const {
   return visit(node->expr);
 }
 
-any Interpreter::visit(LogicalNotOpExpr *node) const { return expr_wrapper(node); }
-BITWISE_OP(LogicalAndExpr, Bool, bool, &)
-BITWISE_OP(LogicalOrExpr, Bool, bool, ||)
-
 any Interpreter::visit(LtExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(LteExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuloExpr *node) const { return expr_wrapper(node); }
@@ -183,7 +194,7 @@ any Interpreter::visit(ModuleExpr *node) const {
 
   auto module = make_shared<ModuleValue>(fqn.value(), functions.value(), records.value());
   IS.module_stack.top().second = module;
-  return module;
+  return make_shared<RuntimeObject>(Module, module);
 }
 
 any Interpreter::visit(ModuleImport *node) const { return expr_wrapper(node); }
@@ -200,7 +211,16 @@ any Interpreter::visit(PowerExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(RaiseExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(RangeSequenceExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(RecordInstanceExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(RecordNode *node) const { return expr_wrapper(node); }
+
+any Interpreter::visit(RecordNode *node) const {
+  vector<shared_ptr<RuntimeObject>> fields;
+  fields.reserve(node->identifiers.size());
+  for (const auto [identifier, type_def] : node->identifiers) {
+    fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(identifier)));
+  }
+  return make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields));
+}
+
 any Interpreter::visit(RecordPattern *node) const { return expr_wrapper(node); }
 any Interpreter::visit(SeqGeneratorExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(SeqPattern *node) const { return expr_wrapper(node); }
@@ -266,9 +286,9 @@ any Interpreter::visit(TypeInstance *node) const { return expr_wrapper(node); }
 any Interpreter::visit(IdentifierExpr *node) const { return IS.frame->lookup(node->source_context, node->name->value); }
 
 any Interpreter::visit(ScopedNode *node) const {
-  IS.frame = make_shared<InterepterFrame>(IS.frame);
+  IS.push_frame();
   auto result = AstVisitor::visit(node);
-  IS.frame = IS.frame->parent;
+  IS.pop_frame();
   return result;
 }
 
@@ -283,9 +303,9 @@ any Interpreter::visit(OpExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
 
 any Interpreter::visit(MainNode *node) const {
-  IS.frame = make_shared<InterepterFrame>(IS.frame);
+  IS.push_frame();
   auto result = visit(node->node);
-  IS.frame = IS.frame->parent;
+  IS.pop_frame();
   return result;
 }
 

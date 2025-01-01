@@ -258,7 +258,7 @@ identifierOrUnderscore: identifier | underscore;
 
 record
   : KW_RECORD recordType OP_ASSIGN PARENS_L identifier COLON typeDef (
-    NEWLINE? COMMA NEWLINE? identifier COLON typeName
+    NEWLINE? COMMA NEWLINE? identifier COLON typeDef
   )* NEWLINE? PARENS_R NEWLINE;
 
 recordInstance
@@ -273,13 +273,27 @@ fieldUpdateExpr
     NEWLINE? COMMA NEWLINE? name OP_ASSIGN expression
   )* NEWLINE? PARENS_R;
 
+builtInTypeName
+  : KW_BYTE
+  | KW_BOOL
+  | KW_INT
+  | KW_FLOAT
+  | KW_CHAR
+  | KW_STRING
+  | KW_SYMBOL
+  | KW_DICT
+  | KW_SEQ
+  | KW_SET
+  | KW_VAR
+  | KW_FUN;
+
 type
   : KW_TYPE declaration = typeDecl OP_ASSIGN typeDecl (
     NEWLINE? VLINE NEWLINE? typeDecl
   )* NEWLINE?;
 typeDecl: typeName typeVar*;
 typeDef: typeName typeName*;
-typeName: UPPERCASE_NAME;
+typeName: builtInTypeName | UPPERCASE_NAME | UNIT;
 typeVar: LOWERCASE_NAME;
 typeInstance
   : typeName (

@@ -41,11 +41,11 @@ string unescapeYonaString(const string &rawString) { return UNESCAPE_YONA.transl
 
 string module_location(const vector<string> &module_name) {
   filesystem::path result;
-  for (const auto &component : module_name) {
+  for (const auto component : module_name) {
     result /= component;
   }
   result.replace_extension(".yona");
-  return result;
+  return result.generic_string();
 }
 
 template <typename T> optional<T> first_defined_optional(initializer_list<optional<T>> optionals) {

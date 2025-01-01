@@ -19,6 +19,9 @@ using ModuleItem = pair<shared_ptr<FqnValue>, shared_ptr<ModuleValue>>;
 inline struct {
   shared_ptr<InterepterFrame> frame;
   stack<ModuleItem> module_stack;
+
+  void push_frame() { frame = make_shared<InterepterFrame>(frame); }
+  void pop_frame() { frame = frame->parent; }
 } IS;
 
 class Interpreter final : public AstVisitor {

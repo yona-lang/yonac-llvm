@@ -26,7 +26,7 @@ private:
   string nextLambdaName();
   ModuleImportQueue module_imports_;
 
-  template <typename T>
+  template <class T>
     requires derived_from<T, AstNode>
   T *visit_expr(tree::ParseTree *tree) {
     if (tree == nullptr) {
@@ -35,10 +35,14 @@ private:
     return any_cast<expr_wrapper>(visit(tree)).get_node<T>();
   }
 
-  template <typename T, typename PT>
+  template <class T, class PT>
     requires derived_from<T, AstNode>
   vector<T *> visit_exprs(vector<PT *> trees) {
+    if (trees.empty()) {
+      return vector<T *>();
+    }
     vector<T *> exprs;
+    exprs.reserve(trees.size());
     for (auto tree : trees) {
       exprs.push_back(visit_expr<T>(tree));
     }

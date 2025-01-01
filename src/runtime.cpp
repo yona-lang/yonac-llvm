@@ -31,7 +31,7 @@ std::ostream &printString(std::ostream &strm, const RuntimeObject &obj) {
 }
 
 std::ostream &printBool(std::ostream &strm, const RuntimeObject &obj) {
-  strm << obj.get<bool>();
+  strm << (obj.get<bool>() ? "true" : "false");
   return strm;
 }
 

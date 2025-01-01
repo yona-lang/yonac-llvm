@@ -25,8 +25,7 @@ any YonaVisitor::visitFunction(YonaParser::FunctionContext *ctx) {
 
   string function_name = ctx->functionName()->name()->LOWERCASE_NAME()->getText();
   names_.push_back(function_name);
-  auto result = wrap_expr<FunctionExpr>(*ctx, function_name, visit_exprs<PatternNode>(ctx->pattern()),
-                                        any_cast<vector<FunctionBody *>>(visitFunctionBody(ctx->functionBody())));
+  auto result = wrap_expr<FunctionExpr>(*ctx, function_name, visit_exprs<PatternNode>(ctx->pattern()), bodies);
   names_.pop_back();
 
   return result;
@@ -34,7 +33,9 @@ any YonaVisitor::visitFunction(YonaParser::FunctionContext *ctx) {
 
 std::any YonaVisitor::visitFunctionName(YonaParser::FunctionNameContext *ctx) { return visitName(ctx->name()); }
 
-any YonaVisitor::visitBodyWithoutGuard(YonaParser::BodyWithoutGuardContext *ctx) { return visit(ctx->expression()); }
+any YonaVisitor::visitBodyWithoutGuard(YonaParser::BodyWithoutGuardContext *ctx) {
+  return wrap_expr<BodyWithoutGuards>(*ctx, visit_expr<ExprNode>(ctx->expression()));
+}
 
 any YonaVisitor::visitBodyWithGuards(YonaParser::BodyWithGuardsContext *ctx) {
   return wrap_expr<BodyWithGuards>(*ctx, visit_expr<ExprNode>(ctx->guard), visit_expr<ExprNode>(ctx->expr));
@@ -406,24 +407,24 @@ any YonaVisitor::visitSet(YonaParser::SetContext *ctx) {
 }
 
 any YonaVisitor::visitFqn(YonaParser::FqnContext *ctx) {
-  vector<NameExpr *> name_exprs;
   vector<string> fqn_parts;
+  optional<PackageNameExpr *> package_name_expr;
 
-  if (ctx->packageName() != nullptr) {
-    for (const auto package_name = visit_expr<PackageNameExpr>(ctx->packageName()); auto name : package_name->parts) {
-      name_exprs.push_back(name);
+  if (ctx->packageName()) {
+    package_name_expr = visit_expr<PackageNameExpr>(ctx->packageName());
+
+    for (const auto name : package_name_expr.value()->parts) {
       fqn_parts.push_back(name->value);
     }
   }
 
-  const auto name_expr = visit_expr<NameExpr>(ctx->moduleName());
+  const auto module_name_expr = visit_expr<NameExpr>(ctx->moduleName());
 
-  name_exprs.push_back(name_expr);
-  fqn_parts.push_back(name_expr->value);
+  fqn_parts.push_back(module_name_expr->value);
 
   module_imports_.push(fqn_parts);
 
-  return wrap_expr<PackageNameExpr>(*ctx, name_exprs);
+  return wrap_expr<FqnExpr>(*ctx, package_name_expr, module_name_expr);
 }
 
 any YonaVisitor::visitPackageName(YonaParser::PackageNameContext *ctx) {
@@ -751,17 +752,17 @@ std::any YonaVisitor::visitKeyValueCollectionExtractor(YonaParser::KeyValueColle
 any YonaVisitor::visitIdentifierOrUnderscore(YonaParser::IdentifierOrUnderscoreContext *ctx) {
   if (ctx->identifier() != nullptr) {
     return visitIdentifier(ctx->identifier());
-  } else {
-    return wrap_expr<UnderscorePattern>(*ctx);
   }
+  return wrap_expr<UnderscorePattern>(*ctx);
 }
 
 any YonaVisitor::visitRecord(YonaParser::RecordContext *ctx) {
-  vector<IdentifierExpr *> identifiers;
-  for (const auto &identifier : ctx->identifier()) {
-    identifiers.push_back(visit_expr<IdentifierExpr>(identifier));
+  vector<pair<IdentifierExpr *, TypeDefinition *>> elements;
+  for (size_t i = 0; i < ctx->identifier().size(); ++i) {
+    elements.emplace_back(visit_expr<IdentifierExpr>(ctx->identifier(i)), visit_expr<TypeDefinition>(ctx->typeDef(i)));
   }
-  return wrap_expr<RecordNode>(*ctx, visit_expr<NameExpr>(ctx->recordType()), identifiers);
+
+  return wrap_expr<RecordNode>(*ctx, visit_expr<NameExpr>(ctx->recordType()), elements);
 }
 
 any YonaVisitor::visitRecordType(YonaParser::RecordTypeContext *ctx) { return wrap_expr<NameExpr>(*ctx, ctx->UPPERCASE_NAME()->getText()); }
@@ -786,7 +787,9 @@ any YonaVisitor::visitFieldUpdateExpr(YonaParser::FieldUpdateExprContext *ctx) {
   return wrap_expr<FieldUpdateExpr>(*ctx, visit_expr<IdentifierExpr>(ctx->identifier()), elements);
 }
 
-std::any YonaVisitor::visitFunctionDecl(YonaParser::FunctionDeclContext *ctx) { return YonaParserBaseVisitor::visitFunctionDecl(ctx); }
+std::any YonaVisitor::visitFunctionDecl(YonaParser::FunctionDeclContext *ctx) {
+  return wrap_expr<FunctionDeclaration>(*ctx, visit_expr<NameExpr>(ctx->functionName()), visit_exprs<TypeDefinition>(ctx->typeDef()));
+}
 
 std::any YonaVisitor::visitType(YonaParser::TypeContext *ctx) {
   return wrap_expr<TypeNode>(*ctx, visit_expr<TypeDeclaration>(ctx->declaration),
@@ -798,11 +801,31 @@ std::any YonaVisitor::visitTypeDecl(YonaParser::TypeDeclContext *ctx) {
 }
 
 std::any YonaVisitor::visitTypeDef(YonaParser::TypeDefContext *ctx) {
-  return wrap_expr<TypeDeclaration>(*ctx, visit_expr<NameExpr>(ctx->typeName(0)),
-                                    visit_exprs<NameExpr>(vector(ctx->typeName().begin() + 1, ctx->typeName().end())));
+  vector<variant<NameExpr *, UnitExpr *>> types;
+  for (size_t i = 1; i < ctx->typeName().size(); i++) {
+    types.emplace_back(any_cast<variant<NameExpr *, UnitExpr *>>(visit(ctx->typeName(i))));
+  }
+
+  variant<NameExpr *, UnitExpr *> name;
+  auto name_wrapper = any_cast<expr_wrapper>(visitTypeName(ctx->typeName(0)));
+  if (name_wrapper.get_node_dynamic<NameExpr>()) {
+    name = name_wrapper.get_node<NameExpr>();
+  } else {
+    name = name_wrapper.get_node<UnitExpr>();
+  }
+
+  return wrap_expr<TypeDefinition>(*ctx, name, types);
 }
 
-std::any YonaVisitor::visitTypeName(YonaParser::TypeNameContext *ctx) { return wrap_expr<NameExpr>(*ctx, ctx->UPPERCASE_NAME()->getText()); }
+std::any YonaVisitor::visitTypeName(YonaParser::TypeNameContext *ctx) {
+  if (ctx->UPPERCASE_NAME()) {
+    return wrap_expr<NameExpr>(*ctx, ctx->UPPERCASE_NAME()->getText());
+  } else if (ctx->UNIT()) {
+    return wrap_expr<UnitExpr>(*ctx);
+  } else {
+    return wrap_expr<NameExpr>(*ctx, ctx->builtInTypeName()->getText());
+  }
+}
 
 std::any YonaVisitor::visitTypeVar(YonaParser::TypeVarContext *ctx) { return wrap_expr<NameExpr>(*ctx, ctx->LOWERCASE_NAME()->getText()); }
 
