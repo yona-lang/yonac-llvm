@@ -797,40 +797,87 @@ std::any YonaVisitor::visitType(YonaParser::TypeContext *ctx) {
 }
 
 std::any YonaVisitor::visitTypeDecl(YonaParser::TypeDeclContext *ctx) {
-  return wrap_expr<TypeDeclaration>(*ctx, visit_expr<NameExpr>(ctx->typeName()), visit_exprs<NameExpr>(ctx->typeVar()));
+  return wrap_expr<TypeDeclaration>(*ctx, visit_expr<TypeNameNode>(ctx->typeName()), visit_exprs<NameExpr>(ctx->typeVar()));
 }
 
 std::any YonaVisitor::visitTypeDef(YonaParser::TypeDefContext *ctx) {
-  vector<variant<NameExpr *, UnitExpr *>> types;
+  vector<TypeNameNode *> types;
   for (size_t i = 1; i < ctx->typeName().size(); i++) {
-    types.emplace_back(any_cast<variant<NameExpr *, UnitExpr *>>(visit(ctx->typeName(i))));
+    types.emplace_back(any_cast<TypeNameNode *>(visit(ctx->typeName(i))));
   }
 
-  variant<NameExpr *, UnitExpr *> name;
   auto name_wrapper = any_cast<expr_wrapper>(visitTypeName(ctx->typeName(0)));
-  if (name_wrapper.get_node_dynamic<NameExpr>()) {
-    name = name_wrapper.get_node<NameExpr>();
-  } else {
-    name = name_wrapper.get_node<UnitExpr>();
-  }
+  auto name = name_wrapper.get_node<TypeNameNode>();
 
   return wrap_expr<TypeDefinition>(*ctx, name, types);
 }
 
 std::any YonaVisitor::visitTypeName(YonaParser::TypeNameContext *ctx) {
   if (ctx->UPPERCASE_NAME()) {
-    return wrap_expr<NameExpr>(*ctx, ctx->UPPERCASE_NAME()->getText());
-  } else if (ctx->UNIT()) {
-    return wrap_expr<UnitExpr>(*ctx);
-  } else {
-    return wrap_expr<NameExpr>(*ctx, ctx->builtInTypeName()->getText());
+    return wrap_expr<UserDefinedTypeNode>(*ctx, ctx->UPPERCASE_NAME()->getText());
   }
+  if (ctx->UNIT()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Unit);
+  }
+  return visitBuiltInTypeName(ctx->builtInTypeName());
 }
 
 std::any YonaVisitor::visitTypeVar(YonaParser::TypeVarContext *ctx) { return wrap_expr<NameExpr>(*ctx, ctx->LOWERCASE_NAME()->getText()); }
 
 std::any YonaVisitor::visitTypeInstance(YonaParser::TypeInstanceContext *ctx) {
   return wrap_expr<TypeInstance>(*ctx, visit_expr<NameExpr>(ctx->typeName()), visit_exprs<ExprNode>(ctx->expression()));
+}
+
+std::any YonaVisitor::visitBuiltInTypeName(YonaParser::BuiltInTypeNameContext *ctx) {
+  if (ctx->KW_BYTE()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Byte);
+  }
+  if (ctx->KW_BOOL()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Bool);
+  }
+  if (ctx->KW_INT() || ctx->KW_INT32()) {
+    if (ctx->KW_UNSIGNED()) {
+      return wrap_expr<BuiltinTypeNode>(*ctx, UnsignedInt32);
+    }
+      return wrap_expr<BuiltinTypeNode>(*ctx, SignedInt32);
+  }
+  if (ctx->KW_INT16()) {
+    if (ctx->KW_UNSIGNED()) {
+      return wrap_expr<BuiltinTypeNode>(*ctx, UnsignedInt16);
+    }
+      return wrap_expr<BuiltinTypeNode>(*ctx, SignedInt16);
+  }
+  if (ctx->KW_INT64()) {
+    if (ctx->KW_UNSIGNED()) {
+      return wrap_expr<BuiltinTypeNode>(*ctx, UnsignedInt64);
+    }
+      return wrap_expr<BuiltinTypeNode>(*ctx, SignedInt64);
+  }
+  if (ctx->KW_INT128()) {
+    if (ctx->KW_UNSIGNED()) {
+      return wrap_expr<BuiltinTypeNode>(*ctx, UnsignedInt128);
+    }
+      return wrap_expr<BuiltinTypeNode>(*ctx, SignedInt128);
+  }
+  if (ctx->KW_FLOAT() || ctx->KW_FLOAT32()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Float32);
+  }
+  if (ctx->KW_FLOAT64()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Float64);
+  }
+  if (ctx->KW_FLOAT128()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Float128);
+  }
+  if (ctx->KW_CHAR()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Char);
+  }
+  if (ctx->KW_STRING()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, String);
+  }
+  if (ctx->KW_SYMBOL()) {
+    return wrap_expr<BuiltinTypeNode>(*ctx, Symbol);
+  }
+    return wrap_expr<BuiltinTypeNode>(*ctx, Unit);
 }
 
 string YonaVisitor::fqn() const { return boost::algorithm::join(names_, NAME_DELIMITER); }

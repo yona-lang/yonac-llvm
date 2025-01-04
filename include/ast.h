@@ -139,6 +139,9 @@ enum AstNodeType {
   AST_TYPE_DECLARATION,
   AST_TYPE_DEFINITION,
   AST_TYPE_INSTANCE,
+  AST_TYPE_NAME_NODE,
+  AST_PRIMITIVE_TYPE_NODE,
+  AST_USER_DEFINED_TYPE_NODE,
   AST_TYPE,
   AST_SEQ_PATTERN,
   AST_HEAD_TAILS_PATTERN,
@@ -1353,12 +1356,38 @@ public:
   ~CaseExpr() override;
 };
 
+class TypeNameNode : public AstNode {
+public:
+  explicit TypeNameNode(SourceContext token) : AstNode(token) {}
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_NAME_NODE; };
+};
+
+class BuiltinTypeNode final : public TypeNameNode {
+public:
+  BuiltinType type;
+
+  explicit BuiltinTypeNode(SourceContext token, const BuiltinType type) : TypeNameNode(token), type(type) {}
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_PRIMITIVE_TYPE_NODE; };
+};
+
+class UserDefinedTypeNode final : public TypeNameNode {
+public:
+  NameExpr *name;
+
+  explicit UserDefinedTypeNode(SourceContext token, NameExpr *name);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_USER_DEFINED_TYPE_NODE; };
+  ~UserDefinedTypeNode() override;
+};
+
 class TypeDeclaration final : public AstNode {
 public:
-  NameExpr *name{};
+  TypeNameNode *name;
   vector<NameExpr *> typeVars;
 
-  explicit TypeDeclaration(SourceContext token, NameExpr *name, vector<NameExpr *> type_vars);
+  explicit TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DECLARATION; };
@@ -1367,10 +1396,10 @@ public:
 
 class TypeDefinition final : public AstNode {
 public:
-  variant<NameExpr *, UnitExpr *> name;
-  vector<variant<NameExpr *, UnitExpr *>> typeNames;
+  TypeNameNode *name;
+  vector<TypeNameNode *> typeNames;
 
-  explicit TypeDefinition(SourceContext token, const variant<NameExpr *, UnitExpr *> &name, vector<variant<NameExpr *, UnitExpr *>> type_names);
+  explicit TypeDefinition(SourceContext token, TypeNameNode *name, vector<TypeNameNode *> type_names);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DEFINITION; };
@@ -1391,10 +1420,10 @@ public:
 
 class TypeInstance final : public AstNode {
 public:
-  NameExpr *name;
+  TypeNameNode *name;
   vector<ExprNode *> exprs;
 
-  explicit TypeInstance(SourceContext token, NameExpr *name, vector<ExprNode *> exprs);
+  explicit TypeInstance(SourceContext token, TypeNameNode *name, vector<ExprNode *> exprs);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_INSTANCE; };
@@ -1516,6 +1545,8 @@ public:
   virtual any visit(ZerofillRightShiftExpr *node) const = 0;
   virtual any visit(MainNode *node) const = 0;
   virtual any visit(IdentifierExpr *node) const = 0;
+  virtual any visit(BuiltinTypeNode *node) const = 0;
+  virtual any visit(UserDefinedTypeNode *node) const = 0;
   virtual any visit(ExprNode *node) const;
   virtual any visit(AstNode *node) const;
   virtual any visit(ScopedNode *node) const;
@@ -1526,5 +1557,6 @@ public:
   virtual any visit(AliasExpr *node) const;
   virtual any visit(OpExpr *node) const;
   virtual any visit(BinaryOpExpr *node) const;
+  virtual any visit(TypeNameNode *node) const;
 };
 } // namespace yona::ast

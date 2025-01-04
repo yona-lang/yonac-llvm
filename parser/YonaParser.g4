@@ -276,16 +276,18 @@ fieldUpdateExpr
 builtInTypeName
   : KW_BYTE
   | KW_BOOL
-  | KW_INT
+  | (KW_SIGNED | KW_UNSIGNED)? KW_INT
+  | (KW_SIGNED | KW_UNSIGNED)? KW_INT16
+  | (KW_SIGNED | KW_UNSIGNED)? KW_INT32
+  | (KW_SIGNED | KW_UNSIGNED)? KW_INT64
+  | (KW_SIGNED | KW_UNSIGNED)? KW_INT128
   | KW_FLOAT
+  | KW_FLOAT32
+  | KW_FLOAT64
+  | KW_FLOAT128
   | KW_CHAR
   | KW_STRING
-  | KW_SYMBOL
-  | KW_DICT
-  | KW_SEQ
-  | KW_SET
-  | KW_VAR
-  | KW_FUN;
+  | KW_SYMBOL;
 
 type
   : KW_TYPE declaration = typeDecl OP_ASSIGN typeDecl (

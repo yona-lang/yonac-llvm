@@ -188,5 +188,6 @@ public:
   std::any visitTypeName(YonaParser::TypeNameContext *ctx) override;
   std::any visitTypeVar(YonaParser::TypeVarContext *ctx) override;
   std::any visitTypeInstance(YonaParser::TypeInstanceContext *ctx) override;
+  std::any visitBuiltInTypeName(YonaParser::BuiltInTypeNameContext *ctx) override;
 };
 } // namespace yona

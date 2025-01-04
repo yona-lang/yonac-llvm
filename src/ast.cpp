@@ -44,11 +44,11 @@ Type BinaryOpExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (holds_alternative<ValueType>(leftType) && get<ValueType>(leftType) != Int && get<ValueType>(leftType) != Float) {
+  if (holds_alternative<BuiltinType>(leftType) && get<BuiltinType>(leftType) != Int && get<BuiltinType>(leftType) != Float) {
     ctx.addError(yona_error(source_context, yona_error::TYPE, "Binary expression must be numeric type"));
   }
 
-  if (holds_alternative<ValueType>(rightType) && get<ValueType>(rightType) != Int && get<ValueType>(rightType) != Float) {
+  if (holds_alternative<BuiltinType>(rightType) && get<BuiltinType>(rightType) != Int && get<BuiltinType>(rightType) != Float) {
     ctx.addError(yona_error(source_context, yona_error::TYPE, "Binary expression must be numeric type"));
   }
 
@@ -238,15 +238,15 @@ Type RangeSequenceExpr::infer_type(AstContext &ctx) const {
   Type endExprType = start->infer_type(ctx);
   Type stepExprType = start->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(startExprType) || get<ValueType>(startExprType) != Int) {
+  if (!holds_alternative<BuiltinType>(startExprType) || get<BuiltinType>(startExprType) != Int) {
     ctx.addError(yona_error(start->source_context, yona_error::TYPE, "Sequence start expression must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(endExprType) || get<ValueType>(endExprType) != Int) {
+  if (!holds_alternative<BuiltinType>(endExprType) || get<BuiltinType>(endExprType) != Int) {
     ctx.addError(yona_error(end->source_context, yona_error::TYPE, "Sequence end expression must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(stepExprType) || get<ValueType>(stepExprType) != Int) {
+  if (!holds_alternative<BuiltinType>(stepExprType) || get<BuiltinType>(stepExprType) != Int) {
     ctx.addError(yona_error(step->source_context, yona_error::TYPE, "Sequence step expression must be integer"));
   }
 
@@ -348,7 +348,7 @@ BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *e
 any BodyWithGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type BodyWithGuards::infer_type(AstContext &ctx) const {
-  if (const Type guardType = guard->infer_type(ctx); !holds_alternative<ValueType>(guardType) || get<ValueType>(guardType) != Bool) {
+  if (const Type guardType = guard->infer_type(ctx); !holds_alternative<BuiltinType>(guardType) || get<BuiltinType>(guardType) != Bool) {
     ctx.addError(yona_error(guard->source_context, yona_error::TYPE, "Guard expression must be boolean"));
   }
 
@@ -406,7 +406,7 @@ LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr
 any LogicalNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type LogicalNotOpExpr::infer_type(AstContext &ctx) const {
-  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
+  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<BuiltinType>(exprType) || get<BuiltinType>(exprType) != Bool) {
     ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for logical negation must be boolean"));
   }
 
@@ -420,7 +420,7 @@ BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(t
 any BinaryNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type BinaryNotOpExpr::infer_type(AstContext &ctx) const {
-  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<ValueType>(exprType) || get<ValueType>(exprType) != Bool) {
+  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<BuiltinType>(exprType) || get<BuiltinType>(exprType) != Bool) {
     ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for binary negation must be boolean"));
   }
 
@@ -473,11 +473,11 @@ Type LeftShiftExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for left shift must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for left shift must be integer"));
   }
 
@@ -492,11 +492,11 @@ Type RightShiftExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for right shift must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for right shift must be integer"));
   }
 
@@ -511,11 +511,11 @@ Type ZerofillRightShiftExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
   }
 
@@ -603,11 +603,11 @@ Type BitwiseAndExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise AND must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise AND must be integer"));
   }
 
@@ -622,11 +622,11 @@ Type BitwiseXorExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
   }
 
@@ -641,11 +641,11 @@ Type BitwiseOrExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Int) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise OR must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Int) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Int) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise OR must be integer"));
   }
 
@@ -660,11 +660,11 @@ Type LogicalAndExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Bool) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical AND must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Bool) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical AND must be integer"));
   }
 
@@ -679,11 +679,11 @@ Type LogicalOrExpr::infer_type(AstContext &ctx) const {
   const Type leftType = left->infer_type(ctx);
   const Type rightType = right->infer_type(ctx);
 
-  if (!holds_alternative<ValueType>(leftType) || get<ValueType>(leftType) != Bool) {
+  if (!holds_alternative<BuiltinType>(leftType) || get<BuiltinType>(leftType) != Bool) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical OR must be integer"));
   }
 
-  if (!holds_alternative<ValueType>(rightType) || get<ValueType>(rightType) != Bool) {
+  if (!holds_alternative<BuiltinType>(rightType) || get<BuiltinType>(rightType) != Bool) {
     ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical OR must be integer"));
   }
 
@@ -732,7 +732,8 @@ IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, Exp
 any IfExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type IfExpr::infer_type(AstContext &ctx) const {
-  if (const Type conditionType = condition->infer_type(ctx); !holds_alternative<ValueType>(conditionType) || get<ValueType>(conditionType) != Bool) {
+  if (const Type conditionType = condition->infer_type(ctx);
+      !holds_alternative<BuiltinType>(conditionType) || get<BuiltinType>(conditionType) != Bool) {
     ctx.addError(yona_error(condition->source_context, yona_error::TYPE, "If condition must be boolean"));
   }
 
@@ -1348,8 +1349,16 @@ CaseExpr::~CaseExpr() {
   }
 }
 
-TypeDeclaration::TypeDeclaration(SourceContext token, NameExpr *name, vector<NameExpr *> type_vars)
-    : AstNode(token), name(name->with_parent<NameExpr>(this)), typeVars(nodes_with_parent(type_vars, this)) {}
+any TypeNameNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+any BuiltinTypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+UserDefinedTypeNode::UserDefinedTypeNode(SourceContext token, NameExpr *name) : TypeNameNode(token), name(name->with_parent<NameExpr>(this)) {}
+
+UserDefinedTypeNode::~UserDefinedTypeNode() { delete name; }
+
+TypeDeclaration::TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars)
+    : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeVars(nodes_with_parent(type_vars, this)) {}
 
 any TypeDeclaration::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1362,8 +1371,8 @@ TypeDeclaration::~TypeDeclaration() {
   }
 }
 
-TypeDefinition::TypeDefinition(SourceContext token, const variant<NameExpr *, UnitExpr *> &name, vector<variant<NameExpr *, UnitExpr *>> type_names)
-    : AstNode(token), name(node_with_parent(name, this)), typeNames(nodes_with_parent(type_names, this)) {}
+TypeDefinition::TypeDefinition(SourceContext token, TypeNameNode *name, vector<TypeNameNode *> type_names)
+    : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeNames(nodes_with_parent(type_names, this)) {}
 
 any TypeDefinition::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1371,31 +1380,16 @@ Type TypeDefinition::infer_type(AstContext &ctx) const {
   vector<Type> type_names;
   type_names.reserve(typeNames.size());
   for (const auto t : typeNames) {
-    if (holds_alternative<NameExpr *>(t)) {
-      type_names.push_back(get<NameExpr *>(t)->infer_type(ctx));
-    } else {
-      type_names.push_back(get<UnitExpr *>(t)->infer_type(ctx));
-    }
+    delete t;
   }
-  if (holds_alternative<NameExpr *>(name)) {
-    return make_shared<NamedType>(get<NameExpr *>(name)->value, make_shared<ProductType>(type_names));
-  } else {
-    return nullptr;
-  }
+  // return make_shared<NamedType>(name->, make_shared<ProductType>(type_names)); // TODO
+  return nullptr;
 }
 
 TypeDefinition::~TypeDefinition() {
-  if (holds_alternative<NameExpr *>(name)) {
-    delete get<NameExpr *>(name);
-  } else {
-    delete get<UnitExpr *>(name);
-  }
+  delete name;
   for (const auto p : typeNames) {
-    if (holds_alternative<NameExpr *>(p)) {
-      delete get<NameExpr *>(p);
-    } else {
-      delete get<UnitExpr *>(p);
-    }
+    delete p;
   }
 }
 
@@ -1413,8 +1407,8 @@ TypeNode::~TypeNode() {
   }
 }
 
-TypeInstance::TypeInstance(SourceContext token, NameExpr *name, vector<ExprNode *> exprs)
-    : AstNode(token), name(name->with_parent<NameExpr>(this)), exprs(nodes_with_parent(exprs, this)) {}
+TypeInstance::TypeInstance(SourceContext token, TypeNameNode *name, vector<ExprNode *> exprs)
+    : AstNode(token), name(name->with_parent<TypeNameNode>(this)), exprs(nodes_with_parent(exprs, this)) {}
 
 any TypeInstance::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1767,6 +1761,16 @@ any AstVisitor::visit(BinaryOpExpr *node) const {
     return visit(derived);
   }
   if (const auto derived = dynamic_cast<InExpr *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
+any AstVisitor::visit(TypeNameNode *node) const {
+  if (const auto derived = dynamic_cast<BuiltinTypeNode *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<UserDefinedTypeNode *>(node)) {
     return visit(derived);
   }
   unreachable();

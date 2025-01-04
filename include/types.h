@@ -3,6 +3,10 @@
 //
 
 #pragma once
+#include <string>
+#include <unordered_set>
+#include <variant>
+#include <vector>
 
 namespace yona::compiler::types {
 using namespace std;
@@ -16,10 +20,28 @@ struct SumType;
 struct ProductType;
 struct UnionType;
 
-enum ValueType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Module, Record, Exception };
+enum BuiltinType {
+  Byte,
+  Bool,
+  SignedInt16,
+  SignedInt32,
+  SignedInt64,
+  SignedInt128,
+  UnsignedInt16,
+  UnsignedInt32,
+  UnsignedInt64,
+  UnsignedInt128,
+  Float32,
+  Float64,
+  Float128,
+  Char,
+  String,
+  Symbol,
+  Unit
+};
 
-using Type = variant<ValueType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>, shared_ptr<NamedType>,
-                     shared_ptr<SumType>, shared_ptr<ProductType>, nullptr_t>;
+using Type = variant<BuiltinType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
+                     shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, nullptr_t>;
 
 struct SingleItemCollectionType final {
   enum CollectionKind { Set, Seq } kind;
