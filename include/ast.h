@@ -190,7 +190,7 @@ public:
     requires derived_from<T, AstNode>
   T *with_parent(AstNode *parent) {
     this->parent = parent;
-    return dynamic_cast<T *>(this);
+    return static_cast<T *>(this);
   }
 };
 
@@ -564,8 +564,8 @@ public:
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
 
-  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, vector<string> &exports, vector<RecordNode *> records, vector<FunctionExpr *> &functions,
-                      vector<FunctionDeclaration *> function_declarations);
+  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
+                      const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_EXPR; };

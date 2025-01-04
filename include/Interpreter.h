@@ -146,5 +146,8 @@ public:
   any visit(OpExpr *node) const override;
   any visit(BinaryOpExpr *node) const override;
   any visit(MainNode *node) const override;
+  any visit(BuiltinTypeNode *node) const override;
+  any visit(UserDefinedTypeNode *node) const override;
+  any visit(TypeNameNode *node) const override;
 };
 } // namespace yona::interp

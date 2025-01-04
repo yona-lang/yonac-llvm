@@ -301,6 +301,7 @@ any Interpreter::visit(FunctionBody *node) const { return AstVisitor::visit(node
 any Interpreter::visit(AliasExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(OpExpr *node) const { return AstVisitor::visit(node); }
 any Interpreter::visit(BinaryOpExpr *node) const { return AstVisitor::visit(node); }
+any Interpreter::visit(TypeNameNode *node) const { return AstVisitor::visit(node); }
 
 any Interpreter::visit(MainNode *node) const {
   IS.push_frame();
@@ -308,5 +309,7 @@ any Interpreter::visit(MainNode *node) const {
   IS.pop_frame();
   return result;
 }
+any Interpreter::visit(BuiltinTypeNode *node) const {}
+any Interpreter::visit(UserDefinedTypeNode *node) const {}
 
 } // namespace yona::interp

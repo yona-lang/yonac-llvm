@@ -123,5 +123,8 @@ public:
   [[nodiscard]] any visit(OpExpr *node) const override;
   [[nodiscard]] any visit(BinaryOpExpr *node) const override;
   [[nodiscard]] any visit(MainNode *node) const override;
+  [[nodiscard]] any visit(BuiltinTypeNode *node) const override;
+  [[nodiscard]] any visit(UserDefinedTypeNode *node) const override;
+  [[nodiscard]] any visit(TypeNameNode *node) const override;
 };
 } // namespace yona::compiler
