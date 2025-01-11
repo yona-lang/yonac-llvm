@@ -7,7 +7,6 @@
 #include <codecvt>
 #include <functional>
 #include <locale>
-#include <memory>
 #include <ostream>
 #include <string>
 #include <variant>

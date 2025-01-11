@@ -19,6 +19,7 @@ using ModuleImportQueue = queue<vector<string>>;
 
 inline struct YonaEnvironment {
   vector<string> search_paths;
+  string main_fun_name;
   bool compile_mode = false;
 } YONA_ENVIRONMENT;
 

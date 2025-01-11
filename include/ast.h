@@ -9,6 +9,8 @@
 #include "common.h"
 #include "types.h"
 
+#include <ostream>
+
 namespace yona::ast {
 class FunctionDeclaration;
 class AstNode;
@@ -173,6 +175,9 @@ public:
 };
 
 class AstNode {
+private:
+  virtual void print(std::ostream &os) const = 0;
+
 public:
   SourceInfo source_context;
   AstNode *parent = nullptr;
@@ -181,6 +186,7 @@ public:
   virtual any accept(const AstVisitor &visitor);
   [[nodiscard]] virtual Type infer_type(AstContext &ctx) const;
   [[nodiscard]] virtual AstNodeType get_type() const { return AST_NODE; };
+  friend std::ostream &operator<<(std::ostream &os, const AstNode &obj);
 
   template <class T>
     requires derived_from<T, AstNode>
@@ -253,6 +259,9 @@ public:
 };
 
 class UnderscoreNode final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit UnderscoreNode(SourceContext token) : PatternNode(token) {}
   any accept(const AstVisitor &visitor) override;
@@ -354,6 +363,9 @@ public:
 };
 
 class NameExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   const string value;
 
@@ -364,6 +376,9 @@ public:
 };
 
 class IdentifierExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
 
@@ -375,6 +390,9 @@ public:
 };
 
 class RecordNode final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *recordType;
   vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers;
@@ -387,6 +405,9 @@ public:
 };
 
 class TrueLiteralExpr final : public LiteralExpr<bool> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit TrueLiteralExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
@@ -395,6 +416,9 @@ public:
 };
 
 class FalseLiteralExpr final : public LiteralExpr<bool> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit FalseLiteralExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
@@ -403,6 +427,9 @@ public:
 };
 
 class FloatExpr final : public LiteralExpr<float> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit FloatExpr(SourceContext token, float value);
   any accept(const AstVisitor &visitor) override;
@@ -411,6 +438,9 @@ public:
 };
 
 class IntegerExpr final : public LiteralExpr<int> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit IntegerExpr(SourceContext token, int value);
   any accept(const AstVisitor &visitor) override;
@@ -419,6 +449,9 @@ public:
 };
 
 class ByteExpr final : public LiteralExpr<unsigned char> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit ByteExpr(SourceContext token, unsigned char value);
   any accept(const AstVisitor &visitor) override;
@@ -427,6 +460,9 @@ public:
 };
 
 class StringExpr final : public LiteralExpr<string> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit StringExpr(SourceContext token, string value);
   any accept(const AstVisitor &visitor) override;
@@ -435,6 +471,9 @@ public:
 };
 
 class CharacterExpr final : public LiteralExpr<wchar_t> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit CharacterExpr(SourceContext token, wchar_t value);
   any accept(const AstVisitor &visitor) override;
@@ -443,6 +482,9 @@ public:
 };
 
 class UnitExpr final : public LiteralExpr<nullptr_t> {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit UnitExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
@@ -451,6 +493,9 @@ public:
 };
 
 class TupleExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<ExprNode *> values;
 
@@ -462,6 +507,9 @@ public:
 };
 
 class DictExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<pair<ExprNode *, ExprNode *>> values;
 
@@ -473,6 +521,9 @@ public:
 };
 
 class ValuesSequenceExpr final : public SequenceExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<ExprNode *> values;
 
@@ -484,8 +535,10 @@ public:
 };
 
 class RangeSequenceExpr final : public SequenceExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
-  // TODO make them optional
   ExprNode *start;
   ExprNode *end;
   ExprNode *step;
@@ -498,6 +551,9 @@ public:
 };
 
 class SetExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<ExprNode *> values;
 
@@ -509,6 +565,9 @@ public:
 };
 
 class SymbolExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   string value;
 
@@ -519,6 +578,9 @@ public:
 };
 
 class PackageNameExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<NameExpr *> parts;
 
@@ -531,6 +593,9 @@ public:
 };
 
 class FqnExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   optional<PackageNameExpr *> packageName;
   NameExpr *moduleName;
@@ -544,6 +609,9 @@ public:
 };
 
 class FunctionExpr final : public ScopedNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   const string name;
   vector<PatternNode *> patterns;
@@ -557,6 +625,9 @@ public:
 };
 
 class ModuleExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   FqnExpr *fqn;
   vector<string> exports;
@@ -573,6 +644,9 @@ public:
 };
 
 class RecordInstanceExpr final : public ValueExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *recordType;
   vector<pair<NameExpr *, ExprNode *>> items;
@@ -585,6 +659,9 @@ public:
 };
 
 class BodyWithGuards final : public FunctionBody {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *guard;
   ExprNode *expr;
@@ -597,6 +674,9 @@ public:
 };
 
 class BodyWithoutGuards final : public FunctionBody {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *expr;
 
@@ -608,6 +688,9 @@ public:
 };
 
 class LogicalNotOpExpr final : public OpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *expr;
 
@@ -619,6 +702,9 @@ public:
 };
 
 class BinaryNotOpExpr final : public OpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *expr;
 
@@ -630,6 +716,9 @@ public:
 };
 
 class PowerExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit PowerExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -638,6 +727,9 @@ public:
 };
 
 class MultiplyExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit MultiplyExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -646,6 +738,9 @@ public:
 };
 
 class DivideExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit DivideExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -654,6 +749,9 @@ public:
 };
 
 class ModuloExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit ModuloExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -662,6 +760,9 @@ public:
 };
 
 class AddExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit AddExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -670,6 +771,9 @@ public:
 };
 
 class SubtractExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit SubtractExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -678,6 +782,9 @@ public:
 };
 
 class LeftShiftExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit LeftShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -686,6 +793,9 @@ public:
 };
 
 class RightShiftExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit RightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -694,6 +804,9 @@ public:
 };
 
 class ZerofillRightShiftExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit ZerofillRightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -702,6 +815,9 @@ public:
 };
 
 class GteExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit GteExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -710,6 +826,9 @@ public:
 };
 
 class LteExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit LteExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -718,6 +837,9 @@ public:
 };
 
 class GtExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit GtExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -726,6 +848,9 @@ public:
 };
 
 class LtExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit LtExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -734,6 +859,9 @@ public:
 };
 
 class EqExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit EqExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -742,6 +870,9 @@ public:
 };
 
 class NeqExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit NeqExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -750,6 +881,9 @@ public:
 };
 
 class ConsLeftExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit ConsLeftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -758,6 +892,9 @@ public:
 };
 
 class ConsRightExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit ConsRightExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -766,6 +903,9 @@ public:
 };
 
 class JoinExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit JoinExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -774,6 +914,9 @@ public:
 };
 
 class BitwiseAndExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit BitwiseAndExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -782,6 +925,9 @@ public:
 };
 
 class BitwiseXorExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit BitwiseXorExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -790,6 +936,9 @@ public:
 };
 
 class BitwiseOrExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit BitwiseOrExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -798,6 +947,9 @@ public:
 };
 
 class LogicalAndExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit LogicalAndExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -806,6 +958,9 @@ public:
 };
 
 class LogicalOrExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit LogicalOrExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -814,6 +969,9 @@ public:
 };
 
 class InExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit InExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
@@ -822,6 +980,9 @@ public:
 };
 
 class LetExpr final : public ScopedNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<AliasExpr *> aliases;
   ExprNode *expr;
@@ -834,6 +995,9 @@ public:
 };
 
 class MainNode final : public ScopedNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   AstNode *node;
 
@@ -845,6 +1009,9 @@ public:
 };
 
 class IfExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *condition;
   ExprNode *thenExpr;
@@ -858,6 +1025,9 @@ public:
 };
 
 class ApplyExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   CallExpr *call;
   vector<variant<ExprNode *, ValueExpr *>> args;
@@ -870,6 +1040,9 @@ public:
 };
 
 class DoExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<ExprNode *> steps;
 
@@ -881,6 +1054,9 @@ public:
 };
 
 class ImportExpr final : public ScopedNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<ImportClauseExpr *> clauses;
   ExprNode *expr;
@@ -893,6 +1069,9 @@ public:
 };
 
 class RaiseExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   SymbolExpr *symbol;
   StringExpr *message;
@@ -905,12 +1084,16 @@ public:
 };
 
 class WithExpr final : public ScopedNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
+  bool daemon;
   ExprNode *contextExpr;
   NameExpr *name;
   ExprNode *bodyExpr;
 
-  explicit WithExpr(SourceContext token, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr);
+  explicit WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr);
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_WITH_EXPR; };
@@ -918,6 +1101,9 @@ public:
 };
 
 class FieldAccessExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierExpr *identifier;
   NameExpr *name;
@@ -930,6 +1116,9 @@ public:
 };
 
 class FieldUpdateExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierExpr *identifier;
   vector<pair<NameExpr *, ExprNode *>> updates;
@@ -942,6 +1131,9 @@ public:
 };
 
 class LambdaAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
   FunctionExpr *lambda;
@@ -954,6 +1146,9 @@ public:
 };
 
 class ModuleAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
   ModuleExpr *module;
@@ -966,6 +1161,9 @@ public:
 };
 
 class ValueAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierExpr *identifier;
   ExprNode *expr;
@@ -978,6 +1176,9 @@ public:
 };
 
 class PatternAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   PatternNode *pattern;
   ExprNode *expr;
@@ -990,6 +1191,9 @@ public:
 };
 
 class FqnAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
   FqnExpr *fqn;
@@ -1002,6 +1206,9 @@ public:
 };
 
 class FunctionAlias final : public AliasExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
   NameExpr *alias;
@@ -1014,6 +1221,9 @@ public:
 };
 
 class AliasCall final : public CallExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *alias;
   NameExpr *funName;
@@ -1026,6 +1236,9 @@ public:
 };
 
 class NameCall final : public CallExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
 
@@ -1037,6 +1250,9 @@ public:
 };
 
 class ModuleCall final : public CallExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   variant<FqnExpr *, ExprNode *> fqn;
   NameExpr *funName;
@@ -1049,6 +1265,9 @@ public:
 };
 
 class ModuleImport final : public ImportClauseExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   FqnExpr *fqn;
   NameExpr *name;
@@ -1061,6 +1280,9 @@ public:
 };
 
 class FunctionsImport final : public ImportClauseExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<FunctionAlias *> aliases;
   FqnExpr *fromFqn;
@@ -1073,6 +1295,9 @@ public:
 };
 
 class SeqGeneratorExpr final : public GeneratorExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *reducerExpr;
   CollectionExtractorExpr *collectionExtractor;
@@ -1086,6 +1311,9 @@ public:
 };
 
 class SetGeneratorExpr final : public GeneratorExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *reducerExpr;
   CollectionExtractorExpr *collectionExtractor;
@@ -1099,6 +1327,9 @@ public:
 };
 
 class DictGeneratorReducer final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *key;
   ExprNode *value;
@@ -1111,6 +1342,9 @@ public:
 };
 
 class DictGeneratorExpr final : public GeneratorExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   DictGeneratorReducer *reducerExpr;
   CollectionExtractorExpr *collectionExtractor;
@@ -1125,6 +1359,9 @@ public:
 };
 
 class UnderscorePattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   explicit UnderscorePattern(SourceContext token) : PatternNode(token) {}
   any accept(const AstVisitor &visitor) override;
@@ -1135,6 +1372,9 @@ public:
 using IdentifierOrUnderscore = variant<IdentifierExpr *, UnderscoreNode *>;
 
 class ValueCollectionExtractorExpr final : public CollectionExtractorExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierOrUnderscore expr;
 
@@ -1147,6 +1387,9 @@ public:
 };
 
 class KeyValueCollectionExtractorExpr final : public CollectionExtractorExpr {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierOrUnderscore keyExpr;
   IdentifierOrUnderscore valueExpr;
@@ -1170,6 +1413,9 @@ using TailPattern = PatternNode;            // variant<IdentifierExpr, SequenceE
                                             // UnderscoreNode, StringExpr>;
 
 class PatternWithGuards final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *guard;
   ExprNode *expr;
@@ -1182,6 +1428,9 @@ public:
 };
 
 class PatternWithoutGuards final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *expr;
 
@@ -1193,6 +1442,9 @@ public:
 };
 
 class PatternExpr : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   variant<Pattern *, PatternWithoutGuards *, vector<PatternWithGuards *>> patternExpr;
 
@@ -1204,6 +1456,9 @@ public:
 };
 
 class CatchPatternExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   Pattern *matchPattern;
   variant<PatternWithoutGuards *, vector<PatternWithGuards *>> pattern;
@@ -1216,6 +1471,9 @@ public:
 };
 
 class CatchExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<CatchPatternExpr *> patterns;
 
@@ -1227,6 +1485,9 @@ public:
 };
 
 class TryCatchExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *tryExpr;
   CatchExpr *catchExpr;
@@ -1239,6 +1500,9 @@ public:
 };
 
 class PatternValue final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   variant<LiteralExpr<nullptr_t> *, LiteralExpr<void *> *, SymbolExpr *, IdentifierExpr *> expr;
 
@@ -1250,6 +1514,9 @@ public:
 };
 
 class AsDataStructurePattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   IdentifierExpr *identifier;
   DataStructurePattern *pattern;
@@ -1262,6 +1529,9 @@ public:
 };
 
 class TuplePattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<Pattern *> patterns;
 
@@ -1273,6 +1543,9 @@ public:
 };
 
 class SeqPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<Pattern *> patterns;
 
@@ -1284,6 +1557,9 @@ public:
 };
 
 class HeadTailsPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<PatternWithoutSequence *> heads;
   TailPattern *tail;
@@ -1296,6 +1572,9 @@ public:
 };
 
 class TailsHeadPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   TailPattern *tail;
   vector<PatternWithoutSequence *> heads;
@@ -1308,6 +1587,9 @@ public:
 };
 
 class HeadTailsHeadPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<PatternWithoutSequence *> left;
   TailPattern *tail;
@@ -1322,6 +1604,9 @@ public:
 };
 
 class DictPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   vector<pair<PatternValue *, Pattern *>> keyValuePairs;
 
@@ -1333,6 +1618,9 @@ public:
 };
 
 class RecordPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   const string recordType;
   vector<pair<NameExpr *, Pattern *>> items;
@@ -1345,6 +1633,9 @@ public:
 };
 
 class CaseExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   ExprNode *expr;
   vector<PatternExpr *> patterns;
@@ -1364,6 +1655,9 @@ public:
 };
 
 class BuiltinTypeNode final : public TypeNameNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   BuiltinType type;
 
@@ -1373,6 +1667,9 @@ public:
 };
 
 class UserDefinedTypeNode final : public TypeNameNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *name;
 
@@ -1383,6 +1680,9 @@ public:
 };
 
 class TypeDeclaration final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   TypeNameNode *name;
   vector<NameExpr *> typeVars;
@@ -1395,6 +1695,9 @@ public:
 };
 
 class TypeDefinition final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   TypeNameNode *name;
   vector<TypeNameNode *> typeNames;
@@ -1407,6 +1710,9 @@ public:
 };
 
 class TypeNode final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   TypeDeclaration *declaration;
   vector<TypeDeclaration *> definitions;
@@ -1419,6 +1725,9 @@ public:
 };
 
 class TypeInstance final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   TypeNameNode *name;
   vector<ExprNode *> exprs;
@@ -1431,6 +1740,9 @@ public:
 };
 
 class FunctionDeclaration final : public AstNode {
+private:
+  void print(std::ostream &os) const override;
+
 public:
   NameExpr *functionName;
   vector<TypeDefinition *> typeDefinitions;

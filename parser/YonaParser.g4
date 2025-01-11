@@ -287,7 +287,11 @@ builtInTypeName
   | KW_FLOAT128
   | KW_CHAR
   | KW_STRING
-  | KW_SYMBOL;
+  | KW_SYMBOL
+  | KW_DICT
+  | KW_SEQ
+  | KW_SET
+  | KW_VAR;
 
 type
   : KW_TYPE declaration = typeDecl OP_ASSIGN typeDecl (

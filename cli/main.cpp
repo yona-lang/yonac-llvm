@@ -43,10 +43,10 @@ static void validate(boost::any &v, vector<string> const &tokens, search_paths *
   search_paths *p = boost::any_cast<search_paths>(&v);
   BOOST_ASSERT(p);
 
-  const boost::char_separator sep(PATH_SEPARATOR);
+  const boost::char_separator<char> sep(PATH_SEPARATOR);
   for (string const &t : tokens) {
     // tokenize values and push them back onto p->values
-    boost::tokenizer tok(t, sep);
+    boost::tokenizer<boost::char_separator<char>> tok(t, sep);
     ranges::copy(tok, back_inserter(p->values));
   }
 }
@@ -69,6 +69,7 @@ vector<string> process_program_options(const int argc, const char *const argv[])
   bool compile;
   search_paths sp;
   path mp;
+  string main_fun_name;
 
   po::options_description desc("Allowed options");
   desc.add_options()("help", "Show brief usage message");
@@ -77,6 +78,7 @@ vector<string> process_program_options(const int argc, const char *const argv[])
                      "Input module file (lookup-able in YONA_PATH, separated "
                      "by system specific path separator, "
                      "without .yona extension)");
+  desc.add_options()("function", po::value<string>(&main_fun_name)->default_value("run"), "Main function FQN");
 
   po::options_description desc_env;
   desc_env.add_options()("yona-path", po::value<search_paths>(&sp)->multitoken(), "Yona search paths (colon-separated list)");
@@ -97,6 +99,7 @@ vector<string> process_program_options(const int argc, const char *const argv[])
   po::notify(env_args);
 
   yona::YONA_ENVIRONMENT.search_paths = sp.values;
+  yona::YONA_ENVIRONMENT.main_fun_name = main_fun_name;
 
   if (args.contains("help")) {
     BOOST_LOG_TRIVIAL(info) << desc;
@@ -140,6 +143,7 @@ int main(const int argc, const char *argv[]) {
     interp::Interpreter interpreter;
 
     auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
+    BOOST_LOG_TRIVIAL(info) << *optimized_ast;
     auto result = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
 
     BOOST_LOG_TRIVIAL(info) << ANSI_COLOR_BOLD_GREEN << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl << *result;

@@ -1,6 +1,9 @@
-module Test exports fun as
+module Test exports main as
 
 fun :: () -> Int
 fun = let test = 3+5 in test
+
+main :: Seq String -> Int
+main args = fun
 
 end

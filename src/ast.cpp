@@ -1,13 +1,9 @@
 #include "ast.h"
 
-#include "runtime.h"
-
 #include <boost/algorithm/string/join.hpp>
 #include <variant>
 
 #include "utils.h"
-
-#include <llvm/IR/Module.h>
 
 namespace yona::ast {
 
@@ -79,8 +75,12 @@ any ImportClauseExpr::accept(const AstVisitor &visitor) { return ExprNode::accep
 any GeneratorExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
 any CollectionExtractorExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
+
 any SequenceExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
+
 any FunctionBody::accept(const AstVisitor &visitor) { return AstNode::accept(visitor); }
+
+void NameExpr::print(std::ostream &os) const { os << value; }
 
 IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr *name) : ValueExpr(token), name(name->with_parent<NameExpr>(this)) {}
 
@@ -89,6 +89,8 @@ any IdentifierExpr::accept(const AstVisitor &visitor) { return visitor.visit(thi
 Type IdentifierExpr::infer_type(AstContext &ctx) const { return nullptr; }
 
 IdentifierExpr::~IdentifierExpr() { delete name; }
+
+void IdentifierExpr::print(std::ostream &os) const { os << *name; }
 
 RecordNode::RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers)
     : AstNode(token), recordType(recordType->with_parent<NameExpr>(this)), identifiers(nodes_with_parent(std::move(identifiers), this)) {}
@@ -107,11 +109,25 @@ RecordNode::~RecordNode() {
   }
 }
 
+void RecordNode::print(std::ostream &os) const {
+  os << recordType << '(';
+  size_t i = 0;
+  for (const auto [ident, type_def] : identifiers) {
+    os << *ident << ':' << *type_def;
+    if (i++ < identifiers.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ')';
+}
+
 TrueLiteralExpr::TrueLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, true) {}
 
 any TrueLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type TrueLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
+
+void TrueLiteralExpr::print(std::ostream &os) const { os << "true"; }
 
 FalseLiteralExpr::FalseLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, false) {}
 
@@ -119,11 +135,15 @@ any FalseLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(t
 
 Type FalseLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
 
+void FalseLiteralExpr::print(std::ostream &os) const { os << "false"; }
+
 FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float>(token, value) {}
 
 any FloatExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type FloatExpr::infer_type(AstContext &ctx) const { return Float32; }
+
+void FloatExpr::print(std::ostream &os) const { os << value; }
 
 IntegerExpr::IntegerExpr(SourceContext token, const int value) : LiteralExpr<int>(token, value) {}
 
@@ -131,9 +151,13 @@ any IntegerExpr::accept(const AstVisitor &visitor) { return visitor.visit(this);
 
 Type IntegerExpr::infer_type(AstContext &ctx) const { return SignedInt32; }
 
+void IntegerExpr::print(std::ostream &os) const { os << value; }
+
 any ExprNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 any PatternNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+void UnderscoreNode::print(std::ostream &os) const { os << "_"; }
 
 any UnderscoreNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -147,11 +171,15 @@ any ByteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type ByteExpr::infer_type(AstContext &ctx) const { return Byte; }
 
+void ByteExpr::print(std::ostream &os) const { os << value; }
+
 StringExpr::StringExpr(SourceContext token, string value) : LiteralExpr<string>(token, std::move(value)) {}
 
 any StringExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type StringExpr::infer_type(AstContext &ctx) const { return String; }
+
+void StringExpr::print(std::ostream &os) const { os << value; }
 
 CharacterExpr::CharacterExpr(SourceContext token, const wchar_t value) : LiteralExpr<wchar_t>(token, value) {}
 
@@ -159,11 +187,17 @@ any CharacterExpr::accept(const AstVisitor &visitor) { return visitor.visit(this
 
 Type CharacterExpr::infer_type(AstContext &ctx) const { return Char; }
 
+void CharacterExpr::print(std::ostream &os) const {
+  os << (char)value; // TODO
+}
+
 UnitExpr::UnitExpr(SourceContext token) : LiteralExpr<nullptr_t>(token, nullptr) {}
 
 any UnitExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type UnitExpr::infer_type(AstContext &ctx) const { return Unit; }
+
+void UnitExpr::print(std::ostream &os) const { os << "()"; }
 
 TupleExpr::TupleExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(std::move(values), this)) {}
 
@@ -178,6 +212,17 @@ Type TupleExpr::infer_type(AstContext &ctx) const {
 TupleExpr::~TupleExpr() {
   for (const auto p : values)
     delete p;
+}
+
+void TupleExpr::print(std::ostream &os) const {
+  os << '(';
+  for (size_t i = 0; i < values.size(); i++) {
+    os << *values[i];
+    if (i < values.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ')';
 }
 
 DictExpr::DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> values)
@@ -207,6 +252,17 @@ DictExpr::~DictExpr() {
   }
 }
 
+void DictExpr::print(std::ostream &os) const {
+  os << '{';
+  for (size_t i = 0; i < values.size(); i++) {
+    os << values[i].first << ": " << values[i].second;
+    if (i < values.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << '}';
+}
+
 ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, vector<ExprNode *> values)
     : SequenceExpr(token), values(nodes_with_parent(std::move(values), this)) {}
 
@@ -226,6 +282,17 @@ Type ValuesSequenceExpr::infer_type(AstContext &ctx) const {
 ValuesSequenceExpr::~ValuesSequenceExpr() {
   for (const auto p : values)
     delete p;
+}
+
+void ValuesSequenceExpr::print(std::ostream &os) const {
+  os << '[';
+  for (size_t i = 0; i < values.size(); i++) {
+    os << values[i];
+    if (i < values.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ']';
 }
 
 RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode *start, ExprNode *end, ExprNode *step)
@@ -260,6 +327,14 @@ RangeSequenceExpr::~RangeSequenceExpr() {
   delete step;
 }
 
+void RangeSequenceExpr::print(std::ostream &os) const {
+  os << '[';
+  if (step) {
+    os << *step << ", ";
+  }
+  os << *start << ".." << *end << ']';
+}
+
 SetExpr::SetExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(std::move(values), this)) {}
 
 any SetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -280,11 +355,24 @@ SetExpr::~SetExpr() {
     delete p;
 }
 
+void SetExpr::print(std::ostream &os) const {
+  os << '{';
+  for (size_t i = 0; i < values.size(); i++) {
+    os << *values[i];
+    if (i < values.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << '}';
+}
+
 SymbolExpr::SymbolExpr(SourceContext token, string value) : ValueExpr(token), value(std::move(value)) {}
 
 any SymbolExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type SymbolExpr::infer_type(AstContext &ctx) const { return Symbol; }
+
+void SymbolExpr::print(std::ostream &os) const { os << ':' << value; }
 
 PackageNameExpr::PackageNameExpr(SourceContext token, vector<NameExpr *> parts)
     : ValueExpr(token), parts(nodes_with_parent(std::move(parts), this)) {}
@@ -308,6 +396,8 @@ string PackageNameExpr::to_string() const {
   return boost::algorithm::join(names, PACKAGE_DELIMITER);
 }
 
+void PackageNameExpr::print(std::ostream &os) const { os << to_string(); }
+
 FqnExpr::FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, NameExpr *moduleName)
     : ValueExpr(token), packageName(node_with_parent<PackageNameExpr>(packageName, this)), moduleName(moduleName->with_parent<NameExpr>(this)) {}
 
@@ -324,6 +414,8 @@ FqnExpr::~FqnExpr() {
 string FqnExpr::to_string() const {
   return packageName.transform([](auto val) { return val->to_string(); }).value_or("") + PACKAGE_DELIMITER + moduleName->value;
 }
+
+void FqnExpr::print(std::ostream &os) const { os << to_string(); }
 
 FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies)
     : ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(std::move(patterns), this)),
@@ -345,6 +437,20 @@ FunctionExpr::~FunctionExpr() {
     delete p;
 }
 
+void FunctionExpr::print(std::ostream &os) const {
+  os << name << " ";
+  size_t i = 0;
+  for (const auto p : patterns) {
+    os << *p;
+    if (i < patterns.size() - 1) {
+      os << ' ';
+    }
+  }
+  for (const auto p : bodies) {
+    os << *p << endl;
+  }
+}
+
 BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr)
     : FunctionBody(token), guard(guard->with_parent<ExprNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
@@ -357,6 +463,9 @@ Type BodyWithGuards::infer_type(AstContext &ctx) const {
 
   return expr->infer_type(ctx);
 }
+
+void BodyWithGuards::print(std::ostream &os) const { os << " | " << *guard << " = " << *expr; }
+
 BodyWithGuards::~BodyWithGuards() {
   delete guard;
   delete expr;
@@ -369,6 +478,8 @@ any BodyWithoutGuards::accept(const AstVisitor &visitor) { return visitor.visit(
 Type BodyWithoutGuards::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
 
 BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
+
+void BodyWithoutGuards::print(std::ostream &os) const { os << " = " << *expr; }
 
 ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
                        const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations)
@@ -394,6 +505,33 @@ ModuleExpr::~ModuleExpr() {
     delete p;
 }
 
+void ModuleExpr::print(std::ostream &os) const {
+  os << "module " << *fqn << " exports ";
+
+  for (size_t i = 0; i < exports.size(); i++) {
+    os << exports[i];
+    if (i < exports.size() - 1) {
+      os << ", ";
+    }
+  }
+
+  os << " as" << endl;
+
+  for (const auto p : records) {
+    os << *p << endl;
+  }
+
+  for (const auto p : functionDeclarations) {
+    os << *p << endl;
+  }
+
+  for (const auto p : functions) {
+    os << *p << endl;
+  }
+
+  os << "end";
+}
+
 RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items)
     : ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(std::move(items), this)) {}
 
@@ -417,6 +555,19 @@ RecordInstanceExpr::~RecordInstanceExpr() {
   }
 }
 
+void RecordInstanceExpr::print(std::ostream &os) const {
+  os << *recordType << '(';
+
+  for (size_t i = 0; i < items.size(); i++) {
+    os << *items[i].first << " = " << *items[i].second;
+    if (i < items.size() - 1) {
+      os << ", ";
+    }
+  }
+
+  os << ')';
+}
+
 LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
 
 any LogicalNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -430,6 +581,8 @@ Type LogicalNotOpExpr::infer_type(AstContext &ctx) const {
 }
 
 LogicalNotOpExpr::~LogicalNotOpExpr() { delete expr; }
+
+void LogicalNotOpExpr::print(std::ostream &os) const { os << '!' << *expr; }
 
 BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
 
@@ -445,11 +598,15 @@ Type BinaryNotOpExpr::infer_type(AstContext &ctx) const {
 
 BinaryNotOpExpr::~BinaryNotOpExpr() { delete expr; }
 
+void BinaryNotOpExpr::print(std::ostream &os) const { os << '~' << *expr; }
+
 PowerExpr::PowerExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any PowerExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type PowerExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
+void PowerExpr::print(std::ostream &os) const { os << *left << "**" << *right; }
 
 MultiplyExpr::MultiplyExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -457,11 +614,15 @@ any MultiplyExpr::accept(const AstVisitor &visitor) { return visitor.visit(this)
 
 Type MultiplyExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
+void MultiplyExpr::print(std::ostream &os) const { os << *left << "*" << *right; }
+
 DivideExpr::DivideExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any DivideExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type DivideExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
+void DivideExpr::print(std::ostream &os) const { os << *left << "/" << *right; }
 
 ModuloExpr::ModuloExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -469,17 +630,23 @@ any ModuloExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); 
 
 Type ModuloExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
+void ModuloExpr::print(std::ostream &os) const { os << *left << "%" << *right; }
+
 AddExpr::AddExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any AddExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type AddExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
 
+void AddExpr::print(std::ostream &os) const { os << *left << "+" << *right; }
+
 SubtractExpr::SubtractExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any SubtractExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type SubtractExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
+void SubtractExpr::print(std::ostream &os) const { os << *left << "-" << *right; }
 
 LeftShiftExpr::LeftShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -500,6 +667,8 @@ Type LeftShiftExpr::infer_type(AstContext &ctx) const {
   return derive_bin_op_result_type(lhs, rhs);
 }
 
+void LeftShiftExpr::print(std::ostream &os) const { os << *left << "<<" << *right; }
+
 RightShiftExpr::RightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any RightShiftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -518,6 +687,8 @@ Type RightShiftExpr::infer_type(AstContext &ctx) const {
 
   return derive_bin_op_result_type(lhs, rhs);
 }
+
+void RightShiftExpr::print(std::ostream &os) const { os << *left << ">>" << *right; }
 
 ZerofillRightShiftExpr::ZerofillRightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -538,11 +709,15 @@ Type ZerofillRightShiftExpr::infer_type(AstContext &ctx) const {
   return derive_bin_op_result_type(lhs, rhs);
 }
 
+void ZerofillRightShiftExpr::print(std::ostream &os) const { os << *left << ">>>" << *right; }
+
 GteExpr::GteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any GteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type GteExpr::infer_type(AstContext &ctx) const { return Bool; }
+
+void GteExpr::print(std::ostream &os) const { os << *left << ">=" << *right; }
 
 LteExpr::LteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -550,11 +725,15 @@ any LteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type LteExpr::infer_type(AstContext &ctx) const { return Bool; }
 
+void LteExpr::print(std::ostream &os) const { os << *left << "<=" << *right; }
+
 GtExpr::GtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any GtExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type GtExpr::infer_type(AstContext &ctx) const { return Bool; }
+
+void GtExpr::print(std::ostream &os) const { os << *left << ">" << *right; }
 
 LtExpr::LtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -562,11 +741,15 @@ any LtExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type LtExpr::infer_type(AstContext &ctx) const { return Bool; }
 
+void LtExpr::print(std::ostream &os) const { os << *left << "<" << *right; }
+
 EqExpr::EqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any EqExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type EqExpr::infer_type(AstContext &ctx) const { return Bool; }
+
+void EqExpr::print(std::ostream &os) const { os << *left << "==" << *right; }
 
 NeqExpr::NeqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -574,17 +757,23 @@ any NeqExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type NeqExpr::infer_type(AstContext &ctx) const { return Bool; }
 
+void NeqExpr::print(std::ostream &os) const { os << *left << "!=" << *right; }
+
 ConsLeftExpr::ConsLeftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any ConsLeftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type ConsLeftExpr::infer_type(AstContext &ctx) const { return Bool; }
 
+void ConsLeftExpr::print(std::ostream &os) const { os << *left << "-|" << *right; }
+
 ConsRightExpr::ConsRightExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any ConsRightExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type ConsRightExpr::infer_type(AstContext &ctx) const { return Bool; }
+
+void ConsRightExpr::print(std::ostream &os) const { os << *left << "|-" << *right; }
 
 JoinExpr::JoinExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -611,6 +800,8 @@ Type JoinExpr::infer_type(AstContext &ctx) const {
   return lhs;
 }
 
+void JoinExpr::print(std::ostream &os) const { os << *left << "++" << *right; }
+
 BitwiseAndExpr::BitwiseAndExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any BitwiseAndExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -629,6 +820,8 @@ Type BitwiseAndExpr::infer_type(AstContext &ctx) const {
 
   return derive_bin_op_result_type(lhs, rhs);
 }
+
+void BitwiseAndExpr::print(std::ostream &os) const { os << *left << "&" << *right; }
 
 BitwiseXorExpr::BitwiseXorExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -649,6 +842,8 @@ Type BitwiseXorExpr::infer_type(AstContext &ctx) const {
   return Bool;
 }
 
+void BitwiseXorExpr::print(std::ostream &os) const { os << *left << "^" << *right; }
+
 BitwiseOrExpr::BitwiseOrExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any BitwiseOrExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -667,6 +862,8 @@ Type BitwiseOrExpr::infer_type(AstContext &ctx) const {
 
   return Bool;
 }
+
+void BitwiseOrExpr::print(std::ostream &os) const { os << *left << "|" << *right; }
 
 LogicalAndExpr::LogicalAndExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
@@ -687,6 +884,8 @@ Type LogicalAndExpr::infer_type(AstContext &ctx) const {
   return Bool;
 }
 
+void LogicalAndExpr::print(std::ostream &os) const { os << *left << "&&" << *right; }
+
 LogicalOrExpr::LogicalOrExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any LogicalOrExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -706,6 +905,8 @@ Type LogicalOrExpr::infer_type(AstContext &ctx) const {
   return Bool;
 }
 
+void LogicalOrExpr::print(std::ostream &os) const { os << *left << "||" << *right; }
+
 InExpr::InExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
 any InExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -720,6 +921,8 @@ Type InExpr::infer_type(AstContext &ctx) const {
   return Bool;
 }
 
+void InExpr::print(std::ostream &os) const { os << *left << " in " << *right; }
+
 LetExpr::LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr)
     : ScopedNode(token), aliases(nodes_with_parent(std::move(aliases), this)), expr(expr->with_parent<ExprNode>(this)) {}
 
@@ -733,6 +936,14 @@ LetExpr::~LetExpr() {
   delete expr;
 }
 
+void LetExpr::print(std::ostream &os) const {
+  os << "let ";
+  for (const auto p : aliases) {
+    os << " " << *p << endl;
+  }
+  os << " in " << *expr;
+}
+
 MainNode::MainNode(SourceContext token, AstNode *node) : ScopedNode(token), node(node->with_parent<AstNode>(this)) {}
 
 any MainNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -740,6 +951,8 @@ any MainNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 Type MainNode::infer_type(AstContext &ctx) const { return node->infer_type(ctx); }
 
 MainNode::~MainNode() { delete node; }
+
+void MainNode::print(std::ostream &os) const { os << "main = " << *node; }
 
 IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, ExprNode *elseExpr)
     : ExprNode(token), condition(condition->with_parent<ExprNode>(this)), thenExpr(thenExpr->with_parent<ExprNode>(this)),
@@ -768,6 +981,13 @@ IfExpr::~IfExpr() {
   delete elseExpr;
 }
 
+void IfExpr::print(std::ostream &os) const {
+  os << "if " << *condition << " then " << *thenExpr;
+  if (elseExpr) {
+    os << " else " << *elseExpr;
+  }
+}
+
 ApplyExpr::ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args)
     : ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(std::move(args), this)) {}
 
@@ -788,6 +1008,21 @@ ApplyExpr::~ApplyExpr() {
   }
 }
 
+void ApplyExpr::print(std::ostream &os) const {
+  os << *call << ' ';
+  size_t i = 0;
+  for (const auto p : args) {
+    if (holds_alternative<ExprNode *>(p)) {
+      os << *get<ExprNode *>(p);
+    } else {
+      os << *get<ValueExpr *>(p);
+    }
+    if (i++ < args.size() - 1) {
+      os << " ";
+    }
+  }
+}
+
 DoExpr::DoExpr(SourceContext token, vector<ExprNode *> steps) : ExprNode(token), steps(steps) {}
 
 any DoExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -798,6 +1033,14 @@ DoExpr::~DoExpr() {
   for (const auto p : steps) {
     delete p;
   }
+}
+
+void DoExpr::print(std::ostream &os) const {
+  os << "do" << endl;
+  for (const auto p : steps) {
+    os << "  " << *p << endl;
+  }
+  os << "end";
 }
 
 ImportExpr::ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, ExprNode *expr)
@@ -814,6 +1057,15 @@ ImportExpr::~ImportExpr() {
   delete expr;
 }
 
+void ImportExpr::print(std::ostream &os) const {
+  os << "import" << endl;
+  for (const auto p : clauses) {
+    os << "  " << *p << endl;
+  }
+  os << "in" << endl;
+  os << "  " << *expr;
+}
+
 RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message)
     : ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this)) {}
 
@@ -828,8 +1080,10 @@ RaiseExpr::~RaiseExpr() {
   delete message;
 }
 
-WithExpr::WithExpr(SourceContext token, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr)
-    : ScopedNode(token), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(name->with_parent<NameExpr>(this)),
+void RaiseExpr::print(std::ostream &os) const { os << "raise " << *symbol << " " << *message; }
+
+WithExpr::WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr)
+    : ScopedNode(token), daemon(daemon), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(name->with_parent<NameExpr>(this)),
       bodyExpr(bodyExpr->with_parent<ExprNode>(this)) {}
 
 any WithExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -842,6 +1096,19 @@ WithExpr::~WithExpr() {
   delete bodyExpr;
 }
 
+void WithExpr::print(std::ostream &os) const {
+  os << "with ";
+  if (daemon) {
+    os << "daemon ";
+  }
+  os << *contextExpr;
+  if (name) {
+    os << " as " << *name;
+  }
+  os << endl << *bodyExpr << endl;
+  os << "end";
+}
+
 FieldAccessExpr::FieldAccessExpr(SourceContext token, IdentifierExpr *identifier, NameExpr *name)
     : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
 
@@ -851,13 +1118,15 @@ Type FieldAccessExpr::infer_type(AstContext &ctx) const {
   return nullptr; // TODO
 }
 
-FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates)
-    : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), updates(nodes_with_parent(std::move(updates), this)) {}
-
 FieldAccessExpr::~FieldAccessExpr() {
   delete identifier;
   delete name;
 }
+
+void FieldAccessExpr::print(std::ostream &os) const { os << *identifier << '.' << *name; }
+
+FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates)
+    : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), updates(nodes_with_parent(std::move(updates), this)) {}
 
 any FieldUpdateExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -873,6 +1142,18 @@ FieldUpdateExpr::~FieldUpdateExpr() {
   }
 }
 
+void FieldUpdateExpr::print(std::ostream &os) const {
+  os << *identifier << "(";
+  size_t i = 0;
+  for (const auto [fst, snd] : updates) {
+    os << *fst << " = " << *snd;
+    if (i++ < updates.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ")";
+}
+
 LambdaAlias::LambdaAlias(SourceContext token, NameExpr *name, FunctionExpr *lambda)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), lambda(lambda->with_parent<FunctionExpr>(this)) {}
 
@@ -884,6 +1165,8 @@ LambdaAlias::~LambdaAlias() {
   delete name;
   delete lambda;
 }
+
+void LambdaAlias::print(std::ostream &os) const { os << *name << " = " << *lambda; }
 
 ModuleAlias::ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this)) {}
@@ -897,6 +1180,8 @@ ModuleAlias::~ModuleAlias() {
   delete module;
 }
 
+void ModuleAlias::print(std::ostream &os) const { os << *name << " = " << *module; }
+
 ValueAlias::ValueAlias(SourceContext token, IdentifierExpr *identifier, ExprNode *expr)
     : AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
@@ -908,6 +1193,8 @@ ValueAlias::~ValueAlias() {
   delete identifier;
   delete expr;
 }
+
+void ValueAlias::print(std::ostream &os) const { os << *identifier << " = " << *expr; }
 
 PatternAlias::PatternAlias(SourceContext token, PatternNode *pattern, ExprNode *expr)
     : AliasExpr(token), pattern(pattern->with_parent<PatternNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
@@ -921,6 +1208,8 @@ PatternAlias::~PatternAlias() {
   delete expr;
 }
 
+void PatternAlias::print(std::ostream &os) const { os << *pattern << " = " << *expr; }
+
 FqnAlias::FqnAlias(SourceContext token, NameExpr *name, FqnExpr *fqn)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), fqn(fqn->with_parent<FqnExpr>(this)) {}
 
@@ -933,6 +1222,8 @@ FqnAlias::~FqnAlias() {
   delete fqn;
 }
 
+void FqnAlias::print(std::ostream &os) const { os << *name << " = " << *fqn; }
+
 FunctionAlias::FunctionAlias(SourceContext token, NameExpr *name, NameExpr *alias)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias->with_parent<NameExpr>(this)) {}
 
@@ -944,6 +1235,8 @@ FunctionAlias::~FunctionAlias() {
   delete name;
   delete alias;
 }
+
+void FunctionAlias::print(std::ostream &os) const { os << *name << " = " << *alias; }
 
 AliasCall::AliasCall(SourceContext token, NameExpr *alias, NameExpr *funName)
     : CallExpr(token), alias(alias->with_parent<NameExpr>(this)), funName(funName->with_parent<NameExpr>(this)) {}
@@ -959,6 +1252,8 @@ AliasCall::~AliasCall() {
   delete funName;
 }
 
+void AliasCall::print(std::ostream &os) const { os << *alias << "::" << *funName; }
+
 NameCall::NameCall(SourceContext token, NameExpr *name) : CallExpr(token), name(name->with_parent<NameExpr>(this)) {}
 
 any NameCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -968,6 +1263,8 @@ Type NameCall::infer_type(AstContext &ctx) const {
 }
 
 NameCall::~NameCall() { delete name; }
+
+void NameCall::print(std::ostream &os) const { os << *name; }
 
 ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr *, ExprNode *> &fqn, NameExpr *funName)
     : CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this)) {}
@@ -987,6 +1284,15 @@ ModuleCall::~ModuleCall() {
   delete funName;
 }
 
+void ModuleCall::print(std::ostream &os) const {
+  if (holds_alternative<FqnExpr *>(fqn)) {
+    os << *get<FqnExpr *>(fqn);
+  } else {
+    os << *get<ExprNode *>(fqn);
+  }
+  os << "::" << *funName;
+}
+
 ModuleImport::ModuleImport(SourceContext token, FqnExpr *fqn, NameExpr *name)
     : ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
 
@@ -999,6 +1305,13 @@ Type ModuleImport::infer_type(AstContext &ctx) const {
 ModuleImport::~ModuleImport() {
   delete fqn;
   delete name;
+}
+
+void ModuleImport::print(std::ostream &os) const {
+  os << *fqn;
+  if (name) {
+    os << " as " << *name;
+  }
 }
 
 FunctionsImport::FunctionsImport(SourceContext token, vector<FunctionAlias *> aliases, FqnExpr *fromFqn)
@@ -1015,6 +1328,17 @@ FunctionsImport::~FunctionsImport() {
     delete p;
   }
   delete fromFqn;
+}
+
+void FunctionsImport::print(std::ostream &os) const {
+  size_t i = 0;
+  for (const auto p : aliases) {
+    os << *p;
+    if (i++ < aliases.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << " from " << *fromFqn;
 }
 
 SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression)
@@ -1034,6 +1358,10 @@ SeqGeneratorExpr::~SeqGeneratorExpr() {
   delete stepExpression;
 }
 
+void SeqGeneratorExpr::print(std::ostream &os) const {
+  os << "[" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "]";
+}
+
 SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression)
     : GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
@@ -1051,6 +1379,10 @@ SetGeneratorExpr::~SetGeneratorExpr() {
   delete stepExpression;
 }
 
+void SetGeneratorExpr::print(std::ostream &os) const {
+  os << "{" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "}";
+}
+
 DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode *key, ExprNode *value)
     : ExprNode(token), key(key->with_parent<ExprNode>(this)), value(value->with_parent<ExprNode>(this)) {}
 
@@ -1062,6 +1394,8 @@ DictGeneratorReducer::~DictGeneratorReducer() {
   delete key;
   delete value;
 }
+
+void DictGeneratorReducer::print(std::ostream &os) const { os << *key << " = " << *value; }
 
 DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer *reducerExpr, CollectionExtractorExpr *collectionExtractor,
                                      ExprNode *stepExpression)
@@ -1079,6 +1413,10 @@ DictGeneratorExpr::~DictGeneratorExpr() {
   delete reducerExpr;
   delete collectionExtractor;
   delete stepExpression;
+}
+
+void DictGeneratorExpr::print(std::ostream &os) const {
+  os << "{" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "}";
 }
 
 ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore identifier_or_underscore)
@@ -1106,6 +1444,14 @@ void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
 
 ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() { release_identifier_or_underscore(expr); }
 
+void ValueCollectionExtractorExpr::print(std::ostream &os) const {
+  if (holds_alternative<IdentifierExpr *>(expr)) {
+    os << *get<IdentifierExpr *>(expr);
+  } else {
+    os << *get<UnderscoreNode *>(expr);
+  }
+}
+
 KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore keyExpr,
                                                                  const IdentifierOrUnderscore valueExpr)
     : CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)), valueExpr(node_with_parent(valueExpr, this)) {}
@@ -1117,6 +1463,20 @@ Type KeyValueCollectionExtractorExpr::infer_type(AstContext &ctx) const { unreac
 KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr() {
   release_identifier_or_underscore(keyExpr);
   release_identifier_or_underscore(valueExpr);
+}
+
+void KeyValueCollectionExtractorExpr::print(std::ostream &os) const {
+  if (holds_alternative<IdentifierExpr *>(keyExpr)) {
+    os << *get<IdentifierExpr *>(keyExpr);
+  } else {
+    os << *get<UnderscoreNode *>(keyExpr);
+  }
+  os << " = ";
+  if (holds_alternative<IdentifierExpr *>(valueExpr)) {
+    os << *get<IdentifierExpr *>(valueExpr);
+  } else {
+    os << *get<UnderscoreNode *>(valueExpr);
+  }
 }
 
 PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr)
@@ -1131,6 +1491,8 @@ PatternWithGuards::~PatternWithGuards() {
   delete expr;
 }
 
+void PatternWithGuards::print(std::ostream &os) const { os << *expr << " if " << *guard; }
+
 PatternWithoutGuards::PatternWithoutGuards(SourceContext token, ExprNode *expr) : PatternNode(token), expr(expr->with_parent<ExprNode>(this)) {}
 
 any PatternWithoutGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
@@ -1138,6 +1500,8 @@ any PatternWithoutGuards::accept(const AstVisitor &visitor) { return visitor.vis
 Type PatternWithoutGuards::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
 
 PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
+
+void PatternWithoutGuards::print(std::ostream &os) const { os << *expr; }
 
 PatternExpr::PatternExpr(SourceContext token, const variant<Pattern *, PatternWithoutGuards *, vector<PatternWithGuards *>> &patternExpr)
     : ExprNode(token), patternExpr(patternExpr) // TODO
@@ -1161,6 +1525,22 @@ PatternExpr::~PatternExpr() {
   } else {
     for (const auto p : get<vector<PatternWithGuards *>>(patternExpr)) {
       delete p;
+    }
+  }
+}
+
+void PatternExpr::print(std::ostream &os) const {
+  if (holds_alternative<Pattern *>(patternExpr)) {
+    os << *get<Pattern *>(patternExpr);
+  } else if (holds_alternative<PatternWithoutGuards *>(patternExpr)) {
+    os << *get<PatternWithoutGuards *>(patternExpr);
+  } else {
+    size_t i = 0;
+    for (const auto p : get<vector<PatternWithGuards *>>(patternExpr)) {
+      os << *p;
+      if (i++ < get<vector<PatternWithGuards *>>(patternExpr).size() - 1) {
+        os << endl;
+      }
     }
   }
 }
@@ -1190,6 +1570,21 @@ CatchPatternExpr::~CatchPatternExpr() {
   }
 }
 
+void CatchPatternExpr::print(std::ostream &os) const {
+  os << *matchPattern << " ";
+  if (holds_alternative<PatternWithoutGuards *>(pattern)) {
+    os << *get<PatternWithoutGuards *>(pattern);
+  } else {
+    size_t i = 0;
+    for (const auto p : get<vector<PatternWithGuards *>>(pattern)) {
+      os << *p;
+      if (i++ < get<vector<PatternWithGuards *>>(pattern).size() - 1) {
+        os << endl;
+      }
+    }
+  }
+}
+
 CatchExpr::CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns)
     : ExprNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
 
@@ -1200,6 +1595,16 @@ Type CatchExpr::infer_type(AstContext &ctx) const { return patterns.back()->infe
 CatchExpr::~CatchExpr() {
   for (const auto p : patterns) {
     delete p;
+  }
+}
+
+void CatchExpr::print(std::ostream &os) const {
+  size_t i = 0;
+  for (const auto p : patterns) {
+    os << *p;
+    if (i++ < patterns.size() - 1) {
+      os << endl;
+    }
   }
 }
 
@@ -1216,6 +1621,8 @@ TryCatchExpr::~TryCatchExpr() {
   delete tryExpr;
   delete catchExpr;
 }
+
+void TryCatchExpr::print(std::ostream &os) const { os << "try" << endl << "  " << *tryExpr << endl << "catch" << endl << "  " << *catchExpr << endl; }
 
 PatternValue::PatternValue(SourceContext token, const variant<LiteralExpr<nullptr_t> *, LiteralExpr<void *> *, SymbolExpr *, IdentifierExpr *> &expr)
     : PatternNode(token), expr(node_with_parent(expr, this)) {}
@@ -1234,6 +1641,18 @@ PatternValue::~PatternValue() {
   }
 }
 
+void PatternValue::print(std::ostream &os) const {
+  if (holds_alternative<LiteralExpr<nullptr_t> *>(expr)) {
+    os << *get<LiteralExpr<nullptr_t> *>(expr);
+  } else if (holds_alternative<LiteralExpr<void *> *>(expr)) {
+    os << *get<LiteralExpr<void *> *>(expr);
+  } else if (holds_alternative<SymbolExpr *>(expr)) {
+    os << *get<SymbolExpr *>(expr);
+  } else {
+    os << *get<IdentifierExpr *>(expr);
+  }
+}
+
 AsDataStructurePattern::AsDataStructurePattern(SourceContext token, IdentifierExpr *identifier, DataStructurePattern *pattern)
     : PatternNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), pattern(pattern->with_parent<DataStructurePattern>(this)) {}
 
@@ -1246,9 +1665,17 @@ AsDataStructurePattern::~AsDataStructurePattern() {
   delete pattern;
 }
 
+void AsDataStructurePattern::print(std::ostream &os) const {
+  os << *identifier << "@(" << *pattern << ")";
+}
+
 any UnderscorePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type UnderscorePattern::infer_type(AstContext &ctx) const { unreachable(); }
+
+void UnderscorePattern::print(std::ostream &os) const {
+  os << '_';
+}
 
 TuplePattern::TuplePattern(SourceContext token, vector<Pattern *> patterns)
     : PatternNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
@@ -1263,6 +1690,18 @@ TuplePattern::~TuplePattern() {
   }
 }
 
+void TuplePattern::print(std::ostream &os) const {
+  os << '(';
+  size_t i = 0;
+  for (const auto p : patterns) {
+    os << *p;
+    if (i++ < patterns.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ')';
+}
+
 SeqPattern::SeqPattern(SourceContext token, vector<Pattern *> patterns)
     : PatternNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
 
@@ -1274,6 +1713,18 @@ SeqPattern::~SeqPattern() {
   for (const auto p : patterns) {
     delete p;
   }
+}
+
+void SeqPattern::print(std::ostream &os) const {
+  os << '[';
+  size_t i = 0;
+  for (const auto p : patterns) {
+    os << *p;
+    if (i++ < patterns.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ']';
 }
 
 HeadTailsPattern::HeadTailsPattern(SourceContext token, vector<PatternWithoutSequence *> heads, TailPattern *tail)
@@ -1290,6 +1741,18 @@ HeadTailsPattern::~HeadTailsPattern() {
   delete tail;
 }
 
+void HeadTailsPattern::print(std::ostream &os) const {
+  size_t i = 0;
+  for (const auto p : heads) {
+    os << *p;
+    if (i++ < heads.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << " -| ";
+  os << *tail;
+}
+
 TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern *tail, vector<PatternWithoutSequence *> heads)
     : PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(std::move(heads), this)) {}
 
@@ -1301,6 +1764,18 @@ TailsHeadPattern::~TailsHeadPattern() {
   delete tail;
   for (const auto p : heads) {
     delete p;
+  }
+}
+
+void TailsHeadPattern::print(std::ostream &os) const {
+  os << *tail;
+  os << " |- ";
+  size_t i = 0;
+  for (const auto p : heads) {
+    os << *p;
+    if (i++ < heads.size() - 1) {
+      os << ", ";
+    }
   }
 }
 
@@ -1323,6 +1798,25 @@ HeadTailsHeadPattern::~HeadTailsHeadPattern() {
   }
 }
 
+void HeadTailsHeadPattern::print(std::ostream &os) const {
+  size_t i = 0;
+  for (const auto p : left) {
+    os << *p;
+    if (i++ < left.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << " -| " << tail << " |- ";
+  os << *tail;
+  i = 0;
+  for (const auto p : right) {
+    os << *p;
+    if (i++ < right.size() - 1) {
+      os << ", ";
+    }
+  }
+}
+
 DictPattern::DictPattern(SourceContext token, vector<pair<PatternValue *, Pattern *>> keyValuePairs)
     : PatternNode(token), keyValuePairs(nodes_with_parent(std::move(keyValuePairs), this)) {}
 
@@ -1337,8 +1831,20 @@ DictPattern::~DictPattern() {
   }
 }
 
+void DictPattern::print(std::ostream &os) const {
+  os << '{';
+  size_t i = 0;
+  for (const auto [fst, snd] : keyValuePairs) {
+    os << *fst << " = " << *snd;
+    if (i++ < keyValuePairs.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << '}';
+}
+
 RecordPattern::RecordPattern(SourceContext token, string recordType, vector<pair<NameExpr *, Pattern *>> items)
-    : PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(move(items), this)) {}
+    : PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(std::move(items), this)) {}
 
 any RecordPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1349,6 +1855,18 @@ RecordPattern::~RecordPattern() {
     delete fst;
     delete snd;
   }
+}
+
+void RecordPattern::print(std::ostream &os) const {
+  os << recordType << " (";
+  size_t i = 0;
+  for (const auto [fst, snd] : items) {
+    os << *fst << " = " << *snd;
+    if (i++ < items.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ')';
 }
 
 CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<PatternExpr *> patterns)
@@ -1371,7 +1889,18 @@ CaseExpr::~CaseExpr() {
   }
 }
 
+void CaseExpr::print(std::ostream &os) const {
+  os << "case " << *expr << " of" << endl;
+  for (const auto p : patterns) {
+    os << "  " << *p << endl;
+  }
+}
+
 any TypeNameNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+void BuiltinTypeNode::print(std::ostream &os) const{
+  os << BuiltinTypeStrings[type];
+}
 
 any BuiltinTypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1380,6 +1909,10 @@ UserDefinedTypeNode::UserDefinedTypeNode(SourceContext token, NameExpr *name) : 
 any UserDefinedTypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 UserDefinedTypeNode::~UserDefinedTypeNode() { delete name; }
+
+void UserDefinedTypeNode::print(std::ostream &os) const {
+  os << *name;
+}
 
 TypeDeclaration::TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars)
     : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeVars(nodes_with_parent(std::move(type_vars), this)) {}
@@ -1392,6 +1925,17 @@ TypeDeclaration::~TypeDeclaration() {
   delete name;
   for (const auto p : typeVars) {
     delete p;
+  }
+}
+
+void TypeDeclaration::print(std::ostream &os) const {
+  os << *name << " ";
+  size_t i = 0;
+  for (const auto p : typeVars) {
+    os << *p;
+    if (i++ < typeVars.size() - 1) {
+      os << " ";
+    }
   }
 }
 
@@ -1417,6 +1961,17 @@ TypeDefinition::~TypeDefinition() {
   }
 }
 
+void TypeDefinition::print(std::ostream &os) const {
+  os << *name << " ";
+  size_t i = 0;
+  for (const auto p : typeNames) {
+    os << *p;
+    if (i++ < typeNames.size() - 1) {
+      os << " ";
+    }
+  }
+}
+
 TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions)
     : AstNode(token), declaration(declaration->with_parent<TypeDeclaration>(this)), definitions(nodes_with_parent(std::move(definitions), this)) {}
 
@@ -1428,6 +1983,17 @@ TypeNode::~TypeNode() {
   delete declaration;
   for (const auto p : definitions) {
     delete p;
+  }
+}
+
+void TypeNode::print(std::ostream &os) const {
+  os << "type " << *declaration << " = ";
+  size_t i = 0;
+  for (const auto p : definitions) {
+    os << *p;
+    if (i++ < definitions.size() - 1) {
+      os << "| " << endl;
+    }
   }
 }
 
@@ -1445,6 +2011,18 @@ TypeInstance::~TypeInstance() {
   }
 }
 
+void TypeInstance::print(std::ostream &os) const {
+  os << *name << "(";
+  size_t i = 0;
+  for (const auto p : exprs) {
+    os << *p;
+    if (i++ < exprs.size() - 1) {
+      os << ", ";
+    }
+  }
+  os << ')';
+}
+
 FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr *function_name, vector<TypeDefinition *> type_definitions)
     : AstNode(token), functionName(function_name->with_parent<NameExpr>(this)),
       typeDefinitions(nodes_with_parent(std::move(type_definitions), this)) {}
@@ -1457,6 +2035,17 @@ FunctionDeclaration::~FunctionDeclaration() {
   delete functionName;
   for (const auto p : typeDefinitions) {
     delete p;
+  }
+}
+
+void FunctionDeclaration::print(std::ostream &os) const {
+  os << *functionName << " :: ";
+  size_t i = 0;
+  for (const auto p : typeDefinitions) {
+    os << *p;
+    if (i++ < typeDefinitions.size() - 1) {
+      os << "-> ";
+    }
   }
 }
 
@@ -1805,5 +2394,10 @@ any AstVisitor::visit(TypeNameNode *node) const {
     return visit(derived);
   }
   unreachable();
+}
+
+std::ostream &operator<<(std::ostream &os, const AstNode &obj) {
+  obj.print(os);
+  return os;
 }
 } // namespace yona::ast
