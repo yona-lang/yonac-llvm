@@ -97,6 +97,8 @@ public:
   void write(const string &name, T value);
   void write(const string &name, any value);
   T lookup(SourceInfo source_token, const string &name);
+  optional<T> try_lookup(SourceInfo source_token, const string &name) noexcept;
+  void merge(const Frame &other);
 
   // TODO print function
 };

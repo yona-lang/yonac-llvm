@@ -1,4 +1,6 @@
 {
+  "name": "yonac-llvm",
+  "version-date": "2025-01-15",
   "dependencies": [
     "antlr4",
     "boost-log",

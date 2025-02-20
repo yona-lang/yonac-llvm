@@ -22,19 +22,24 @@ inline struct {
 
   void push_frame() { frame = make_shared<InterepterFrame>(frame); }
   void pop_frame() { frame = frame->parent; }
+  void merge_frame_to_parent() {
+    frame->parent->merge(*frame);
+    pop_frame();
+  }
 } IS;
 
 class Interpreter final : public AstVisitor {
-public:
+private:
   template <RuntimeObjectType ROT, typename VT> optional<VT> get_value(AstNode *node) const;
   template <RuntimeObjectType ROT, typename VT, class T>
     requires derived_from<T, AstNode>
   optional<vector<VT>> get_value(const vector<T *> &nodes) const;
-
   template <RuntimeObjectType ROT, typename VT> optional<any> map_value(initializer_list<AstNode *> nodes, function<VT(vector<VT>)> cb) const;
-
   template <RuntimeObjectType actual, RuntimeObjectType... expected> static void type_error(AstNode *node);
+  [[nodiscard]] bool match_fun_args(const vector<PatternNode *> &patterns, const vector<RuntimeObjectPtr> &args) const;
+  RuntimeObjectPtr call(CallExpr *call_expr, vector<RuntimeObjectPtr> args) const;
 
+public:
   any visit(AddExpr *node) const override;
   any visit(AliasCall *node) const override;
   any visit(ApplyExpr *node) const override;

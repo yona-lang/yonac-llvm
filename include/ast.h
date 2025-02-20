@@ -614,8 +614,8 @@ private:
 
 public:
   const string name;
-  vector<PatternNode *> patterns;
-  vector<FunctionBody *> bodies;
+  vector<PatternNode *> patterns; // args
+  vector<FunctionBody *> bodies;  // 1 if without guards, or more with guards
 
   explicit FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies);
   any accept(const AstVisitor &visitor) override;

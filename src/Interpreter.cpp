@@ -33,7 +33,7 @@ namespace yona::interp {
 using namespace std::placeholders;
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
-  if (const auto runtime_object = any_cast<shared_ptr<RuntimeObject>>(visit(node)); runtime_object->type == ROT) {
+  if (const auto runtime_object = any_cast<RuntimeObjectPtr>(visit(node)); runtime_object->type == ROT) {
     return make_optional(runtime_object->get<VT>());
   }
   return nullopt;
@@ -76,6 +76,25 @@ template <RuntimeObjectType actual, RuntimeObjectType... expected> void Interpre
   }
 }
 
+bool Interpreter::match_fun_args(const vector<PatternNode *> &patterns, const vector<RuntimeObjectPtr> &args) const {
+  if (patterns.size() == args.size()) {
+    IS.push_frame();
+
+    for (size_t i = 0; i < patterns.size(); i++) {
+      auto pattern_value = any_cast<RuntimeObjectPtr>(visit(patterns[i]));
+      if (pattern_value != args[i]) {
+        IS.pop_frame();
+        return false;
+      }
+    }
+
+    IS.merge_frame_to_parent();
+    return true;
+  }
+
+  return false;
+}
+
 BINARY_OP(AddExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 0, plus<>), BINARY_OP_EXTRACTION(Float, double, 0.0, 0, plus<>))
 BINARY_OP(MultiplyExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 1, 0, multiplies<>), BINARY_OP_EXTRACTION(Float, double, 1.0, 0, multiplies<>))
 BINARY_OP(SubtractExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, minus<>), BINARY_OP_EXTRACTION(Float, double, 0.0, 1, minus<>))
@@ -96,7 +115,26 @@ any Interpreter::visit(LogicalNotOpExpr *node) const { return expr_wrapper(node)
 any Interpreter::visit(BinaryNotOpExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(AliasCall *node) const { return expr_wrapper(node); }
-any Interpreter::visit(ApplyExpr *node) const { return expr_wrapper(node); }
+any Interpreter::visit(ApplyExpr *node) const {
+  auto func = get_value<Function, shared_ptr<FunctionValue>>(node->call);
+
+  if (!func.has_value()) {
+    throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Invalid function call");
+  }
+
+  vector<RuntimeObjectPtr> args;
+  args.reserve(node->args.size());
+
+  for (const auto arg : node->args) {
+    if (holds_alternative<ValueExpr *>(arg)) {
+      args.push_back(any_cast<RuntimeObjectPtr>(visit(get<ValueExpr *>(arg))));
+    } else {
+      args.push_back(any_cast<RuntimeObjectPtr>(visit(get<ExprNode *>(arg))));
+    }
+  }
+
+  return func->get()->code(args);
+}
 any Interpreter::visit(AsDataStructurePattern *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(BodyWithGuards *node) const { return expr_wrapper(node); }
@@ -110,11 +148,11 @@ any Interpreter::visit(ConsLeftExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ConsRightExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(DictExpr *node) const {
-  vector<pair<shared_ptr<RuntimeObject>, shared_ptr<RuntimeObject>>> fields;
+  vector<pair<RuntimeObjectPtr, RuntimeObjectPtr>> fields;
 
   fields.reserve(node->values.size());
   for (const auto [fst, snd] : node->values) {
-    fields.emplace_back(any_cast<shared_ptr<RuntimeObject>>(visit(fst)), any_cast<shared_ptr<RuntimeObject>>(visit(snd)));
+    fields.emplace_back(any_cast<RuntimeObjectPtr>(visit(fst)), any_cast<RuntimeObjectPtr>(visit(snd)));
   }
 
   return make_shared<RuntimeObject>(Dict, make_shared<DictValue>(fields));
@@ -142,7 +180,7 @@ any Interpreter::visit(FqnAlias *node) const { return expr_wrapper(node); }
 any Interpreter::visit(FqnExpr *node) const {
   vector<string> fqn;
   if (node->packageName.has_value()) {
-    for (auto name : node->packageName.value()->parts) {
+    for (const auto name : node->packageName.value()->parts) {
       fqn.push_back(name->value);
     }
   }
@@ -154,8 +192,29 @@ any Interpreter::visit(FqnExpr *node) const {
 any Interpreter::visit(FunctionAlias *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(FunctionExpr *node) const {
-  return make_shared<RuntimeObject>(Function,
-                                    make_shared<FunctionValue>(make_shared<FqnValue>(vector{node->name}), [](auto obj) { return obj; })); // TODO
+  function code = [this, node](const vector<RuntimeObjectPtr> &args) -> RuntimeObjectPtr {
+    if (match_fun_args(node->patterns, args)) {
+      IS.merge_frame_to_parent();
+
+      for (const auto body : node->bodies) {
+        if (dynamic_cast<BodyWithoutGuards *>(body)) {
+          return any_cast<RuntimeObjectPtr>(visit(body));
+        }
+
+        const auto body_with_guards = dynamic_cast<BodyWithGuards *>(body);
+        if (optional<bool> result = get_value<Bool, bool>(body_with_guards->guard); !result.has_value() || !result.value()) {
+          continue;
+        }
+
+        return any_cast<RuntimeObjectPtr>(visit(body_with_guards->expr));
+      }
+    }
+
+    return nullptr;
+  };
+
+  auto fun_value = make_shared<FunctionValue>(make_shared<FqnValue>(vector{node->name}), code);
+  return make_shared<RuntimeObject>(Function, fun_value);
 }
 
 any Interpreter::visit(FunctionsImport *node) const { return expr_wrapper(node); }
@@ -193,12 +252,25 @@ any Interpreter::visit(ModuleExpr *node) const {
   auto functions = get_value<Function, shared_ptr<FunctionValue>>(node->functions);
 
   auto module = make_shared<ModuleValue>(fqn.value(), functions.value(), records.value());
+
+  for (const auto& function : functions.value()) {
+    module->functions.push_back(function);
+  }
+
   IS.module_stack.top().second = module;
   return make_shared<RuntimeObject>(Module, module);
 }
 
 any Interpreter::visit(ModuleImport *node) const { return expr_wrapper(node); }
-any Interpreter::visit(NameCall *node) const { return expr_wrapper(node); }
+any Interpreter::visit(NameCall *node) const {
+  auto expr = IS.frame->lookup(node->source_context, node->name->value);
+
+  if (expr->type != Function) {
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Expected a function, got " + RuntimeObjectTypes[expr->type]);
+  }
+
+  return expr;
+}
 any Interpreter::visit(NameExpr *node) const { return make_shared<RuntimeObject>(FQN, make_shared<FqnValue>(vector{node->value})); }
 any Interpreter::visit(NeqExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(PackageNameExpr *node) const { return expr_wrapper(node); }
@@ -213,10 +285,10 @@ any Interpreter::visit(RangeSequenceExpr *node) const { return expr_wrapper(node
 any Interpreter::visit(RecordInstanceExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(RecordNode *node) const {
-  vector<shared_ptr<RuntimeObject>> fields;
+  vector<RuntimeObjectPtr> fields;
   fields.reserve(node->identifiers.size());
   for (const auto [identifier, type_def] : node->identifiers) {
-    fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(identifier)));
+    fields.push_back(any_cast<RuntimeObjectPtr>(visit(identifier)));
   }
   return make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields));
 }
@@ -226,11 +298,11 @@ any Interpreter::visit(SeqGeneratorExpr *node) const { return expr_wrapper(node)
 any Interpreter::visit(SeqPattern *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(SetExpr *node) const {
-  vector<shared_ptr<RuntimeObject>> fields;
+  vector<RuntimeObjectPtr> fields;
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    fields.push_back(any_cast<RuntimeObjectPtr>(visit(value)));
   }
 
   return make_shared<RuntimeObject>(Set, make_shared<SetValue>(fields));
@@ -244,11 +316,11 @@ any Interpreter::visit(TrueLiteralExpr *node) const { return make_shared<Runtime
 any Interpreter::visit(TryCatchExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(TupleExpr *node) const {
-  vector<shared_ptr<RuntimeObject>> fields;
+  vector<RuntimeObjectPtr> fields;
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    fields.push_back(any_cast<RuntimeObjectPtr>(visit(value)));
   }
 
   return make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields));
@@ -267,11 +339,11 @@ any Interpreter::visit(ValueAlias *node) const {
 any Interpreter::visit(ValueCollectionExtractorExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(ValuesSequenceExpr *node) const {
-  vector<shared_ptr<RuntimeObject>> fields;
+  vector<RuntimeObjectPtr> fields;
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back(any_cast<shared_ptr<RuntimeObject>>(visit(value)));
+    fields.push_back(any_cast<RuntimeObjectPtr>(visit(value)));
   }
 
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(fields));
@@ -309,7 +381,7 @@ any Interpreter::visit(MainNode *node) const {
   IS.pop_frame();
   return result;
 }
-any Interpreter::visit(BuiltinTypeNode *node) const {}
-any Interpreter::visit(UserDefinedTypeNode *node) const {}
+any Interpreter::visit(BuiltinTypeNode *node) const { return expr_wrapper(node); }
+any Interpreter::visit(UserDefinedTypeNode *node) const { return expr_wrapper(node); }
 
 } // namespace yona::interp

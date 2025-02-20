@@ -406,13 +406,19 @@ any FqnExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 Type FqnExpr::infer_type(AstContext &ctx) const { unreachable(); }
 
 FqnExpr::~FqnExpr() {
-  if (packageName.has_value())
+  if (packageName.has_value()) {
     delete packageName.value();
+  }
   delete moduleName;
 }
 
 string FqnExpr::to_string() const {
-  return packageName.transform([](auto val) { return val->to_string(); }).value_or("") + PACKAGE_DELIMITER + moduleName->value;
+  string result = packageName.transform([](auto val) { return val->to_string(); }).value_or("");
+  if (!result.empty()) {
+    result += PACKAGE_DELIMITER;
+  }
+  result += moduleName->value;
+  return result;
 }
 
 void FqnExpr::print(std::ostream &os) const { os << to_string(); }
@@ -937,11 +943,11 @@ LetExpr::~LetExpr() {
 }
 
 void LetExpr::print(std::ostream &os) const {
-  os << "let ";
+  os << "let" << endl;
   for (const auto p : aliases) {
-    os << " " << *p << endl;
+    os << "\t" << *p << endl;
   }
-  os << " in " << *expr;
+  os << "in" << endl << "\t" << *expr;
 }
 
 MainNode::MainNode(SourceContext token, AstNode *node) : ScopedNode(token), node(node->with_parent<AstNode>(this)) {}
@@ -1665,17 +1671,13 @@ AsDataStructurePattern::~AsDataStructurePattern() {
   delete pattern;
 }
 
-void AsDataStructurePattern::print(std::ostream &os) const {
-  os << *identifier << "@(" << *pattern << ")";
-}
+void AsDataStructurePattern::print(std::ostream &os) const { os << *identifier << "@(" << *pattern << ")"; }
 
 any UnderscorePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 Type UnderscorePattern::infer_type(AstContext &ctx) const { unreachable(); }
 
-void UnderscorePattern::print(std::ostream &os) const {
-  os << '_';
-}
+void UnderscorePattern::print(std::ostream &os) const { os << '_'; }
 
 TuplePattern::TuplePattern(SourceContext token, vector<Pattern *> patterns)
     : PatternNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
@@ -1898,9 +1900,7 @@ void CaseExpr::print(std::ostream &os) const {
 
 any TypeNameNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-void BuiltinTypeNode::print(std::ostream &os) const{
-  os << BuiltinTypeStrings[type];
-}
+void BuiltinTypeNode::print(std::ostream &os) const { os << BuiltinTypeStrings[type]; }
 
 any BuiltinTypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
@@ -1910,9 +1910,7 @@ any UserDefinedTypeNode::accept(const AstVisitor &visitor) { return visitor.visi
 
 UserDefinedTypeNode::~UserDefinedTypeNode() { delete name; }
 
-void UserDefinedTypeNode::print(std::ostream &os) const {
-  os << *name;
-}
+void UserDefinedTypeNode::print(std::ostream &os) const { os << *name; }
 
 TypeDeclaration::TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars)
     : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeVars(nodes_with_parent(std::move(type_vars), this)) {}
@@ -1962,10 +1960,10 @@ TypeDefinition::~TypeDefinition() {
 }
 
 void TypeDefinition::print(std::ostream &os) const {
-  os << *name << " ";
+  os << *name;
   size_t i = 0;
   for (const auto p : typeNames) {
-    os << *p;
+    os << " " << *p;
     if (i++ < typeNames.size() - 1) {
       os << " ";
     }
@@ -2044,7 +2042,7 @@ void FunctionDeclaration::print(std::ostream &os) const {
   for (const auto p : typeDefinitions) {
     os << *p;
     if (i++ < typeDefinitions.size() - 1) {
-      os << "-> ";
+      os << " -> ";
     }
   }
 }

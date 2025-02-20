@@ -34,6 +34,8 @@ using RuntimeObjectData =
             shared_ptr<SetValue> /*Set*/, shared_ptr<FqnValue> /*FQN*/, shared_ptr<ModuleValue> /*Module*/, shared_ptr<FunctionValue> /*Function*/,
             shared_ptr<ApplyValue> /*Apply*/>;
 
+using RuntimeObjectPtr = shared_ptr<RuntimeObject>;
+
 enum RuntimeObjectType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Dict, Seq, Set, Tuple, FQN, Module, Function };
 
 inline string RuntimeObjectTypes[] = {"Int",  "Float", "Byte", "Char",  "String", "Bool",   "Unit",    "Symbol",
@@ -44,24 +46,24 @@ struct SymbolValue {
 };
 
 struct DictValue {
-  vector<pair<shared_ptr<RuntimeObject>, shared_ptr<RuntimeObject>>> fields{};
+  vector<pair<RuntimeObjectPtr, RuntimeObjectPtr>> fields{};
 };
 
 struct SeqValue {
-  vector<shared_ptr<RuntimeObject>> fields{};
+  vector<RuntimeObjectPtr> fields{};
 };
 
 struct SetValue {
-  vector<shared_ptr<RuntimeObject>> fields{};
+  vector<RuntimeObjectPtr> fields{};
 };
 
 struct ApplyValue {
-  shared_ptr<RuntimeObject> func;
-  shared_ptr<RuntimeObject> arg;
+  RuntimeObjectPtr func;
+  RuntimeObjectPtr arg;
 };
 
 struct TupleValue {
-  vector<shared_ptr<RuntimeObject>> fields{};
+  vector<RuntimeObjectPtr> fields{};
 };
 
 struct FqnValue {
@@ -70,7 +72,7 @@ struct FqnValue {
 
 struct FunctionValue {
   shared_ptr<FqnValue> fqn;
-  function<shared_ptr<RuntimeObject>(shared_ptr<RuntimeObject>)> code;
+  function<RuntimeObjectPtr(const vector<RuntimeObjectPtr> &)> code; // nullptr - nomatch
 };
 
 struct ModuleValue {
@@ -88,6 +90,9 @@ struct RuntimeObject {
   template <typename T> T &get() { return std::get<T>(data); }
 
   template <typename T> const T &get() const { return std::get<T>(data); }
+
+  friend bool operator==(const RuntimeObject &lhs, const RuntimeObject &rhs) { return lhs.type == rhs.type && lhs.data == rhs.data; }
+  friend bool operator!=(const RuntimeObject &lhs, const RuntimeObject &rhs) { return !(lhs == rhs); }
 };
 
 std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj);

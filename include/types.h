@@ -44,29 +44,10 @@ enum BuiltinType {
   Unit
 };
 
-static const std::string BuiltinTypeStrings[] = {
-  "Bool",
-  "Byte",
-  "SignedInt16",
-  "SignedInt32",
-  "SignedInt64",
-  "SignedInt128",
-  "UnsignedInt16",
-  "UnsignedInt32",
-  "UnsignedInt64",
-  "UnsignedInt128",
-  "Float32",
-  "Float64",
-  "Float128",
-  "Char",
-  "String",
-  "Symbol",
-  "Dict",
-  "Set",
-  "Seq",
-  "Var",
-  "Unit"
-};
+static const std::string BuiltinTypeStrings[] = {"Bool",          "Byte",          "SignedInt16",   "SignedInt32",    "SignedInt64", "SignedInt128",
+                                                 "UnsignedInt16", "UnsignedInt32", "UnsignedInt64", "UnsignedInt128", "Float32",     "Float64",
+                                                 "Float128",      "Char",          "String",        "Symbol",         "Dict",        "Set",
+                                                 "Seq",           "Var",           "Unit"};
 
 using Type = variant<BuiltinType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
                      shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, nullptr_t>;
