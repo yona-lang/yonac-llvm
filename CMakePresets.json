@@ -48,12 +48,17 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+        "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
         "CMAKE_TOOLCHAIN_FILE": {
           "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
           "type": "FILEPATH"
-        }
+        },
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": {
+          "value": "${sourceDir}/cmake/homebrew-llvm-toolchain.cmake",
+          "type": "FILEPATH"
+        },
+        "BOOST_ROOT": "/opt/homebrew/opt/boost"
       },
       "condition": {
         "type": "equals",

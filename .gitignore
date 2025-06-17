@@ -366,3 +366,8 @@ FodyWeavers.xsd
 vcpkg_installed/
 
 cmake-build*/
+
+.idea/
+
+.antlr/
+.DS_Store

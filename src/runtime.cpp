@@ -10,6 +10,7 @@ std::ostream &printInt(std::ostream &strm, const RuntimeObject &obj) {
   strm << obj.get<int>();
   return strm;
 }
+
 std::ostream &printFloat(std::ostream &strm, const RuntimeObject &obj) {
   strm << obj.get<double>();
   return strm;
@@ -48,7 +49,7 @@ std::ostream &printSymbol(std::ostream &strm, const RuntimeObject &obj) {
 std::ostream &printDict(std::ostream &strm, const RuntimeObject &obj) {
   strm << "{";
   const auto fields = obj.get<std::shared_ptr<DictValue>>()->fields;
-  size_t i = 0;
+  std::size_t i = 0;
   for (const auto &field : fields) {
     strm << *field.first << ": " << *field.second;
     if (i++ < fields.size() - 1) {
@@ -62,7 +63,7 @@ std::ostream &printDict(std::ostream &strm, const RuntimeObject &obj) {
 std::ostream &printSeq(std::ostream &strm, const RuntimeObject &obj) {
   strm << "[";
   const auto fields = obj.get<std::shared_ptr<SeqValue>>()->fields;
-  size_t i = 0;
+  std::size_t i = 0;
   for (const auto &field : fields) {
     strm << *field;
     if (i++ < fields.size() - 1) {
@@ -76,7 +77,7 @@ std::ostream &printSeq(std::ostream &strm, const RuntimeObject &obj) {
 std::ostream &printSet(std::ostream &strm, const RuntimeObject &obj) {
   strm << "{";
   const auto fields = obj.get<std::shared_ptr<SetValue>>()->fields;
-  size_t i = 0;
+  std::size_t i = 0;
   for (const auto &field : fields) {
     strm << *field;
     if (i++ < fields.size() - 1) {
@@ -90,7 +91,7 @@ std::ostream &printSet(std::ostream &strm, const RuntimeObject &obj) {
 std::ostream &printTuple(std::ostream &strm, const RuntimeObject &obj) {
   strm << "(";
   const auto fields = obj.get<std::shared_ptr<TupleValue>>()->fields;
-  size_t i = 0;
+  std::size_t i = 0;
   for (const auto &field : fields) {
     strm << *field;
     if (i++ < fields.size() - 1) {
@@ -103,7 +104,7 @@ std::ostream &printTuple(std::ostream &strm, const RuntimeObject &obj) {
 
 std::ostream &printFQN(std::ostream &strm, const RuntimeObject &obj) {
   const auto parts = obj.get<std::shared_ptr<FqnValue>>()->parts;
-  size_t i = 0;
+  std::size_t i = 0;
   for (const auto &part : parts) {
     strm << part;
     if (i++ < parts.size() - 1) {
@@ -123,7 +124,7 @@ std::ostream &printModule(std::ostream &strm, const RuntimeObject &obj) {
   const auto &module = obj.get<std::shared_ptr<ModuleValue>>();
   const auto functions = module->functions;
   const auto records = module->records;
-  size_t i = 0;
+  std::size_t i = 0;
 
   strm << module->fqn << "(functions=";
 
