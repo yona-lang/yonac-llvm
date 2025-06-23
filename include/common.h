@@ -4,17 +4,20 @@
 
 #pragma once
 
-#include <antlr4-runtime.h>
+#include <map>
 #include <queue>
 #include <string>
+#include <any>
+#include <optional>
+#include <memory>
+#include <format>
 
 #include "terminal.h"
+#include "SourceLocation.h"
 
 namespace yona {
 using namespace std;
-using namespace antlr4;
 
-using SourceContext = const ParserRuleContext &;
 using ModuleImportQueue = queue<vector<string>>;
 
 inline struct YonaEnvironment {
@@ -23,83 +26,71 @@ inline struct YonaEnvironment {
   bool compile_mode = false;
 } YONA_ENVIRONMENT;
 
-struct SourceInfo final {
-  size_t start_line;
-  size_t start_col;
-  size_t stop_line;
-  size_t stop_col;
-  string text;
-
-  SourceInfo(SourceContext token)
-      : start_line(token.getStart() ? token.getStart()->getLine() : 0), start_col(token.getStart() ? token.getStart()->getCharPositionInLine() : 0),
-        stop_line(token.getStop() ? token.getStop()->getLine() : 0), stop_col(token.getStop() ? token.getStop()->getCharPositionInLine() : 0),
-        text(token.getStart() ? token.getStart()->getText() : "?") {}
-
-  SourceInfo(antlr4::Token &token, Recognizer &recognizer)
-      : start_line(token.getLine()), start_col(token.getCharPositionInLine()), stop_line(token.getLine()),
-        stop_col(token.getText().length() + start_col), text(recognizer.getTokenErrorDisplay(&token)) {}
-
-  SourceInfo(const size_t start_line, const size_t start_col, const size_t stop_line, const size_t stop_col, string text)
-      : start_line(start_line), start_col(start_col), stop_line(stop_line), stop_col(stop_col), text(std::move(text)) {}
-};
-
-inline std::ostream &operator<<(std::ostream &os, const SourceInfo &rhs) {
-  os << "[" << rhs.start_line << ":" << rhs.start_col << "-" << rhs.stop_line << ":" << rhs.stop_col << "] " << rhs.text;
-  return os;
-}
-
-struct yona_error final : std::runtime_error {
-  enum Type { SYNTAX, TYPE, RUNTIME } type;
-  SourceInfo source_token;
-  string message;
-
-  explicit yona_error(SourceInfo source_token, Type type, string message)
-      : runtime_error(message), type(type), source_token(std::move(source_token)), message(std::move(message)) {}
-};
-
-inline const char *ErrorTypes[] = {"syntax", "type", "runtime check"};
-
-inline std::ostream &operator<<(std::ostream &os, const yona_error &rhs) {
-  os << ANSI_COLOR_RED << "Invalid " << ErrorTypes[rhs.type] << " at " << rhs.source_token << ANSI_COLOR_RESET << ": " << rhs.message;
-  return os;
-}
-
-class AstContext final {
-private:
-  unordered_multimap<yona_error::Type, yona_error> errors_;
-
+class yona_error : public runtime_error {
 public:
-  explicit AstContext(unordered_multimap<yona_error::Type, yona_error> errors) : errors_(std::move(errors)) {};
-  explicit AstContext() = default;
+  enum Type { SYNTAX, TYPE, REFERENCE, IO, COMPILER, NOT_IMPLEMENTED, RUNTIME };
 
-  void addError(const yona_error &error) { errors_.insert({error.type, error}); }
-  [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
-  [[nodiscard]] const unordered_multimap<yona_error::Type, yona_error> &getErrors() const { return errors_; }
-  [[nodiscard]] size_t errorCount() const { return errors_.size(); }
+  yona_error(const SourceLocation& ctx, Type type, const string& message)
+      : runtime_error(message), ctx_(ctx), type_(type) {}
 
-  AstContext operator+(const AstContext &other) const {
-    unordered_multimap new_errors(errors_);
-    new_errors.insert(other.errors_.begin(), other.errors_.end());
-    return AstContext(new_errors);
+  [[nodiscard]] string format() const {
+    static const map<Type, pair<string, string>> TYPE_DESCRIPTION = {
+        {SYNTAX, {"Syntax", ANSI_COLOR_RED}},
+        {TYPE, {"Type", ANSI_COLOR_CYAN}},
+        {REFERENCE, {"Reference", ANSI_COLOR_GREEN}},
+        {IO, {"IO", ANSI_COLOR_MAGENTA}},
+        {COMPILER, {"Compiler", ANSI_COLOR_YELLOW}},
+        {NOT_IMPLEMENTED, {"Not Implemented", ANSI_COLOR_WHITE}},
+        {RUNTIME, {"Runtime", ANSI_COLOR_BRIGHT_RED}},
+    };
+
+    string location = ctx_.is_valid() ? ctx_.to_string() + " " : "";
+    
+    auto [type_name, color] = TYPE_DESCRIPTION.at(type_);
+    return std::format("{}{}{} error{}: {}", color, type_name, ANSI_COLOR_RESET, 
+                       location.empty() ? "" : " at " + location, what());
   }
+
+  SourceLocation ctx_;
+  Type type_;
 };
 
+inline ostream& operator<<(ostream& stream, const yona_error& error) {
+  stream << error.format();
+  return stream;
+}
+
+// Base frame template for symbol tables
 template <typename T> struct Frame {
-private:
-  vector<T> args_;
-  unordered_map<string, T> locals_;
+  shared_ptr<Frame> parent = nullptr;
+  map<string, T> locals_;
 
-public:
-  shared_ptr<Frame> parent;
+  explicit Frame(shared_ptr<Frame> p) : parent(std::move(p)){};
 
-  explicit Frame(shared_ptr<Frame> parent) : parent(std::move(parent)) {}
-
-  void write(const string &name, T value);
-  void write(const string &name, any value);
-  T lookup(SourceInfo source_token, const string &name);
-  optional<T> try_lookup(SourceInfo source_token, const string &name) noexcept;
-  void merge(const Frame &other);
-
-  // TODO print function
+  void write(const string& name, T value);
+  void write(const string& name, any value);
+  T lookup(SourceInfo source_token, const string& name);
+  optional<T> try_lookup(SourceInfo source_token, const string& name) noexcept;
+  void merge(const Frame& other);
 };
-}; // namespace yona
+
+// AST context for error collection
+struct AstContext {
+  multimap<yona_error::Type, shared_ptr<yona_error>> errors_;
+
+  void addError(const shared_ptr<yona_error>& error) { errors_.emplace(error->type_, error); }
+
+  [[nodiscard]] multimap<yona_error::Type, shared_ptr<yona_error>> getErrors() const { return errors_; }
+
+  [[nodiscard]] bool hasErrors() const { return !errors_.empty(); }
+};
+
+// Forward declarations for AST nodes
+namespace ast {
+class AstNode;
+}
+
+// Utilities
+string module_location(const vector<string>& module_name);
+
+} // namespace yona

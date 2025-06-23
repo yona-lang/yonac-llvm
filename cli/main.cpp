@@ -5,7 +5,6 @@
 #include <iostream>
 #include <type_traits>
 
-#include <antlr4-runtime.h>
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/utility/setup/console.hpp>
@@ -117,7 +116,6 @@ vector<string> process_program_options(const int argc, const char *const argv[])
 void init_logging() { boost::log::add_console_log(std::cout); }
 
 int main(const int argc, const char *argv[]) {
-  using namespace antlr4;
   using namespace yona;
   using namespace yona::ast;
   using namespace yona::compiler::types;
@@ -131,9 +129,9 @@ int main(const int argc, const char *argv[]) {
   auto [success, node, type, ast_ctx] = parser.parse_input(module);
 
   if (!success) {
-    BOOST_LOG_TRIVIAL(error) << ast_ctx.errorCount() << " errors found. Please fix them and re-run.";
+    BOOST_LOG_TRIVIAL(error) << ast_ctx.errors_.size() << " errors found. Please fix them and re-run.";
     for (auto [_type, error] : ast_ctx.getErrors()) {
-      BOOST_LOG_TRIVIAL(error) << error;
+      BOOST_LOG_TRIVIAL(error) << *error;
     }
     return EXIT_FAILURE;
   }
@@ -144,6 +142,20 @@ int main(const int argc, const char *argv[]) {
 
     auto optimized_ast = any_cast<expr_wrapper>(node->accept(optimizer)).get_node<AstNode>();
     BOOST_LOG_TRIVIAL(info) << *optimized_ast;
+    
+    // Enable type checking (can be made optional via command line flag later)
+    interpreter.enable_type_checking(true);
+    
+    // Type check the AST before interpretation
+    if (!interpreter.type_check(optimized_ast)) {
+      BOOST_LOG_TRIVIAL(error) << "Type checking failed:";
+      for (const auto& error : interpreter.get_type_errors()) {
+        BOOST_LOG_TRIVIAL(error) << *error;
+      }
+      return EXIT_FAILURE;
+    }
+    
+    // Interpret the type-checked AST
     auto result = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
 
     BOOST_LOG_TRIVIAL(info) << ANSI_COLOR_BOLD_GREEN << string(term_width, FULL_BLOCK) << ANSI_COLOR_RESET << endl << *result;

@@ -14,7 +14,6 @@ namespace yona {
 using namespace std;
 using namespace ast;
 using namespace compiler::types;
-using namespace antlr4;
 
 const vector<pair<string, string>> YONA_CTRL_CHARS_UNESCAPE = {{"\\b", "\b"}, {"\\n", "\n"}, {"\\t", "\t"},
                                                                {"\\f", "\f"}, {"\\r", "\r"}, {"\\0", "\0"}};
@@ -28,7 +27,7 @@ public:
 
 class LookupTranslator final : public CharSequenceTranslator {
 private:
-  unordered_map<string, string> lookupMap;
+  map<string, string> lookupMap;
 
 public:
   explicit LookupTranslator(const vector<pair<string, string>> &lookup) : lookupMap(lookup.begin(), lookup.end()) {};

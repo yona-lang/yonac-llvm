@@ -24,6 +24,7 @@ public:
   [[nodiscard]] any visit(BodyWithoutGuards *node) const override;
   [[nodiscard]] any visit(ByteExpr *node) const override;
   [[nodiscard]] any visit(CaseExpr *node) const override;
+  [[nodiscard]] any visit(CaseClause *node) const override;
   [[nodiscard]] any visit(CatchExpr *node) const override;
   [[nodiscard]] any visit(CatchPatternExpr *node) const override;
   [[nodiscard]] any visit(CharacterExpr *node) const override;
@@ -67,6 +68,7 @@ public:
   [[nodiscard]] any visit(ModuloExpr *node) const override;
   [[nodiscard]] any visit(ModuleAlias *node) const override;
   [[nodiscard]] any visit(ModuleCall *node) const override;
+  [[nodiscard]] any visit(ExprCall *node) const override;
   [[nodiscard]] any visit(ModuleExpr *node) const override;
   [[nodiscard]] any visit(ModuleImport *node) const override;
   [[nodiscard]] any visit(MultiplyExpr *node) const override;
@@ -79,6 +81,8 @@ public:
   [[nodiscard]] any visit(PatternValue *node) const override;
   [[nodiscard]] any visit(PatternWithGuards *node) const override;
   [[nodiscard]] any visit(PatternWithoutGuards *node) const override;
+  [[nodiscard]] any visit(PipeLeftExpr *node) const override;
+  [[nodiscard]] any visit(PipeRightExpr *node) const override;
   [[nodiscard]] any visit(PowerExpr *node) const override;
   [[nodiscard]] any visit(RaiseExpr *node) const override;
   [[nodiscard]] any visit(RangeSequenceExpr *node) const override;

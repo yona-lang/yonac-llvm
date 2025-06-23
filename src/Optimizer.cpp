@@ -19,6 +19,7 @@ any Optimizer::visit(BodyWithGuards *node) const { return any(expr_wrapper(node)
 any Optimizer::visit(BodyWithoutGuards *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ByteExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(CaseExpr *node) const { return any(expr_wrapper(node)); }
+any Optimizer::visit(CaseClause *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(CatchExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(CatchPatternExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(CharacterExpr *node) const { return any(expr_wrapper(node)); }
@@ -62,6 +63,7 @@ any Optimizer::visit(LteExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ModuloExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ModuleAlias *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ModuleCall *node) const { return any(expr_wrapper(node)); }
+any Optimizer::visit(ExprCall *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ModuleExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(ModuleImport *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(MultiplyExpr *node) const { return any(expr_wrapper(node)); }
@@ -74,6 +76,8 @@ any Optimizer::visit(PatternExpr *node) const { return any(expr_wrapper(node)); 
 any Optimizer::visit(PatternValue *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PatternWithGuards *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PatternWithoutGuards *node) const { return any(expr_wrapper(node)); }
+any Optimizer::visit(PipeLeftExpr *node) const { return any(expr_wrapper(node)); }
+any Optimizer::visit(PipeRightExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(PowerExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(RaiseExpr *node) const { return any(expr_wrapper(node)); }
 any Optimizer::visit(RangeSequenceExpr *node) const { return any(expr_wrapper(node)); }

@@ -3,18 +3,16 @@
 //
 #include "utils.h"
 
-#include <antlr4-runtime.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/program_options.hpp>
 #include <filesystem>
 #include <string>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 namespace yona {
-using namespace antlr4;
 using namespace std;
 
 std::string LookupTranslator::translate(const std::string &input) {

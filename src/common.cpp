@@ -16,8 +16,9 @@ template <typename T> T Frame<T>::lookup(SourceInfo source_token, const string &
 }
 
 template <typename T> optional<T> Frame<T>::try_lookup(SourceInfo source_token, const string &name) noexcept{
-  if (locals_.contains(name)) {
-    return locals_[name];
+  auto it = locals_.find(name);
+  if (it != locals_.end()) {
+    return it->second;
   }
   if (parent) {
     return parent->try_lookup(source_token, name);

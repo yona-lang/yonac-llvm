@@ -23,7 +23,10 @@
 #define ANSI_COLOR_BOLD_CYAN "\033[1;36m"
 #define ANSI_COLOR_BOLD_WHITE "\033[1;37m"
 
-#define FULL_BLOCK L'\u2588'
+// Bright Colors (for compatibility)
+#define ANSI_COLOR_BRIGHT_RED ANSI_COLOR_BOLD_RED
+
+#define FULL_BLOCK '='
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN

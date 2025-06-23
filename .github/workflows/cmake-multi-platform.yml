@@ -1,0 +1,171 @@
+name: CMake Multi-Platform Build
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        build_type: [Debug, Release]
+        include:
+          # Linux Debug
+          - os: ubuntu-24.04
+            build_type: Debug
+            name: Linux Debug
+            configure_preset: x64-debug-linux
+            build_preset: build-debug-linux
+            test_preset: unit-tests-linux
+            llvm_version: 20
+          
+          # Linux Release
+          - os: ubuntu-24.04
+            build_type: Release
+            name: Linux Release
+            configure_preset: x64-release-linux
+            build_preset: build-release-linux
+            test_preset: unit-tests-linux
+            llvm_version: 20
+            
+          # macOS Debug
+          - os: macos-latest
+            build_type: Debug
+            name: macOS Debug
+            configure_preset: x64-debug-macos
+            build_preset: build-debug-macos
+            test_preset: unit-tests-macos
+            llvm_version: 20
+            
+          # macOS Release
+          - os: macos-latest
+            build_type: Release
+            name: macOS Release
+            configure_preset: x64-release-macos
+            build_preset: build-release-macos
+            test_preset: unit-tests-macos
+            llvm_version: 20
+            
+          # Windows Debug
+          - os: windows-latest
+            build_type: Debug
+            name: Windows Debug
+            configure_preset: x64-debug
+            build_preset: build-debug
+            test_preset: unit-tests-windows
+            llvm_version: 20
+            
+          # Windows Release
+          - os: windows-latest
+            build_type: Release
+            name: Windows Release
+            configure_preset: x64-release
+            build_preset: build-release
+            test_preset: unit-tests-windows
+            llvm_version: 20
+
+    name: ${{ matrix.name }}
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    # Cache vcpkg packages
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/vcpkg
+          !${{ github.workspace }}/vcpkg/buildtrees
+          !${{ github.workspace }}/vcpkg/packages
+          !${{ github.workspace }}/vcpkg/downloads
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    # Install LLVM on Linux
+    - name: Install LLVM (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+        sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{ matrix.llvm_version }} main"
+        sudo apt update
+        sudo apt install -y \
+          libllvm-${{ matrix.llvm_version }}-ocaml-dev \
+          libllvm${{ matrix.llvm_version }} \
+          llvm-${{ matrix.llvm_version }} \
+          llvm-${{ matrix.llvm_version }}-dev \
+          llvm-${{ matrix.llvm_version }}-runtime \
+          clang-${{ matrix.llvm_version }} \
+          clang-tools-${{ matrix.llvm_version }} \
+          libclang-common-${{ matrix.llvm_version }}-dev \
+          libclang-${{ matrix.llvm_version }}-dev \
+          libclang1-${{ matrix.llvm_version }} \
+          clang-format-${{ matrix.llvm_version }} \
+          python3-clang-${{ matrix.llvm_version }} \
+          clangd-${{ matrix.llvm_version }} \
+          clang-tidy-${{ matrix.llvm_version }} \
+          lld-${{ matrix.llvm_version }}
+
+    # Install dependencies on macOS
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install llvm boost ninja
+        # Check LLVM version
+        brew list --versions llvm
+        echo "LLVM_DIR=$(brew --prefix llvm)" >> $GITHUB_ENV
+        echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+        # Override compiler paths for CI
+        echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
+        echo "CXX=$(brew --prefix llvm)/bin/clang++" >> $GITHUB_ENV
+
+    # Install LLVM on Windows
+    - name: Install LLVM (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=20.1.4 -y
+        $llvmPath = "C:\Program Files\LLVM"
+        echo "LLVM_DIR=$llvmPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "$llvmPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    # Install CMake and Ninja
+    - uses: lukka/get-cmake@latest
+
+    # Setup vcpkg
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11
+      with:
+        # This will use the vcpkg.json and vcpkg-configuration.json from the repo
+        runVcpkgInstall: false
+
+    # Configure, Build and Test
+    - name: Run CMake
+      uses: lukka/run-cmake@v10
+      with:
+        configurePreset: ${{ matrix.configure_preset }}
+        buildPreset: ${{ matrix.build_preset }}
+        testPreset: ${{ matrix.test_preset }}
+        testPresetAdditionalArgs: "['--output-junit', 'test-results.xml']"
+
+    # Upload test results
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.name }}
+        path: '**/test-results.xml'
+
+    # Test Report
+    - name: Test Report
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Tests - ${{ matrix.name }}
+        path: '**/test-results.xml'
+        reporter: java-junit
