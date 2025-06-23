@@ -4,8 +4,14 @@
 
 #pragma once
 
+#include <stack>
+#include <unordered_map>
+#include <cstdlib>
+#include <optional>
+
 #include "ast.h"
 #include "runtime.h"
+#include "TypeChecker.h"
 
 namespace yona::interp {
 using namespace std;
@@ -16,20 +22,74 @@ using symbol_ref_t = shared_ptr<RuntimeObject>;
 using InterepterFrame = Frame<symbol_ref_t>;
 using ModuleItem = pair<shared_ptr<FqnValue>, shared_ptr<ModuleValue>>;
 
-inline struct {
+struct InterpreterState {
   shared_ptr<InterepterFrame> frame;
   stack<ModuleItem> module_stack;
+  RuntimeObjectPtr generator_current_element;  // Current element for generator expressions
+  RuntimeObjectPtr generator_current_key;      // Current key for dict generator expressions
+  
+  // Exception handling state
+  bool has_exception = false;
+  RuntimeObjectPtr exception_value;  // The exception object (symbol + message)
+  SourceContext exception_context;   // Where the exception was raised
+  
+  // Module cache: maps FQN to loaded module
+  unordered_map<string, shared_ptr<ModuleValue>> module_cache;
+  
+  // Module search paths (initialized from YONA_PATH environment variable)
+  vector<string> module_paths;
 
+  InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)) {
+    // Initialize module paths from YONA_PATH environment variable
+    const char* yona_path = std::getenv("YONA_PATH");
+    if (yona_path) {
+      string path_str(yona_path);
+      size_t pos = 0;
+      string delimiter = ":";  // Use : on Unix, ; on Windows
+      #ifdef _WIN32
+        delimiter = ";";
+      #endif
+      
+      while ((pos = path_str.find(delimiter)) != string::npos) {
+        module_paths.push_back(path_str.substr(0, pos));
+        path_str.erase(0, pos + delimiter.length());
+      }
+      if (!path_str.empty()) {
+        module_paths.push_back(path_str);
+      }
+    }
+    
+    // Always include current directory
+    module_paths.insert(module_paths.begin(), ".");
+  }
+  
   void push_frame() { frame = make_shared<InterepterFrame>(frame); }
   void pop_frame() { frame = frame->parent; }
   void merge_frame_to_parent() {
     frame->parent->merge(*frame);
     pop_frame();
   }
-} IS;
+  
+  void raise_exception(RuntimeObjectPtr exc, SourceContext ctx) {
+    has_exception = true;
+    exception_value = exc;
+    exception_context = ctx;
+  }
+  
+  void clear_exception() {
+    has_exception = false;
+    exception_value = nullptr;
+    exception_context = EMPTY_SOURCE_LOCATION;
+  }
+};
 
 class Interpreter final : public AstVisitor {
 private:
+  mutable InterpreterState IS;  // mutable because visitor methods are const
+  mutable optional<unique_ptr<typechecker::TypeChecker>> type_checker;  // Optional type checker
+  mutable typechecker::TypeInferenceContext type_context;  // Type inference context
+  mutable unordered_map<AstNode*, compiler::types::Type> type_annotations;  // Store inferred types
+  
   template <RuntimeObjectType ROT, typename VT> optional<VT> get_value(AstNode *node) const;
   template <RuntimeObjectType ROT, typename VT, class T>
     requires derived_from<T, AstNode>
@@ -38,8 +98,49 @@ private:
   template <RuntimeObjectType actual, RuntimeObjectType... expected> static void type_error(AstNode *node);
   [[nodiscard]] bool match_fun_args(const vector<PatternNode *> &patterns, const vector<RuntimeObjectPtr> &args) const;
   RuntimeObjectPtr call(CallExpr *call_expr, vector<RuntimeObjectPtr> args) const;
+  
+  // Create an exception runtime object
+  RuntimeObjectPtr make_exception(const RuntimeObjectPtr& symbol, const RuntimeObjectPtr& message) const;
+  
+  // Module loading and resolution
+  string fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
+  string find_module_file(const string& relative_path) const;
+  shared_ptr<ModuleValue> load_module(const shared_ptr<FqnValue>& fqn) const;
+  shared_ptr<ModuleValue> get_or_load_module(const shared_ptr<FqnValue>& fqn) const;
+  
+  // Pattern matching helpers
+  bool match_pattern(PatternNode *pattern, const RuntimeObjectPtr& value) const;
+  bool match_pattern_value(PatternValue *pattern, const RuntimeObjectPtr& value) const;
+  bool match_tuple_pattern(TuplePattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_seq_pattern(SeqPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_dict_pattern(DictPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_record_pattern(RecordPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_as_pattern(AsDataStructurePattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_head_tails_pattern(HeadTailsPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_tails_head_pattern(TailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_tail_pattern(TailPattern *pattern, const RuntimeObjectPtr& value) const;
+  
+  // Helper to create runtime objects with type information
+  RuntimeObjectPtr make_typed_object(RuntimeObjectType type, RuntimeObjectData data, AstNode* node = nullptr) const;
+  
+  // Runtime type checking helpers
+  bool check_runtime_type(const RuntimeObjectPtr& value, const compiler::types::Type& expected_type) const;
+  compiler::types::Type runtime_type_to_static_type(RuntimeObjectType type) const;
 
 public:
+  Interpreter() = default;
+  
+  // Enable/disable type checking
+  void enable_type_checking(bool enable = true);
+  
+  // Type check an AST node before interpretation
+  bool type_check(AstNode* node);
+  
+  // Get type errors from last type check
+  const vector<shared_ptr<yona_error>>& get_type_errors() const {
+    return type_context.get_errors();
+  }
   any visit(AddExpr *node) const override;
   any visit(AliasCall *node) const override;
   any visit(ApplyExpr *node) const override;
@@ -52,6 +153,7 @@ public:
   any visit(BodyWithoutGuards *node) const override;
   any visit(ByteExpr *node) const override;
   any visit(CaseExpr *node) const override;
+  any visit(CaseClause *node) const override;
   any visit(CatchExpr *node) const override;
   any visit(CatchPatternExpr *node) const override;
   any visit(CharacterExpr *node) const override;
@@ -95,6 +197,7 @@ public:
   any visit(ModuloExpr *node) const override;
   any visit(ModuleAlias *node) const override;
   any visit(ModuleCall *node) const override;
+  any visit(ExprCall *node) const override;
   any visit(ModuleExpr *node) const override;
   any visit(ModuleImport *node) const override;
   any visit(MultiplyExpr *node) const override;
@@ -102,6 +205,8 @@ public:
   any visit(NameExpr *node) const override;
   any visit(NeqExpr *node) const override;
   any visit(PackageNameExpr *node) const override;
+  any visit(PipeLeftExpr *node) const override;
+  any visit(PipeRightExpr *node) const override;
   any visit(PatternAlias *node) const override;
   any visit(PatternExpr *node) const override;
   any visit(PatternValue *node) const override;
@@ -154,5 +259,8 @@ public:
   any visit(BuiltinTypeNode *node) const override;
   any visit(UserDefinedTypeNode *node) const override;
   any visit(TypeNameNode *node) const override;
+  any visit(CallExpr *node) const override;
+  any visit(GeneratorExpr *node) const override;
+  any visit(CollectionExtractorExpr *node) const override;
 };
 } // namespace yona::interp

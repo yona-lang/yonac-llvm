@@ -1,10 +1,10 @@
 #pragma once
 
-#include <antlr4-runtime.h>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+#include <memory>
 
 #include "common.h"
 #include "types.h"
@@ -120,6 +120,7 @@ enum AstNodeType {
   AST_NAME_CALL,
   AST_MAIN,
   AST_MODULE_CALL,
+  AST_EXPR_CALL,
   AST_MODULE_IMPORT,
   AST_FUNCTIONS_IMPORT,
   AST_SEQ_GENERATOR_EXPR,
@@ -151,7 +152,8 @@ enum AstNodeType {
   AST_HEAD_TAILS_HEAD_PATTERN,
   AST_DICT_PATTERN,
   AST_RECORD_PATTERN,
-  AST_CASE_EXPR
+  AST_CASE_EXPR,
+  AST_CASE_CLAUSE
 };
 
 struct expr_wrapper {
@@ -184,7 +186,6 @@ public:
   explicit AstNode(SourceContext token) : source_context(token) {};
   virtual ~AstNode() = default;
   virtual any accept(const AstVisitor &visitor);
-  [[nodiscard]] virtual Type infer_type(AstContext &ctx) const;
   [[nodiscard]] virtual AstNodeType get_type() const { return AST_NODE; };
   friend std::ostream &operator<<(std::ostream &os, const AstNode &obj);
 
@@ -265,7 +266,6 @@ private:
 public:
   explicit UnderscoreNode(SourceContext token) : PatternNode(token) {}
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_NODE; };
 };
 
@@ -276,9 +276,9 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_EXPR; };
 };
 
-class ScopedNode : public AstNode {
+class ScopedNode : public ExprNode {
 public:
-  explicit ScopedNode(SourceContext token) : AstNode(token) {}
+  explicit ScopedNode(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SCOPED_NODE; };
 };
@@ -305,7 +305,6 @@ public:
   ExprNode *right;
 
   explicit BinaryOpExpr(SourceContext token, ExprNode *left, ExprNode *right);
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BINARY_OP_EXPR; };
   ~BinaryOpExpr() override;
@@ -314,7 +313,6 @@ public:
 class AliasExpr : public ExprNode {
 public:
   explicit AliasExpr(SourceContext token) : ExprNode(token) {}
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_ALIAS_EXPR; };
 };
@@ -322,7 +320,6 @@ public:
 class CallExpr : public ExprNode {
 public:
   explicit CallExpr(SourceContext token) : ExprNode(token) {}
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CALL_EXPR; };
 };
@@ -371,7 +368,6 @@ public:
 
   explicit NameExpr(SourceContext token, string value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_EXPR; };
 };
 
@@ -384,7 +380,6 @@ public:
 
   explicit IdentifierExpr(SourceContext token, NameExpr *name);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_IDENTIFIER_EXPR; };
   ~IdentifierExpr() override;
 };
@@ -399,7 +394,6 @@ public:
 
   explicit RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_NODE; };
   ~RecordNode() override;
 };
@@ -411,7 +405,6 @@ private:
 public:
   explicit TrueLiteralExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TRUE_LITERAL_EXPR; };
 };
 
@@ -422,7 +415,6 @@ private:
 public:
   explicit FalseLiteralExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FALSE_LITERAL_EXPR; };
 };
 
@@ -433,7 +425,6 @@ private:
 public:
   explicit FloatExpr(SourceContext token, float value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FLOAT_EXPR; };
 };
 
@@ -444,7 +435,6 @@ private:
 public:
   explicit IntegerExpr(SourceContext token, int value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_INTEGER_EXPR; };
 };
 
@@ -455,7 +445,6 @@ private:
 public:
   explicit ByteExpr(SourceContext token, unsigned char value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BYTE_EXPR; };
 };
 
@@ -466,7 +455,6 @@ private:
 public:
   explicit StringExpr(SourceContext token, string value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_STRING_EXPR; };
 };
 
@@ -477,7 +465,6 @@ private:
 public:
   explicit CharacterExpr(SourceContext token, wchar_t value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CHARACTER_EXPR; };
 };
 
@@ -488,7 +475,6 @@ private:
 public:
   explicit UnitExpr(SourceContext token);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_UNIT_EXPR; };
 };
 
@@ -501,7 +487,6 @@ public:
 
   explicit TupleExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_EXPR; };
   ~TupleExpr() override;
 };
@@ -515,7 +500,6 @@ public:
 
   explicit DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> values);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_EXPR; };
   ~DictExpr() override;
 };
@@ -529,7 +513,6 @@ public:
 
   explicit ValuesSequenceExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUES_SEQUENCE_EXPR; };
   ~ValuesSequenceExpr() override;
 };
@@ -545,7 +528,6 @@ public:
 
   explicit RangeSequenceExpr(SourceContext token, ExprNode *start, ExprNode *end, ExprNode *step);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RANGE_SEQUENCE_EXPR; };
   ~RangeSequenceExpr() override;
 };
@@ -559,7 +541,6 @@ public:
 
   explicit SetExpr(SourceContext token, vector<ExprNode *> values);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SET_EXPR; };
   ~SetExpr() override;
 };
@@ -573,7 +554,6 @@ public:
 
   explicit SymbolExpr(SourceContext token, string value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SYMBOL_EXPR; };
 };
 
@@ -586,7 +566,6 @@ public:
 
   explicit PackageNameExpr(SourceContext token, vector<NameExpr *> parts);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PACKAGE_NAME_EXPR; };
   ~PackageNameExpr() override;
   [[nodiscard]] string to_string() const;
@@ -602,7 +581,6 @@ public:
 
   explicit FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, NameExpr *moduleName);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_EXPR; };
   ~FqnExpr() override;
   [[nodiscard]] string to_string() const;
@@ -619,7 +597,6 @@ public:
 
   explicit FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_EXPR; };
   ~FunctionExpr() override;
 };
@@ -638,7 +615,6 @@ public:
   explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_EXPR; };
   ~ModuleExpr() override;
 };
@@ -653,7 +629,6 @@ public:
 
   explicit RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_INSTANCE_EXPR; };
   ~RecordInstanceExpr() override;
 };
@@ -668,7 +643,6 @@ public:
 
   explicit BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BODY_WITH_GUARDS; };
   ~BodyWithGuards() override;
 };
@@ -682,7 +656,6 @@ public:
 
   explicit BodyWithoutGuards(SourceContext token, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BODY_WITHOUT_GUARDS; };
   ~BodyWithoutGuards() override;
 };
@@ -696,7 +669,6 @@ public:
 
   explicit LogicalNotOpExpr(SourceContext token, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_NOT_OP_EXPR; };
   ~LogicalNotOpExpr() override;
 };
@@ -710,7 +682,6 @@ public:
 
   explicit BinaryNotOpExpr(SourceContext token, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BINARY_NOT_OP_EXPR; };
   ~BinaryNotOpExpr() override;
 };
@@ -722,7 +693,6 @@ private:
 public:
   explicit PowerExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_POWER_EXPR; };
 };
 
@@ -733,7 +703,6 @@ private:
 public:
   explicit MultiplyExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MULTIPLY_EXPR; };
 };
 
@@ -744,7 +713,6 @@ private:
 public:
   explicit DivideExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DIVIDE_EXPR; };
 };
 
@@ -755,7 +723,6 @@ private:
 public:
   explicit ModuloExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULO_EXPR; };
 };
 
@@ -766,7 +733,6 @@ private:
 public:
   explicit AddExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_ADD_EXPR; };
 };
 
@@ -777,7 +743,6 @@ private:
 public:
   explicit SubtractExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SUBTRACT_EXPR; };
 };
 
@@ -788,7 +753,6 @@ private:
 public:
   explicit LeftShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LEFT_SHIFT_EXPR; };
 };
 
@@ -799,7 +763,6 @@ private:
 public:
   explicit RightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RIGHT_SHIFT_EXPR; };
 };
 
@@ -810,7 +773,6 @@ private:
 public:
   explicit ZerofillRightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_ZEROFILL_RIGHT_SHIFT_EXPR; };
 };
 
@@ -821,7 +783,6 @@ private:
 public:
   explicit GteExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_GTE_EXPR; };
 };
 
@@ -832,7 +793,6 @@ private:
 public:
   explicit LteExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LTE_EXPR; };
 };
 
@@ -843,7 +803,6 @@ private:
 public:
   explicit GtExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_GT_EXPR; };
 };
 
@@ -854,7 +813,6 @@ private:
 public:
   explicit LtExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LT_EXPR; };
 };
 
@@ -865,7 +823,6 @@ private:
 public:
   explicit EqExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_EQ_EXPR; };
 };
 
@@ -876,7 +833,6 @@ private:
 public:
   explicit NeqExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_NEQ_EXPR; };
 };
 
@@ -887,7 +843,6 @@ private:
 public:
   explicit ConsLeftExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CONS_LEFT_EXPR; };
 };
 
@@ -898,7 +853,6 @@ private:
 public:
   explicit ConsRightExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CONS_RIGHT_EXPR; };
 };
 
@@ -909,7 +863,6 @@ private:
 public:
   explicit JoinExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_JOIN_EXPR; };
 };
 
@@ -920,7 +873,6 @@ private:
 public:
   explicit BitwiseAndExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_AND_EXPR; };
 };
 
@@ -931,7 +883,6 @@ private:
 public:
   explicit BitwiseXorExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_XOR_EXPR; };
 };
 
@@ -942,7 +893,6 @@ private:
 public:
   explicit BitwiseOrExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_BITWISE_OR_EXPR; };
 };
 
@@ -953,7 +903,6 @@ private:
 public:
   explicit LogicalAndExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_AND_EXPR; };
 };
 
@@ -964,7 +913,6 @@ private:
 public:
   explicit LogicalOrExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LOGICAL_OR_EXPR; };
 };
 
@@ -975,8 +923,27 @@ private:
 public:
   explicit InExpr(SourceContext token, ExprNode *left, ExprNode *right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_IN_EXPR; };
+};
+
+class PipeLeftExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  explicit PipeLeftExpr(SourceContext token, ExprNode *left, ExprNode *right);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_LEFT_EXPR; };
+};
+
+class PipeRightExpr final : public BinaryOpExpr {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  explicit PipeRightExpr(SourceContext token, ExprNode *left, ExprNode *right);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_PIPE_RIGHT_EXPR; };
 };
 
 class LetExpr final : public ScopedNode {
@@ -989,7 +956,6 @@ public:
 
   explicit LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LET_EXPR; };
   ~LetExpr() override;
 };
@@ -1003,7 +969,6 @@ public:
 
   explicit MainNode(SourceContext token, AstNode *node);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MAIN; };
   ~MainNode() override;
 };
@@ -1019,7 +984,6 @@ public:
 
   explicit IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, ExprNode *elseExpr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_IF_EXPR; };
   ~IfExpr() override;
 };
@@ -1034,7 +998,6 @@ public:
 
   explicit ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_APPLY_EXPR; };
   ~ApplyExpr() override;
 };
@@ -1048,7 +1011,6 @@ public:
 
   explicit DoExpr(SourceContext token, vector<ExprNode *> steps);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DO_EXPR; };
   ~DoExpr() override;
 };
@@ -1063,7 +1025,6 @@ public:
 
   explicit ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_EXPR; };
   ~ImportExpr() override;
 };
@@ -1078,7 +1039,6 @@ public:
 
   explicit RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RAISE_EXPR; };
   ~RaiseExpr() override;
 };
@@ -1095,7 +1055,6 @@ public:
 
   explicit WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_WITH_EXPR; };
   ~WithExpr() override;
 };
@@ -1110,7 +1069,6 @@ public:
 
   explicit FieldAccessExpr(SourceContext token, IdentifierExpr *identifier, NameExpr *name);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FIELD_ACCESS_EXPR; };
   ~FieldAccessExpr() override;
 };
@@ -1125,7 +1083,6 @@ public:
 
   explicit FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FIELD_UPDATE_EXPR; };
   ~FieldUpdateExpr() override;
 };
@@ -1140,7 +1097,6 @@ public:
 
   explicit LambdaAlias(SourceContext token, NameExpr *name, FunctionExpr *lambda);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_LAMBDA_ALIAS; };
   ~LambdaAlias() override;
 };
@@ -1155,7 +1111,6 @@ public:
 
   explicit ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_ALIAS; };
   ~ModuleAlias() override;
 };
@@ -1170,7 +1125,6 @@ public:
 
   explicit ValueAlias(SourceContext token, IdentifierExpr *identifier, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_ALIAS; };
   ~ValueAlias() override;
 };
@@ -1185,7 +1139,6 @@ public:
 
   explicit PatternAlias(SourceContext token, PatternNode *pattern, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_ALIAS; };
   ~PatternAlias() override;
 };
@@ -1200,7 +1153,6 @@ public:
 
   explicit FqnAlias(SourceContext token, NameExpr *name, FqnExpr *fqn);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FQN_ALIAS; };
   ~FqnAlias() override;
 };
@@ -1215,7 +1167,6 @@ public:
 
   explicit FunctionAlias(SourceContext token, NameExpr *name, NameExpr *alias);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_ALIAS; };
   ~FunctionAlias() override;
 };
@@ -1230,7 +1181,6 @@ public:
 
   explicit AliasCall(SourceContext token, NameExpr *alias, NameExpr *funName);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_ALIAS_CALL; };
   ~AliasCall() override;
 };
@@ -1244,9 +1194,11 @@ public:
 
   explicit NameCall(SourceContext token, NameExpr *name);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_CALL; };
   ~NameCall() override;
+  
+  // Debug method
+  [[nodiscard]] const NameExpr* get_name() const { return name; }
 };
 
 class ModuleCall final : public CallExpr {
@@ -1259,9 +1211,21 @@ public:
 
   explicit ModuleCall(SourceContext token, const variant<FqnExpr *, ExprNode *> &fqn, NameExpr *funName);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_CALL; };
   ~ModuleCall() override;
+};
+
+class ExprCall final : public CallExpr {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  ExprNode *expr;
+
+  explicit ExprCall(SourceContext token, ExprNode *expr);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_EXPR_CALL; };
+  ~ExprCall() override;
 };
 
 class ModuleImport final : public ImportClauseExpr {
@@ -1274,7 +1238,6 @@ public:
 
   explicit ModuleImport(SourceContext token, FqnExpr *fqn, NameExpr *name);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_IMPORT; };
   ~ModuleImport() override;
 };
@@ -1289,7 +1252,6 @@ public:
 
   explicit FunctionsImport(SourceContext token, vector<FunctionAlias *> aliases, FqnExpr *fromFqn);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTIONS_IMPORT; };
   ~FunctionsImport() override;
 };
@@ -1305,7 +1267,6 @@ public:
 
   explicit SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SEQ_GENERATOR_EXPR; };
   ~SeqGeneratorExpr() override;
 };
@@ -1321,7 +1282,6 @@ public:
 
   explicit SetGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SET_GENERATOR_EXPR; };
   ~SetGeneratorExpr() override;
 };
@@ -1336,7 +1296,6 @@ public:
 
   explicit DictGeneratorReducer(SourceContext token, ExprNode *key, ExprNode *value);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_GENERATOR_REDUCER; };
   ~DictGeneratorReducer() override;
 };
@@ -1353,7 +1312,6 @@ public:
   explicit DictGeneratorExpr(SourceContext token, DictGeneratorReducer *reducerExpr, CollectionExtractorExpr *collectionExtractor,
                              ExprNode *stepExpression);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_GENERATOR_EXPR; };
   ~DictGeneratorExpr() override;
 };
@@ -1365,7 +1323,6 @@ private:
 public:
   explicit UnderscorePattern(SourceContext token) : PatternNode(token) {}
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_PATTERN; };
 };
 
@@ -1380,8 +1337,6 @@ public:
 
   explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore identifier_or_underscore);
   any accept(const AstVisitor &visitor) override;
-  Type infer_type_identifier_or_underscore(AstContext &ctx) const;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_COLLECTION_EXTRACTOR_EXPR; };
   ~ValueCollectionExtractorExpr() override;
 };
@@ -1396,7 +1351,6 @@ public:
 
   explicit KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr, IdentifierOrUnderscore valueExpr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_KEY_VALUE_COLLECTION_EXTRACTOR_EXPR; };
   ~KeyValueCollectionExtractorExpr() override;
 };
@@ -1422,7 +1376,6 @@ public:
 
   explicit PatternWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_WITH_GUARDS; };
   ~PatternWithGuards() override;
 };
@@ -1436,9 +1389,23 @@ public:
 
   explicit PatternWithoutGuards(SourceContext token, ExprNode *expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_WITHOUT_GUARDS; };
   ~PatternWithoutGuards() override;
+};
+
+// New class that properly associates a pattern with its body expression for case statements
+class CaseClause : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  Pattern *pattern;
+  ExprNode *body;
+
+  explicit CaseClause(SourceContext token, Pattern *pattern, ExprNode *body);
+  any accept(const AstVisitor &visitor) override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_CASE_CLAUSE; };
+  ~CaseClause() override;
 };
 
 class PatternExpr : public ExprNode {
@@ -1450,7 +1417,6 @@ public:
 
   explicit PatternExpr(SourceContext token, const variant<Pattern *, PatternWithoutGuards *, vector<PatternWithGuards *>> &patternExpr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_EXPR; };
   ~PatternExpr() override;
 };
@@ -1465,7 +1431,6 @@ public:
 
   explicit CatchPatternExpr(SourceContext token, Pattern *matchPattern, const variant<PatternWithoutGuards *, vector<PatternWithGuards *>> &pattern);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CATCH_PATTERN_EXPR; };
   ~CatchPatternExpr() override;
 };
@@ -1479,7 +1444,6 @@ public:
 
   explicit CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CATCH_EXPR; };
   ~CatchExpr() override;
 };
@@ -1494,7 +1458,6 @@ public:
 
   explicit TryCatchExpr(SourceContext token, ExprNode *tryExpr, CatchExpr *catchExpr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TRY_CATCH_EXPR; };
   ~TryCatchExpr() override;
 };
@@ -1508,7 +1471,6 @@ public:
 
   explicit PatternValue(SourceContext token, const variant<LiteralExpr<nullptr_t> *, LiteralExpr<void *> *, SymbolExpr *, IdentifierExpr *> &expr);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_VALUE; };
   ~PatternValue() override;
 };
@@ -1523,7 +1485,6 @@ public:
 
   explicit AsDataStructurePattern(SourceContext token, IdentifierExpr *identifier, DataStructurePattern *pattern);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_AS_DATA_STRUCTURE_PATTERN; };
   ~AsDataStructurePattern() override;
 };
@@ -1537,7 +1498,6 @@ public:
 
   explicit TuplePattern(SourceContext token, vector<Pattern *> patterns);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TUPLE_PATTERN; };
   ~TuplePattern() override;
 };
@@ -1551,7 +1511,6 @@ public:
 
   explicit SeqPattern(SourceContext token, vector<Pattern *> patterns);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SEQ_PATTERN; };
   ~SeqPattern() override;
 };
@@ -1566,7 +1525,6 @@ public:
 
   explicit HeadTailsPattern(SourceContext token, vector<PatternWithoutSequence *> heads, TailPattern *tail);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_PATTERN; };
   ~HeadTailsPattern() override;
 };
@@ -1581,7 +1539,6 @@ public:
 
   explicit TailsHeadPattern(SourceContext token, TailPattern *tail, vector<PatternWithoutSequence *> heads);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TAILS_HEAD_PATTERN; };
   ~TailsHeadPattern() override;
 };
@@ -1598,7 +1555,6 @@ public:
   explicit HeadTailsHeadPattern(SourceContext token, vector<PatternWithoutSequence *> left, TailPattern *tail,
                                 vector<PatternWithoutSequence *> right);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_HEAD_TAILS_HEAD_PATTERN; };
   ~HeadTailsHeadPattern() override;
 };
@@ -1612,7 +1568,6 @@ public:
 
   explicit DictPattern(SourceContext token, vector<pair<PatternValue *, Pattern *>> keyValuePairs);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_DICT_PATTERN; };
   ~DictPattern() override;
 };
@@ -1627,7 +1582,6 @@ public:
 
   explicit RecordPattern(SourceContext token, string recordType, vector<pair<NameExpr *, Pattern *>> items);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_PATTERN; };
   ~RecordPattern() override;
 };
@@ -1638,11 +1592,10 @@ private:
 
 public:
   ExprNode *expr;
-  vector<PatternExpr *> patterns;
+  vector<CaseClause *> clauses;
 
-  explicit CaseExpr(SourceContext token, ExprNode *expr, vector<PatternExpr *> patterns);
+  explicit CaseExpr(SourceContext token, ExprNode *expr, vector<CaseClause *> clauses);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_CASE_EXPR; };
   ~CaseExpr() override;
 };
@@ -1689,7 +1642,6 @@ public:
 
   explicit TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DECLARATION; };
   ~TypeDeclaration() override;
 };
@@ -1704,7 +1656,6 @@ public:
 
   explicit TypeDefinition(SourceContext token, TypeNameNode *name, vector<TypeNameNode *> type_names);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_DEFINITION; };
   ~TypeDefinition() override;
 };
@@ -1719,7 +1670,6 @@ public:
 
   explicit TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE; };
   ~TypeNode() override;
 };
@@ -1734,7 +1684,6 @@ public:
 
   explicit TypeInstance(SourceContext token, TypeNameNode *name, vector<ExprNode *> exprs);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_TYPE_INSTANCE; };
   ~TypeInstance() override;
 };
@@ -1749,7 +1698,6 @@ public:
 
   explicit FunctionDeclaration(SourceContext token, NameExpr *function_name, vector<TypeDefinition *> type_definitions);
   any accept(const AstVisitor &visitor) override;
-  [[nodiscard]] Type infer_type(AstContext &ctx) const override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_DECLARATION; };
   ~FunctionDeclaration() override;
 };
@@ -1768,6 +1716,7 @@ public:
   virtual any visit(BodyWithGuards *node) const = 0;
   virtual any visit(BodyWithoutGuards *node) const = 0;
   virtual any visit(ByteExpr *node) const = 0;
+  virtual any visit(CaseClause *node) const = 0;
   virtual any visit(CaseExpr *node) const = 0;
   virtual any visit(CatchExpr *node) const = 0;
   virtual any visit(CatchPatternExpr *node) const = 0;
@@ -1813,6 +1762,7 @@ public:
   virtual any visit(ModuloExpr *node) const = 0;
   virtual any visit(ModuleAlias *node) const = 0;
   virtual any visit(ModuleCall *node) const = 0;
+  virtual any visit(ExprCall *node) const = 0;
   virtual any visit(ModuleExpr *node) const = 0;
   virtual any visit(ModuleImport *node) const = 0;
   virtual any visit(MultiplyExpr *node) const = 0;
@@ -1820,6 +1770,8 @@ public:
   virtual any visit(NameExpr *node) const = 0;
   virtual any visit(NeqExpr *node) const = 0;
   virtual any visit(PackageNameExpr *node) const = 0;
+  virtual any visit(PipeLeftExpr *node) const = 0;
+  virtual any visit(PipeRightExpr *node) const = 0;
   virtual any visit(PatternAlias *node) const = 0;
   virtual any visit(PatternExpr *node) const = 0;
   virtual any visit(PatternValue *node) const = 0;
@@ -1870,5 +1822,8 @@ public:
   virtual any visit(OpExpr *node) const;
   virtual any visit(BinaryOpExpr *node) const;
   virtual any visit(TypeNameNode *node) const;
+  virtual any visit(CallExpr *node) const;
+  virtual any visit(GeneratorExpr *node) const;
+  virtual any visit(CollectionExtractorExpr *node) const;
 };
 } // namespace yona::ast

@@ -4,6 +4,8 @@
 
 #include "runtime.h"
 
+#include <ranges>
+
 namespace yona::interp::runtime {
 namespace { // Anonymous namespace for helper functions
 std::ostream &printInt(std::ostream &strm, const RuntimeObject &obj) {
@@ -22,7 +24,7 @@ std::ostream &printByte(std::ostream &strm, const RuntimeObject &obj) {
 }
 
 std::ostream &printChar(std::ostream &strm, const RuntimeObject &obj) {
-  strm << STRING_CONVERTER.to_bytes(obj.get<wchar_t>());
+  strm << wchar_to_utf8(obj.get<wchar_t>());
   return strm;
 }
 
@@ -102,13 +104,26 @@ std::ostream &printTuple(std::ostream &strm, const RuntimeObject &obj) {
   return strm;
 }
 
+std::ostream &printRecord(std::ostream &strm, const RuntimeObject &obj) {
+  const auto &record = obj.get<std::shared_ptr<RecordValue>>();
+  strm << record->type_name << "(";
+  for (std::size_t i = 0; i < record->field_names.size(); i++) {
+    strm << record->field_names[i] << "=" << *record->field_values[i];
+    if (i < record->field_names.size() - 1) {
+      strm << ", ";
+    }
+  }
+  strm << ")";
+  return strm;
+}
+
 std::ostream &printFQN(std::ostream &strm, const RuntimeObject &obj) {
   const auto parts = obj.get<std::shared_ptr<FqnValue>>()->parts;
   std::size_t i = 0;
   for (const auto &part : parts) {
     strm << part;
     if (i++ < parts.size() - 1) {
-      strm << "::";
+      strm << "\\";
     }
   }
   return strm;
@@ -122,15 +137,15 @@ std::ostream &printFunction(std::ostream &strm, const RuntimeObject &obj) {
 
 std::ostream &printModule(std::ostream &strm, const RuntimeObject &obj) {
   const auto &module = obj.get<std::shared_ptr<ModuleValue>>();
-  const auto functions = module->functions;
-  const auto records = module->records;
+  const auto &exports = module->exports;
+  const auto &record_types = module->record_types;
   std::size_t i = 0;
 
-  strm << module->fqn << "(functions=";
+  strm << module->fqn << "(exports=";
 
-  for (const auto &function : functions) {
-    strm << function->fqn;
-    if (i++ < functions.size() - 1) {
+  for (const auto &function : exports | views::keys) {
+    strm << function;
+    if (i++ < exports.size() - 1) {
       strm << ", ";
     }
   }
@@ -138,9 +153,9 @@ std::ostream &printModule(std::ostream &strm, const RuntimeObject &obj) {
 
   strm << ", records=";
 
-  for (const auto &record : records) {
-    strm << *record->fields[0];
-    if (i++ < record->fields.size() - 1) {
+  for (const auto &record : record_types | views::keys) {
+    strm << record;
+    if (i++ < record_types.size() - 1) {
       strm << ", ";
     }
   }
@@ -175,6 +190,8 @@ std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj) {
     return printSet(strm, obj);
   case Tuple:
     return printTuple(strm, obj);
+  case Record:
+    return printRecord(strm, obj);
   case FQN:
     return printFQN(strm, obj);
   case Module:

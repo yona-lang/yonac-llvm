@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <variant>
+#include <iostream>
 
 #include "utils.h"
 
@@ -31,25 +32,18 @@ template <typename T> any LiteralExpr<T>::accept(const AstVisitor &visitor) { re
 
 any AstNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type AstNode::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 any ScopedNode::accept(const AstVisitor &visitor) { return AstNode::accept(visitor); }
 
 any OpExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
 BinaryOpExpr::BinaryOpExpr(SourceContext token, ExprNode *left, ExprNode *right)
-    : OpExpr(token), left(left->with_parent<ExprNode>(this)), right(right->with_parent<ExprNode>(this)) {}
+    : OpExpr(token), 
+      left(left ? left->with_parent<ExprNode>(this) : nullptr), 
+      right(right ? right->with_parent<ExprNode>(this) : nullptr) {}
 
-Type BinaryOpExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_numeric(lhs) || !is_numeric(rhs)) {
-    ctx.addError(yona_error(source_context, yona_error::TYPE, "Binary expression must be numeric type"));
-  }
-
-  return derive_bin_op_result_type(lhs, rhs);
-}
 
 any BinaryOpExpr::accept(const AstVisitor &visitor) { return OpExpr::accept(visitor); }
 BinaryOpExpr::~BinaryOpExpr() {
@@ -61,15 +55,15 @@ NameExpr::NameExpr(SourceContext token, string value) : ExprNode(token), value(s
 
 any NameExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type NameExpr::infer_type(AstContext &ctx) const { unreachable(); }
 
-Type AliasExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
+
 
 any AliasExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
-Type CallExpr::infer_type(AstContext &ctx) const { unreachable(); }
 
-any CallExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
+
+any CallExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 any ImportClauseExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
 any GeneratorExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
@@ -86,7 +80,7 @@ IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr *name) : ValueExpr(
 
 any IdentifierExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type IdentifierExpr::infer_type(AstContext &ctx) const { return nullptr; }
+
 
 IdentifierExpr::~IdentifierExpr() { delete name; }
 
@@ -97,9 +91,7 @@ RecordNode::RecordNode(SourceContext token, NameExpr *recordType, vector<pair<Id
 
 any RecordNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RecordNode::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 RecordNode::~RecordNode() {
   delete recordType;
@@ -125,7 +117,7 @@ TrueLiteralExpr::TrueLiteralExpr(SourceContext token) : LiteralExpr<bool>(token,
 
 any TrueLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TrueLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void TrueLiteralExpr::print(std::ostream &os) const { os << "true"; }
 
@@ -133,7 +125,7 @@ FalseLiteralExpr::FalseLiteralExpr(SourceContext token) : LiteralExpr<bool>(toke
 
 any FalseLiteralExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FalseLiteralExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void FalseLiteralExpr::print(std::ostream &os) const { os << "false"; }
 
@@ -141,7 +133,7 @@ FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float
 
 any FloatExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FloatExpr::infer_type(AstContext &ctx) const { return Float32; }
+
 
 void FloatExpr::print(std::ostream &os) const { os << value; }
 
@@ -149,7 +141,7 @@ IntegerExpr::IntegerExpr(SourceContext token, const int value) : LiteralExpr<int
 
 any IntegerExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type IntegerExpr::infer_type(AstContext &ctx) const { return SignedInt32; }
+
 
 void IntegerExpr::print(std::ostream &os) const { os << value; }
 
@@ -161,7 +153,7 @@ void UnderscoreNode::print(std::ostream &os) const { os << "_"; }
 
 any UnderscoreNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type UnderscoreNode::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 any ValueExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
@@ -169,7 +161,7 @@ ByteExpr::ByteExpr(SourceContext token, const unsigned char value) : LiteralExpr
 
 any ByteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ByteExpr::infer_type(AstContext &ctx) const { return Byte; }
+
 
 void ByteExpr::print(std::ostream &os) const { os << value; }
 
@@ -177,7 +169,7 @@ StringExpr::StringExpr(SourceContext token, string value) : LiteralExpr<string>(
 
 any StringExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type StringExpr::infer_type(AstContext &ctx) const { return String; }
+
 
 void StringExpr::print(std::ostream &os) const { os << value; }
 
@@ -185,7 +177,7 @@ CharacterExpr::CharacterExpr(SourceContext token, const wchar_t value) : Literal
 
 any CharacterExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type CharacterExpr::infer_type(AstContext &ctx) const { return Char; }
+
 
 void CharacterExpr::print(std::ostream &os) const {
   os << (char)value; // TODO
@@ -195,7 +187,7 @@ UnitExpr::UnitExpr(SourceContext token) : LiteralExpr<nullptr_t>(token, nullptr)
 
 any UnitExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type UnitExpr::infer_type(AstContext &ctx) const { return Unit; }
+
 
 void UnitExpr::print(std::ostream &os) const { os << "()"; }
 
@@ -203,11 +195,7 @@ TupleExpr::TupleExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr
 
 any TupleExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TupleExpr::infer_type(AstContext &ctx) const {
-  vector<Type> fieldTypes;
-  ranges::for_each(values, [&](const ExprNode *expr) { fieldTypes.push_back(expr->infer_type(ctx)); });
-  return make_shared<ProductType>(fieldTypes);
-}
+
 
 TupleExpr::~TupleExpr() {
   for (const auto p : values)
@@ -230,20 +218,7 @@ DictExpr::DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> val
 
 any DictExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DictExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> keyTypes;
-  unordered_set<Type> valueTypes;
-  ranges::for_each(values, [&](const pair<ExprNode *, ExprNode *> &p) {
-    keyTypes.insert(p.first->infer_type(ctx));
-    valueTypes.insert(p.second->infer_type(ctx));
-  });
 
-  if (keyTypes.size() > 1 || valueTypes.size() > 1) {
-    ctx.addError(yona_error(source_context, yona_error::TYPE, "Dictionary keys and values must have the same type"));
-  }
-
-  return make_shared<DictCollectionType>(values.front().first->infer_type(ctx), values.front().second->infer_type(ctx));
-}
 
 DictExpr::~DictExpr() {
   for (const auto [fst, snd] : values) {
@@ -268,16 +243,7 @@ ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, vector<ExprNode *> v
 
 any ValuesSequenceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ValuesSequenceExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> valueTypes;
-  ranges::for_each(values, [&](const ExprNode *expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
-  if (valueTypes.size() > 1) {
-    ctx.addError(yona_error(source_context, yona_error::TYPE, "Sequence values must have the same type"));
-  }
-
-  return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, values.front()->infer_type(ctx));
-}
 
 ValuesSequenceExpr::~ValuesSequenceExpr() {
   for (const auto p : values)
@@ -301,25 +267,7 @@ RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode *start, ExprN
 
 any RangeSequenceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RangeSequenceExpr::infer_type(AstContext &ctx) const {
-  Type startExprType = start->infer_type(ctx);
-  Type endExprType = start->infer_type(ctx);
-  Type stepExprType = start->infer_type(ctx);
 
-  if (!is_signed(startExprType)) {
-    ctx.addError(yona_error(start->source_context, yona_error::TYPE, "Sequence start expression must be integer"));
-  }
-
-  if (!is_signed(endExprType)) {
-    ctx.addError(yona_error(end->source_context, yona_error::TYPE, "Sequence end expression must be integer"));
-  }
-
-  if (!is_signed(stepExprType)) {
-    ctx.addError(yona_error(step->source_context, yona_error::TYPE, "Sequence step expression must be integer"));
-  }
-
-  return nullptr;
-}
 
 RangeSequenceExpr::~RangeSequenceExpr() {
   delete start;
@@ -339,16 +287,7 @@ SetExpr::SetExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(tok
 
 any SetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SetExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> valueTypes;
-  ranges::for_each(values, [&](const ExprNode *expr) { valueTypes.insert(expr->infer_type(ctx)); });
 
-  if (valueTypes.size() > 1) {
-    ctx.addError(yona_error(source_context, yona_error::TYPE, "Set values must have the same type"));
-  }
-
-  return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, values.front()->infer_type(ctx));
-}
 
 SetExpr::~SetExpr() {
   for (const auto p : values)
@@ -370,7 +309,7 @@ SymbolExpr::SymbolExpr(SourceContext token, string value) : ValueExpr(token), va
 
 any SymbolExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SymbolExpr::infer_type(AstContext &ctx) const { return Symbol; }
+
 
 void SymbolExpr::print(std::ostream &os) const { os << ':' << value; }
 
@@ -379,7 +318,7 @@ PackageNameExpr::PackageNameExpr(SourceContext token, vector<NameExpr *> parts)
 
 any PackageNameExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type PackageNameExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 PackageNameExpr::~PackageNameExpr() {
   for (const auto p : parts)
@@ -403,7 +342,7 @@ FqnExpr::FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, N
 
 any FqnExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FqnExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 FqnExpr::~FqnExpr() {
   if (packageName.has_value()) {
@@ -429,12 +368,7 @@ FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode 
 
 any FunctionExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FunctionExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> bodyTypes;
-  ranges::for_each(bodies, [&](const FunctionBody *body) { bodyTypes.insert(body->infer_type(ctx)); });
 
-  return make_shared<SumType>(bodyTypes);
-}
 
 FunctionExpr::~FunctionExpr() {
   for (const auto p : patterns)
@@ -448,12 +382,12 @@ void FunctionExpr::print(std::ostream &os) const {
   size_t i = 0;
   for (const auto p : patterns) {
     os << *p;
-    if (i < patterns.size() - 1) {
+    if (++i < patterns.size()) {
       os << ' ';
     }
   }
   for (const auto p : bodies) {
-    os << *p << endl;
+    os << *p;
   }
 }
 
@@ -462,13 +396,7 @@ BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *e
 
 any BodyWithGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BodyWithGuards::infer_type(AstContext &ctx) const {
-  if (const Type guardType = guard->infer_type(ctx); !holds_alternative<BuiltinType>(guardType) || get<BuiltinType>(guardType) != Bool) {
-    ctx.addError(yona_error(guard->source_context, yona_error::TYPE, "Guard expression must be boolean"));
-  }
 
-  return expr->infer_type(ctx);
-}
 
 void BodyWithGuards::print(std::ostream &os) const { os << " | " << *guard << " = " << *expr; }
 
@@ -481,7 +409,7 @@ BodyWithoutGuards::BodyWithoutGuards(SourceContext token, ExprNode *expr) : Func
 
 any BodyWithoutGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BodyWithoutGuards::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
@@ -494,12 +422,7 @@ ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &
 
 any ModuleExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ModuleExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> functionTypes;
-  ranges::for_each(functions, [&](const auto *item) { functionTypes.insert(item->infer_type(ctx)); });
 
-  return make_shared<NamedType>(fqn->to_string(), make_shared<SumType>(functionTypes));
-}
 
 ModuleExpr::~ModuleExpr() {
   delete fqn;
@@ -543,15 +466,7 @@ RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType
 
 any RecordInstanceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RecordInstanceExpr::infer_type(AstContext &ctx) const {
-  vector<Type> itemTypes;
 
-  for (const auto &[name, expr] : items) {
-    itemTypes.push_back(expr->infer_type(ctx));
-  }
-
-  return make_shared<NamedType>(recordType->value, make_shared<ProductType>(itemTypes));
-}
 
 RecordInstanceExpr::~RecordInstanceExpr() {
   delete recordType;
@@ -578,13 +493,7 @@ LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr
 
 any LogicalNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LogicalNotOpExpr::infer_type(AstContext &ctx) const {
-  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<BuiltinType>(exprType) || get<BuiltinType>(exprType) != Bool) {
-    ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for logical negation must be boolean"));
-  }
 
-  return Bool;
-}
 
 LogicalNotOpExpr::~LogicalNotOpExpr() { delete expr; }
 
@@ -594,13 +503,7 @@ BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(t
 
 any BinaryNotOpExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BinaryNotOpExpr::infer_type(AstContext &ctx) const {
-  if (const Type exprType = expr->infer_type(ctx); !holds_alternative<BuiltinType>(exprType) || get<BuiltinType>(exprType) != Bool) {
-    ctx.addError(yona_error(expr->source_context, yona_error::TYPE, "Expression for binary negation must be boolean"));
-  }
 
-  return Bool;
-}
 
 BinaryNotOpExpr::~BinaryNotOpExpr() { delete expr; }
 
@@ -610,7 +513,7 @@ PowerExpr::PowerExpr(SourceContext token, ExprNode *left, ExprNode *right) : Bin
 
 any PowerExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type PowerExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void PowerExpr::print(std::ostream &os) const { os << *left << "**" << *right; }
 
@@ -618,7 +521,7 @@ MultiplyExpr::MultiplyExpr(SourceContext token, ExprNode *left, ExprNode *right)
 
 any MultiplyExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type MultiplyExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void MultiplyExpr::print(std::ostream &os) const { os << *left << "*" << *right; }
 
@@ -626,7 +529,7 @@ DivideExpr::DivideExpr(SourceContext token, ExprNode *left, ExprNode *right) : B
 
 any DivideExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DivideExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void DivideExpr::print(std::ostream &os) const { os << *left << "/" << *right; }
 
@@ -634,7 +537,7 @@ ModuloExpr::ModuloExpr(SourceContext token, ExprNode *left, ExprNode *right) : B
 
 any ModuloExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ModuloExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void ModuloExpr::print(std::ostream &os) const { os << *left << "%" << *right; }
 
@@ -642,7 +545,7 @@ AddExpr::AddExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryO
 
 any AddExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type AddExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void AddExpr::print(std::ostream &os) const { os << *left << "+" << *right; }
 
@@ -650,7 +553,7 @@ SubtractExpr::SubtractExpr(SourceContext token, ExprNode *left, ExprNode *right)
 
 any SubtractExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SubtractExpr::infer_type(AstContext &ctx) const { return BinaryOpExpr::infer_type(ctx); }
+
 
 void SubtractExpr::print(std::ostream &os) const { os << *left << "-" << *right; }
 
@@ -658,20 +561,7 @@ LeftShiftExpr::LeftShiftExpr(SourceContext token, ExprNode *left, ExprNode *righ
 
 any LeftShiftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LeftShiftExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for left shift must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for left shift must be integer"));
-  }
-
-  return derive_bin_op_result_type(lhs, rhs);
-}
 
 void LeftShiftExpr::print(std::ostream &os) const { os << *left << "<<" << *right; }
 
@@ -679,20 +569,7 @@ RightShiftExpr::RightShiftExpr(SourceContext token, ExprNode *left, ExprNode *ri
 
 any RightShiftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RightShiftExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for right shift must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for right shift must be integer"));
-  }
-
-  return derive_bin_op_result_type(lhs, rhs);
-}
 
 void RightShiftExpr::print(std::ostream &os) const { os << *left << ">>" << *right; }
 
@@ -700,20 +577,7 @@ ZerofillRightShiftExpr::ZerofillRightShiftExpr(SourceContext token, ExprNode *le
 
 any ZerofillRightShiftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ZerofillRightShiftExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for zerofill right shift must be integer"));
-  }
-
-  return derive_bin_op_result_type(lhs, rhs);
-}
 
 void ZerofillRightShiftExpr::print(std::ostream &os) const { os << *left << ">>>" << *right; }
 
@@ -721,7 +585,7 @@ GteExpr::GteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryO
 
 any GteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type GteExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void GteExpr::print(std::ostream &os) const { os << *left << ">=" << *right; }
 
@@ -729,7 +593,7 @@ LteExpr::LteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryO
 
 any LteExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LteExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void LteExpr::print(std::ostream &os) const { os << *left << "<=" << *right; }
 
@@ -737,7 +601,7 @@ GtExpr::GtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpE
 
 any GtExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type GtExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void GtExpr::print(std::ostream &os) const { os << *left << ">" << *right; }
 
@@ -745,7 +609,7 @@ LtExpr::LtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpE
 
 any LtExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LtExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void LtExpr::print(std::ostream &os) const { os << *left << "<" << *right; }
 
@@ -753,7 +617,7 @@ EqExpr::EqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpE
 
 any EqExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type EqExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void EqExpr::print(std::ostream &os) const { os << *left << "==" << *right; }
 
@@ -761,7 +625,7 @@ NeqExpr::NeqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryO
 
 any NeqExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type NeqExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void NeqExpr::print(std::ostream &os) const { os << *left << "!=" << *right; }
 
@@ -769,7 +633,7 @@ ConsLeftExpr::ConsLeftExpr(SourceContext token, ExprNode *left, ExprNode *right)
 
 any ConsLeftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ConsLeftExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void ConsLeftExpr::print(std::ostream &os) const { os << *left << "-|" << *right; }
 
@@ -777,7 +641,7 @@ ConsRightExpr::ConsRightExpr(SourceContext token, ExprNode *left, ExprNode *righ
 
 any ConsRightExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ConsRightExpr::infer_type(AstContext &ctx) const { return Bool; }
+
 
 void ConsRightExpr::print(std::ostream &os) const { os << *left << "|-" << *right; }
 
@@ -785,26 +649,7 @@ JoinExpr::JoinExpr(SourceContext token, ExprNode *left, ExprNode *right) : Binar
 
 any JoinExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type JoinExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(lhs) || !holds_alternative<shared_ptr<DictCollectionType>>(lhs) ||
-      !holds_alternative<shared_ptr<ProductType>>(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Join expression can be used only for collections"));
-  }
-
-  if (!holds_alternative<shared_ptr<SingleItemCollectionType>>(rhs) || !holds_alternative<shared_ptr<DictCollectionType>>(rhs) ||
-      !holds_alternative<shared_ptr<ProductType>>(rhs)) {
-    ctx.addError(yona_error(right->source_context, yona_error::TYPE, "Join expression can be used only for collections"));
-  }
-
-  if (lhs != rhs) {
-    ctx.addError(yona_error(source_context, yona_error::TYPE, "Join expression can be used only on same types"));
-  }
-
-  return lhs;
-}
 
 void JoinExpr::print(std::ostream &os) const { os << *left << "++" << *right; }
 
@@ -812,20 +657,7 @@ BitwiseAndExpr::BitwiseAndExpr(SourceContext token, ExprNode *left, ExprNode *ri
 
 any BitwiseAndExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BitwiseAndExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise AND must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise AND must be integer"));
-  }
-
-  return derive_bin_op_result_type(lhs, rhs);
-}
 
 void BitwiseAndExpr::print(std::ostream &os) const { os << *left << "&" << *right; }
 
@@ -833,20 +665,7 @@ BitwiseXorExpr::BitwiseXorExpr(SourceContext token, ExprNode *left, ExprNode *ri
 
 any BitwiseXorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BitwiseXorExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise XOR must be integer"));
-  }
-
-  return Bool;
-}
 
 void BitwiseXorExpr::print(std::ostream &os) const { os << *left << "^" << *right; }
 
@@ -854,20 +673,7 @@ BitwiseOrExpr::BitwiseOrExpr(SourceContext token, ExprNode *left, ExprNode *righ
 
 any BitwiseOrExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type BitwiseOrExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!is_integer(lhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise OR must be integer"));
-  }
-
-  if (!is_integer(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for bitwise OR must be integer"));
-  }
-
-  return Bool;
-}
 
 void BitwiseOrExpr::print(std::ostream &os) const { os << *left << "|" << *right; }
 
@@ -875,20 +681,7 @@ LogicalAndExpr::LogicalAndExpr(SourceContext token, ExprNode *left, ExprNode *ri
 
 any LogicalAndExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LogicalAndExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!holds_alternative<BuiltinType>(lhs) || get<BuiltinType>(lhs) != Bool) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical AND must be integer"));
-  }
-
-  if (!holds_alternative<BuiltinType>(rhs) || get<BuiltinType>(rhs) != Bool) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical AND must be integer"));
-  }
-
-  return Bool;
-}
 
 void LogicalAndExpr::print(std::ostream &os) const { os << *left << "&&" << *right; }
 
@@ -896,20 +689,7 @@ LogicalOrExpr::LogicalOrExpr(SourceContext token, ExprNode *left, ExprNode *righ
 
 any LogicalOrExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LogicalOrExpr::infer_type(AstContext &ctx) const {
-  const Type lhs = left->infer_type(ctx);
-  const Type rhs = right->infer_type(ctx);
 
-  if (!holds_alternative<BuiltinType>(lhs) || get<BuiltinType>(lhs) != Bool) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical OR must be integer"));
-  }
-
-  if (!holds_alternative<BuiltinType>(rhs) || get<BuiltinType>(rhs) != Bool) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for logical OR must be integer"));
-  }
-
-  return Bool;
-}
 
 void LogicalOrExpr::print(std::ostream &os) const { os << *left << "||" << *right; }
 
@@ -917,24 +697,32 @@ InExpr::InExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpE
 
 any InExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type InExpr::infer_type(AstContext &ctx) const {
-  if (const Type rhs = right->infer_type(ctx); !holds_alternative<shared_ptr<SingleItemCollectionType>>(rhs) ||
-                                               !holds_alternative<shared_ptr<DictCollectionType>>(rhs) ||
-                                               !holds_alternative<shared_ptr<ProductType>>(rhs)) {
-    ctx.addError(yona_error(left->source_context, yona_error::TYPE, "Expression for IN must be a collection"));
-  }
 
-  return Bool;
-}
 
 void InExpr::print(std::ostream &os) const { os << *left << " in " << *right; }
+
+PipeLeftExpr::PipeLeftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
+
+any PipeLeftExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+
+
+void PipeLeftExpr::print(std::ostream &os) const { os << *left << " <| " << *right; }
+
+PipeRightExpr::PipeRightExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
+
+any PipeRightExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+
+
+void PipeRightExpr::print(std::ostream &os) const { os << *left << " |> " << *right; }
 
 LetExpr::LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr)
     : ScopedNode(token), aliases(nodes_with_parent(std::move(aliases), this)), expr(expr->with_parent<ExprNode>(this)) {}
 
 any LetExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LetExpr::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 LetExpr::~LetExpr() {
   for (const auto p : aliases)
@@ -954,7 +742,7 @@ MainNode::MainNode(SourceContext token, AstNode *node) : ScopedNode(token), node
 
 any MainNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type MainNode::infer_type(AstContext &ctx) const { return node->infer_type(ctx); }
+
 
 MainNode::~MainNode() { delete node; }
 
@@ -966,20 +754,7 @@ IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, Exp
 
 any IfExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type IfExpr::infer_type(AstContext &ctx) const {
-  if (const Type conditionType = condition->infer_type(ctx);
-      !holds_alternative<BuiltinType>(conditionType) || get<BuiltinType>(conditionType) != Bool) {
-    ctx.addError(yona_error(condition->source_context, yona_error::TYPE, "If condition must be boolean"));
-  }
 
-  unordered_set returnTypes{thenExpr->infer_type(ctx)};
-
-  if (elseExpr != nullptr) {
-    returnTypes.insert(elseExpr->infer_type(ctx));
-  }
-
-  return make_shared<SumType>(returnTypes);
-}
 
 IfExpr::~IfExpr() {
   delete condition;
@@ -999,9 +774,7 @@ ApplyExpr::ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNod
 
 any ApplyExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ApplyExpr::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 ApplyExpr::~ApplyExpr() {
   delete call;
@@ -1015,7 +788,7 @@ ApplyExpr::~ApplyExpr() {
 }
 
 void ApplyExpr::print(std::ostream &os) const {
-  os << *call << ' ';
+  os << *call << '(';
   size_t i = 0;
   for (const auto p : args) {
     if (holds_alternative<ExprNode *>(p)) {
@@ -1024,16 +797,17 @@ void ApplyExpr::print(std::ostream &os) const {
       os << *get<ValueExpr *>(p);
     }
     if (i++ < args.size() - 1) {
-      os << " ";
+      os << ", ";
     }
   }
+  os << ')';
 }
 
 DoExpr::DoExpr(SourceContext token, vector<ExprNode *> steps) : ExprNode(token), steps(steps) {}
 
 any DoExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DoExpr::infer_type(AstContext &ctx) const { return steps.back()->infer_type(ctx); }
+
 
 DoExpr::~DoExpr() {
   for (const auto p : steps) {
@@ -1054,7 +828,7 @@ ImportExpr::ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, 
 
 any ImportExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ImportExpr::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 ImportExpr::~ImportExpr() {
   for (const auto p : clauses) {
@@ -1077,9 +851,7 @@ RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *messag
 
 any RaiseExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RaiseExpr::infer_type(AstContext &ctx) const {
-  return make_shared<NamedType>("exception", make_shared<ProductType>(vector{symbol->infer_type(ctx), message->infer_type(ctx)}));
-}
+
 
 RaiseExpr::~RaiseExpr() {
   delete symbol;
@@ -1094,7 +866,7 @@ WithExpr::WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, Name
 
 any WithExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type WithExpr::infer_type(AstContext &ctx) const { return bodyExpr->infer_type(ctx); }
+
 
 WithExpr::~WithExpr() {
   delete contextExpr;
@@ -1120,9 +892,7 @@ FieldAccessExpr::FieldAccessExpr(SourceContext token, IdentifierExpr *identifier
 
 any FieldAccessExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FieldAccessExpr::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 FieldAccessExpr::~FieldAccessExpr() {
   delete identifier;
@@ -1136,9 +906,7 @@ FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier
 
 any FieldUpdateExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FieldUpdateExpr::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 FieldUpdateExpr::~FieldUpdateExpr() {
   delete identifier;
@@ -1165,7 +933,7 @@ LambdaAlias::LambdaAlias(SourceContext token, NameExpr *name, FunctionExpr *lamb
 
 any LambdaAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type LambdaAlias::infer_type(AstContext &ctx) const { return lambda->infer_type(ctx); }
+
 
 LambdaAlias::~LambdaAlias() {
   delete name;
@@ -1179,7 +947,7 @@ ModuleAlias::ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module
 
 any ModuleAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ModuleAlias::infer_type(AstContext &ctx) const { return module->infer_type(ctx); }
+
 
 ModuleAlias::~ModuleAlias() {
   delete name;
@@ -1193,7 +961,7 @@ ValueAlias::ValueAlias(SourceContext token, IdentifierExpr *identifier, ExprNode
 
 any ValueAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ValueAlias::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 ValueAlias::~ValueAlias() {
   delete identifier;
@@ -1207,7 +975,7 @@ PatternAlias::PatternAlias(SourceContext token, PatternNode *pattern, ExprNode *
 
 any PatternAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type PatternAlias::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 PatternAlias::~PatternAlias() {
   delete pattern;
@@ -1221,7 +989,7 @@ FqnAlias::FqnAlias(SourceContext token, NameExpr *name, FqnExpr *fqn)
 
 any FqnAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FqnAlias::infer_type(AstContext &ctx) const { return fqn->infer_type(ctx); }
+
 
 FqnAlias::~FqnAlias() {
   delete name;
@@ -1235,7 +1003,7 @@ FunctionAlias::FunctionAlias(SourceContext token, NameExpr *name, NameExpr *alia
 
 any FunctionAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FunctionAlias::infer_type(AstContext &ctx) const { return alias->infer_type(ctx); }
+
 
 FunctionAlias::~FunctionAlias() {
   delete name;
@@ -1249,9 +1017,7 @@ AliasCall::AliasCall(SourceContext token, NameExpr *alias, NameExpr *funName)
 
 any AliasCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type AliasCall::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 AliasCall::~AliasCall() {
   delete alias;
@@ -1264,22 +1030,20 @@ NameCall::NameCall(SourceContext token, NameExpr *name) : CallExpr(token), name(
 
 any NameCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type NameCall::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 NameCall::~NameCall() { delete name; }
 
-void NameCall::print(std::ostream &os) const { os << *name; }
+void NameCall::print(std::ostream &os) const { 
+    os << *name; 
+}
 
 ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr *, ExprNode *> &fqn, NameExpr *funName)
     : CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this)) {}
 
 any ModuleCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ModuleCall::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 ModuleCall::~ModuleCall() {
   if (holds_alternative<FqnExpr *>(fqn)) {
@@ -1299,14 +1063,25 @@ void ModuleCall::print(std::ostream &os) const {
   os << "::" << *funName;
 }
 
+ExprCall::ExprCall(SourceContext token, ExprNode *expr)
+    : CallExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
+
+any ExprCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+ExprCall::~ExprCall() {
+  delete expr;
+}
+
+void ExprCall::print(std::ostream &os) const {
+  os << "(" << *expr << ")";
+}
+
 ModuleImport::ModuleImport(SourceContext token, FqnExpr *fqn, NameExpr *name)
     : ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
 
 any ModuleImport::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ModuleImport::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 ModuleImport::~ModuleImport() {
   delete fqn;
@@ -1325,9 +1100,7 @@ FunctionsImport::FunctionsImport(SourceContext token, vector<FunctionAlias *> al
 
 any FunctionsImport::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FunctionsImport::infer_type(AstContext &ctx) const {
-  return nullptr; // TODO
-}
+
 
 FunctionsImport::~FunctionsImport() {
   for (const auto p : aliases) {
@@ -1354,9 +1127,7 @@ SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, C
 
 any SeqGeneratorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SeqGeneratorExpr::infer_type(AstContext &ctx) const {
-  return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Seq, reducerExpr->infer_type(ctx));
-}
+
 
 SeqGeneratorExpr::~SeqGeneratorExpr() {
   delete reducerExpr;
@@ -1375,9 +1146,7 @@ SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode *reducerExpr, C
 
 any SetGeneratorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SetGeneratorExpr::infer_type(AstContext &ctx) const {
-  return make_shared<SingleItemCollectionType>(SingleItemCollectionType::Set, reducerExpr->infer_type(ctx));
-}
+
 
 SetGeneratorExpr::~SetGeneratorExpr() {
   delete reducerExpr;
@@ -1394,7 +1163,7 @@ DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode *key, E
 
 any DictGeneratorReducer::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DictGeneratorReducer::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 DictGeneratorReducer::~DictGeneratorReducer() {
   delete key;
@@ -1411,9 +1180,7 @@ DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer *
 
 any DictGeneratorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DictGeneratorExpr::infer_type(AstContext &ctx) const {
-  return make_shared<DictCollectionType>(reducerExpr->key->infer_type(ctx), reducerExpr->value->infer_type(ctx));
-}
+
 
 DictGeneratorExpr::~DictGeneratorExpr() {
   delete reducerExpr;
@@ -1430,15 +1197,8 @@ ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, 
 
 any ValueCollectionExtractorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type ValueCollectionExtractorExpr::infer_type_identifier_or_underscore(AstContext &ctx) const {
-  if (holds_alternative<IdentifierExpr *>(expr)) {
-    return get<IdentifierExpr *>(expr)->infer_type(ctx);
-  } else {
-    return get<UnderscoreNode *>(expr)->infer_type(ctx);
-  }
-}
 
-Type ValueCollectionExtractorExpr::infer_type(AstContext &ctx) const { return infer_type_identifier_or_underscore(ctx); }
+
 
 void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
   if (holds_alternative<IdentifierExpr *>(expr)) {
@@ -1464,7 +1224,7 @@ KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext t
 
 any KeyValueCollectionExtractorExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type KeyValueCollectionExtractorExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr() {
   release_identifier_or_underscore(keyExpr);
@@ -1490,7 +1250,7 @@ PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode *guard, ExprN
 
 any PatternWithGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); };
 
-Type PatternWithGuards::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 PatternWithGuards::~PatternWithGuards() {
   delete guard;
@@ -1503,7 +1263,7 @@ PatternWithoutGuards::PatternWithoutGuards(SourceContext token, ExprNode *expr) 
 
 any PatternWithoutGuards::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type PatternWithoutGuards::infer_type(AstContext &ctx) const { return expr->infer_type(ctx); }
+
 
 PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
 
@@ -1521,7 +1281,7 @@ PatternExpr::PatternExpr(SourceContext token, const variant<Pattern *, PatternWi
 }
 any PatternExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
-Type PatternExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 PatternExpr::~PatternExpr() {
   if (holds_alternative<Pattern *>(patternExpr)) {
@@ -1563,7 +1323,7 @@ CatchPatternExpr::CatchPatternExpr(SourceContext token, Pattern *matchPattern,
 
 any CatchPatternExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type CatchPatternExpr::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 CatchPatternExpr::~CatchPatternExpr() {
   delete matchPattern;
@@ -1596,7 +1356,7 @@ CatchExpr::CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns)
 
 any CatchExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type CatchExpr::infer_type(AstContext &ctx) const { return patterns.back()->infer_type(ctx); }
+
 
 CatchExpr::~CatchExpr() {
   for (const auto p : patterns) {
@@ -1619,9 +1379,7 @@ TryCatchExpr::TryCatchExpr(SourceContext token, ExprNode *tryExpr, CatchExpr *ca
 
 any TryCatchExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TryCatchExpr::infer_type(AstContext &ctx) const {
-  return make_shared<SumType>(unordered_set{tryExpr->infer_type(ctx), catchExpr->infer_type(ctx)});
-}
+
 
 TryCatchExpr::~TryCatchExpr() {
   delete tryExpr;
@@ -1635,7 +1393,7 @@ PatternValue::PatternValue(SourceContext token, const variant<LiteralExpr<nullpt
 
 any PatternValue::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type PatternValue::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 PatternValue::~PatternValue() {
   if (holds_alternative<LiteralExpr<nullptr_t> *>(expr)) {
@@ -1664,7 +1422,7 @@ AsDataStructurePattern::AsDataStructurePattern(SourceContext token, IdentifierEx
 
 any AsDataStructurePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type AsDataStructurePattern::infer_type(AstContext &ctx) const { return pattern->infer_type(ctx); }
+
 
 AsDataStructurePattern::~AsDataStructurePattern() {
   delete identifier;
@@ -1675,7 +1433,7 @@ void AsDataStructurePattern::print(std::ostream &os) const { os << *identifier <
 
 any UnderscorePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type UnderscorePattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 void UnderscorePattern::print(std::ostream &os) const { os << '_'; }
 
@@ -1684,7 +1442,7 @@ TuplePattern::TuplePattern(SourceContext token, vector<Pattern *> patterns)
 
 any TuplePattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TuplePattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 TuplePattern::~TuplePattern() {
   for (const auto p : patterns) {
@@ -1709,7 +1467,7 @@ SeqPattern::SeqPattern(SourceContext token, vector<Pattern *> patterns)
 
 any SeqPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type SeqPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 SeqPattern::~SeqPattern() {
   for (const auto p : patterns) {
@@ -1734,7 +1492,7 @@ HeadTailsPattern::HeadTailsPattern(SourceContext token, vector<PatternWithoutSeq
 
 any HeadTailsPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type HeadTailsPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 HeadTailsPattern::~HeadTailsPattern() {
   for (const auto p : heads) {
@@ -1760,7 +1518,7 @@ TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern *tail, vecto
 
 any TailsHeadPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TailsHeadPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 TailsHeadPattern::~TailsHeadPattern() {
   delete tail;
@@ -1788,7 +1546,7 @@ HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, vector<PatternWi
 
 any HeadTailsHeadPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type HeadTailsHeadPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 HeadTailsHeadPattern::~HeadTailsHeadPattern() {
   for (const auto p : left) {
@@ -1824,7 +1582,7 @@ DictPattern::DictPattern(SourceContext token, vector<pair<PatternValue *, Patter
 
 any DictPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type DictPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 DictPattern::~DictPattern() {
   for (const auto [fst, snd] : keyValuePairs) {
@@ -1850,7 +1608,7 @@ RecordPattern::RecordPattern(SourceContext token, string recordType, vector<pair
 
 any RecordPattern::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type RecordPattern::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 RecordPattern::~RecordPattern() {
   for (const auto [fst, snd] : items) {
@@ -1871,30 +1629,40 @@ void RecordPattern::print(std::ostream &os) const {
   os << ')';
 }
 
-CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<PatternExpr *> patterns)
-    : ExprNode(token), expr(expr->with_parent<ExprNode>(this)), patterns(nodes_with_parent(std::move(patterns), this)) {}
+// CaseClause implementation
+CaseClause::CaseClause(SourceContext token, Pattern *pattern, ExprNode *body)
+    : ExprNode(token), pattern(pattern->with_parent<Pattern>(this)), body(body->with_parent<ExprNode>(this)) {}
+
+CaseClause::~CaseClause() {
+  delete pattern;
+  delete body;
+}
+
+any CaseClause::accept(const AstVisitor &visitor) { return visitor.visit(this); }
+
+void CaseClause::print(std::ostream &os) const {
+  os << *pattern << " -> " << *body;
+}
+
+// CaseExpr implementation
+CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<CaseClause *> clauses)
+    : ExprNode(token), expr(expr->with_parent<ExprNode>(this)), clauses(nodes_with_parent(std::move(clauses), this)) {}
 
 any CaseExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type CaseExpr::infer_type(AstContext &ctx) const {
-  unordered_set<Type> types;
-  for (const auto p : patterns) {
-    types.insert(p->infer_type(ctx));
-  }
-  return make_shared<SumType>(types);
-}
+
 
 CaseExpr::~CaseExpr() {
   delete expr;
-  for (const auto p : patterns) {
-    delete p;
+  for (const auto clause : clauses) {
+    delete clause;
   }
 }
 
 void CaseExpr::print(std::ostream &os) const {
   os << "case " << *expr << " of" << endl;
-  for (const auto p : patterns) {
-    os << "  " << *p << endl;
+  for (const auto clause : clauses) {
+    os << "  | " << *clause << endl;
   }
 }
 
@@ -1917,7 +1685,7 @@ TypeDeclaration::TypeDeclaration(SourceContext token, TypeNameNode *name, vector
 
 any TypeDeclaration::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TypeDeclaration::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 TypeDeclaration::~TypeDeclaration() {
   delete name;
@@ -1942,15 +1710,7 @@ TypeDefinition::TypeDefinition(SourceContext token, TypeNameNode *name, vector<T
 
 any TypeDefinition::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TypeDefinition::infer_type(AstContext &ctx) const {
-  vector<Type> type_names;
-  type_names.reserve(typeNames.size());
-  for (const auto t : typeNames) {
-    delete t;
-  }
-  // return make_shared<NamedType>(name->, make_shared<ProductType>(type_names)); // TODO
-  return nullptr;
-}
+
 
 TypeDefinition::~TypeDefinition() {
   delete name;
@@ -1975,7 +1735,7 @@ TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, vector<Typ
 
 any TypeNode::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TypeNode::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 TypeNode::~TypeNode() {
   delete declaration;
@@ -2000,7 +1760,7 @@ TypeInstance::TypeInstance(SourceContext token, TypeNameNode *name, vector<ExprN
 
 any TypeInstance::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type TypeInstance::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 TypeInstance::~TypeInstance() {
   delete name;
@@ -2027,7 +1787,7 @@ FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr *function
 
 any FunctionDeclaration::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
-Type FunctionDeclaration::infer_type(AstContext &ctx) const { unreachable(); }
+
 
 FunctionDeclaration::~FunctionDeclaration() {
   delete functionName;
@@ -2048,6 +1808,9 @@ void FunctionDeclaration::print(std::ostream &os) const {
 }
 
 any AstVisitor::visit(ExprNode *node) const {
+  if (const auto derived = dynamic_cast<ScopedNode *>(node)) {
+    return visit(derived);
+  }
   if (const auto derived = dynamic_cast<AliasExpr *>(node)) {
     return visit(derived);
   }
@@ -2055,6 +1818,9 @@ any AstVisitor::visit(ExprNode *node) const {
     return visit(derived);
   }
   if (const auto derived = dynamic_cast<CallExpr *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<CaseClause *>(node)) {
     return visit(derived);
   }
   if (const auto derived = dynamic_cast<CaseExpr *>(node)) {
@@ -2112,9 +1878,6 @@ any AstVisitor::visit(ExprNode *node) const {
 }
 
 any AstVisitor::visit(AstNode *node) const {
-  if (const auto derived = dynamic_cast<ExprNode *>(node)) {
-    return visit(derived);
-  }
   if (const auto derived = dynamic_cast<PatternNode *>(node)) {
     return visit(derived);
   }
@@ -2131,6 +1894,9 @@ any AstVisitor::visit(AstNode *node) const {
     return visit(derived);
   }
   if (const auto derived = dynamic_cast<TypeNameNode *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<ExprNode *>(node)) {
     return visit(derived);
   }
   unreachable();
@@ -2394,8 +2160,57 @@ any AstVisitor::visit(TypeNameNode *node) const {
   unreachable();
 }
 
+any AstVisitor::visit(CallExpr *node) const {
+  if (const auto derived = dynamic_cast<AliasCall *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<NameCall *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<ModuleCall *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<ExprCall *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
+any AstVisitor::visit(GeneratorExpr *node) const {
+  if (const auto derived = dynamic_cast<SeqGeneratorExpr *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<SetGeneratorExpr *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<DictGeneratorExpr *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
+any AstVisitor::visit(CollectionExtractorExpr *node) const {
+  if (const auto derived = dynamic_cast<ValueCollectionExtractorExpr *>(node)) {
+    return visit(derived);
+  }
+  if (const auto derived = dynamic_cast<KeyValueCollectionExtractorExpr *>(node)) {
+    return visit(derived);
+  }
+  unreachable();
+}
+
 std::ostream &operator<<(std::ostream &os, const AstNode &obj) {
   obj.print(os);
   return os;
 }
+
+// Explicit template instantiations for LiteralExpr
+template class LiteralExpr<bool>;
+template class LiteralExpr<float>;
+template class LiteralExpr<int>;
+template class LiteralExpr<unsigned char>;
+template class LiteralExpr<string>;
+template class LiteralExpr<wchar_t>;
+template class LiteralExpr<nullptr_t>;
+
 } // namespace yona::ast
