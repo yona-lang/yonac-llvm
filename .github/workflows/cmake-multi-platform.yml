@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest, windows-latest]
+        os: [ubuntu-24.04, macos-latest, windows-2025]
         build_type: [Debug, Release]
         include:
           # Linux Debug
@@ -53,7 +53,7 @@ jobs:
             llvm_version: 20
             
           # Windows Debug
-          - os: windows-latest
+          - os: windows-2025
             build_type: Debug
             name: Windows Debug
             configure_preset: x64-debug
@@ -62,7 +62,7 @@ jobs:
             llvm_version: 20
             
           # Windows Release
-          - os: windows-latest
+          - os: windows-2025
             build_type: Release
             name: Windows Release
             configure_preset: x64-release
@@ -96,7 +96,6 @@ jobs:
         sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{ matrix.llvm_version }} main"
         sudo apt update
         sudo apt install -y \
-          libllvm-${{ matrix.llvm_version }}-ocaml-dev \
           libllvm${{ matrix.llvm_version }} \
           llvm-${{ matrix.llvm_version }} \
           llvm-${{ matrix.llvm_version }}-dev \
@@ -107,10 +106,7 @@ jobs:
           libclang-${{ matrix.llvm_version }}-dev \
           libclang1-${{ matrix.llvm_version }} \
           clang-format-${{ matrix.llvm_version }} \
-          python3-clang-${{ matrix.llvm_version }} \
-          clangd-${{ matrix.llvm_version }} \
-          clang-tidy-${{ matrix.llvm_version }} \
-          lld-${{ matrix.llvm_version }}
+          clangd-${{ matrix.llvm_version }}
 
     # Install dependencies on macOS
     - name: Install dependencies (macOS)
@@ -129,7 +125,6 @@ jobs:
     - name: Install LLVM (Windows)
       if: runner.os == 'Windows'
       run: |
-        choco install llvm --version=20.1.4 -y
         $llvmPath = "C:\Program Files\LLVM"
         echo "LLVM_DIR=$llvmPath" | Out-File -FilePath $env:GITHUB_ENV -Append
         echo "$llvmPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append

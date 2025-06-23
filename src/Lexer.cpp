@@ -1,6 +1,7 @@
-#include "Lexer.h"
 #include <algorithm>
-#include <cctype>
+#include <expected>
+
+#include "Lexer.h"
 
 namespace yona::lexer {
 
@@ -10,7 +11,7 @@ const std::unordered_map<std::string_view, TokenType> Lexer::keywords_ = {
     {"import", TokenType::IMPORT},
     {"from", TokenType::FROM},
     {"as", TokenType::AS},
-    {"export", TokenType::EXPORT},
+    {"exports", TokenType::EXPORT},
     {"let", TokenType::LET},
     {"in", TokenType::IN},
     {"if", TokenType::IF},
@@ -652,19 +653,17 @@ std::expected<Token, LexError> Lexer::scan_token() {
             return make_token(TokenType::UNDERSCORE);
         }
         // Otherwise, it's the start of an identifier
-        current_ = token_start_ + 1; // Reset to after first char
         return scan_identifier();
     }
     
     // Identifiers and keywords
     if (is_identifier_start(ch)) {
-        current_ = token_start_ + 1; // Reset to after first char
         return scan_identifier();
     }
     
     // Numbers
     if (is_digit(ch)) {
-        current_ = token_start_ + 1; // Reset to after first char
+        current_ = token_start_ + 1; // Reset to after first char (safe for digits which are always 1 byte)
         return scan_number();
     }
     
