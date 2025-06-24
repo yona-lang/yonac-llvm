@@ -60,7 +60,8 @@ jobs:
             build_preset: build-debug
             test_preset: unit-tests-windows
             llvm_version: 20
-            
+            llvm_minor_version: 1.7
+
           # Windows Release
           - os: windows-2025
             build_type: Release
@@ -69,6 +70,7 @@ jobs:
             build_preset: build-release
             test_preset: unit-tests-windows
             llvm_version: 20
+            llvm_minor_version: 1.7
 
     name: ${{ matrix.name }}
     
@@ -124,10 +126,33 @@ jobs:
     # Install LLVM on Windows
     - name: Install LLVM (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
-        $llvmPath = "C:\Program Files\LLVM"
-        echo "LLVM_DIR=$llvmPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "$llvmPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        $llvmVersion = "${{ matrix.llvm_version }}"
+        $llvmMinorVersion = "${{ matrix.llvm_minor_version }}"
+        $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
+        $llvmTag = "llvmorg-$llvmVersion.$llvmMinorVersion"
+        $llvmArchive = "clang+llvm-$llvmVersion.$llvmMinorVersion-x86_64-pc-windows-msvc.tar.xz"
+        $downloadUrl = "$llvmBaseUrl/$llvmTag/$llvmArchive"
+        $destDir = "C:\local\LLVM"
+        $tempArchive = "$env:RUNNER_TEMP\$llvmArchive"
+
+        # Create destination directory
+        if (!(Test-Path $destDir)) {
+          New-Item -ItemType Directory -Path $destDir | Out-Null
+        }
+
+        # Download LLVM archive
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchive
+
+        # Extract .tar.xz (requires 7zip, available on GitHub runners)
+        7z x $tempArchive -o"$env:RUNNER_TEMP\llvm-extract" | Out-Null
+        $tarFile = Get-ChildItem "$env:RUNNER_TEMP\llvm-extract" -Filter *.tar | Select-Object -First 1
+        7z x $tarFile.FullName -o"$destDir" | Out-Null
+
+        # Set environment variables
+        echo "LLVM_DIR=$destDir" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "$destDir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
