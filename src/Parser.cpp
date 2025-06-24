@@ -879,11 +879,31 @@ private:
             return make_unique<PatternValue>(loc, symbol_expr);
         }
 
-        // Literal patterns - currently PatternValue doesn't support numeric literals directly
-        // Only nullptr_t, void*, SymbolExpr, and IdentifierExpr are supported
-        if (check(TokenType::YINTEGER) || check(TokenType::YFLOAT) ||
-            check(TokenType::YSTRING) || check(TokenType::YCHARACTER) ||
-            check(TokenType::YTRUE) || check(TokenType::YFALSE)) {
+        // Integer literal pattern
+        if (check(TokenType::YINTEGER)) {
+            auto token = advance();
+            auto value = get<int64_t>(token.value);
+            // Create a LiteralExpr for the integer - this is a workaround
+            // We'll handle it specially in the interpreter
+            auto literal_expr = new IntegerExpr(loc, static_cast<int>(value));
+            // Cast to void* to fit in PatternValue (ugly hack)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(literal_expr));
+        }
+        
+        // Byte literal pattern
+        if (check(TokenType::YBYTE)) {
+            auto token = advance();
+            auto value = get<uint8_t>(token.value);
+            // Create a ByteExpr for the byte - this is a workaround
+            auto byte_expr = new ByteExpr(loc, value);
+            // Cast to void* to fit in PatternValue (ugly hack)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(byte_expr));
+        }
+        
+        // Other literal patterns - currently not properly supported
+        if (check(TokenType::YFLOAT) || check(TokenType::YSTRING) || 
+            check(TokenType::YCHARACTER) || check(TokenType::YTRUE) || 
+            check(TokenType::YFALSE)) {
             advance(); // consume the literal
             // TODO: The AST needs to be updated to support literal patterns
             // For now, return underscore pattern as a placeholder
@@ -1319,12 +1339,11 @@ private:
                 return make_unique<CharacterExpr>(loc, static_cast<wchar_t>(value));
             }
 
-            // TODO: BYTE token type doesn't exist in lexer
-            /*case TokenType::YBYTE: {
+            case TokenType::YBYTE: {
                 auto token = advance();
                 auto value = get<uint8_t>(token.value);
                 return make_unique<ByteExpr>(loc, value);
-            }*/
+            }
 
             case TokenType::YTRUE:
                 advance();
@@ -1429,16 +1448,29 @@ private:
                     return parse_sequence_generator(loc, std::move(first));
                 } else if (match(TokenType::YDOTDOT)) {
                     // Range sequence
-                    auto end = parse_expr();
+                    // Parse end expression - for ranges we only want simple numeric expressions
+                    auto end = parse_range_bound();
+                    if (!end) {
+                        error(ParseError::Type::INVALID_SYNTAX, "Expected numeric expression after '..' in range");
+                        return nullptr;
+                    }
+                    
                     ExprNode* step = nullptr;
-
                     if (match(TokenType::YDOTDOT)) {
-                        step = parse_expr().release();
+                        auto step_expr = parse_range_bound();
+                        if (step_expr) {
+                            step = step_expr.release();
+                        } else {
+                            error(ParseError::Type::INVALID_SYNTAX, "Expected numeric expression for range step");
+                        }
                     }
 
                     expect(TokenType::YRBRACKET, "Expected ']' after range");
-                    return make_unique<RangeSequenceExpr>(loc,
+                    std::cerr << "DEBUG: Creating RangeSequenceExpr" << std::endl;
+                    auto range_expr = make_unique<RangeSequenceExpr>(loc,
                         first.release(), end.release(), step);
+                    std::cerr << "DEBUG: RangeSequenceExpr created" << std::endl;
+                    return range_expr;
                 } else {
                     // Regular list
                     vector<ExprNode*> elements;
@@ -1579,6 +1611,7 @@ private:
 
             // Cons operators
             BINARY_OP_RIGHT_ASSOC(TokenType::YCONS, ConsLeftExpr, "::")
+            BINARY_OP(TokenType::YCONS_RIGHT, ConsRightExpr, ":>")
 
             // Pipe operators
             BINARY_OP_RIGHT_ASSOC(TokenType::YPIPE_LEFT, PipeLeftExpr, "<|")
@@ -1588,15 +1621,6 @@ private:
             // Membership
             BINARY_OP(TokenType::YIN, InExpr, "in")
 
-            // TODO: Implement actual cons operators :: and :>
-            // For now, these are commented out to avoid duplicate case labels
-            /*case TokenType::YCONS_RIGHT:
-                return make_unique<ConsRightExpr>(loc, left.release(),
-                    parse_expr(next_precedence(prec)).release());
-
-            case TokenType::YCONS_LEFT:
-                return make_unique<ConsLeftExpr>(loc, left.release(),
-                    parse_expr(prec).release()); // Right associative*/
 
             // Field access
             case TokenType::YDOT: {
@@ -1659,6 +1683,34 @@ private:
                 current_--; // Put the token back
                 return left;
         }
+    }
+
+    // Parse a simple numeric expression for range bounds
+    // Only supports: integer, float, -integer, -float
+    unique_ptr<ExprNode> parse_range_bound() {
+        SourceLocation loc = current_location();
+        
+        bool negative = false;
+        if (check(TokenType::YMINUS)) {
+            advance();
+            negative = true;
+        }
+        
+        if (check(TokenType::YINTEGER)) {
+            auto token = advance();
+            auto value = get<int64_t>(token.value);
+            int int_value = static_cast<int>(value);
+            if (negative) int_value = -int_value;
+            return make_unique<IntegerExpr>(loc, int_value);
+        } else if (check(TokenType::YFLOAT)) {
+            auto token = advance();
+            auto value = get<double>(token.value);
+            float float_value = static_cast<float>(value);
+            if (negative) float_value = -float_value;
+            return make_unique<FloatExpr>(loc, float_value);
+        }
+        
+        return nullptr;
     }
 
     Precedence get_infix_precedence(TokenType type) const {
@@ -1868,53 +1920,9 @@ private:
         return make_unique<CaseClause>(loc, pattern.release(), body.release());
     }
 
-    unique_ptr<PatternExpr> parse_pattern_expr() {
-        SourceLocation loc = current_location();
-
-        // Consume the leading pipe if present (required in case expressions)
-        match(TokenType::YPIPE);
-
-        auto pattern = parse_pattern();
-
-        if (!pattern) {
-            error(ParseError::Type::INVALID_PATTERN, "Expected pattern after '|'");
-            return nullptr;
-        }
-
-        // For now, we don't support guards - just expect arrow and body
-        expect(TokenType::YARROW, "Expected '->' after pattern");
-
-        // Parse the body expression, but stop at | or end (for next pattern or end of case)
-        auto body = parse_expr_until_pattern_end();
-
-        if (!body) {
-            error(ParseError::Type::INVALID_SYNTAX, "Expected expression after '->'");
-            return nullptr;
-        }
-
-        // The AST structure for PatternExpr is problematic for case expressions.
-        // It doesn't properly associate patterns with their bodies.
-        //
-        // Looking at the interpreter:
-        // - Pattern* variant: does pattern matching but returns matched value (no body!)
-        // - PatternWithoutGuards*: evaluates body but no pattern matching
-        // - vector<PatternWithGuards*>: has guards but still no pattern
-        //
-        // None of these properly handle "pattern -> body" for case expressions.
-        // CatchPatternExpr has the right structure but PatternExpr doesn't.
-        //
-        // For now, we'll use PatternWithoutGuards to store the body.
-        // The interpreter will need to be fixed to properly handle pattern matching.
-
-        auto pattern_without_guards = new PatternWithoutGuards(loc, body.release());
-        variant<Pattern*, PatternWithoutGuards*, vector<PatternWithGuards*>> var = pattern_without_guards;
-
-        // TODO: Fix AST structure to properly support case patterns
-        // The pattern is being thrown away here which breaks pattern matching
-        pattern.release(); // Memory leak but prevents crash
-
-        return make_unique<PatternExpr>(loc, var);
-    }
+    // NOTE: This function was removed as it was unused and contained a memory leak.
+    // Case expressions now properly use parse_case_clause() which returns CaseClause objects
+    // that correctly associate patterns with their body expressions.
 
     unique_ptr<ExprNode> parse_do_expr() {
         SourceLocation loc = current_location();
@@ -2304,15 +2312,47 @@ private:
     }
 
     bool check_fqn_start() {
-        // FQN starts with an identifier
+        // To distinguish between module import and function import:
+        // - Module import: import Module\Name [as alias] in ...
+        // - Function import: import func1, func2 from Module\Name in ...
+        
+        // We need to look ahead for 'from' keyword to determine if this is a function import
+        int lookahead = current_;
+        int depth = 0;
+        
+        while (lookahead < tokens_.size() && depth < 10) {
+            TokenType type = tokens_[lookahead].type;
+            
+            // If we find 'from', this is a function import, not module import
+            if (type == TokenType::YFROM) {
+                return false;
+            }
+            
+            // If we find 'in', we've gone too far - this must be a module import
+            if (type == TokenType::YIN) {
+                break;
+            }
+            
+            // Skip over expected tokens in import clause
+            if (type == TokenType::YIDENTIFIER || type == TokenType::YBACKSLASH || 
+                type == TokenType::YAS || type == TokenType::YCOMMA) {
+                lookahead++;
+                depth++;
+            } else {
+                break;
+            }
+        }
+        
+        // If we have an identifier possibly followed by backslash, it could be FQN
         if (!check(TokenType::YIDENTIFIER)) return false;
-
-        // Look ahead to see if there's a backslash (indicating a package path)
+        
+        // Check if next token suggests FQN
         if (current_ + 1 < tokens_.size()) {
             return tokens_[current_ + 1].type == TokenType::YBACKSLASH;
         }
-        // Single identifier could be a module name without package
-        return false; // We need more context to decide
+        
+        // Single identifier - could be module name if no 'from' found
+        return true;
     }
 
     unique_ptr<FqnExpr> parse_fqn() {

@@ -153,9 +153,13 @@ jobs:
           7z x $tarFile.FullName -o"$destDir" | Out-Null
         }
 
+    - name: Set Up LLVM (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
         # Set environment variables
-        echo "LLVM_INSTALL_PREFIX=$destDir" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "$destDir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        echo "LLVM_INSTALL_PREFIX=D:\local\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "D:\local\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest

@@ -26,7 +26,7 @@ inline struct YonaEnvironment {
   bool compile_mode = false;
 } YONA_ENVIRONMENT;
 
-class yona_error : public runtime_error {
+class yona_error final : public runtime_error {
 public:
   enum Type { SYNTAX, TYPE, REFERENCE, IO, COMPILER, NOT_IMPLEMENTED, RUNTIME };
 
@@ -44,7 +44,7 @@ public:
         {RUNTIME, {"Runtime", ANSI_COLOR_BRIGHT_RED}},
     };
 
-    string location = ctx_.is_valid() ? ctx_.to_string() + " " : "";
+    const string location = ctx_.is_valid() ? ctx_.to_string() + " " : "";
 
     auto [type_name, color] = TYPE_DESCRIPTION.at(type_);
     return std::format("{}{}{} error{}: {}", color, type_name, ANSI_COLOR_RESET,

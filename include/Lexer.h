@@ -21,6 +21,7 @@ enum class TokenType {
     YFLOAT,
     YSTRING,
     YCHARACTER,
+    YBYTE,
     YSYMBOL,
     YTRUE,
     YFALSE,
@@ -107,6 +108,7 @@ enum class TokenType {
 
     // List operations
     YCONS,           // ::
+    YCONS_RIGHT,     // :>
     YPIPE_LEFT,      // <|
     YPIPE_RIGHT,     // |>
     YJOIN,           // ++
@@ -135,6 +137,7 @@ struct Token {
         double,          // FLOAT
         std::string,     // STRING (owned, as it may contain escapes)
         char32_t,        // CHARACTER
+        uint8_t,         // BYTE
         std::string_view // SYMBOL, IDENTIFIER (references to source)
     >;
     LiteralValue value;

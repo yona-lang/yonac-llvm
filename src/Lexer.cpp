@@ -309,6 +309,14 @@ std::expected<Token, LexError> Lexer::scan_number() {
         } else if (ch == '_') {
             // Allow underscores in numbers for readability
             skip_char();
+        } else if ((ch == 'b' || ch == 'B') && !has_dot && !has_exp) {
+            // Check if this is a byte suffix (must be at end of number)
+            auto next = peek_char();
+            if (!next || (!is_digit(next.value()) && next.value() != '_')) {
+                skip_char(); // Consume the 'b' or 'B'
+                break; // Exit the loop, we'll handle byte conversion after
+            }
+            break;
         } else {
             break;
         }
@@ -316,13 +324,41 @@ std::expected<Token, LexError> Lexer::scan_number() {
 
     std::string_view lexeme = current_lexeme();
 
+    // Check for byte suffix
+    bool is_byte = false;
+    if (lexeme.size() > 1 && (lexeme.back() == 'b' || lexeme.back() == 'B')) {
+        is_byte = true;
+        lexeme = lexeme.substr(0, lexeme.size() - 1);
+    }
+
     // Remove underscores for parsing
     std::string clean_lexeme;
     for (char c : lexeme) {
         if (c != '_') clean_lexeme += c;
     }
 
-    if (has_dot || has_exp) {
+    if (is_byte) {
+        // Parse as byte
+        int64_t value;
+        try {
+            size_t idx;
+            value = std::stoll(clean_lexeme, &idx);
+            if (idx != clean_lexeme.size() || value < 0 || value > 255) {
+                return std::unexpected(LexError{
+                    LexError::Type::INVALID_NUMBER_FORMAT,
+                    "Byte literal must be between 0 and 255",
+                    current_location()
+                });
+            }
+        } catch (const std::exception&) {
+            return std::unexpected(LexError{
+                LexError::Type::INVALID_NUMBER_FORMAT,
+                "Invalid byte literal",
+                current_location()
+            });
+        }
+        return make_token(TokenType::YBYTE, static_cast<uint8_t>(value));
+    } else if (has_dot || has_exp) {
         // Parse as float
         double value;
         try {
@@ -688,13 +724,16 @@ std::expected<Token, LexError> Lexer::scan_token() {
             current_ = token_start_; // Reset for character scanning
             return scan_character();
         case ':':
-            // Could be COLON, CONS (::), or SYMBOL
+            // Could be COLON, CONS (::), CONS_RIGHT (:>), or SYMBOL
             if (!is_at_end()) {
                 auto next = peek_char();
                 if (next) {
                     if (next.value() == ':') {
                         skip_char();
                         return make_token(TokenType::YCONS);
+                    } else if (next.value() == '>') {
+                        skip_char();
+                        return make_token(TokenType::YCONS_RIGHT);
                     } else if (is_identifier_start(next.value()) || is_operator_char(next.value())) {
                         current_ = token_start_; // Reset for symbol scanning
                         return scan_symbol();

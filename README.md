@@ -23,7 +23,7 @@ sudo dnf install llvm llvm-devel llvm-libs cmake ninja-build
 ### macOS
 
 ```bash
-brew install llvm boost vcpkg cmake ninja
+brew install llvm cmake ninja
 ```
 
 ### Windows

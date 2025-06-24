@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "common.h"
 #include "utils.h"
@@ -60,6 +61,12 @@ using namespace yona::typechecker;
       return make_shared<RuntimeObject>(Bool, left->get<int>() op right->get<double>());                                                             \
     } else if (left->type == Float && right->type == Int) {                                                                                         \
       return make_shared<RuntimeObject>(Bool, left->get<double>() op right->get<int>());                                                             \
+    } else if (left->type == Byte && right->type == Byte) {                                                                                         \
+      return make_shared<RuntimeObject>(Bool, static_cast<uint8_t>(left->get<std::byte>()) op static_cast<uint8_t>(right->get<std::byte>()));       \
+    } else if (left->type == Byte && right->type == Int) {                                                                                          \
+      return make_shared<RuntimeObject>(Bool, static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) op right->get<int>());                  \
+    } else if (left->type == Int && right->type == Byte) {                                                                                          \
+      return make_shared<RuntimeObject>(Bool, left->get<int>() op static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())));                  \
     }                                                                                                                                                \
                                                                                                                                                      \
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected numeric types for comparison");                         \
@@ -212,7 +219,20 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
       // Unit literal - this would be UnitExpr
       return value->type == Unit;
     } else if constexpr (is_same_v<T, LiteralExpr<void*>*>) {
-      // This case shouldn't happen in practice
+      // HACK: We're using void* to smuggle in IntegerExpr and ByteExpr
+      // Cast to base AstNode to check the type
+      auto node = reinterpret_cast<AstNode*>(arg);
+      
+      if (node->get_type() == AST_INTEGER_EXPR) {
+        auto int_expr = static_cast<IntegerExpr*>(node);
+        if (value->type != Int) return false;
+        return value->get<int>() == int_expr->value;
+      }
+      else if (node->get_type() == AST_BYTE_EXPR) {
+        auto byte_expr = static_cast<ByteExpr*>(node);
+        if (value->type != Byte) return false;
+        return static_cast<uint8_t>(value->get<std::byte>()) == byte_expr->value;
+      }
       return false;
     } else if constexpr (is_same_v<T, SymbolExpr*>) {
       // Symbol literal
@@ -430,9 +450,93 @@ bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPt
   return match_pattern(pattern, value);
 }
 
-BINARY_OP(AddExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 0, plus<>), BINARY_OP_EXTRACTION(Float, double, 0.0, 0, plus<>))
-BINARY_OP(MultiplyExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 1, 0, multiplies<>), BINARY_OP_EXTRACTION(Float, double, 1.0, 0, multiplies<>))
-BINARY_OP(SubtractExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, minus<>), BINARY_OP_EXTRACTION(Float, double, 0.0, 1, minus<>))
+any Interpreter::visit(AddExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  
+  auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
+  CHECK_EXCEPTION_RETURN();
+  auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
+  CHECK_EXCEPTION_RETURN();
+  
+  // Handle byte promotion to int
+  if (left->type == Byte || right->type == Byte) {
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
+                   (left->type == Int) ? left->get<int>() : 
+                   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+                    (right->type == Int) ? right->get<int>() :
+                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    return make_shared<RuntimeObject>(Int, left_val + right_val);
+  }
+  
+  // Original int/float handling
+  if (auto result = first_defined_optional({
+    BINARY_OP_EXTRACTION(Int, int, 0, 0, plus<>),
+    BINARY_OP_EXTRACTION(Float, double, 0.0, 0, plus<>)
+  }); result.has_value()) {
+    return result.value();
+  } else {
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Float");
+  }
+}
+any Interpreter::visit(MultiplyExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  
+  auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
+  CHECK_EXCEPTION_RETURN();
+  auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
+  CHECK_EXCEPTION_RETURN();
+  
+  // Handle byte promotion to int
+  if (left->type == Byte || right->type == Byte) {
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
+                   (left->type == Int) ? left->get<int>() : 
+                   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+                    (right->type == Int) ? right->get<int>() :
+                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    return make_shared<RuntimeObject>(Int, left_val * right_val);
+  }
+  
+  // Original int/float handling
+  if (auto result = first_defined_optional({
+    BINARY_OP_EXTRACTION(Int, int, 1, 0, multiplies<>),
+    BINARY_OP_EXTRACTION(Float, double, 1.0, 0, multiplies<>)
+  }); result.has_value()) {
+    return result.value();
+  } else {
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Float");
+  }
+}
+any Interpreter::visit(SubtractExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  
+  auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
+  CHECK_EXCEPTION_RETURN();
+  auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
+  CHECK_EXCEPTION_RETURN();
+  
+  // Handle byte promotion to int
+  if (left->type == Byte || right->type == Byte) {
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
+                   (left->type == Int) ? left->get<int>() : 
+                   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+                    (right->type == Int) ? right->get<int>() :
+                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
+    return make_shared<RuntimeObject>(Int, left_val - right_val);
+  }
+  
+  // Original int/float handling
+  if (auto result = first_defined_optional({
+    BINARY_OP_EXTRACTION(Int, int, 0, 1, minus<>),
+    BINARY_OP_EXTRACTION(Float, double, 0.0, 1, minus<>)
+  }); result.has_value()) {
+    return result.value();
+  } else {
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Float");
+  }
+}
 BINARY_OP(DivideExpr, "Int or Float", BINARY_OP_EXTRACTION(Int, int, 0, 1, divides<>), BINARY_OP_EXTRACTION(Float, double, 0.0, 1, divides<>))
 
 BITWISE_OP(BitwiseAndExpr, Int, int, &)
@@ -585,7 +689,7 @@ any Interpreter::visit(BodyWithoutGuards *node) const {
 }
 any Interpreter::visit(ByteExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Byte, node->value, node);
+  return make_typed_object(Byte, static_cast<std::byte>(node->value), node);
 }
 any Interpreter::visit(CaseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -906,6 +1010,9 @@ any Interpreter::visit(FunctionsImport *node) const {
     // Use alias if provided, otherwise use original name
     const string& import_name = alias->alias ? alias->alias->value : func_name;
     IS.frame->write(import_name, make_shared<RuntimeObject>(Function, func));
+    
+    // Debug: Verify the function was written
+    // std::cout << "Imported function '" << import_name << "' to frame" << std::endl;
   }
 
   return make_shared<RuntimeObject>(Unit, nullptr);
@@ -945,6 +1052,10 @@ any Interpreter::visit(ImportClauseExpr *node) const {
 any Interpreter::visit(ImportExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
+  // Create a new frame for the imported bindings
+  auto saved_frame = IS.frame;
+  IS.frame = make_shared<InterepterFrame>(saved_frame);
+
   // Process all import clauses
   for (auto clause : node->clauses) {
     auto clause_result = any_cast<RuntimeObjectPtr>(visit(clause));
@@ -952,11 +1063,15 @@ any Interpreter::visit(ImportExpr *node) const {
   }
 
   // Visit the expression that uses the imported functions
+  any result = make_shared<RuntimeObject>(Unit, nullptr);
   if (node->expr) {
-    return visit(node->expr);
+    result = visit(node->expr);
   }
 
-  return make_shared<RuntimeObject>(Unit, nullptr);
+  // Restore the previous frame
+  IS.frame = saved_frame;
+  
+  return result;
 }
 any Interpreter::visit(InExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1337,7 +1452,73 @@ any Interpreter::visit(RaiseExpr *node) const {
   // Return unit value (exception is in the state)
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
-any Interpreter::visit(RangeSequenceExpr *node) const { return expr_wrapper(node); }
+any Interpreter::visit(RangeSequenceExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  
+  // Evaluate start, end, and step expressions
+  auto start_obj = any_cast<RuntimeObjectPtr>(visit(node->start));
+  CHECK_EXCEPTION_RETURN();
+  
+  auto end_obj = any_cast<RuntimeObjectPtr>(visit(node->end));
+  CHECK_EXCEPTION_RETURN();
+  
+  // Evaluate step if provided
+  RuntimeObjectPtr step_obj;
+  if (node->step) {
+    step_obj = any_cast<RuntimeObjectPtr>(visit(node->step));
+    CHECK_EXCEPTION_RETURN();
+  }
+  
+  vector<RuntimeObjectPtr> result_fields;
+  
+  // Handle integer ranges
+  if (start_obj->type == Int && end_obj->type == Int && (!step_obj || step_obj->type == Int)) {
+    int start = start_obj->get<int>();
+    int end = end_obj->get<int>();
+    // If no step provided, determine direction automatically
+    int step = step_obj ? step_obj->get<int>() : (start <= end ? 1 : -1);
+    
+    if (step == 0) {
+      throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Range step cannot be zero");
+    }
+    
+    // Handle forward and reverse ranges
+    if ((step > 0 && start <= end) || (step < 0 && start >= end)) {
+      for (int i = start; (step > 0 ? i <= end : i >= end); i += step) {
+        result_fields.push_back(make_shared<RuntimeObject>(Int, i));
+      }
+    }
+    // Empty range if direction doesn't match
+  }
+  // Handle float ranges
+  else if ((start_obj->type == Float || start_obj->type == Int) && 
+           (end_obj->type == Float || end_obj->type == Int) &&
+           (!step_obj || step_obj->type == Float || step_obj->type == Int)) {
+    double start = (start_obj->type == Float) ? start_obj->get<double>() : start_obj->get<int>();
+    double end = (end_obj->type == Float) ? end_obj->get<double>() : end_obj->get<int>();
+    // If no step provided, determine direction automatically
+    double step = step_obj ? 
+      ((step_obj->type == Float) ? step_obj->get<double>() : step_obj->get<int>()) :
+      (start <= end ? 1.0 : -1.0);
+    
+    if (step == 0.0) {
+      throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Range step cannot be zero");
+    }
+    
+    // Handle forward and reverse ranges with floating point comparison tolerance
+    const double epsilon = 1e-10;
+    if ((step > 0 && start <= end + epsilon) || (step < 0 && start >= end - epsilon)) {
+      for (double i = start; (step > 0 ? i <= end + epsilon : i >= end - epsilon); i += step) {
+        result_fields.push_back(make_shared<RuntimeObject>(Float, i));
+      }
+    }
+    // Empty range if direction doesn't match
+  } else {
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Range bounds and step must be numeric types");
+  }
+  
+  return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(result_fields));
+}
 any Interpreter::visit(RecordInstanceExpr *node) const { return expr_wrapper(node); }
 
 any Interpreter::visit(RecordNode *node) const {
@@ -1750,20 +1931,23 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
                      "Failed to open module file: " + module_path);
   }
 
-  auto parse_result = parser.parse_input(file);
-  if (!parse_result.success || !parse_result.node) {
+  // Read file contents
+  stringstream buffer;
+  buffer << file.rdbuf();
+  string file_contents = buffer.str();
+
+  auto parse_result = parser.parse_module(file_contents, module_path);
+  if (!parse_result.has_value()) {
     string error_msg = "Failed to parse module: " + module_path;
-    if (parse_result.ast_ctx.hasErrors()) {
-      auto errors = parse_result.ast_ctx.getErrors();
-      if (!errors.empty()) {
-        error_msg = error_msg + " - " + errors.begin()->second->what();
-      }
+    auto& errors = parse_result.error();
+    if (!errors.empty()) {
+      error_msg = error_msg + " - " + errors.front().message;
     }
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, error_msg);
   }
 
   // Visit the module to evaluate it
-  auto result = any_cast<RuntimeObjectPtr>(visit(parse_result.node.get()));
+  auto result = any_cast<RuntimeObjectPtr>(visit(parse_result.value().get()));
 
   if (result->type != Module) {
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE,

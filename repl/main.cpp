@@ -60,8 +60,8 @@ ProgramOptions process_program_options(const int argc, const char *const argv[])
 
   // Options
   app.add_option("-e,--expr", expr_input, "Evaluate expression");
-  app.add_option("-m,--module", module_path, "Input module file (lookup-able in YONA_PATH, without .yona extension)")
-     ->check(CLI::NonexistentPath); // This allows non-existent paths (will be looked up in YONA_PATH)
+  app.add_option("-m,--module,module", module_path, "Input module file (lookup-able in YONA_PATH, without .yona extension)")
+     ->check(CLI::NonexistentPath);
   app.add_option("-f,--function", opts.main_fun_name, "Main function FQN")
      ->default_val("run");
   app.add_flag("--ast", opts.print_ast, "Print AST");
@@ -73,10 +73,6 @@ ProgramOptions process_program_options(const int argc, const char *const argv[])
     yona_path_env = env_val;
     opts.search_paths = split_paths(yona_path_env);
   }
-
-  // Allow module as positional argument
-  app.add_option("module", module_path, "Input module file")
-     ->check(CLI::NonexistentPath);
 
   try {
     app.parse(argc, argv);

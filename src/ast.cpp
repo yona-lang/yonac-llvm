@@ -263,7 +263,10 @@ void ValuesSequenceExpr::print(std::ostream &os) const {
 }
 
 RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode *start, ExprNode *end, ExprNode *step)
-    : SequenceExpr(token), start(start->with_parent<ExprNode>(this)), end(end->with_parent<ExprNode>(this)), step(step->with_parent<ExprNode>(this)) {
+    : SequenceExpr(token), 
+      start(start->with_parent<ExprNode>(this)), 
+      end(end->with_parent<ExprNode>(this)), 
+      step(step ? step->with_parent<ExprNode>(this) : nullptr) {
 }
 
 any RangeSequenceExpr::accept(const AstVisitor &visitor) { return visitor.visit(this); }
