@@ -77,19 +77,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Cache vcpkg packages
-    - name: Cache vcpkg
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ github.workspace }}/vcpkg
-          !${{ github.workspace }}/vcpkg/buildtrees
-          !${{ github.workspace }}/vcpkg/packages
-          !${{ github.workspace }}/vcpkg/downloads
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-
-
     # Install LLVM on Linux
     - name: Install LLVM (Linux)
       if: runner.os == 'Linux'
@@ -172,13 +159,6 @@ jobs:
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
-
-    # Setup vcpkg
-    - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11
-      with:
-        # This will use the vcpkg.json and vcpkg-configuration.json from the repo
-        runVcpkgInstall: false
 
     # Configure, Build and Test
     - name: Run CMake
