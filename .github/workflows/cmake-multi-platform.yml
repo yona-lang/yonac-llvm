@@ -61,6 +61,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            boost_version: 1.88.0
 
           # Windows Release
           - os: windows-2025
@@ -71,6 +72,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            boost_version: 1.88.0
 
     name: ${{ matrix.name }}
     
@@ -108,20 +110,31 @@ jobs:
           libclang-${{ matrix.llvm_version }}-dev \
           libclang1-${{ matrix.llvm_version }} \
           clang-format-${{ matrix.llvm_version }} \
-          clangd-${{ matrix.llvm_version }}
+          clangd-${{ matrix.llvm_version }} \
+          libboost-all-dev
 
     # Install dependencies on macOS
     - name: Install dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install llvm boost ninja
+        brew install llvm@${{ matrix.llvm_version }} boost ninja
         # Check LLVM version
         brew list --versions llvm
-        echo "LLVM_DIR=$(brew --prefix llvm)" >> $GITHUB_ENV
-        echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+        echo "LLVM_DIR=$(brew --prefix llvm@${{ matrix.llvm_version }})" >> $GITHUB_ENV
+        echo "LDFLAGS=-L$(brew --prefix llvm@${{ matrix.llvm_version }})/lib" >> $GITHUB_ENV
+        echo "CPPFLAGS=-I$(brew --prefix llvm@${{ matrix.llvm_version }})/include" >> $GITHUB_ENV
+        echo "$(brew --prefix llvm@${{ matrix.llvm_version }})/bin" >> $GITHUB_PATH
         # Override compiler paths for CI
-        echo "CC=$(brew --prefix llvm)/bin/clang" >> $GITHUB_ENV
-        echo "CXX=$(brew --prefix llvm)/bin/clang++" >> $GITHUB_ENV
+        echo "CC=$(brew --prefix llvm@${{ matrix.llvm_version }})/bin/clang" >> $GITHUB_ENV
+        echo "CXX=$(brew --prefix llvm@${{ matrix.llvm_version }})/bin/clang++" >> $GITHUB_ENV
+
+    # Cache LLVM (Windows)
+    - name: Cache LLVM (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: C:\local\LLVM
+        key: llvm-${{ matrix.llvm_version }}-${{ matrix.llvm_minor_version }}
 
     # Install LLVM on Windows
     - name: Install LLVM (Windows)
@@ -130,29 +143,59 @@ jobs:
       run: |
         $llvmVersion = "${{ matrix.llvm_version }}"
         $llvmMinorVersion = "${{ matrix.llvm_minor_version }}"
-        $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
-        $llvmTag = "llvmorg-$llvmVersion.$llvmMinorVersion"
-        $llvmArchive = "clang+llvm-$llvmVersion.$llvmMinorVersion-x86_64-pc-windows-msvc.tar.xz"
-        $downloadUrl = "$llvmBaseUrl/$llvmTag/$llvmArchive"
         $destDir = "C:\local\LLVM"
-        $tempArchive = "$env:RUNNER_TEMP\$llvmArchive"
+        $clangExe = Join-Path $destDir "bin\clang.exe"
+        if (!(Test-Path $clangExe)) {
+          $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
+          $llvmTag = "llvmorg-$llvmVersion.$llvmMinorVersion"
+          $llvmArchive = "clang+llvm-$llvmVersion.$llvmMinorVersion-x86_64-pc-windows-msvc.tar.xz"
+          $downloadUrl = "$llvmBaseUrl/$llvmTag/$llvmArchive"
+          $tempArchive = "$env:RUNNER_TEMP\$llvmArchive"
 
-        # Create destination directory
-        if (!(Test-Path $destDir)) {
-          New-Item -ItemType Directory -Path $destDir | Out-Null
+          # Create destination directory
+          if (!(Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir | Out-Null
+          }
+
+          # Download LLVM archive
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchive
+
+          # Extract .tar.xz (requires 7zip, available on GitHub runners)
+          7z x $tempArchive -o"$env:RUNNER_TEMP\llvm-extract" | Out-Null
+          $tarFile = Get-ChildItem "$env:RUNNER_TEMP\llvm-extract" -Filter *.tar | Select-Object -First 1
+          7z x $tarFile.FullName -o"$destDir" | Out-Null
         }
-
-        # Download LLVM archive
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchive
-
-        # Extract .tar.xz (requires 7zip, available on GitHub runners)
-        7z x $tempArchive -o"$env:RUNNER_TEMP\llvm-extract" | Out-Null
-        $tarFile = Get-ChildItem "$env:RUNNER_TEMP\llvm-extract" -Filter *.tar | Select-Object -First 1
-        7z x $tarFile.FullName -o"$destDir" | Out-Null
 
         # Set environment variables
         echo "LLVM_DIR=$destDir" | Out-File -FilePath $env:GITHUB_ENV -Append
         echo "$destDir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    # Cache Boost (Windows)
+    - name: Cache Boost (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: C:\local\boost
+        key: boost
+
+    # Install Boost (Windows)
+    - name: Install Boost (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $boostVersion = "${{ matrix.boost_version }}"        
+        $boostUrl = "https://archives.boost.io/release/1.88.0/binaries/boost_$boostVersion-bin-msvc-all-32-64.7z"
+        $boostArchive = "$env:RUNNER_TEMP\boost_$boostVersion.7z"
+        $boostDest = "C:\local"
+        $boostDir = "C:\local\boost"
+
+        if (!(Test-Path $boostDir)) {
+          Invoke-WebRequest -Uri $boostUrl -OutFile $boostArchive
+          7z x $boostArchive -o"$boostDest" | Out-Null
+        }
+
+        # Optionally set BOOST_ROOT for CMake
+        echo "BOOST_ROOT=$boostDir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
