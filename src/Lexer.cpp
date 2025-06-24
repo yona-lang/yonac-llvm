@@ -7,51 +7,51 @@ namespace yona::lexer {
 
 // Keyword lookup table
 const std::unordered_map<std::string_view, TokenType> Lexer::keywords_ = {
-    {"module", TokenType::MODULE},
-    {"import", TokenType::IMPORT},
-    {"from", TokenType::FROM},
-    {"as", TokenType::AS},
-    {"exports", TokenType::EXPORT},
-    {"let", TokenType::LET},
-    {"in", TokenType::IN},
-    {"if", TokenType::IF},
-    {"then", TokenType::THEN},
-    {"else", TokenType::ELSE},
-    {"case", TokenType::CASE},
-    {"of", TokenType::OF},
-    {"do", TokenType::DO},
-    {"end", TokenType::END},
-    {"try", TokenType::TRY},
-    {"catch", TokenType::CATCH},
-    {"raise", TokenType::RAISE},
-    {"with", TokenType::WITH},
-    {"fun", TokenType::FUN},
-    {"lambda", TokenType::LAMBDA},
-    {"record", TokenType::RECORD},
-    {"type", TokenType::TYPE},
-    {"true", TokenType::TRUE},
-    {"false", TokenType::FALSE},
+    {"module", TokenType::YMODULE},
+    {"import", TokenType::YIMPORT},
+    {"from", TokenType::YFROM},
+    {"as", TokenType::YAS},
+    {"exports", TokenType::YEXPORT},
+    {"let", TokenType::YLET},
+    {"in", TokenType::YIN},
+    {"if", TokenType::YIF},
+    {"then", TokenType::YTHEN},
+    {"else", TokenType::YELSE},
+    {"case", TokenType::YCASE},
+    {"of", TokenType::YOF},
+    {"do", TokenType::YDO},
+    {"end", TokenType::YEND},
+    {"try", TokenType::YTRY},
+    {"catch", TokenType::YCATCH},
+    {"raise", TokenType::YRAISE},
+    {"with", TokenType::YWITH},
+    {"fun", TokenType::YFUN},
+    {"lambda", TokenType::YLAMBDA},
+    {"record", TokenType::YRECORD},
+    {"type", TokenType::YTYPE},
+    {"true", TokenType::YTRUE},
+    {"false", TokenType::YFALSE},
 };
 
 // Token methods
 std::string Token::to_string() const {
-    return std::format("[{}:{}:{} {} '{}']", 
-        location.line, location.column, 
-        token_type_to_string(type), 
+    return std::format("[{}:{}:{} {} '{}']",
+        location.line, location.column,
+        token_type_to_string(type),
         static_cast<int>(type),
         lexeme);
 }
 
 bool Token::is_keyword() const noexcept {
-    return type >= TokenType::MODULE && type <= TokenType::TYPE;
+    return type >= TokenType::YMODULE && type <= TokenType::YTYPE;
 }
 
 bool Token::is_operator() const noexcept {
-    return type >= TokenType::PLUS && type <= TokenType::JOIN;
+    return type >= TokenType::YPLUS && type <= TokenType::YJOIN;
 }
 
 bool Token::is_literal() const noexcept {
-    return type >= TokenType::INTEGER && type <= TokenType::UNIT;
+    return type >= TokenType::YINTEGER && type <= TokenType::YUNIT;
 }
 
 // Character classification
@@ -94,17 +94,17 @@ std::expected<char32_t, LexError> Lexer::peek_char() const {
     if (current_ >= source_.length()) {
         return U'\0';
     }
-    
+
     // Simple ASCII fast path
     unsigned char ch = source_[current_];
     if (ch < 0x80) {
         return static_cast<char32_t>(ch);
     }
-    
+
     // UTF-8 decoding
     size_t len = 0;
     char32_t result = 0;
-    
+
     if ((ch & 0xE0) == 0xC0) {
         len = 2;
         result = ch & 0x1F;
@@ -121,7 +121,7 @@ std::expected<char32_t, LexError> Lexer::peek_char() const {
             current_location()
         });
     }
-    
+
     if (current_ + len > source_.length()) {
         return std::unexpected(LexError{
             LexError::Type::INVALID_CHARACTER,
@@ -129,7 +129,7 @@ std::expected<char32_t, LexError> Lexer::peek_char() const {
             current_location()
         });
     }
-    
+
     for (size_t i = 1; i < len; ++i) {
         unsigned char byte = source_[current_ + i];
         if ((byte & 0xC0) != 0x80) {
@@ -141,7 +141,7 @@ std::expected<char32_t, LexError> Lexer::peek_char() const {
         }
         result = (result << 6) | (byte & 0x3F);
     }
-    
+
     return result;
 }
 
@@ -150,9 +150,9 @@ std::expected<char32_t, LexError> Lexer::advance_char() {
     if (!ch_result) {
         return ch_result;
     }
-    
+
     char32_t ch = ch_result.value();
-    
+
     // Update position
     if (ch == '\n') {
         line_++;
@@ -160,7 +160,7 @@ std::expected<char32_t, LexError> Lexer::advance_char() {
     } else {
         column_++;
     }
-    
+
     // Advance current position by the number of bytes in the UTF-8 sequence
     if (ch < 0x80) {
         current_++;
@@ -171,7 +171,7 @@ std::expected<char32_t, LexError> Lexer::advance_char() {
     } else {
         current_ += 4;
     }
-    
+
     return ch;
 }
 
@@ -202,7 +202,7 @@ Token Lexer::make_token(TokenType type, Token::LiteralValue value) const {
 
 Token Lexer::make_error_token(const std::string& message) const {
     return Token{
-        TokenType::ERROR,
+        TokenType::YERROR,
         current_lexeme(),
         {token_start_line_, token_start_column_, token_start_, current_ - token_start_, filename_},
         message
@@ -214,9 +214,9 @@ void Lexer::skip_whitespace_and_comments() {
     while (!is_at_end()) {
         auto ch_result = peek_char();
         if (!ch_result) return;
-        
+
         char32_t ch = ch_result.value();
-        
+
         if (is_whitespace(ch)) {
             skip_char();
         } else if (ch == '#') {
@@ -232,11 +232,11 @@ void Lexer::skip_whitespace_and_comments() {
             skip_char(); // /
             skip_char(); // *
             int depth = 1;
-            
+
             while (!is_at_end() && depth > 0) {
                 auto next = peek_char();
                 if (!next) break;
-                
+
                 if (next.value() == '/' && current_ + 1 < source_.length() && source_[current_ + 1] == '*') {
                     skip_char();
                     skip_char();
@@ -260,34 +260,34 @@ std::expected<Token, LexError> Lexer::scan_identifier() {
     while (!is_at_end()) {
         auto ch_result = peek_char();
         if (!ch_result) return std::unexpected(ch_result.error());
-        
+
         if (!is_identifier_continue(ch_result.value())) {
             break;
         }
         skip_char();
     }
-    
+
     std::string_view lexeme = current_lexeme();
-    
+
     // Check if it's a keyword
     if (auto it = keywords_.find(lexeme); it != keywords_.end()) {
         return make_token(it->second);
     }
-    
-    return make_token(TokenType::IDENTIFIER, lexeme);
+
+    return make_token(TokenType::YIDENTIFIER, lexeme);
 }
 
 // Scan number
 std::expected<Token, LexError> Lexer::scan_number() {
     bool has_dot = false;
     bool has_exp = false;
-    
+
     while (!is_at_end()) {
         auto ch_result = peek_char();
         if (!ch_result) return std::unexpected(ch_result.error());
-        
+
         char32_t ch = ch_result.value();
-        
+
         if (is_digit(ch)) {
             skip_char();
         } else if (ch == '.' && !has_dot && !has_exp) {
@@ -300,7 +300,7 @@ std::expected<Token, LexError> Lexer::scan_number() {
         } else if ((ch == 'e' || ch == 'E') && !has_exp) {
             has_exp = true;
             skip_char();
-            
+
             // Handle optional sign
             auto next = peek_char();
             if (next && (next.value() == '+' || next.value() == '-')) {
@@ -313,15 +313,15 @@ std::expected<Token, LexError> Lexer::scan_number() {
             break;
         }
     }
-    
+
     std::string_view lexeme = current_lexeme();
-    
+
     // Remove underscores for parsing
     std::string clean_lexeme;
     for (char c : lexeme) {
         if (c != '_') clean_lexeme += c;
     }
-    
+
     if (has_dot || has_exp) {
         // Parse as float
         double value;
@@ -342,7 +342,7 @@ std::expected<Token, LexError> Lexer::scan_number() {
                 current_location()
             });
         }
-        return make_token(TokenType::FLOAT, value);
+        return make_token(TokenType::YFLOAT, value);
     } else {
         // Parse as integer
         int64_t value;
@@ -363,7 +363,7 @@ std::expected<Token, LexError> Lexer::scan_number() {
                 current_location()
             });
         }
-        return make_token(TokenType::INTEGER, value);
+        return make_token(TokenType::YINTEGER, value);
     }
 }
 
@@ -371,7 +371,7 @@ std::expected<Token, LexError> Lexer::scan_number() {
 std::expected<char32_t, LexError> Lexer::parse_escape_sequence() {
     auto ch_result = advance_char();
     if (!ch_result) return std::unexpected(ch_result.error());
-    
+
     char32_t ch = ch_result.value();
     switch (ch) {
         case 'n': return '\n';
@@ -395,11 +395,11 @@ std::expected<char32_t, LexError> Lexer::parse_escape_sequence() {
 // Parse unicode escape
 std::expected<char32_t, LexError> Lexer::parse_unicode_escape(int digits) {
     char32_t value = 0;
-    
+
     for (int i = 0; i < digits; ++i) {
         auto ch_result = advance_char();
         if (!ch_result) return std::unexpected(ch_result.error());
-        
+
         char32_t ch = ch_result.value();
         if (ch >= '0' && ch <= '9') {
             value = value * 16 + (ch - '0');
@@ -415,7 +415,7 @@ std::expected<char32_t, LexError> Lexer::parse_unicode_escape(int digits) {
             });
         }
     }
-    
+
     return value;
 }
 
@@ -423,21 +423,21 @@ std::expected<char32_t, LexError> Lexer::parse_unicode_escape(int digits) {
 std::expected<Token, LexError> Lexer::scan_string() {
     skip_char(); // Skip opening quote
     std::string value;
-    
+
     while (!is_at_end()) {
         auto ch_result = peek_char();
         if (!ch_result) return std::unexpected(ch_result.error());
-        
+
         char32_t ch = ch_result.value();
-        
+
         if (ch == '"') {
             skip_char();
-            return make_token(TokenType::STRING, std::move(value));
+            return make_token(TokenType::YSTRING, std::move(value));
         } else if (ch == '\\') {
             skip_char();
             auto escaped = parse_escape_sequence();
             if (!escaped) return std::unexpected(escaped.error());
-            
+
             // Convert char32_t to UTF-8
             if (escaped.value() < 0x80) {
                 value += static_cast<char>(escaped.value());
@@ -473,7 +473,7 @@ std::expected<Token, LexError> Lexer::scan_string() {
             }
         }
     }
-    
+
     return std::unexpected(LexError{
         LexError::Type::UNTERMINATED_STRING,
         "Unterminated string literal",
@@ -484,12 +484,12 @@ std::expected<Token, LexError> Lexer::scan_string() {
 // Scan character literal
 std::expected<Token, LexError> Lexer::scan_character() {
     skip_char(); // Skip opening quote
-    
+
     auto ch_result = peek_char();
     if (!ch_result) return std::unexpected(ch_result.error());
-    
+
     char32_t ch = ch_result.value();
-    
+
     if (ch == '\\') {
         skip_char();
         auto escaped = parse_escape_sequence();
@@ -504,7 +504,7 @@ std::expected<Token, LexError> Lexer::scan_character() {
     } else {
         skip_char();
     }
-    
+
     // Expect closing quote
     auto close_result = advance_char();
     if (!close_result || close_result.value() != '\'') {
@@ -514,18 +514,18 @@ std::expected<Token, LexError> Lexer::scan_character() {
             current_location()
         });
     }
-    
-    return make_token(TokenType::CHARACTER, ch);
+
+    return make_token(TokenType::YCHARACTER, ch);
 }
 
 // Scan symbol
 std::expected<Token, LexError> Lexer::scan_symbol() {
     skip_char(); // Skip colon
-    
+
     // Symbol can be an identifier or operator
     auto ch_result = peek_char();
     if (!ch_result) return std::unexpected(ch_result.error());
-    
+
     if (is_identifier_start(ch_result.value())) {
         while (!is_at_end()) {
             auto next = peek_char();
@@ -540,18 +540,18 @@ std::expected<Token, LexError> Lexer::scan_symbol() {
             skip_char();
         }
     }
-    
+
     std::string_view symbol_name = source_.substr(token_start_ + 1, current_ - token_start_ - 1);
-    return make_token(TokenType::SYMBOL, symbol_name);
+    return make_token(TokenType::YSYMBOL, symbol_name);
 }
 
 // Match helper
 bool Lexer::match(char32_t expected) {
     if (is_at_end()) return false;
-    
+
     auto ch_result = peek_char();
     if (!ch_result || ch_result.value() != expected) return false;
-    
+
     skip_char();
     return true;
 }
@@ -560,67 +560,67 @@ bool Lexer::match(char32_t expected) {
 std::expected<Token, LexError> Lexer::scan_operator(char32_t first_char) {
     switch (first_char) {
         case '+':
-            if (match('+')) return make_token(TokenType::JOIN);
-            return make_token(TokenType::PLUS);
-            
+            if (match('+')) return make_token(TokenType::YJOIN);
+            return make_token(TokenType::YPLUS);
+
         case '-':
-            if (match('>')) return make_token(TokenType::ARROW);
-            if (match('-')) return make_token(TokenType::REMOVE);
-            if (match('|')) return make_token(TokenType::PREPEND);
-            return make_token(TokenType::MINUS);
-            
+            if (match('>')) return make_token(TokenType::YARROW);
+            if (match('-')) return make_token(TokenType::YREMOVE);
+            if (match('|')) return make_token(TokenType::YPREPEND);
+            return make_token(TokenType::YMINUS);
+
         case '*':
-            if (match('*')) return make_token(TokenType::POWER);
-            return make_token(TokenType::STAR);
-            
+            if (match('*')) return make_token(TokenType::YPOWER);
+            return make_token(TokenType::YSTAR);
+
         case '/':
-            return make_token(TokenType::SLASH);
-            
+            return make_token(TokenType::YSLASH);
+
         case '%':
-            return make_token(TokenType::PERCENT);
-            
+            return make_token(TokenType::YPERCENT);
+
         case '=':
-            if (match('=')) return make_token(TokenType::EQ);
-            if (match('>')) return make_token(TokenType::FAT_ARROW);
-            return make_token(TokenType::ASSIGN);
-            
+            if (match('=')) return make_token(TokenType::YEQ);
+            if (match('>')) return make_token(TokenType::YFAT_ARROW);
+            return make_token(TokenType::YASSIGN);
+
         case '!':
-            if (match('=')) return make_token(TokenType::NEQ);
-            return make_token(TokenType::NOT);
-            
+            if (match('=')) return make_token(TokenType::YNEQ);
+            return make_token(TokenType::YNOT);
+
         case '<':
-            if (match('=')) return make_token(TokenType::LTE);
-            if (match('<')) return make_token(TokenType::LEFT_SHIFT);
-            if (match('|')) return make_token(TokenType::PIPE_LEFT);
-            return make_token(TokenType::LT);
-            
+            if (match('=')) return make_token(TokenType::YLTE);
+            if (match('<')) return make_token(TokenType::YLEFT_SHIFT);
+            if (match('|')) return make_token(TokenType::YPIPE_LEFT);
+            return make_token(TokenType::YLT);
+
         case '>':
-            if (match('=')) return make_token(TokenType::GTE);
+            if (match('=')) return make_token(TokenType::YGTE);
             if (match('>')) {
-                if (match('>')) return make_token(TokenType::ZERO_FILL_RIGHT_SHIFT);
-                return make_token(TokenType::RIGHT_SHIFT);
+                if (match('>')) return make_token(TokenType::YZERO_FILL_RIGHT_SHIFT);
+                return make_token(TokenType::YRIGHT_SHIFT);
             }
-            return make_token(TokenType::GT);
-            
+            return make_token(TokenType::YGT);
+
         case '&':
-            if (match('&')) return make_token(TokenType::AND);
-            return make_token(TokenType::BIT_AND);
-            
+            if (match('&')) return make_token(TokenType::YAND);
+            return make_token(TokenType::YBIT_AND);
+
         case '|':
-            if (match('|')) return make_token(TokenType::OR);
-            if (match('>')) return make_token(TokenType::PIPE_RIGHT);
-            if (match('-')) return make_token(TokenType::APPEND);
-            return make_token(TokenType::PIPE);
-            
+            if (match('|')) return make_token(TokenType::YOR);
+            if (match('>')) return make_token(TokenType::YPIPE_RIGHT);
+            if (match('-')) return make_token(TokenType::YAPPEND);
+            return make_token(TokenType::YPIPE);
+
         case '^':
-            return make_token(TokenType::BIT_XOR);
-            
+            return make_token(TokenType::YBIT_XOR);
+
         case '~':
-            return make_token(TokenType::BIT_NOT);
-            
+            return make_token(TokenType::YBIT_NOT);
+
         case '@':
-            return make_token(TokenType::AT);
-            
+            return make_token(TokenType::YAT);
+
         default:
             return std::unexpected(LexError{
                 LexError::Type::INVALID_CHARACTER,
@@ -633,55 +633,55 @@ std::expected<Token, LexError> Lexer::scan_operator(char32_t first_char) {
 // Main token scanning
 std::expected<Token, LexError> Lexer::scan_token() {
     skip_whitespace_and_comments();
-    
+
     if (is_at_end()) {
         mark_token_start();  // Mark position for EOF
-        return make_token(TokenType::EOF_TOKEN);
+        return make_token(TokenType::YEOF_TOKEN);
     }
-    
+
     mark_token_start();
-    
+
     auto ch_result = advance_char();
     if (!ch_result) return std::unexpected(ch_result.error());
-    
+
     char32_t ch = ch_result.value();
-    
+
     // Special case for single underscore
     if (ch == '_') {
         // Check if it's just a single underscore or part of an identifier
         if (is_at_end() || !is_identifier_continue(peek_char().value_or(0))) {
-            return make_token(TokenType::UNDERSCORE);
+            return make_token(TokenType::YUNDERSCORE);
         }
         // Otherwise, it's the start of an identifier
         return scan_identifier();
     }
-    
+
     // Identifiers and keywords
     if (is_identifier_start(ch)) {
         return scan_identifier();
     }
-    
+
     // Numbers
     if (is_digit(ch)) {
         current_ = token_start_ + 1; // Reset to after first char (safe for digits which are always 1 byte)
         return scan_number();
     }
-    
+
     // Single character tokens
     switch (ch) {
-        case '(': return make_token(TokenType::LPAREN);
-        case ')': return make_token(TokenType::RPAREN);
-        case '[': return make_token(TokenType::LBRACKET);
-        case ']': return make_token(TokenType::RBRACKET);
-        case '{': return make_token(TokenType::LBRACE);
-        case '}': return make_token(TokenType::RBRACE);
-        case ',': return make_token(TokenType::COMMA);
-        case ';': return make_token(TokenType::SEMICOLON);
+        case '(': return make_token(TokenType::YLPAREN);
+        case ')': return make_token(TokenType::YRPAREN);
+        case '[': return make_token(TokenType::YLBRACKET);
+        case ']': return make_token(TokenType::YRBRACKET);
+        case '{': return make_token(TokenType::YLBRACE);
+        case '}': return make_token(TokenType::YRBRACE);
+        case ',': return make_token(TokenType::YCOMMA);
+        case ';': return make_token(TokenType::YSEMICOLON);
         case '.':
-            if (match('.')) return make_token(TokenType::DOTDOT);
-            return make_token(TokenType::DOT);
-        case '\\': return make_token(TokenType::BACKSLASH);
-        case '"': 
+            if (match('.')) return make_token(TokenType::YDOTDOT);
+            return make_token(TokenType::YDOT);
+        case '\\': return make_token(TokenType::YBACKSLASH);
+        case '"':
             current_ = token_start_; // Reset for string scanning
             return scan_string();
         case '\'':
@@ -694,22 +694,22 @@ std::expected<Token, LexError> Lexer::scan_token() {
                 if (next) {
                     if (next.value() == ':') {
                         skip_char();
-                        return make_token(TokenType::CONS);
+                        return make_token(TokenType::YCONS);
                     } else if (is_identifier_start(next.value()) || is_operator_char(next.value())) {
                         current_ = token_start_; // Reset for symbol scanning
                         return scan_symbol();
                     }
                 }
             }
-            return make_token(TokenType::COLON);
-            
+            return make_token(TokenType::YCOLON);
+
         // Operators
         case '+': case '-': case '*': case '/': case '%':
         case '=': case '!': case '<': case '>':
         case '&': case '|': case '^': case '~': case '@':
             current_ = token_start_ + 1; // Reset to after first char
             return scan_operator(ch);
-            
+
         default:
             return std::unexpected(LexError{
                 LexError::Type::INVALID_CHARACTER,
@@ -729,26 +729,26 @@ std::expected<Token, LexError> Lexer::peek_token() {
     size_t saved_current = current_;
     size_t saved_line = line_;
     size_t saved_column = column_;
-    
+
     auto token = scan_token();
-    
+
     // Restore state
     current_ = saved_current;
     line_ = saved_line;
     column_ = saved_column;
-    
+
     return token;
 }
 
 std::expected<std::vector<Token>, std::vector<LexError>> Lexer::tokenize() {
     std::vector<Token> tokens;
     std::vector<LexError> errors;
-    
+
     while (true) {
         auto token_result = next_token();
         if (token_result) {
             tokens.push_back(token_result.value());
-            if (token_result.value().type == TokenType::EOF_TOKEN) {
+            if (token_result.value().type == TokenType::YEOF_TOKEN) {
                 break;
             }
         } else {
@@ -759,98 +759,98 @@ std::expected<std::vector<Token>, std::vector<LexError>> Lexer::tokenize() {
             }
         }
     }
-    
+
     if (!errors.empty()) {
         return std::unexpected(std::move(errors));
     }
-    
+
     return tokens;
 }
 
 // Token type to string conversion
 std::string_view token_type_to_string(TokenType type) noexcept {
     switch (type) {
-        case TokenType::INTEGER: return "INTEGER";
-        case TokenType::FLOAT: return "FLOAT";
-        case TokenType::STRING: return "STRING";
-        case TokenType::CHARACTER: return "CHARACTER";
-        case TokenType::SYMBOL: return "SYMBOL";
-        case TokenType::TRUE: return "TRUE";
-        case TokenType::FALSE: return "FALSE";
-        case TokenType::UNIT: return "UNIT";
-        case TokenType::IDENTIFIER: return "IDENTIFIER";
-        case TokenType::MODULE: return "MODULE";
-        case TokenType::IMPORT: return "IMPORT";
-        case TokenType::FROM: return "FROM";
-        case TokenType::AS: return "AS";
-        case TokenType::EXPORT: return "EXPORT";
-        case TokenType::LET: return "LET";
-        case TokenType::IN: return "IN";
-        case TokenType::IF: return "IF";
-        case TokenType::THEN: return "THEN";
-        case TokenType::ELSE: return "ELSE";
-        case TokenType::CASE: return "CASE";
-        case TokenType::OF: return "OF";
-        case TokenType::DO: return "DO";
-        case TokenType::END: return "END";
-        case TokenType::TRY: return "TRY";
-        case TokenType::CATCH: return "CATCH";
-        case TokenType::RAISE: return "RAISE";
-        case TokenType::WITH: return "WITH";
-        case TokenType::FUN: return "FUN";
-        case TokenType::LAMBDA: return "LAMBDA";
-        case TokenType::RECORD: return "RECORD";
-        case TokenType::TYPE: return "TYPE";
-        case TokenType::PLUS: return "PLUS";
-        case TokenType::MINUS: return "MINUS";
-        case TokenType::STAR: return "STAR";
-        case TokenType::SLASH: return "SLASH";
-        case TokenType::PERCENT: return "PERCENT";
-        case TokenType::POWER: return "POWER";
-        case TokenType::EQ: return "EQ";
-        case TokenType::NEQ: return "NEQ";
-        case TokenType::LT: return "LT";
-        case TokenType::GT: return "GT";
-        case TokenType::LTE: return "LTE";
-        case TokenType::GTE: return "GTE";
-        case TokenType::AND: return "AND";
-        case TokenType::OR: return "OR";
-        case TokenType::NOT: return "NOT";
-        case TokenType::BIT_AND: return "BIT_AND";
-        case TokenType::BIT_OR: return "BIT_OR";
-        case TokenType::BIT_XOR: return "BIT_XOR";
-        case TokenType::BIT_NOT: return "BIT_NOT";
-        case TokenType::LEFT_SHIFT: return "LEFT_SHIFT";
-        case TokenType::RIGHT_SHIFT: return "RIGHT_SHIFT";
-        case TokenType::ZERO_FILL_RIGHT_SHIFT: return "ZERO_FILL_RIGHT_SHIFT";
-        case TokenType::ASSIGN: return "ASSIGN";
-        case TokenType::ARROW: return "ARROW";
-        case TokenType::FAT_ARROW: return "FAT_ARROW";
-        case TokenType::LPAREN: return "LPAREN";
-        case TokenType::RPAREN: return "RPAREN";
-        case TokenType::LBRACKET: return "LBRACKET";
-        case TokenType::RBRACKET: return "RBRACKET";
-        case TokenType::LBRACE: return "LBRACE";
-        case TokenType::RBRACE: return "RBRACE";
-        case TokenType::COMMA: return "COMMA";
-        case TokenType::SEMICOLON: return "SEMICOLON";
-        case TokenType::COLON: return "COLON";
-        case TokenType::DOT: return "DOT";
-        case TokenType::DOTDOT: return "DOTDOT";
-        case TokenType::PIPE: return "PIPE";
-        case TokenType::AT: return "AT";
-        case TokenType::UNDERSCORE: return "UNDERSCORE";
-        case TokenType::BACKSLASH: return "BACKSLASH";
-        case TokenType::CONS: return "CONS";
-        case TokenType::PIPE_LEFT: return "PIPE_LEFT";
-        case TokenType::PIPE_RIGHT: return "PIPE_RIGHT";
-        case TokenType::JOIN: return "JOIN";
-        case TokenType::REMOVE: return "REMOVE";
-        case TokenType::PREPEND: return "PREPEND";
-        case TokenType::APPEND: return "APPEND";
-        case TokenType::EOF_TOKEN: return "EOF";
-        case TokenType::NEWLINE: return "NEWLINE";
-        case TokenType::ERROR: return "ERROR";
+        case TokenType::YINTEGER: return "INTEGER";
+        case TokenType::YFLOAT: return "FLOAT";
+        case TokenType::YSTRING: return "STRING";
+        case TokenType::YCHARACTER: return "CHARACTER";
+        case TokenType::YSYMBOL: return "SYMBOL";
+        case TokenType::YTRUE: return "TRUE";
+        case TokenType::YFALSE: return "FALSE";
+        case TokenType::YUNIT: return "UNIT";
+        case TokenType::YIDENTIFIER: return "IDENTIFIER";
+        case TokenType::YMODULE: return "MODULE";
+        case TokenType::YIMPORT: return "IMPORT";
+        case TokenType::YFROM: return "FROM";
+        case TokenType::YAS: return "AS";
+        case TokenType::YEXPORT: return "EXPORT";
+        case TokenType::YLET: return "LET";
+        case TokenType::YIN: return "IN";
+        case TokenType::YIF: return "IF";
+        case TokenType::YTHEN: return "THEN";
+        case TokenType::YELSE: return "ELSE";
+        case TokenType::YCASE: return "CASE";
+        case TokenType::YOF: return "OF";
+        case TokenType::YDO: return "DO";
+        case TokenType::YEND: return "END";
+        case TokenType::YTRY: return "TRY";
+        case TokenType::YCATCH: return "CATCH";
+        case TokenType::YRAISE: return "RAISE";
+        case TokenType::YWITH: return "WITH";
+        case TokenType::YFUN: return "FUN";
+        case TokenType::YLAMBDA: return "LAMBDA";
+        case TokenType::YRECORD: return "RECORD";
+        case TokenType::YTYPE: return "TYPE";
+        case TokenType::YPLUS: return "PLUS";
+        case TokenType::YMINUS: return "MINUS";
+        case TokenType::YSTAR: return "STAR";
+        case TokenType::YSLASH: return "SLASH";
+        case TokenType::YPERCENT: return "PERCENT";
+        case TokenType::YPOWER: return "POWER";
+        case TokenType::YEQ: return "EQ";
+        case TokenType::YNEQ: return "NEQ";
+        case TokenType::YLT: return "LT";
+        case TokenType::YGT: return "GT";
+        case TokenType::YLTE: return "LTE";
+        case TokenType::YGTE: return "GTE";
+        case TokenType::YAND: return "AND";
+        case TokenType::YOR: return "OR";
+        case TokenType::YNOT: return "NOT";
+        case TokenType::YBIT_AND: return "BIT_AND";
+        case TokenType::YBIT_OR: return "BIT_OR";
+        case TokenType::YBIT_XOR: return "BIT_XOR";
+        case TokenType::YBIT_NOT: return "BIT_NOT";
+        case TokenType::YLEFT_SHIFT: return "LEFT_SHIFT";
+        case TokenType::YRIGHT_SHIFT: return "RIGHT_SHIFT";
+        case TokenType::YZERO_FILL_RIGHT_SHIFT: return "ZERO_FILL_RIGHT_SHIFT";
+        case TokenType::YASSIGN: return "ASSIGN";
+        case TokenType::YARROW: return "ARROW";
+        case TokenType::YFAT_ARROW: return "FAT_ARROW";
+        case TokenType::YLPAREN: return "LPAREN";
+        case TokenType::YRPAREN: return "RPAREN";
+        case TokenType::YLBRACKET: return "LBRACKET";
+        case TokenType::YRBRACKET: return "RBRACKET";
+        case TokenType::YLBRACE: return "LBRACE";
+        case TokenType::YRBRACE: return "RBRACE";
+        case TokenType::YCOMMA: return "COMMA";
+        case TokenType::YSEMICOLON: return "SEMICOLON";
+        case TokenType::YCOLON: return "COLON";
+        case TokenType::YDOT: return "DOT";
+        case TokenType::YDOTDOT: return "DOTDOT";
+        case TokenType::YPIPE: return "PIPE";
+        case TokenType::YAT: return "AT";
+        case TokenType::YUNDERSCORE: return "UNDERSCORE";
+        case TokenType::YBACKSLASH: return "BACKSLASH";
+        case TokenType::YCONS: return "CONS";
+        case TokenType::YPIPE_LEFT: return "PIPE_LEFT";
+        case TokenType::YPIPE_RIGHT: return "PIPE_RIGHT";
+        case TokenType::YJOIN: return "JOIN";
+        case TokenType::YREMOVE: return "REMOVE";
+        case TokenType::YPREPEND: return "PREPEND";
+        case TokenType::YAPPEND: return "APPEND";
+        case TokenType::YEOF_TOKEN: return "EOF";
+        case TokenType::YNEWLINE: return "NEWLINE";
+        case TokenType::YERROR: return "ERROR";
         default: return "UNKNOWN";
     }
 }

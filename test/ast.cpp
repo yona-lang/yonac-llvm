@@ -1,7 +1,6 @@
 //
 // Created by akovari on 15.12.24.
 //
-#include <boost/log/utility/setup/file.hpp>
 #include <gtest/gtest.h>
 
 #include "Interpreter.h"
@@ -65,10 +64,7 @@ INSTANTIATE_TEST_SUITE_P(
                     make_tuple("correct_logical_or_1", "true || false", make_pair(interp::RuntimeObjectType::Bool, "true"), ErrorMap{}),
                     make_tuple("correct_logical_or_2", "false || false", make_pair(interp::RuntimeObjectType::Bool, "false"), ErrorMap{})));
 
-void init_logging() { boost::log::add_file_log("tests.log"); }
-
 int main(int argc, char **argv) {
-  init_logging();
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

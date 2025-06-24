@@ -12,11 +12,11 @@ Modules are defined using the `module` keyword followed by a fully-qualified nam
 module Package\ModuleName exports function1, function2 as
   # Record definitions
   record Person(name: String, age: Int)
-  
-  # Function definitions  
+
+  # Function definitions
   function1(x) -> x + 1
   function2(a, b) -> a * b
-  
+
   # Private functions (not exported)
   helper(x) -> x * 2
 end
@@ -48,7 +48,7 @@ import function1, function2 from Package\ModuleName in
 
 2. **Import with aliases**:
    ```yona
-   import 
+   import
      add as plus,
      multiply as mult
    from Math\Basic in
@@ -166,7 +166,7 @@ import add, multiply from Math\Basic in
     result  # Returns 40
 
 # Import with aliases
-import 
+import
   add as plus,
   subtract as minus
 from Math\Basic in
@@ -179,23 +179,23 @@ from Math\Basic in
 # File: Data/Stack.yona
 module Data\Stack exports empty, push, pop, peek, isEmpty as
   # Stack is represented as a list
-  
+
   empty() -> []
-  
+
   push(stack, item) -> [item | stack]
-  
-  pop(stack) -> 
+
+  pop(stack) ->
     case stack of
       [] -> raise :empty_stack
       [head | tail] -> (head, tail)  # Returns (item, new_stack)
     end
-  
+
   peek(stack) ->
     case stack of
       [] -> raise :empty_stack
       [head | _] -> head
     end
-  
+
   isEmpty(stack) -> stack == []
 end
 ```

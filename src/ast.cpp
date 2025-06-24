@@ -1,10 +1,11 @@
 #include "ast.h"
 
-#include <boost/algorithm/string/join.hpp>
 #include <variant>
 #include <iostream>
 
 #include "utils.h"
+
+#include <numeric>
 
 namespace yona::ast {
 
@@ -39,8 +40,8 @@ any ScopedNode::accept(const AstVisitor &visitor) { return AstNode::accept(visit
 any OpExpr::accept(const AstVisitor &visitor) { return ExprNode::accept(visitor); }
 
 BinaryOpExpr::BinaryOpExpr(SourceContext token, ExprNode *left, ExprNode *right)
-    : OpExpr(token), 
-      left(left ? left->with_parent<ExprNode>(this) : nullptr), 
+    : OpExpr(token),
+      left(left ? left->with_parent<ExprNode>(this) : nullptr),
       right(right ? right->with_parent<ExprNode>(this) : nullptr) {}
 
 
@@ -331,8 +332,9 @@ string PackageNameExpr::to_string() const {
   for (const auto part : parts) {
     names.push_back(part->value);
   }
-
-  return boost::algorithm::join(names, PACKAGE_DELIMITER);
+  return std::accumulate(
+      std::next(names.begin()), names.end(), names.empty() ? std::string() : names.front(),
+      [](const std::string &a, const std::string &b) { return a + PACKAGE_DELIMITER + b; });
 }
 
 void PackageNameExpr::print(std::ostream &os) const { os << to_string(); }
@@ -1034,8 +1036,8 @@ any NameCall::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 
 NameCall::~NameCall() { delete name; }
 
-void NameCall::print(std::ostream &os) const { 
-    os << *name; 
+void NameCall::print(std::ostream &os) const {
+    os << *name;
 }
 
 ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr *, ExprNode *> &fqn, NameExpr *funName)

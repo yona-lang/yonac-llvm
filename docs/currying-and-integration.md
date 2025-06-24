@@ -79,7 +79,7 @@ struct PartiallyAppliedFunction : FunctionValue {
 any Interpreter::visit(ApplyExpr *node) const {
   auto func = evaluate_function(node);
   auto provided_args = evaluate_arguments(node);
-  
+
   if (func->arity() > provided_args.size()) {
     // Return partially applied function
     return make_partial_application(func, provided_args);
@@ -132,12 +132,12 @@ ParseResult Parser::parse_and_check(istream& stream) {
   // Parse
   auto parse_result = parse_input(stream);
   if (!parse_result.success) return parse_result;
-  
+
   // Type check
   TypeInferenceContext ctx;
   TypeChecker checker(ctx);
   Type inferred_type = checker.check(parse_result.node.get());
-  
+
   if (ctx.has_errors()) {
     // Convert type errors to parse errors
     parse_result.success = false;
@@ -145,7 +145,7 @@ ParseResult Parser::parse_and_check(istream& stream) {
       parse_result.ast_ctx.addError(error);
     }
   }
-  
+
   parse_result.type = inferred_type;
   return parse_result;
 }
@@ -158,7 +158,7 @@ struct RuntimeObject {
   RuntimeObjectType type;
   RuntimeObjectData data;
   optional<compiler::types::Type> static_type; // Add this
-  
+
   // Constructor with type
   RuntimeObject(RuntimeObjectType t, RuntimeObjectData d, compiler::types::Type st)
     : type(t), data(std::move(d)), static_type(st) {}
@@ -172,13 +172,13 @@ struct RuntimeObject {
 RuntimeObjectPtr Interpreter::apply_with_type_check(
     RuntimeObjectPtr func,
     const vector<RuntimeObjectPtr>& args) const {
-  
+
   if (func->static_type.has_value()) {
     // Check argument types match function signature
     auto func_type = func->static_type.value();
     // ... perform type checking ...
   }
-  
+
   // Proceed with application
   return apply_function(func, args);
 }
@@ -191,7 +191,7 @@ RuntimeObjectPtr Interpreter::apply_with_type_check(
 any Interpreter::visit(AddExpr *node) const {
   auto left_type = type_of(node->left);
   auto right_type = type_of(node->right);
-  
+
   if (is_integer(left_type) && is_integer(right_type)) {
     // Use integer addition
     return optimized_int_add(node->left, node->right);

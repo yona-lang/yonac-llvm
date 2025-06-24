@@ -16,11 +16,11 @@ class CurryingTest : public ::testing::Test {
 protected:
     Parser parser;
     Interpreter interpreter;
-    
+
     RuntimeObjectPtr eval(const string& code) {
         istringstream stream(code);
         auto parse_result = parser.parse_input(stream);
-        
+
         if (!parse_result.success) {
             string error_msg = "Parse error";
             if (parse_result.ast_ctx.hasErrors()) {
@@ -32,7 +32,7 @@ protected:
             }
             throw runtime_error(error_msg);
         }
-        
+
         return any_cast<RuntimeObjectPtr>(parse_result.node->accept(interpreter));
     }
 };
@@ -44,7 +44,7 @@ TEST_F(CurryingTest, BasicCurrying) {
         let add5 = add(5) in
         add5(3)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 8);
 }
@@ -57,19 +57,19 @@ TEST_F(CurryingTest, MultipleArgumentCurrying) {
         let sum3_10_20 = sum3_10(20) in
         sum3_10_20(30)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 60);
 }
 
-// Test partial application with multiple arguments at once  
+// Test partial application with multiple arguments at once
 TEST_F(CurryingTest, PartialApplicationMultipleArgs) {
     auto result = eval(R"(
         let sum3 = \(x) -> \(y) -> \(z) -> x + y + z in
         let sum3_10_20 = sum3(10)(20) in
         sum3_10_20(30)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 60);
 }
@@ -80,7 +80,7 @@ TEST_F(CurryingTest, FullApplication) {
         let sum3 = \(x) -> \(y) -> \(z) -> x + y + z in
         sum3(10)(20)(30)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 60);
 }
@@ -93,7 +93,7 @@ TEST_F(CurryingTest, OverApplication) {
         let double = \(x) -> x * 2 in
         double(sum)
     )");
-    
+
     // add(5)(3) returns 8, then double(8) returns 16
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 16);
@@ -102,7 +102,7 @@ TEST_F(CurryingTest, OverApplication) {
 // Test currying with higher-order functions
 TEST_F(CurryingTest, HigherOrderFunctionCurrying) {
     auto result = eval(R"(
-        let map = \(f) -> \(list) -> 
+        let map = \(f) -> \(list) ->
             case list of
             [] -> []
             [head | tail] -> f(head) :: map(f)(tail)
@@ -112,7 +112,7 @@ TEST_F(CurryingTest, HigherOrderFunctionCurrying) {
         let doubleList = map(double) in
         doubleList([1, 2, 3])
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Seq);
     auto seq = result->get<shared_ptr<SeqValue>>();
     ASSERT_EQ(seq->fields.size(), 3);
@@ -124,13 +124,13 @@ TEST_F(CurryingTest, HigherOrderFunctionCurrying) {
 // Test currying with nested functions
 TEST_F(CurryingTest, NestedFunctionCurrying) {
     auto result = eval(R"(
-        let makeAdder = \(x) -> 
+        let makeAdder = \(x) ->
             \(y) -> x + y
         in
         let add10 = makeAdder(10) in
         add10(5)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 15);
 }
@@ -144,7 +144,7 @@ TEST_F(CurryingTest, CurryingPreservesFunctionIdentity) {
         # Both should produce the same result
         [add5(3), add5_again(3)]
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Seq);
     auto seq = result->get<shared_ptr<SeqValue>>();
     ASSERT_EQ(seq->fields.size(), 2);
@@ -164,7 +164,7 @@ TEST_F(CurryingTest, CurryingWithPatternMatching) {
         let getFirstOrDefault = processList(99) in
         [getFirstOrDefault([]), getFirstOrDefault([42, 1, 2])]
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Seq);
     auto seq = result->get<shared_ptr<SeqValue>>();
     ASSERT_EQ(seq->fields.size(), 2);
@@ -178,7 +178,7 @@ TEST_F(CurryingTest, ZeroArgumentFunction) {
         let getConstant = 42 in
         getConstant
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 42);
 }
@@ -189,7 +189,7 @@ TEST_F(CurryingTest, SingleArgumentFunction) {
         let double = \(x) -> x * 2 in
         double(21)
     )");
-    
+
     ASSERT_EQ(result->type, runtime::Int);
     EXPECT_EQ(result->get<int>(), 42);
 }

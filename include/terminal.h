@@ -1,6 +1,6 @@
 #pragma once
+#pragma once
 
-// Reset
 #define ANSI_COLOR_RESET "\033[0m"
 
 // Regular Colors
@@ -36,6 +36,7 @@
 #include <sys/ioctl.h>
 #endif
 
+namespace yona::terminal {
 inline std::pair<size_t, size_t> get_terminal_size() {
 #if defined(_WIN32)
   CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -47,3 +48,26 @@ inline std::pair<size_t, size_t> get_terminal_size() {
   return std::make_pair(w.ws_col, w.ws_row);
 #endif
 }
+
+inline void clear_screen() {
+#if defined(_WIN32)
+    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    DWORD cellCount, count;
+    COORD homeCoords = { 0, 0 };
+
+    if (hStdOut == INVALID_HANDLE_VALUE) return;
+
+    if (!GetConsoleScreenBufferInfo(hStdOut, &csbi)) return;
+    cellCount = csbi.dwSize.X * csbi.dwSize.Y;
+
+    if (!FillConsoleOutputCharacter(hStdOut, (TCHAR)' ', cellCount, homeCoords, &count)) return;
+    if (!FillConsoleOutputAttribute(hStdOut, csbi.wAttributes, cellCount, homeCoords, &count)) return;
+    SetConsoleCursorPosition(hStdOut, homeCoords);
+#else
+    // ANSI escape code to clear screen and move cursor to home
+    std::fputs("\033[2J\033[H", stdout);
+    std::fflush(stdout);
+#endif
+}
+} // namespace yona::terminal

@@ -12,6 +12,7 @@
 #include <expected>
 #include <unordered_map>
 
+#include "yona_export.h"
 #include "ast.h"
 #include "common.h"
 #include "types.h"
@@ -42,13 +43,13 @@ struct ParseError {
         MISSING_TOKEN,
         AMBIGUOUS_PARSE
     };
-    
+
     Type type;
     string message;
     SourceLocation location;
     optional<TokenType> expected_token;
     optional<TokenType> actual_token;
-    
+
     [[nodiscard]] string format() const;
 };
 
@@ -61,14 +62,14 @@ struct ParseResult {
     shared_ptr<AstNode> node;
     compiler::types::Type type;
     AstContext ast_ctx;
-    
+
     ParseResult() : success(false), node(nullptr), type(nullptr) {}
     ParseResult(bool s, shared_ptr<AstNode> n, compiler::types::Type t, AstContext ctx)
         : success(s), node(std::move(n)), type(t), ast_ctx(std::move(ctx)) {}
 };
 
 // High-performance recursive descent parser
-class Parser {
+class YONA_API Parser {
 private:
     unique_ptr<ParserImpl> impl_;
     ModuleImportQueue module_import_queue_;
@@ -76,20 +77,20 @@ private:
 public:
     explicit Parser(ParserConfig config = {});
     ~Parser();
-    
+
     // Disable copy but allow move
     Parser(const Parser&) = delete;
     Parser& operator=(const Parser&) = delete;
     Parser(Parser&&) noexcept;
     Parser& operator=(Parser&&) noexcept;
-    
+
     // Modern parsing interface
-    [[nodiscard]] expected<unique_ptr<ModuleExpr>, vector<ParseError>> 
+    [[nodiscard]] expected<unique_ptr<ModuleExpr>, vector<ParseError>>
         parse_module(string_view source, string_view filename = "<input>");
-    
+
     [[nodiscard]] expected<unique_ptr<ExprNode>, vector<ParseError>>
         parse_expression(string_view source, string_view filename = "<input>");
-    
+
     // Legacy interface for compatibility
     ParseResult parse_input(const vector<string>& module_name);
     ParseResult parse_input(istream& stream);

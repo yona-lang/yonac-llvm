@@ -46,7 +46,7 @@ struct RecordValue {
   string type_name;
   vector<string> field_names;
   vector<RuntimeObjectPtr> field_values;
-  
+
   RuntimeObjectPtr get_field(const string& name) const;
   bool set_field(const string& name, RuntimeObjectPtr value);
 };

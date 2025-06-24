@@ -8,17 +8,14 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "cl.exe",
-        "CMAKE_CXX_COMPILER": "cl.exe",
+        "CMAKE_C_COMPILER": "C:/local/LLVM/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "C:/local/LLVM/bin/clang++.exe",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": {
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-          "type": "FILEPATH"
-        },
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": {
           "value": "${sourceDir}/cmake/windows-llvm-toolchain.cmake",
           "type": "FILEPATH"
-        }
+        },
+        "LLVM_INSTALL_PREFIX": "C:/local/LLVM"
       },
       "condition": {
         "type": "equals",
@@ -35,12 +32,9 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_CXX_FLAGS": "-stdlib=libc++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_TOOLCHAIN_FILE": {
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-          "type": "FILEPATH"
-        }
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/triplets"
       },
       "condition": {
         "type": "equals",
@@ -59,14 +53,9 @@
         "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": {
-          "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-          "type": "FILEPATH"
-        },
-        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": {
           "value": "${sourceDir}/cmake/homebrew-llvm-toolchain.cmake",
           "type": "FILEPATH"
-        },
-        "BOOST_ROOT": "/opt/homebrew/opt/boost"
+        }
       },
       "condition": {
         "type": "equals",

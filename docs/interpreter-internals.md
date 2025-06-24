@@ -34,7 +34,7 @@ The interpreter uses a frame-based model for variable scoping:
 struct Frame {
   shared_ptr<Frame> parent;
   map<string, RuntimeObjectPtr> locals_;
-  
+
   void write(const string& name, RuntimeObjectPtr value);
   RuntimeObjectPtr lookup(const string& name);
 };
@@ -47,7 +47,7 @@ struct Frame {
 #### Pattern Matching
 
 Pattern matching is a core feature with support for:
-- Identifier patterns: `x` 
+- Identifier patterns: `x`
 - Tuple patterns: `(a, b, c)`
 - Sequence patterns: `[head | tail]`
 - Dictionary patterns: `{key: value, ...}`
@@ -151,7 +151,7 @@ Each AST node type has a corresponding visitor method:
 any visit(AddExpr *node) const override {
   auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
-  
+
   if (left->type == Int && right->type == Int) {
     return make_shared<RuntimeObject>(Int, left->get<int>() + right->get<int>());
   }
@@ -194,7 +194,7 @@ As a tree-walking interpreter:
 
 All runtime objects maintain source location for error reporting:
 ```cpp
-throw yona_error(node->source_context, yona_error::Type::TYPE, 
+throw yona_error(node->source_context, yona_error::Type::TYPE,
                  "Type mismatch: expected Int");
 ```
 
@@ -208,7 +208,7 @@ Detailed error messages include:
 ## Future Improvements
 
 1. **Bytecode VM**: Compile AST to bytecode for faster execution
-2. **JIT Compilation**: Use LLVM JIT for hot code paths  
+2. **JIT Compilation**: Use LLVM JIT for hot code paths
 3. **Optimized Pattern Matching**: Decision trees for pattern dispatch
 4. **Tail Call Optimization**: Proper tail recursion support
 5. **Concurrent Execution**: Support for parallel evaluation

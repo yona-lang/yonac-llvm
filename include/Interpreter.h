@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <optional>
 
+#include "yona_export.h"
 #include "ast.h"
 #include "runtime.h"
 #include "TypeChecker.h"
@@ -27,15 +28,15 @@ struct InterpreterState {
   stack<ModuleItem> module_stack;
   RuntimeObjectPtr generator_current_element;  // Current element for generator expressions
   RuntimeObjectPtr generator_current_key;      // Current key for dict generator expressions
-  
+
   // Exception handling state
   bool has_exception = false;
   RuntimeObjectPtr exception_value;  // The exception object (symbol + message)
   SourceContext exception_context;   // Where the exception was raised
-  
+
   // Module cache: maps FQN to loaded module
   unordered_map<string, shared_ptr<ModuleValue>> module_cache;
-  
+
   // Module search paths (initialized from YONA_PATH environment variable)
   vector<string> module_paths;
 
@@ -49,7 +50,7 @@ struct InterpreterState {
       #ifdef _WIN32
         delimiter = ";";
       #endif
-      
+
       while ((pos = path_str.find(delimiter)) != string::npos) {
         module_paths.push_back(path_str.substr(0, pos));
         path_str.erase(0, pos + delimiter.length());
@@ -58,24 +59,24 @@ struct InterpreterState {
         module_paths.push_back(path_str);
       }
     }
-    
+
     // Always include current directory
     module_paths.insert(module_paths.begin(), ".");
   }
-  
+
   void push_frame() { frame = make_shared<InterepterFrame>(frame); }
   void pop_frame() { frame = frame->parent; }
   void merge_frame_to_parent() {
     frame->parent->merge(*frame);
     pop_frame();
   }
-  
+
   void raise_exception(RuntimeObjectPtr exc, SourceContext ctx) {
     has_exception = true;
     exception_value = exc;
     exception_context = ctx;
   }
-  
+
   void clear_exception() {
     has_exception = false;
     exception_value = nullptr;
@@ -83,13 +84,13 @@ struct InterpreterState {
   }
 };
 
-class Interpreter final : public AstVisitor {
+class YONA_API Interpreter final : public AstVisitor {
 private:
   mutable InterpreterState IS;  // mutable because visitor methods are const
   mutable optional<unique_ptr<typechecker::TypeChecker>> type_checker;  // Optional type checker
   mutable typechecker::TypeInferenceContext type_context;  // Type inference context
   mutable unordered_map<AstNode*, compiler::types::Type> type_annotations;  // Store inferred types
-  
+
   template <RuntimeObjectType ROT, typename VT> optional<VT> get_value(AstNode *node) const;
   template <RuntimeObjectType ROT, typename VT, class T>
     requires derived_from<T, AstNode>
@@ -98,16 +99,16 @@ private:
   template <RuntimeObjectType actual, RuntimeObjectType... expected> static void type_error(AstNode *node);
   [[nodiscard]] bool match_fun_args(const vector<PatternNode *> &patterns, const vector<RuntimeObjectPtr> &args) const;
   RuntimeObjectPtr call(CallExpr *call_expr, vector<RuntimeObjectPtr> args) const;
-  
+
   // Create an exception runtime object
   RuntimeObjectPtr make_exception(const RuntimeObjectPtr& symbol, const RuntimeObjectPtr& message) const;
-  
+
   // Module loading and resolution
   string fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
   string find_module_file(const string& relative_path) const;
   shared_ptr<ModuleValue> load_module(const shared_ptr<FqnValue>& fqn) const;
   shared_ptr<ModuleValue> get_or_load_module(const shared_ptr<FqnValue>& fqn) const;
-  
+
   // Pattern matching helpers
   bool match_pattern(PatternNode *pattern, const RuntimeObjectPtr& value) const;
   bool match_pattern_value(PatternValue *pattern, const RuntimeObjectPtr& value) const;
@@ -120,23 +121,23 @@ private:
   bool match_tails_head_pattern(TailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_tail_pattern(TailPattern *pattern, const RuntimeObjectPtr& value) const;
-  
+
   // Helper to create runtime objects with type information
   RuntimeObjectPtr make_typed_object(RuntimeObjectType type, RuntimeObjectData data, AstNode* node = nullptr) const;
-  
+
   // Runtime type checking helpers
   bool check_runtime_type(const RuntimeObjectPtr& value, const compiler::types::Type& expected_type) const;
   compiler::types::Type runtime_type_to_static_type(RuntimeObjectType type) const;
 
 public:
   Interpreter() = default;
-  
+
   // Enable/disable type checking
   void enable_type_checking(bool enable = true);
-  
+
   // Type check an AST node before interpretation
   bool type_check(AstNode* node);
-  
+
   // Get type errors from last type check
   const vector<shared_ptr<yona_error>>& get_type_errors() const {
     return type_context.get_errors();

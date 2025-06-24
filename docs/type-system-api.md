@@ -80,12 +80,12 @@ struct NamedType {
 class TypeChecker : public AstVisitor {
 public:
     // Create a type checker with optional initial environment
-    TypeChecker(TypeInferenceContext& ctx, 
+    TypeChecker(TypeInferenceContext& ctx,
                 shared_ptr<TypeEnvironment> initial_env = nullptr);
-    
+
     // Type check an AST node
     Type check(AstNode* node);
-    
+
     // Import type information from modules
     void import_module_types(const string& module_name,
                            const unordered_map<string, RecordTypeInfo>& records,
@@ -100,13 +100,13 @@ class TypeInferenceContext {
 public:
     // Generate a fresh type variable
     shared_ptr<TypeVar> fresh_type_var();
-    
+
     // Add a type error
     void add_error(const SourceLocation& loc, const string& message);
-    
+
     // Check if there are any errors
     bool has_errors() const;
-    
+
     // Get all errors
     const vector<shared_ptr<yona_error>>& get_errors() const;
 };
@@ -119,10 +119,10 @@ class TypeEnvironment {
 public:
     // Bind a variable to a type
     void bind(const string& name, const Type& type);
-    
+
     // Look up a variable's type
     optional<Type> lookup(const string& name) const;
-    
+
     // Create a new child environment
     shared_ptr<TypeEnvironment> extend();
 };

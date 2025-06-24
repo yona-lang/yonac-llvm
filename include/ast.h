@@ -6,6 +6,7 @@
 #include <vector>
 #include <memory>
 
+#include "yona_export.h"
 #include "common.h"
 #include "types.h"
 
@@ -176,7 +177,7 @@ public:
   }
 };
 
-class AstNode {
+class YONA_API AstNode {
 private:
   virtual void print(std::ostream &os) const = 0;
 
@@ -187,7 +188,7 @@ public:
   virtual ~AstNode() = default;
   virtual any accept(const AstVisitor &visitor);
   [[nodiscard]] virtual AstNodeType get_type() const { return AST_NODE; };
-  friend std::ostream &operator<<(std::ostream &os, const AstNode &obj);
+  friend YONA_API std::ostream &operator<<(std::ostream &os, const AstNode &obj);
 
   template <class T>
     requires derived_from<T, AstNode>
@@ -245,21 +246,21 @@ vector<variant<Types *...>> nodes_with_parent(vector<variant<Types *...>> nodes,
   return nodes;
 }
 
-class ExprNode : public AstNode {
+class YONA_API ExprNode : public AstNode {
 public:
   explicit ExprNode(SourceContext token) : AstNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_EXPR_NODE; };
 };
 
-class PatternNode : public AstNode {
+class YONA_API PatternNode : public AstNode {
 public:
   explicit PatternNode(SourceContext token) : AstNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_PATTERN_NODE; };
 };
 
-class UnderscoreNode final : public PatternNode {
+class YONA_API UnderscoreNode final : public PatternNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -269,21 +270,21 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_UNDERSCORE_NODE; };
 };
 
-class ValueExpr : public ExprNode {
+class YONA_API ValueExpr : public ExprNode {
 public:
   explicit ValueExpr(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_VALUE_EXPR; };
 };
 
-class ScopedNode : public ExprNode {
+class YONA_API ScopedNode : public ExprNode {
 public:
   explicit ScopedNode(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_SCOPED_NODE; };
 };
 
-template <typename T> class LiteralExpr : public ValueExpr {
+template <typename T> class YONA_API LiteralExpr : public ValueExpr {
 public:
   const T value;
 
@@ -292,14 +293,14 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_LITERAL_EXPR; };
 };
 
-class OpExpr : public ExprNode {
+class YONA_API OpExpr : public ExprNode {
 public:
   explicit OpExpr(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_OP_EXPR; };
 };
 
-class BinaryOpExpr : public OpExpr {
+class YONA_API BinaryOpExpr : public OpExpr {
 public:
   ExprNode *left;
   ExprNode *right;
@@ -331,21 +332,21 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_CLAUSE_EXPR; };
 };
 
-class GeneratorExpr : public ExprNode {
+class YONA_API GeneratorExpr : public ExprNode {
 public:
   explicit GeneratorExpr(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_GENERATOR_EXPR; };
 };
 
-class CollectionExtractorExpr : public ExprNode {
+class YONA_API CollectionExtractorExpr : public ExprNode {
 public:
   explicit CollectionExtractorExpr(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_COLLECTION_EXTRACTOR_EXPR; };
 };
 
-class SequenceExpr : public ExprNode {
+class YONA_API SequenceExpr : public ExprNode {
 public:
   explicit SequenceExpr(SourceContext token) : ExprNode(token) {}
   any accept(const AstVisitor &visitor) override;
@@ -359,7 +360,7 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_BODY; };
 };
 
-class NameExpr final : public ExprNode {
+class YONA_API NameExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -371,7 +372,7 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_EXPR; };
 };
 
-class IdentifierExpr final : public ValueExpr {
+class YONA_API IdentifierExpr final : public ValueExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -428,7 +429,7 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_FLOAT_EXPR; };
 };
 
-class IntegerExpr final : public LiteralExpr<int> {
+class YONA_API IntegerExpr final : public LiteralExpr<int> {
 private:
   void print(std::ostream &os) const override;
 
@@ -448,7 +449,7 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_BYTE_EXPR; };
 };
 
-class StringExpr final : public LiteralExpr<string> {
+class YONA_API StringExpr final : public LiteralExpr<string> {
 private:
   void print(std::ostream &os) const override;
 
@@ -504,7 +505,7 @@ public:
   ~DictExpr() override;
 };
 
-class ValuesSequenceExpr final : public SequenceExpr {
+class YONA_API ValuesSequenceExpr final : public SequenceExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -545,7 +546,7 @@ public:
   ~SetExpr() override;
 };
 
-class SymbolExpr final : public ValueExpr {
+class YONA_API SymbolExpr final : public ValueExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -696,7 +697,7 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_POWER_EXPR; };
 };
 
-class MultiplyExpr final : public BinaryOpExpr {
+class YONA_API MultiplyExpr final : public BinaryOpExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -960,7 +961,7 @@ public:
   ~LetExpr() override;
 };
 
-class MainNode final : public ScopedNode {
+class YONA_API MainNode final : public ScopedNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1029,7 +1030,7 @@ public:
   ~ImportExpr() override;
 };
 
-class RaiseExpr final : public ExprNode {
+class YONA_API RaiseExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1196,7 +1197,7 @@ public:
   any accept(const AstVisitor &visitor) override;
   [[nodiscard]] AstNodeType get_type() const override { return AST_NAME_CALL; };
   ~NameCall() override;
-  
+
   // Debug method
   [[nodiscard]] const NameExpr* get_name() const { return name; }
 };
@@ -1256,7 +1257,7 @@ public:
   ~FunctionsImport() override;
 };
 
-class SeqGeneratorExpr final : public GeneratorExpr {
+class YONA_API SeqGeneratorExpr final : public GeneratorExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -1328,7 +1329,7 @@ public:
 
 using IdentifierOrUnderscore = variant<IdentifierExpr *, UnderscoreNode *>;
 
-class ValueCollectionExtractorExpr final : public CollectionExtractorExpr {
+class YONA_API ValueCollectionExtractorExpr final : public CollectionExtractorExpr {
 private:
   void print(std::ostream &os) const override;
 
@@ -1380,7 +1381,7 @@ public:
   ~PatternWithGuards() override;
 };
 
-class PatternWithoutGuards final : public PatternNode {
+class YONA_API PatternWithoutGuards final : public PatternNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1421,7 +1422,7 @@ public:
   ~PatternExpr() override;
 };
 
-class CatchPatternExpr final : public ExprNode {
+class YONA_API CatchPatternExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1435,7 +1436,7 @@ public:
   ~CatchPatternExpr() override;
 };
 
-class CatchExpr final : public ExprNode {
+class YONA_API CatchExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1448,7 +1449,7 @@ public:
   ~CatchExpr() override;
 };
 
-class TryCatchExpr final : public ExprNode {
+class YONA_API TryCatchExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 

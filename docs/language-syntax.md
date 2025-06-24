@@ -14,7 +14,7 @@ Yona is a functional programming language with pattern matching, first-class fun
 -17
 1_000_000  # Underscores for readability
 
-# Floats  
+# Floats
 3.14
 -0.5
 1.23e-4
@@ -73,10 +73,10 @@ false
 let x = 42 in x + 1
 
 # Multiple bindings
-let 
+let
   x = 10,
   y = 20
-in 
+in
   x + y
 
 # Pattern matching in let
@@ -356,14 +356,14 @@ type Tree a = Leaf | Node a (Tree a) (Tree a)
 module Package\ModuleName exports func1, func2 as
   # Type definitions
   type Status = Active | Inactive
-  
+
   # Record definitions
   record User(id: Int, name: String, status: Status)
-  
+
   # Function definitions
   func1(x) -> x + 1
   func2(a, b) -> a * b
-  
+
   # Private helper (not exported)
   helper(x) -> x * 2
 end
@@ -449,7 +449,7 @@ From highest to lowest:
 4. **Function Definitions**: Arrow on same line for simple functions
    ```yona
    add(x, y) -> x + y
-   
+
    complex(x, y) ->
      let temp = x * y in
        if temp > 0 then temp else -temp

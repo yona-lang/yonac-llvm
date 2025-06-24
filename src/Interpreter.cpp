@@ -4,7 +4,7 @@
 
 #include "Interpreter.h"
 
-#include <boost/log/trivial.hpp>
+#include <print>
 #include <numeric>
 #include <filesystem>
 #include <fstream>
@@ -70,12 +70,12 @@ using namespace std::placeholders;
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
   const auto runtime_object = any_cast<RuntimeObjectPtr>(visit(node));
-  
+
   // Check for exception after visit
   if (IS.has_exception) {
     return nullopt;
   }
-  
+
   if (runtime_object->type == ROT) {
     return make_optional(runtime_object->get<VT>());
   }
@@ -151,54 +151,54 @@ bool Interpreter::match_pattern(PatternNode *pattern, const RuntimeObjectPtr& va
   // Pattern matching implementation
   // Returns true if the pattern matches the value, false otherwise
   // Side effect: binds variables in the current frame
-  
+
   // Check the specific pattern type
   if (auto underscore = dynamic_cast<UnderscoreNode*>(pattern)) {
     // Underscore always matches
     return true;
   }
-  
+
   if (auto underscore = dynamic_cast<UnderscorePattern*>(pattern)) {
     // Underscore always matches
     return true;
   }
-  
+
   if (auto pattern_value = dynamic_cast<PatternValue*>(pattern)) {
     return match_pattern_value(pattern_value, value);
   }
-  
+
   if (auto tuple_pattern = dynamic_cast<TuplePattern*>(pattern)) {
     return match_tuple_pattern(tuple_pattern, value);
   }
-  
+
   if (auto seq_pattern = dynamic_cast<SeqPattern*>(pattern)) {
     return match_seq_pattern(seq_pattern, value);
   }
-  
+
   if (auto dict_pattern = dynamic_cast<DictPattern*>(pattern)) {
     return match_dict_pattern(dict_pattern, value);
   }
-  
+
   if (auto record_pattern = dynamic_cast<RecordPattern*>(pattern)) {
     return match_record_pattern(record_pattern, value);
   }
-  
+
   if (auto as_pattern = dynamic_cast<AsDataStructurePattern*>(pattern)) {
     return match_as_pattern(as_pattern, value);
   }
-  
+
   if (auto head_tails_pattern = dynamic_cast<HeadTailsPattern*>(pattern)) {
     return match_head_tails_pattern(head_tails_pattern, value);
   }
-  
+
   if (auto tails_head_pattern = dynamic_cast<TailsHeadPattern*>(pattern)) {
     return match_tails_head_pattern(tails_head_pattern, value);
   }
-  
+
   if (auto head_tails_head_pattern = dynamic_cast<HeadTailsHeadPattern*>(pattern)) {
     return match_head_tails_head_pattern(head_tails_head_pattern, value);
   }
-  
+
   // Unknown pattern type
   return false;
 }
@@ -207,7 +207,7 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
   // PatternValue can contain: literal, symbol, or identifier
   return std::visit([this, &value](auto&& arg) -> bool {
     using T = decay_t<decltype(arg)>;
-    
+
     if constexpr (is_same_v<T, LiteralExpr<nullptr_t>*>) {
       // Unit literal - this would be UnitExpr
       return value->type == Unit;
@@ -230,46 +230,46 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
 
 bool Interpreter::match_tuple_pattern(TuplePattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Tuple) return false;
-  
+
   auto tuple_value = value->get<shared_ptr<TupleValue>>();
   if (pattern->patterns.size() != tuple_value->fields.size()) return false;
-  
+
   // Match each element
   for (size_t i = 0; i < pattern->patterns.size(); i++) {
     if (!match_pattern(pattern->patterns[i], tuple_value->fields[i])) {
       return false;
     }
   }
-  
+
   return true;
 }
 
 bool Interpreter::match_seq_pattern(SeqPattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Seq) return false;
-  
+
   auto seq_value = value->get<shared_ptr<SeqValue>>();
   if (pattern->patterns.size() != seq_value->fields.size()) return false;
-  
+
   // Match each element
   for (size_t i = 0; i < pattern->patterns.size(); i++) {
     if (!match_pattern(pattern->patterns[i], seq_value->fields[i])) {
       return false;
     }
   }
-  
+
   return true;
 }
 
 bool Interpreter::match_dict_pattern(DictPattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Dict) return false;
-  
+
   auto dict_value = value->get<shared_ptr<DictValue>>();
-  
+
   // For each pattern key-value pair, find matching entry in dict
   for (const auto& [key_pattern, value_pattern] : pattern->keyValuePairs) {
     // Evaluate the key pattern
     auto key_result = any_cast<RuntimeObjectPtr>(visit(key_pattern));
-    
+
     // Find matching key in dict
     bool found = false;
     for (const auto& [dict_key, dict_val] : dict_value->fields) {
@@ -282,12 +282,12 @@ bool Interpreter::match_dict_pattern(DictPattern *pattern, const RuntimeObjectPt
         break;
       }
     }
-    
+
     if (!found) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -299,83 +299,83 @@ bool Interpreter::match_record_pattern(RecordPattern *pattern, const RuntimeObje
 bool Interpreter::match_as_pattern(AsDataStructurePattern *pattern, const RuntimeObjectPtr& value) const {
   // First bind the whole value to the identifier
   IS.frame->write(pattern->identifier->name->value, value);
-  
+
   // Then match the inner pattern
   return match_pattern(pattern->pattern, value);
 }
 
 bool Interpreter::match_head_tails_pattern(HeadTailsPattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Seq) return false;
-  
+
   auto seq_value = value->get<shared_ptr<SeqValue>>();
-  
+
   // Check if we have enough elements for heads
   if (seq_value->fields.size() < pattern->heads.size()) return false;
-  
+
   // Match head elements
   for (size_t i = 0; i < pattern->heads.size(); i++) {
     if (!match_pattern(pattern->heads[i], seq_value->fields[i])) {
       return false;
     }
   }
-  
+
   // Match tail (remaining elements)
   vector<RuntimeObjectPtr> tail_elements;
   for (size_t i = pattern->heads.size(); i < seq_value->fields.size(); i++) {
     tail_elements.push_back(seq_value->fields[i]);
   }
-  
+
   auto tail_seq = make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(tail_elements));
   return match_tail_pattern(pattern->tail, tail_seq);
 }
 
 bool Interpreter::match_tails_head_pattern(TailsHeadPattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Seq) return false;
-  
+
   auto seq_value = value->get<shared_ptr<SeqValue>>();
-  
+
   // Check if we have enough elements for heads
   if (seq_value->fields.size() < pattern->heads.size()) return false;
-  
+
   size_t tail_end = seq_value->fields.size() - pattern->heads.size();
-  
+
   // Match tail (initial elements)
   vector<RuntimeObjectPtr> tail_elements;
   for (size_t i = 0; i < tail_end; i++) {
     tail_elements.push_back(seq_value->fields[i]);
   }
-  
+
   auto tail_seq = make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(tail_elements));
   if (!match_tail_pattern(pattern->tail, tail_seq)) {
     return false;
   }
-  
+
   // Match head elements
   for (size_t i = 0; i < pattern->heads.size(); i++) {
     if (!match_pattern(pattern->heads[i], seq_value->fields[tail_end + i])) {
       return false;
     }
   }
-  
+
   return true;
 }
 
 bool Interpreter::match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, const RuntimeObjectPtr& value) const {
   if (value->type != Seq) return false;
-  
+
   auto seq_value = value->get<shared_ptr<SeqValue>>();
-  
+
   // Check if we have enough elements
   size_t min_size = pattern->left.size() + pattern->right.size();
   if (seq_value->fields.size() < min_size) return false;
-  
+
   // Match left heads
   for (size_t i = 0; i < pattern->left.size(); i++) {
     if (!match_pattern(pattern->left[i], seq_value->fields[i])) {
       return false;
     }
   }
-  
+
   // Match right heads
   size_t right_start = seq_value->fields.size() - pattern->right.size();
   for (size_t i = 0; i < pattern->right.size(); i++) {
@@ -383,13 +383,13 @@ bool Interpreter::match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, c
       return false;
     }
   }
-  
+
   // Match tail (middle elements)
   vector<RuntimeObjectPtr> tail_elements;
   for (size_t i = pattern->left.size(); i < right_start; i++) {
     tail_elements.push_back(seq_value->fields[i]);
   }
-  
+
   auto tail_seq = make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(tail_elements));
   return match_tail_pattern(pattern->tail, tail_seq);
 }
@@ -397,7 +397,7 @@ bool Interpreter::match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, c
 bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPtr& value) const {
   // TailPattern can be: PatternValue (with IdentifierExpr), SequenceExpr, UnderscoreNode, StringExpr
   // BOOST_LOG_TRIVIAL(debug) << "match_tail_pattern: pattern type = " << pattern->get_type();
-  
+
   // Check if it's a PatternValue containing an identifier
   if (auto pattern_value = dynamic_cast<PatternValue*>(pattern)) {
     // Check if the PatternValue contains an IdentifierExpr
@@ -414,18 +414,18 @@ bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPt
       }
     }, pattern_value->expr);
   }
-  
+
   if (auto identifier = dynamic_cast<IdentifierExpr*>(pattern)) {
     // Direct identifier (shouldn't happen in patterns, but handle it)
     IS.frame->write(identifier->name->value, value);
     return true;
   }
-  
+
   if (dynamic_cast<UnderscoreNode*>(pattern)) {
     // Underscore always matches
     return true;
   }
-  
+
   // For other cases, try to match as a pattern
   return match_pattern(pattern, value);
 }
@@ -450,22 +450,22 @@ any Interpreter::visit(LogicalNotOpExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto operand = any_cast<RuntimeObjectPtr>(visit(node->expr));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (operand->type != Bool) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Bool for logical not operation");
   }
-  
+
   return make_shared<RuntimeObject>(Bool, !operand->get<bool>());
 }
 any Interpreter::visit(BinaryNotOpExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto operand = any_cast<RuntimeObjectPtr>(visit(node->expr));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (operand->type != Int) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int for binary not operation");
   }
-  
+
   return make_shared<RuntimeObject>(Int, ~operand->get<int>());
 }
 
@@ -473,27 +473,27 @@ any Interpreter::visit(AliasCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ApplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Starting function application";
-  
+
   // First visit the call expression to get the function
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: About to visit call expression of type: " << node->call->get_type();
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expr is " << typeid(*node->call).name();
   auto call_result = node->call->accept(*this);
   CHECK_EXCEPTION_RETURN();
-  
+
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expression visited, result type: " << any_cast<RuntimeObjectPtr>(call_result)->type;
-  
+
   // Check if it's a function
   auto func_obj = any_cast<RuntimeObjectPtr>(call_result);
   if (func_obj->type != Function) {
-    BOOST_LOG_TRIVIAL(error) << "ApplyExpr: Call expression is not a function, type=" << func_obj->type;
+    std::cerr << "ApplyExpr: Call expression is not a function, type=" << RuntimeObjectTypes[func_obj->type] << std::endl;
     throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Invalid function call - not a function");
   }
-  
+
   auto func_val = func_obj->get<shared_ptr<FunctionValue>>();
-  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Function arity=" << func_val->arity 
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Function arity=" << func_val->arity
   //                          << ", partial_args=" << func_val->partial_args.size()
   //                          << ", new_args=" << node->args.size();
-  
+
   // Evaluate arguments
   vector<RuntimeObjectPtr> new_args;
   new_args.reserve(node->args.size());
@@ -506,16 +506,16 @@ any Interpreter::visit(ApplyExpr *node) const {
     }
     CHECK_EXCEPTION_RETURN();
   }
-  
+
   // Combine with any partial args
   vector<RuntimeObjectPtr> all_args;
   all_args.reserve(func_val->partial_args.size() + new_args.size());
   all_args.insert(all_args.end(), func_val->partial_args.begin(), func_val->partial_args.end());
   all_args.insert(all_args.end(), new_args.begin(), new_args.end());
-  
+
   // Check if we have enough arguments
   if (all_args.size() < func_val->arity) {
-    // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Creating partial application - have " 
+    // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Creating partial application - have "
     //                          << all_args.size() << " args, need " << func_val->arity;
     // Create a partially applied function
     auto partial_func = make_shared<FunctionValue>();
@@ -523,54 +523,54 @@ any Interpreter::visit(ApplyExpr *node) const {
     partial_func->arity = func_val->arity - all_args.size();  // Remaining arity!
     partial_func->partial_args = {};  // Don't store args here since we'll capture them in the closure
     partial_func->type = func_val->type;  // Preserve type information
-    
+
     // Create a new code function that will apply the remaining args
     auto original_code = func_val->code;
     partial_func->code = [original_code, all_args](const vector<RuntimeObjectPtr>& more_args) -> RuntimeObjectPtr {
-      // BOOST_LOG_TRIVIAL(debug) << "Partial function: Executing with " << more_args.size() 
+      // BOOST_LOG_TRIVIAL(debug) << "Partial function: Executing with " << more_args.size()
       //                          << " more args (already have " << all_args.size() << ")";
-      
+
       // Combine stored args with new args
       vector<RuntimeObjectPtr> combined_args;
       combined_args.reserve(all_args.size() + more_args.size());
       combined_args.insert(combined_args.end(), all_args.begin(), all_args.end());
       combined_args.insert(combined_args.end(), more_args.begin(), more_args.end());
-      
+
       return original_code(combined_args);
     };
-    
+
     return make_typed_object(Function, partial_func, node);
   } else if (all_args.size() == func_val->arity) {
     // Exact number of arguments - apply the function
-    
+
     // Perform runtime type checking if types are available
     if (type_checker.has_value() && func_val->type.has_value()) {
       // TODO: Implement type checking for function arguments
       // For now, just apply without checking
     }
-    
+
     return func_val->code(all_args);
   } else {
     // Too many arguments - apply function and then apply result to remaining args
     // First, take only the needed arguments
     vector<RuntimeObjectPtr> needed_args(all_args.begin(), all_args.begin() + func_val->arity);
     auto result = func_val->code(needed_args);
-    
+
     // If there are remaining arguments, try to apply them to the result
     if (all_args.size() > func_val->arity) {
       vector<RuntimeObjectPtr> remaining_args(all_args.begin() + func_val->arity, all_args.end());
-      
+
       // Create a new ApplyExpr node to apply remaining args
       // For now, throw an error as we'd need to create AST nodes dynamically
-      throw yona_error(node->source_context, yona_error::Type::RUNTIME, 
-                      "Too many arguments provided: expected " + to_string(func_val->arity) + 
+      throw yona_error(node->source_context, yona_error::Type::RUNTIME,
+                      "Too many arguments provided: expected " + to_string(func_val->arity) +
                       ", got " + to_string(all_args.size()));
     }
-    
+
     return result;
   }
 }
-any Interpreter::visit(AsDataStructurePattern *node) const { 
+any Interpreter::visit(AsDataStructurePattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // AsDataStructurePattern is used in pattern matching contexts, not for evaluation
   // It binds a value to an identifier and then matches against a pattern
@@ -579,26 +579,26 @@ any Interpreter::visit(AsDataStructurePattern *node) const {
 }
 
 any Interpreter::visit(BodyWithGuards *node) const { return expr_wrapper(node); }
-any Interpreter::visit(BodyWithoutGuards *node) const { 
+any Interpreter::visit(BodyWithoutGuards *node) const {
   CHECK_EXCEPTION_RETURN();
-  return visit(node->expr); 
+  return visit(node->expr);
 }
-any Interpreter::visit(ByteExpr *node) const { 
+any Interpreter::visit(ByteExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Byte, node->value, node); 
+  return make_typed_object(Byte, node->value, node);
 }
-any Interpreter::visit(CaseExpr *node) const { 
+any Interpreter::visit(CaseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // Evaluate the expression to match against
   auto match_value = any_cast<RuntimeObjectPtr>(visit(node->expr));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Try each clause in order
   for (auto* clause : node->clauses) {
     // Create a new frame for pattern bindings
     IS.push_frame();
-    
+
     // Try to match the pattern
     if (match_pattern(clause->pattern, match_value)) {
       // Pattern matched - evaluate the body and return
@@ -609,11 +609,11 @@ any Interpreter::visit(CaseExpr *node) const {
       // Pattern didn't match - discard frame and try next
       IS.pop_frame();
     }
-    
+
     // Check for exceptions
     CHECK_EXCEPTION_RETURN();
   }
-  
+
   // No pattern matched - raise :nomatch exception
   auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>("nomatch"));
   auto message = make_shared<RuntimeObject>(String, string("No pattern matched in case expression"));
@@ -655,9 +655,9 @@ any Interpreter::visit(CatchPatternExpr *node) const {
   }
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
-any Interpreter::visit(CharacterExpr *node) const { 
+any Interpreter::visit(CharacterExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Char, node->value, node); 
+  return make_typed_object(Char, node->value, node);
 }
 any Interpreter::visit(ConsLeftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -665,16 +665,16 @@ any Interpreter::visit(ConsLeftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (right->type != Seq) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq on right side of cons");
   }
-  
+
   const auto seq = right->get<shared_ptr<SeqValue>>();
   vector<RuntimeObjectPtr> new_fields;
   new_fields.push_back(left);
   new_fields.insert(new_fields.end(), seq->fields.begin(), seq->fields.end());
-  
+
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(new_fields));
 }
 any Interpreter::visit(ConsRightExpr *node) const {
@@ -683,15 +683,15 @@ any Interpreter::visit(ConsRightExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   const auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (left->type != Seq) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq on left side of cons");
   }
-  
+
   auto seq = left->get<shared_ptr<SeqValue>>();
   vector<RuntimeObjectPtr> new_fields(seq->fields);
   new_fields.push_back(right);
-  
+
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(new_fields));
 }
 
@@ -716,14 +716,14 @@ any Interpreter::visit(DictGeneratorExpr *node) const {
   // Evaluate the source collection
   auto source = any_cast<RuntimeObjectPtr>(visit(node->stepExpression));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Ensure source is a collection (Seq, Set, or Dict)
   if (source->type != Seq && source->type != Set && source->type != Dict) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected collection for generator source");
   }
-  
+
   vector<pair<RuntimeObjectPtr, RuntimeObjectPtr>> result_fields;
-  
+
   if (source->type == Seq) {
     auto source_seq = source->get<shared_ptr<SeqValue>>();
     for (const auto& elem : source_seq->fields) {
@@ -770,7 +770,7 @@ any Interpreter::visit(DictGeneratorExpr *node) const {
       IS.pop_frame();
     }
   }
-  
+
   return make_shared<RuntimeObject>(Dict, make_shared<DictValue>(result_fields));
 }
 any Interpreter::visit(DictGeneratorReducer *node) const {
@@ -778,7 +778,7 @@ any Interpreter::visit(DictGeneratorReducer *node) const {
   // Instead, its key and value expressions are evaluated in DictGeneratorExpr
   throw yona_error(node->source_context, yona_error::Type::RUNTIME, "DictGeneratorReducer should not be visited directly");
 }
-any Interpreter::visit(DictPattern *node) const { 
+any Interpreter::visit(DictPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // DictPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
@@ -800,18 +800,18 @@ any Interpreter::visit(EqExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   const auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   return make_shared<RuntimeObject>(Bool, *left == *right);
 }
-any Interpreter::visit(FalseLiteralExpr *node) const { 
+any Interpreter::visit(FalseLiteralExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Bool, false, node); 
+  return make_typed_object(Bool, false, node);
 }
 any Interpreter::visit(FieldAccessExpr *node) const { return expr_wrapper(node); }
 any Interpreter::visit(FieldUpdateExpr *node) const { return expr_wrapper(node); }
-any Interpreter::visit(FloatExpr *node) const { 
+any Interpreter::visit(FloatExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Float, node->value, node); 
+  return make_typed_object(Float, node->value, node);
 }
 any Interpreter::visit(FqnAlias *node) const { return expr_wrapper(node); }
 
@@ -833,16 +833,16 @@ any Interpreter::visit(FunctionExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Determine arity from patterns
   size_t arity = node->patterns.size();
-  // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Creating function with arity=" << arity 
+  // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Creating function with arity=" << arity
   //                          << ", name=" << (node->name.empty() ? "<lambda>" : node->name);
-  
+
   function code = [this, node](const vector<RuntimeObjectPtr> &args) -> RuntimeObjectPtr {
     // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing function with " << args.size() << " args";
-    
+
     if (match_fun_args(node->patterns, args)) {
       // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments matched patterns";
       // match_fun_args pushes a frame and merges it if successful
-      
+
       for (const auto body : node->bodies) {
         // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Processing body";
         if (dynamic_cast<BodyWithoutGuards *>(body)) {
@@ -876,59 +876,59 @@ any Interpreter::visit(FunctionExpr *node) const {
   fun_value->code = code;
   fun_value->arity = arity;
   fun_value->partial_args = {};  // No partial args for new function
-  
+
   return make_typed_object(Function, fun_value, node);
 }
 
 any Interpreter::visit(FunctionsImport *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // Get the FQN of the module to import from
   auto fqn = get_value<FQN, shared_ptr<FqnValue>>(node->fromFqn);
   CHECK_EXCEPTION_RETURN();
-  
+
   if (!fqn.has_value()) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Invalid module FQN");
   }
-  
+
   // Load or get the module
   auto module = get_or_load_module(fqn.value());
-  
+
   // Import specific functions
   for (const auto& alias : node->aliases) {
     const string& func_name = alias->name->value;
     auto func = module->get_export(func_name);
     if (!func) {
-      throw yona_error(node->source_context, yona_error::Type::RUNTIME, 
+      throw yona_error(node->source_context, yona_error::Type::RUNTIME,
                        "Function '" + func_name + "' not exported from module");
     }
-    
+
     // Use alias if provided, otherwise use original name
     const string& import_name = alias->alias ? alias->alias->value : func_name;
     IS.frame->write(import_name, make_shared<RuntimeObject>(Function, func));
   }
-  
+
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 COMPARISON_OP(GtExpr, >)
 COMPARISON_OP(GteExpr, >=)
-any Interpreter::visit(HeadTailsHeadPattern *node) const { 
+any Interpreter::visit(HeadTailsHeadPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // HeadTailsHeadPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
-any Interpreter::visit(HeadTailsPattern *node) const { 
+any Interpreter::visit(HeadTailsPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // HeadTailsPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 any Interpreter::visit(IfExpr *node) const {
   auto condition = any_cast<RuntimeObjectPtr>(visit(node->condition));
-  
+
   if (condition->type != Bool) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Bool for if condition");
   }
-  
+
   if (condition->get<bool>()) {
     return visit(node->thenExpr);
   } else {
@@ -937,25 +937,25 @@ any Interpreter::visit(IfExpr *node) const {
 }
 any Interpreter::visit(ImportClauseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // ImportClauseExpr is a base class - the actual import is in derived classes
   // This will be called via dynamic dispatch to ModuleImport or FunctionsImport
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 any Interpreter::visit(ImportExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // Process all import clauses
   for (auto clause : node->clauses) {
     auto clause_result = any_cast<RuntimeObjectPtr>(visit(clause));
     CHECK_EXCEPTION_RETURN();
   }
-  
+
   // Visit the expression that uses the imported functions
   if (node->expr) {
     return visit(node->expr);
   }
-  
+
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 any Interpreter::visit(InExpr *node) const {
@@ -964,7 +964,7 @@ any Interpreter::visit(InExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (right->type == Seq) {
     auto seq = right->get<shared_ptr<SeqValue>>();
     for (const auto& elem : seq->fields) {
@@ -990,12 +990,12 @@ any Interpreter::visit(InExpr *node) const {
     }
     return make_shared<RuntimeObject>(Bool, false);
   }
-  
+
   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected collection type for 'in' operation");
 }
-any Interpreter::visit(IntegerExpr *node) const { 
+any Interpreter::visit(IntegerExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Int, node->value, node); 
+  return make_typed_object(Int, node->value, node);
 }
 any Interpreter::visit(JoinExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1003,51 +1003,51 @@ any Interpreter::visit(JoinExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (left->type != Seq || right->type != Seq) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq for join operation");
   }
-  
+
   auto left_seq = left->get<shared_ptr<SeqValue>>();
   auto right_seq = right->get<shared_ptr<SeqValue>>();
-  
+
   vector<RuntimeObjectPtr> new_fields(left_seq->fields);
   new_fields.insert(new_fields.end(), right_seq->fields.begin(), right_seq->fields.end());
-  
+
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(new_fields));
 }
 any Interpreter::visit(KeyValueCollectionExtractorExpr *node) const {
   // Get the current key and value from the generator context
   auto key = IS.generator_current_key;
   auto value = IS.generator_current_element;
-  
+
   if (holds_alternative<IdentifierExpr*>(node->keyExpr)) {
     // Bind the key to the identifier
     auto identifier = get<IdentifierExpr*>(node->keyExpr);
     IS.frame->write(identifier->name->value, key);
   }
   // If it's an underscore, we don't bind anything
-  
+
   if (holds_alternative<IdentifierExpr*>(node->valueExpr)) {
     // Bind the value to the identifier
     auto identifier = get<IdentifierExpr*>(node->valueExpr);
     IS.frame->write(identifier->name->value, value);
   }
   // If it's an underscore, we don't bind anything
-  
+
   return value;
 }
-any Interpreter::visit(LambdaAlias *node) const { 
+any Interpreter::visit(LambdaAlias *node) const {
   CHECK_EXCEPTION_RETURN();
   // BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Creating lambda for name=" << node->name->value;
-  
+
   // Evaluate the lambda expression
   auto lambda_result = visit(node->lambda);
   CHECK_EXCEPTION_RETURN();
-  
+
   // Bind the function to the name in the current frame
   IS.frame->write(node->name->value, lambda_result);
-  
+
   // BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Lambda bound to " << node->name->value;
   return lambda_result;
 }
@@ -1070,7 +1070,7 @@ any Interpreter::visit(ModuloExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (left->type == Int && right->type == Int) {
     int divisor = right->get<int>();
     if (divisor == 0) {
@@ -1078,20 +1078,20 @@ any Interpreter::visit(ModuloExpr *node) const {
     }
     return make_shared<RuntimeObject>(Int, left->get<int>() % divisor);
   }
-  
+
   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int for modulo operation");
 }
 any Interpreter::visit(ModuleAlias *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleCall *node) const { return expr_wrapper(node); }
-any Interpreter::visit(ExprCall *node) const { 
+any Interpreter::visit(ExprCall *node) const {
   CHECK_EXCEPTION_RETURN();
   // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Evaluating expression for call";
   // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression type = " << node->expr->get_type();
-  
+
   // ExprCall handles general expression calls (e.g., (lambda)(args) or curried(args))
   // Simply evaluate the expression - it should return a function
   auto result = visit(node->expr);
-  // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression evaluated, type=" 
+  // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression evaluated, type="
   //                          << (result.has_value() ? to_string(any_cast<RuntimeObjectPtr>(result)->type) : "no value");
   return result;
 }
@@ -1104,11 +1104,11 @@ any Interpreter::visit(ModuleExpr *node) const {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Invalid module FQN");
   }
   IS.module_stack.emplace(fqn.value(), nullptr);
-  
+
   // Create a new module
   auto module = make_shared<ModuleValue>();
   module->fqn = fqn.value();
-  
+
   // Process records
   for (auto record : node->records) {
     auto record_result = any_cast<RuntimeObjectPtr>(visit(record));
@@ -1118,14 +1118,14 @@ any Interpreter::visit(ModuleExpr *node) const {
       // For now, we're not storing runtime record instances in the module
     }
   }
-  
+
   // Process functions and populate exports
   for (auto func : node->functions) {
     auto func_result = any_cast<RuntimeObjectPtr>(visit(func));
     CHECK_EXCEPTION_RETURN();
     if (func_result->type == Function) {
       auto func_value = func_result->get<shared_ptr<FunctionValue>>();
-      
+
       // Add to exports if it's in the export list
       const string& func_name = func->name;
       if (find(node->exports.begin(), node->exports.end(), func_name) != node->exports.end()) {
@@ -1140,23 +1140,23 @@ any Interpreter::visit(ModuleExpr *node) const {
 
 any Interpreter::visit(ModuleImport *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // Get the FQN of the module to import
   auto fqn = get_value<FQN, shared_ptr<FqnValue>>(node->fqn);
   CHECK_EXCEPTION_RETURN();
-  
+
   if (!fqn.has_value()) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Invalid module FQN");
   }
-  
+
   // Load or get the module
   auto module = get_or_load_module(fqn.value());
-  
+
   // Import all exported functions from the module
   for (const auto& [name, func] : module->exports) {
     IS.frame->write(name, make_shared<RuntimeObject>(Function, func));
   }
-  
+
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 any Interpreter::visit(NameCall *node) const {
@@ -1169,9 +1169,9 @@ any Interpreter::visit(NameCall *node) const {
 
   return expr;
 }
-any Interpreter::visit(NameExpr *node) const { 
+any Interpreter::visit(NameExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_shared<RuntimeObject>(FQN, make_shared<FqnValue>(vector{node->value})); 
+  return make_shared<RuntimeObject>(FQN, make_shared<FqnValue>(vector{node->value}));
 }
 any Interpreter::visit(NeqExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1179,7 +1179,7 @@ any Interpreter::visit(NeqExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   return make_shared<RuntimeObject>(Bool, *left != *right);
 }
 any Interpreter::visit(PackageNameExpr *node) const { return expr_wrapper(node); }
@@ -1192,13 +1192,13 @@ any Interpreter::visit(PipeLeftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto left_val = any_cast<RuntimeObjectPtr>(visit(node->left));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (left_val->type != Function) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Function for pipe left operator");
   }
-  
+
   auto func = left_val->get<shared_ptr<FunctionValue>>();
-  
+
   // Call the function with the argument
   vector<RuntimeObjectPtr> args = {right_val};
   return func->code(args);
@@ -1212,28 +1212,28 @@ any Interpreter::visit(PipeRightExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right_val = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (right_val->type != Function) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Function for pipe right operator");
   }
-  
+
   auto func = right_val->get<shared_ptr<FunctionValue>>();
-  
+
   // Call the function with the argument
   vector<RuntimeObjectPtr> args = {left_val};
   return func->code(args);
 }
 
-any Interpreter::visit(PatternAlias *node) const { 
+any Interpreter::visit(PatternAlias *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the expression
   auto expr_result = any_cast<RuntimeObjectPtr>(visit(node->expr));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Try to match the pattern against the result
   // Create a new frame for pattern bindings
   IS.push_frame();
-  
+
   if (!match_pattern(node->pattern, expr_result)) {
     // Pattern didn't match - raise :nomatch exception
     IS.pop_frame();
@@ -1243,18 +1243,18 @@ any Interpreter::visit(PatternAlias *node) const {
     IS.raise_exception(exception, node->source_context);
     return make_shared<RuntimeObject>(Unit, nullptr);
   }
-  
+
   // Pattern matched - merge bindings to parent frame
   IS.merge_frame_to_parent();
   return expr_result;
 }
-any Interpreter::visit(PatternExpr *node) const { 
+any Interpreter::visit(PatternExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // PatternExpr is used in case expressions
   // It contains pattern + optional guards + expression to evaluate
   return std::visit([this](auto&& arg) -> any {
     using T = decay_t<decltype(arg)>;
-    
+
     if constexpr (is_same_v<T, Pattern*>) {
       // Just a pattern - used in context where pattern is evaluated
       return visit(arg);
@@ -1276,25 +1276,25 @@ any Interpreter::visit(PatternExpr *node) const {
     return make_shared<RuntimeObject>(Unit, nullptr);
   }, node->patternExpr);
 }
-any Interpreter::visit(PatternValue *node) const { 
+any Interpreter::visit(PatternValue *node) const {
   CHECK_EXCEPTION_RETURN();
   // PatternValue evaluates the contained expression
   return std::visit([this](auto&& arg) -> any {
     return visit(arg);
   }, node->expr);
 }
-any Interpreter::visit(PatternWithGuards *node) const { 
+any Interpreter::visit(PatternWithGuards *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the guard expression
   auto guard_result = any_cast<RuntimeObjectPtr>(visit(node->guard));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Check if guard is true
   if (guard_result->type != Bool || !guard_result->get<bool>()) {
     // Guard failed
     return make_shared<RuntimeObject>(Unit, nullptr);
   }
-  
+
   // Guard passed - evaluate the expression
   return visit(node->expr);
 }
@@ -1305,7 +1305,7 @@ any Interpreter::visit(PowerExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   if (left->type == Int && right->type == Int) {
     return make_shared<RuntimeObject>(Float, pow(left->get<int>(), right->get<int>()));
   } else if (left->type == Float && right->type == Float) {
@@ -1315,25 +1315,25 @@ any Interpreter::visit(PowerExpr *node) const {
   } else if (left->type == Float && right->type == Int) {
     return make_shared<RuntimeObject>(Float, pow(left->get<double>(), right->get<int>()));
   }
-  
+
   throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected numeric types for power operation");
 }
 any Interpreter::visit(RaiseExpr *node) const {
   // Create an exception with symbol and message
   auto symbol = any_cast<RuntimeObjectPtr>(visit(node->symbol));
   auto message = any_cast<RuntimeObjectPtr>(visit(node->message));
-  
+
   if (symbol->type != Symbol) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Symbol for exception type");
   }
   if (message->type != String) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected String for exception message");
   }
-  
+
   // Set the exception in interpreter state
   auto exception = make_exception(symbol, message);
   IS.raise_exception(exception, node->source_context);
-  
+
   // Return unit value (exception is in the state)
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
@@ -1351,7 +1351,7 @@ any Interpreter::visit(RecordNode *node) const {
   return make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields));
 }
 
-any Interpreter::visit(RecordPattern *node) const { 
+any Interpreter::visit(RecordPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // RecordPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
@@ -1361,39 +1361,39 @@ any Interpreter::visit(SeqGeneratorExpr *node) const {
   // Evaluate the source collection
   auto source = any_cast<RuntimeObjectPtr>(visit(node->stepExpression));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Ensure source is a sequence
   if (source->type != Seq) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq for generator source");
   }
-  
+
   auto source_seq = source->get<shared_ptr<SeqValue>>();
   vector<RuntimeObjectPtr> result_fields;
-  
+
   // Process each element in the source
   for (const auto& elem : source_seq->fields) {
     // Push a new frame for this iteration
     IS.push_frame();
-    
+
     // Bind the element to the extractor variable(s)
     // The collectionExtractor will be a ValueCollectionExtractorExpr that binds the element
     // We need to pass the element to the extractor so it can bind it
     IS.generator_current_element = elem;
     visit(node->collectionExtractor);
     CHECK_EXCEPTION_RETURN();
-    
+
     // Evaluate the reducer expression with the bound variable
     auto reduced = any_cast<RuntimeObjectPtr>(visit(node->reducerExpr));
     CHECK_EXCEPTION_RETURN();
     result_fields.push_back(reduced);
-    
+
     // Pop the frame
     IS.pop_frame();
   }
-  
+
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(result_fields));
 }
-any Interpreter::visit(SeqPattern *node) const { 
+any Interpreter::visit(SeqPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // SeqPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
@@ -1417,14 +1417,14 @@ any Interpreter::visit(SetGeneratorExpr *node) const {
   // Evaluate the source collection
   auto source = any_cast<RuntimeObjectPtr>(visit(node->stepExpression));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Ensure source is a collection (Seq, Set, or Dict)
   if (source->type != Seq && source->type != Set && source->type != Dict) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected collection for generator source");
   }
-  
+
   vector<RuntimeObjectPtr> result_fields;
-  
+
   if (source->type == Seq) {
     auto source_seq = source->get<shared_ptr<SeqValue>>();
     for (const auto& elem : source_seq->fields) {
@@ -1464,30 +1464,30 @@ any Interpreter::visit(SetGeneratorExpr *node) const {
       IS.pop_frame();
     }
   }
-  
+
   return make_shared<RuntimeObject>(Set, make_shared<SetValue>(result_fields));
 }
-any Interpreter::visit(StringExpr *node) const { 
+any Interpreter::visit(StringExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(String, node->value, node); 
+  return make_typed_object(String, node->value, node);
 }
-any Interpreter::visit(SymbolExpr *node) const { 
+any Interpreter::visit(SymbolExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Symbol, make_shared<SymbolValue>(node->value), node); 
+  return make_typed_object(Symbol, make_shared<SymbolValue>(node->value), node);
 }
-any Interpreter::visit(TailsHeadPattern *node) const { 
+any Interpreter::visit(TailsHeadPattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // TailsHeadPattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
-any Interpreter::visit(TrueLiteralExpr *node) const { 
+any Interpreter::visit(TrueLiteralExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Bool, true, node); 
+  return make_typed_object(Bool, true, node);
 }
 any Interpreter::visit(TryCatchExpr *node) const {
   // Clear any existing exception before try block
   IS.clear_exception();
-  
+
   // Execute the try expression
   any result;
   try {
@@ -1496,19 +1496,19 @@ any Interpreter::visit(TryCatchExpr *node) const {
     // If an exception was thrown during visit, just re-throw
     throw;
   }
-  
+
   // If no exception was raised, return the result
   if (!IS.has_exception) {
     return result;
   }
-  
+
   // Save the exception for pattern matching
   auto exception = IS.exception_value;
   // TODO: Use exception_context for better error reporting
-  
+
   // Clear the exception state before executing catch block
   IS.clear_exception();
-  
+
   // TODO: Pass exception to catch block for pattern matching
   // For now, just execute the catch expression
   return visit(node->catchExpr);
@@ -1527,18 +1527,18 @@ any Interpreter::visit(TupleExpr *node) const {
   return make_typed_object(Tuple, make_shared<TupleValue>(fields), node);
 }
 
-any Interpreter::visit(TuplePattern *node) const { 
+any Interpreter::visit(TuplePattern *node) const {
   CHECK_EXCEPTION_RETURN();
   // TuplePattern is used in pattern matching contexts, not for evaluation
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
-any Interpreter::visit(UnderscoreNode *node) const { 
+any Interpreter::visit(UnderscoreNode *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_shared<RuntimeObject>(Bool, true); 
+  return make_shared<RuntimeObject>(Bool, true);
 }
-any Interpreter::visit(UnitExpr *node) const { 
+any Interpreter::visit(UnitExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return make_typed_object(Unit, nullptr, node); 
+  return make_typed_object(Unit, nullptr, node);
 }
 
 any Interpreter::visit(ValueAlias *node) const {
@@ -1552,14 +1552,14 @@ any Interpreter::visit(ValueAlias *node) const {
 any Interpreter::visit(ValueCollectionExtractorExpr *node) const {
   // Get the current element from the generator context
   auto elem = IS.generator_current_element;
-  
+
   if (holds_alternative<IdentifierExpr*>(node->expr)) {
     // Bind the element to the identifier
     auto identifier = get<IdentifierExpr*>(node->expr);
     IS.frame->write(identifier->name->value, elem);
   }
   // If it's an underscore, we don't bind anything
-  
+
   return elem;
 }
 
@@ -1582,7 +1582,7 @@ any Interpreter::visit(TypeDeclaration *node) const { return expr_wrapper(node);
 any Interpreter::visit(TypeDefinition *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeNode *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeInstance *node) const { return expr_wrapper(node); }
-any Interpreter::visit(IdentifierExpr *node) const { 
+any Interpreter::visit(IdentifierExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Looking up '" << node->name->value << "'";
   auto result = IS.frame->lookup(node->source_context, node->name->value);
@@ -1721,7 +1721,7 @@ string Interpreter::find_module_file(const string& relative_path) const {
   if (filesystem::exists(relative_path)) {
     return relative_path;
   }
-  
+
   // Search in module paths
   for (const auto& base_path : IS.module_paths) {
     auto full_path = filesystem::path(base_path) / relative_path;
@@ -1729,27 +1729,27 @@ string Interpreter::find_module_file(const string& relative_path) const {
       return full_path.string();
     }
   }
-  
+
   return "";  // Not found
 }
 
 shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn) const {
   auto relative_path = fqn_to_path(fqn);
   auto module_path = find_module_file(relative_path);
-  
+
   if (module_path.empty()) {
-    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, 
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME,
                      "Module not found: " + relative_path);
   }
-  
+
   // Parse the module file
   parser::Parser parser;
   ifstream file(module_path);
   if (!file.is_open()) {
-    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, 
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME,
                      "Failed to open module file: " + module_path);
   }
-  
+
   auto parse_result = parser.parse_input(file);
   if (!parse_result.success || !parse_result.node) {
     string error_msg = "Failed to parse module: " + module_path;
@@ -1761,20 +1761,20 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
     }
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, error_msg);
   }
-  
+
   // Visit the module to evaluate it
   auto result = any_cast<RuntimeObjectPtr>(visit(parse_result.node.get()));
-  
+
   if (result->type != Module) {
-    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, 
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE,
                      "Module file must evaluate to a module");
   }
-  
+
   auto module = result->get<shared_ptr<ModuleValue>>();
   module->source_path = module_path;
-  
+
   // TODO: Process exports list from ModuleExpr
-  
+
   return module;
 }
 
@@ -1785,19 +1785,19 @@ shared_ptr<ModuleValue> Interpreter::get_or_load_module(const shared_ptr<FqnValu
     if (i > 0) cache_key += "/";
     cache_key += fqn->parts[i];
   }
-  
+
   // Check cache first
   auto it = IS.module_cache.find(cache_key);
   if (it != IS.module_cache.end()) {
     return it->second;
   }
-  
+
   // Load module
   auto module = load_module(fqn);
-  
+
   // Cache it
   IS.module_cache[cache_key] = module;
-  
+
   return module;
 }
 
@@ -1821,7 +1821,7 @@ bool Interpreter::check_runtime_type(const RuntimeObjectPtr& value, const Type& 
     // For now, just check exact match
     return true;  // Placeholder
   }
-  
+
   // Otherwise, check based on runtime type
   Type runtime_type = runtime_type_to_static_type(value->type);
   // TODO: Implement proper type compatibility check
@@ -1861,14 +1861,14 @@ bool Interpreter::type_check(AstNode* node) {
   if (!type_checker.has_value()) {
     enable_type_checking(true);
   }
-  
+
   // Reset context for fresh type checking
   type_context = TypeInferenceContext();
   type_annotations.clear();
-  
+
   // Perform type checking
   Type inferred_type = (*type_checker)->check(node);
-  
+
   // Return whether type checking succeeded
   return !type_context.has_errors();
 }

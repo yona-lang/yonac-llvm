@@ -5,11 +5,13 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <variant>
 #include <vector>
 #include <unordered_map>
+#include "yona_export.h"
 #include "types.h"
 
 namespace yona::interp::runtime {
@@ -50,8 +52,8 @@ inline string wchar_to_utf8(wchar_t wc) {
 
 using RuntimeObjectData =
     variant<int /*Int*/, double /*Float*/, byte /*Byte*/, wchar_t /*Char*/, string /*String*/, bool /*Bool*/, nullptr_t /*Unit*/,
-            shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple*/, shared_ptr<RecordValue> /*Record*/, 
-            shared_ptr<DictValue> /*Dict*/, shared_ptr<SeqValue> /*Seq*/, shared_ptr<SetValue> /*Set*/, 
+            shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple*/, shared_ptr<RecordValue> /*Record*/,
+            shared_ptr<DictValue> /*Dict*/, shared_ptr<SeqValue> /*Seq*/, shared_ptr<SetValue> /*Set*/,
             shared_ptr<FqnValue> /*FQN*/, shared_ptr<ModuleValue> /*Module*/, shared_ptr<FunctionValue> /*Function*/,
             shared_ptr<ApplyValue> /*Apply*/>;
 
@@ -91,7 +93,7 @@ struct RecordValue {
   string type_name;                         // Record type name (e.g., "Person")
   vector<string> field_names;               // Field names in order
   vector<RuntimeObjectPtr> field_values;    // Field values in same order
-  
+
   // Helper to get field value by name
   RuntimeObjectPtr get_field(const string& name) const {
     for (size_t i = 0; i < field_names.size(); i++) {
@@ -101,7 +103,7 @@ struct RecordValue {
     }
     return nullptr;
   }
-  
+
   // Helper to set field value by name
   bool set_field(const string& name, RuntimeObjectPtr value) {
     for (size_t i = 0; i < field_names.size(); i++) {
@@ -123,7 +125,7 @@ struct FunctionValue {
   function<RuntimeObjectPtr(const vector<RuntimeObjectPtr> &)> code; // nullptr - nomatch
   size_t arity; // Number of parameters expected
   optional<compiler::types::Type> type; // Function type information
-  
+
   // For partial application - stores already applied arguments
   vector<RuntimeObjectPtr> partial_args;
 };
@@ -137,28 +139,28 @@ struct RecordTypeInfo {
 
 struct ModuleValue {
   shared_ptr<FqnValue> fqn;
-  
+
   // Record type definitions in this module
   unordered_map<string, RecordTypeInfo> record_types;
-  
+
   // Export table: maps exported names to functions (this is the only function storage)
   unordered_map<string, shared_ptr<FunctionValue>> exports;
-  
+
   // Module source file path (for debugging and reloading)
   string source_path;
-  
+
   // Helper to get exported function by name
   shared_ptr<FunctionValue> get_export(const string& name) const {
     auto it = exports.find(name);
     return it != exports.end() ? it->second : nullptr;
   }
-  
+
   // Helper to get record type info
   RecordTypeInfo* get_record_type(const string& name) {
     auto it = record_types.find(name);
     return it != record_types.end() ? &it->second : nullptr;
   }
-  
+
   const RecordTypeInfo* get_record_type(const string& name) const {
     auto it = record_types.find(name);
     return it != record_types.end() ? &it->second : nullptr;
@@ -171,8 +173,8 @@ struct RuntimeObject {
   optional<compiler::types::Type> static_type; // Type information from type checker
 
   RuntimeObject(RuntimeObjectType t, RuntimeObjectData d) : type(t), data(std::move(d)) {}
-  
-  RuntimeObject(RuntimeObjectType t, RuntimeObjectData d, compiler::types::Type st) 
+
+  RuntimeObject(RuntimeObjectType t, RuntimeObjectData d, compiler::types::Type st)
     : type(t), data(std::move(d)), static_type(st) {}
 
   template <typename T> T &get() { return std::get<T>(data); }
@@ -183,6 +185,6 @@ struct RuntimeObject {
   friend bool operator!=(const RuntimeObject &lhs, const RuntimeObject &rhs) { return !(lhs == rhs); }
 };
 
-std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj);
+YONA_API std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj);
 
 } // namespace yona::interp::runtime

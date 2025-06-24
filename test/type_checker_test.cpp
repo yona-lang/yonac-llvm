@@ -14,12 +14,12 @@ using namespace std;
 class TypeCheckerTest : public ::testing::Test {
 protected:
     Parser parser;
-    
+
     unique_ptr<ExprNode> parse_expr(const string& code) {
         stringstream stream(code);
         auto result = parser.parse_input(stream);
         EXPECT_TRUE(result.success);
-        
+
         // Extract expression from MainNode
         if (auto main = dynamic_cast<MainNode*>(result.node.get())) {
             // Transfer ownership from MainNode
@@ -27,23 +27,23 @@ protected:
             main->node = nullptr; // Prevent double deletion
             return unique_ptr<ExprNode>(dynamic_cast<ExprNode*>(expr));
         }
-        
+
         return nullptr;
     }
-    
+
     Type check_expr(const string& code) {
         auto expr = parse_expr(code);
         EXPECT_NE(expr, nullptr);
-        
+
         TypeInferenceContext ctx;
         TypeChecker checker(ctx);
         return checker.check(expr.get());
     }
-    
+
     bool has_type_errors(const string& code) {
         auto expr = parse_expr(code);
         if (!expr) return true;
-        
+
         TypeInferenceContext ctx;
         TypeChecker checker(ctx);
         checker.check(expr.get());
@@ -74,7 +74,7 @@ TEST_F(TypeCheckerTest, BooleanLiteralTypes) {
     Type t1 = check_expr("true");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t1));
     EXPECT_EQ(get<BuiltinType>(t1), compiler::types::Bool);
-    
+
     Type t2 = check_expr("false");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t2));
     EXPECT_EQ(get<BuiltinType>(t2), compiler::types::Bool);
@@ -154,11 +154,11 @@ TEST_F(TypeCheckerTest, AdditionType) {
     Type t1 = check_expr("1 + 2");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t1));
     EXPECT_EQ(get<BuiltinType>(t1), compiler::types::SignedInt64);
-    
+
     Type t2 = check_expr("1.5 + 2.5");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t2));
     EXPECT_EQ(get<BuiltinType>(t2), compiler::types::Float64);
-    
+
     Type t3 = check_expr("\"hello\" + \" world\"");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t3));
     EXPECT_EQ(get<BuiltinType>(t3), compiler::types::String);
@@ -211,15 +211,15 @@ TEST_F(TypeCheckerTest, ComparisonTypes) {
     Type t1 = check_expr("1 < 2");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t1));
     EXPECT_EQ(get<BuiltinType>(t1), compiler::types::Bool);
-    
+
     Type t2 = check_expr("1 > 2");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t2));
     EXPECT_EQ(get<BuiltinType>(t2), compiler::types::Bool);
-    
+
     Type t3 = check_expr("1 <= 2");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t3));
     EXPECT_EQ(get<BuiltinType>(t3), compiler::types::Bool);
-    
+
     Type t4 = check_expr("1 >= 2");
     EXPECT_TRUE(holds_alternative<BuiltinType>(t4));
     EXPECT_EQ(get<BuiltinType>(t4), compiler::types::Bool);
@@ -314,11 +314,11 @@ TEST_F(TypeCheckerTest, LetPolymorphism) {
 TEST_F(TypeCheckerTest, UnificationBasic) {
     TypeInferenceContext ctx;
     TypeChecker checker(ctx);
-    
+
     // Same types unify
     auto result1 = checker.unify(Type(compiler::types::SignedInt64), Type(compiler::types::SignedInt64));
     EXPECT_TRUE(result1.success);
-    
+
     // Different types don't unify
     auto result2 = checker.unify(Type(compiler::types::SignedInt64), Type(compiler::types::String));
     EXPECT_FALSE(result2.success);
@@ -327,15 +327,15 @@ TEST_F(TypeCheckerTest, UnificationBasic) {
 TEST_F(TypeCheckerTest, UnificationWithTypeVariables) {
     TypeInferenceContext ctx;
     TypeChecker checker(ctx);
-    
+
     // Type variable unifies with concrete type
     auto var = make_shared<NamedType>();
     var->name = "0"; // Type variable
     var->type = nullptr;
-    
+
     auto result = checker.unify(Type(var), Type(compiler::types::SignedInt64));
     EXPECT_TRUE(result.success);
-    
+
     // Substitution should map variable to Int
     Type substituted = result.substitution.apply(Type(var));
     EXPECT_TRUE(holds_alternative<BuiltinType>(substituted));
@@ -348,7 +348,7 @@ TEST_F(TypeCheckerTest, NumericPromotion) {
     // Test that derive_bin_op_result_type works correctly
     Type int_type(SignedInt64);
     Type float_type(Float64);
-    
+
     Type result = derive_bin_op_result_type(int_type, float_type);
     EXPECT_TRUE(holds_alternative<BuiltinType>(result));
     EXPECT_EQ(get<BuiltinType>(result), Float64); // Float is "larger" than Int

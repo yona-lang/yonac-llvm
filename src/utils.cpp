@@ -1,16 +1,12 @@
 //
 // Created by akovari on 15.12.24.
 //
-#include "utils.h"
-
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/log/trivial.hpp>
-#include <boost/program_options.hpp>
 #include <filesystem>
 #include <string>
 #include <map>
 #include <vector>
+
+#include "utils.h"
 
 namespace yona {
 using namespace std;

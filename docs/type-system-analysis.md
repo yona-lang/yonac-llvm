@@ -198,7 +198,7 @@ Records are currently represented as `TupleValue` at runtime:
 ## Estimated Timeline
 
 - Phase 1 (Type Parsing): 2-3 days
-- Phase 2 (Records): 2-3 days  
+- Phase 2 (Records): 2-3 days
 - Phase 3 (Type Inference): 4-5 days
 - Phase 4 (Type Checking): 3-4 days
 - Phase 5 (Module Integration): 2-3 days

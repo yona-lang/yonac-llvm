@@ -45,9 +45,9 @@ public:
     };
 
     string location = ctx_.is_valid() ? ctx_.to_string() + " " : "";
-    
+
     auto [type_name, color] = TYPE_DESCRIPTION.at(type_);
-    return std::format("{}{}{} error{}: {}", color, type_name, ANSI_COLOR_RESET, 
+    return std::format("{}{}{} error{}: {}", color, type_name, ANSI_COLOR_RESET,
                        location.empty() ? "" : " at " + location, what());
   }
 

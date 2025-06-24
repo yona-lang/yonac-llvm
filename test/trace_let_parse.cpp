@@ -12,16 +12,16 @@ using namespace std;
 void trace_ast(AstNode* node, int depth = 0, set<AstNode*>* visited = nullptr) {
     set<AstNode*> local_visited;
     if (!visited) visited = &local_visited;
-    
+
     if (visited->count(node) > 0) {
         cout << string(depth * 2, ' ') << "CIRCULAR REFERENCE DETECTED!" << endl;
         return;
     }
     visited->insert(node);
-    
+
     string indent(depth * 2, ' ');
     cout << indent << "Node type: " << node->get_type() << " at " << node << endl;
-    
+
     if (auto let_expr = dynamic_cast<LetExpr*>(node)) {
         cout << indent << "LetExpr with " << let_expr->aliases.size() << " aliases" << endl;
         for (auto alias : let_expr->aliases) {
@@ -69,13 +69,13 @@ void trace_ast(AstNode* node, int depth = 0, set<AstNode*>* visited = nullptr) {
 
 TEST(TraceLetParse, LetWithLambda) {
     Parser parser;
-    
+
     stringstream ss("let f = \\(x) -> x in f(42)");
     cout << "Parsing: " << ss.str() << endl;
     auto parse_result = parser.parse_input(ss);
-    
+
     ASSERT_TRUE(parse_result.success);
-    
+
     cout << "\nTracing AST structure:" << endl;
     trace_ast(parse_result.node.get());
 }

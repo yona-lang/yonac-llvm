@@ -24,7 +24,7 @@ using namespace interp::runtime;
 struct TypeVar {
     int id;
     optional<Type> bound_type;
-    
+
     explicit TypeVar(int id) : id(id) {}
 };
 
@@ -33,15 +33,15 @@ class TypeEnvironment : public enable_shared_from_this<TypeEnvironment> {
 private:
     unordered_map<string, Type> bindings;
     shared_ptr<TypeEnvironment> parent;
-    
+
 public:
     TypeEnvironment() : parent(nullptr) {}
     explicit TypeEnvironment(shared_ptr<TypeEnvironment> parent) : parent(parent) {}
-    
+
     void bind(const string& name, const Type& type) {
         bindings[name] = type;
     }
-    
+
     optional<Type> lookup(const string& name) const {
         auto it = bindings.find(name);
         if (it != bindings.end()) {
@@ -52,7 +52,7 @@ public:
         }
         return nullopt;
     }
-    
+
     shared_ptr<TypeEnvironment> extend() {
         return make_shared<TypeEnvironment>(shared_from_this());
     }
@@ -62,14 +62,14 @@ public:
 class TypeSubstitution {
 private:
     unordered_map<int, Type> substitutions;
-    
+
 public:
     void bind(int var_id, const Type& type) {
         substitutions[var_id] = type;
     }
-    
+
     Type apply(const Type& type) const;
-    
+
     TypeSubstitution compose(const TypeSubstitution& other) const;
 };
 
@@ -78,20 +78,20 @@ class TypeInferenceContext {
 private:
     int next_type_var = 0;
     vector<shared_ptr<yona_error>> errors;
-    
+
 public:
     shared_ptr<TypeVar> fresh_type_var() {
         return make_shared<TypeVar>(next_type_var++);
     }
-    
+
     void add_error(const SourceLocation& loc, const string& message) {
         errors.push_back(make_shared<yona_error>(loc, yona_error::TYPE, message));
     }
-    
+
     const vector<shared_ptr<yona_error>>& get_errors() const {
         return errors;
     }
-    
+
     bool has_errors() const {
         return !errors.empty();
     }
@@ -102,11 +102,11 @@ struct UnificationResult {
     bool success;
     TypeSubstitution substitution;
     optional<string> error_message;
-    
+
     static UnificationResult ok(const TypeSubstitution& sub) {
         return {true, sub, nullopt};
     }
-    
+
     static UnificationResult error(const string& msg) {
         return {false, TypeSubstitution{}, msg};
     }
@@ -117,31 +117,31 @@ class TypeChecker : public AstVisitor {
 private:
     mutable shared_ptr<TypeEnvironment> env;
     TypeInferenceContext& context;
-    
+
     // Module type information
     mutable unordered_map<string, unordered_map<string, RecordTypeInfo>> module_records;
     mutable unordered_map<string, unordered_map<string, Type>> module_exports;
-    
+
     // Unification algorithm
     UnificationResult unify(const Type& t1, const Type& t2) const;
-    
+
     // Helper methods
     Type instantiate(const Type& type) const;
     Type generalize(const Type& type, const TypeEnvironment& env) const;
     Type infer_pattern_type(PatternNode* pattern, const Type& scrutinee_type) const;
-    
+
 public:
-    TypeChecker(TypeInferenceContext& ctx, shared_ptr<TypeEnvironment> initial_env = nullptr) 
+    TypeChecker(TypeInferenceContext& ctx, shared_ptr<TypeEnvironment> initial_env = nullptr)
         : context(ctx), env(initial_env ? initial_env : make_shared<TypeEnvironment>()) {}
-    
+
     // Type checking entry point
     Type check(AstNode* node) const;
-    
+
     // Import module type information
-    void import_module_types(const string& module_name, 
+    void import_module_types(const string& module_name,
                            const unordered_map<string, RecordTypeInfo>& records,
                            const unordered_map<string, Type>& exports);
-    
+
     // Visitor methods for type inference
     any visit(ExprNode *node) const override;
     any visit(IntegerExpr *node) const override;
@@ -171,7 +171,7 @@ public:
     any visit(DoExpr *node) const override;
     any visit(ImportExpr *node) const override;
     any visit(ModuleExpr *node) const override;
-    
+
     // Binary operators
     any visit(AddExpr *node) const override;
     any visit(SubtractExpr *node) const override;
@@ -188,15 +188,15 @@ public:
     any visit(LogicalAndExpr *node) const override;
     any visit(LogicalOrExpr *node) const override;
     any visit(LogicalNotOpExpr *node) const override;
-    
-    
+
+
     // Missing visitor methods
     any visit(DictGeneratorExpr *node) const override { return Type(nullptr); }
     any visit(FieldAccessExpr *node) const override { return Type(nullptr); }
     any visit(RecordNode *node) const override { return Type(nullptr); }
     any visit(SeqGeneratorExpr *node) const override { return Type(nullptr); }
     any visit(SetGeneratorExpr *node) const override { return Type(nullptr); }
-    
+
     // Other visitor methods (can be left as default for now)
     any visit(AstNode *node) const override { return Type(nullptr); }
     any visit(PatternNode *node) const override { return Type(nullptr); }
