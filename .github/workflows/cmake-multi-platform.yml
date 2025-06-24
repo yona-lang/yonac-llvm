@@ -61,6 +61,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            boost_version_dots: 1.88.0
             boost_version: 1_88_0
 
           # Windows Release
@@ -72,6 +73,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            boost_version_dots: 1.88.0
             boost_version: 1_88_0
 
     name: ${{ matrix.name }}
@@ -99,6 +101,7 @@ jobs:
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
         sudo add-apt-repository "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-${{ matrix.llvm_version }} main"
         sudo apt update
+        sudo apt upgrade -y
         sudo apt install -y \
           libllvm${{ matrix.llvm_version }} \
           llvm-${{ matrix.llvm_version }} \
@@ -112,7 +115,7 @@ jobs:
           clang-format-${{ matrix.llvm_version }} \
           clangd-${{ matrix.llvm_version }} \
           libc++-${{ matrix.llvm_version }}-dev \
-          libc++-abi${{ matrix.llvm_version }}-dev \
+          libc++abi-${{ matrix.llvm_version }}-dev \
           libboost-all-dev
 
     # Install dependencies on macOS
@@ -135,7 +138,7 @@ jobs:
       if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
-        path: C:\local\LLVM
+        path: D:\local\LLVM
         key: llvm-${{ matrix.llvm_version }}-${{ matrix.llvm_minor_version }}
 
     # Install LLVM on Windows
@@ -145,7 +148,7 @@ jobs:
       run: |
         $llvmVersion = "${{ matrix.llvm_version }}"
         $llvmMinorVersion = "${{ matrix.llvm_minor_version }}"
-        $destDir = "C:\local\LLVM"
+        $destDir = "D:\local\LLVM"
         $clangExe = Join-Path $destDir "bin\clang.exe"
         if (!(Test-Path $clangExe)) {
           $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
@@ -177,7 +180,7 @@ jobs:
       if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
-        path: C:\local\boost
+        path: D:\local\boost
         key: boost
 
     # Install Boost (Windows)
@@ -186,10 +189,10 @@ jobs:
       shell: pwsh
       run: |
         $boostVersion = "${{ matrix.boost_version }}"        
-        $boostUrl = "https://archives.boost.io/release/1.88.0/binaries/boost_$boostVersion-bin-msvc-all-32-64.7z"
+        $boostUrl = "https://archives.boost.io/release/${{ matrix.boost_version_dots }}/binaries/boost_$boostVersion-bin-msvc-all-32-64.7z"
         $boostArchive = "$env:RUNNER_TEMP\boost_$boostVersion.7z"
-        $boostDest = "C:\local"
-        $boostDir = "C:\local\boost"
+        $boostDest = "D:\local"
+        $boostDir = "D:\local\boost_$boostVersion"
 
         if (!(Test-Path $boostDir)) {
           Invoke-WebRequest -Uri $boostUrl -OutFile $boostArchive
