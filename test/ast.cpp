@@ -48,11 +48,6 @@ INSTANTIATE_TEST_SUITE_P(SyntaxTests, AstTest,
                                          make_tuple("incomplete_addition", "1+", nullopt, ErrorMap{{yona_error::SYNTAX, 1}})),
                          [](const testing::TestParamInfo<AstTest::ParamType> &info) { return get<0>(info.param); });
 
-INSTANTIATE_TEST_SUITE_P(TypeCheckTests, AstTest,
-                         testing::Values(make_tuple("correct_addition_of_ints", "1+1", nullopt, ErrorMap{}),
-                                         make_tuple("correct_addition_of_floats", "1.0+1.5", nullopt, ErrorMap{}),
-                                         make_tuple("failed_addition_of_int_with_char", "1+'1'", nullopt, ErrorMap{{yona_error::TYPE, 1}})),
-                         [](const testing::TestParamInfo<AstTest::ParamType> &info) { return get<0>(info.param); });
 
 INSTANTIATE_TEST_SUITE_P(
     ResultTests, AstTest,

@@ -396,7 +396,7 @@ bool Interpreter::match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, c
 
 bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPtr& value) const {
   // TailPattern can be: PatternValue (with IdentifierExpr), SequenceExpr, UnderscoreNode, StringExpr
-  BOOST_LOG_TRIVIAL(debug) << "match_tail_pattern: pattern type = " << pattern->get_type();
+  // BOOST_LOG_TRIVIAL(debug) << "match_tail_pattern: pattern type = " << pattern->get_type();
   
   // Check if it's a PatternValue containing an identifier
   if (auto pattern_value = dynamic_cast<PatternValue*>(pattern)) {
@@ -472,15 +472,15 @@ any Interpreter::visit(BinaryNotOpExpr *node) const {
 any Interpreter::visit(AliasCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ApplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Starting function application";
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Starting function application";
   
   // First visit the call expression to get the function
-  BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: About to visit call expression of type: " << node->call->get_type();
-  BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expr is " << typeid(*node->call).name();
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: About to visit call expression of type: " << node->call->get_type();
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expr is " << typeid(*node->call).name();
   auto call_result = node->call->accept(*this);
   CHECK_EXCEPTION_RETURN();
   
-  BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expression visited, result type: " << any_cast<RuntimeObjectPtr>(call_result)->type;
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expression visited, result type: " << any_cast<RuntimeObjectPtr>(call_result)->type;
   
   // Check if it's a function
   auto func_obj = any_cast<RuntimeObjectPtr>(call_result);
@@ -490,9 +490,9 @@ any Interpreter::visit(ApplyExpr *node) const {
   }
   
   auto func_val = func_obj->get<shared_ptr<FunctionValue>>();
-  BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Function arity=" << func_val->arity 
-                           << ", partial_args=" << func_val->partial_args.size()
-                           << ", new_args=" << node->args.size();
+  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Function arity=" << func_val->arity 
+  //                          << ", partial_args=" << func_val->partial_args.size()
+  //                          << ", new_args=" << node->args.size();
   
   // Evaluate arguments
   vector<RuntimeObjectPtr> new_args;
@@ -515,8 +515,8 @@ any Interpreter::visit(ApplyExpr *node) const {
   
   // Check if we have enough arguments
   if (all_args.size() < func_val->arity) {
-    BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Creating partial application - have " 
-                             << all_args.size() << " args, need " << func_val->arity;
+    // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Creating partial application - have " 
+    //                          << all_args.size() << " args, need " << func_val->arity;
     // Create a partially applied function
     auto partial_func = make_shared<FunctionValue>();
     partial_func->fqn = func_val->fqn;
@@ -527,8 +527,8 @@ any Interpreter::visit(ApplyExpr *node) const {
     // Create a new code function that will apply the remaining args
     auto original_code = func_val->code;
     partial_func->code = [original_code, all_args](const vector<RuntimeObjectPtr>& more_args) -> RuntimeObjectPtr {
-      BOOST_LOG_TRIVIAL(debug) << "Partial function: Executing with " << more_args.size() 
-                               << " more args (already have " << all_args.size() << ")";
+      // BOOST_LOG_TRIVIAL(debug) << "Partial function: Executing with " << more_args.size() 
+      //                          << " more args (already have " << all_args.size() << ")";
       
       // Combine stored args with new args
       vector<RuntimeObjectPtr> combined_args;
@@ -628,23 +628,28 @@ any Interpreter::visit(CaseClause *node) const {
 }
 
 any Interpreter::visit(CatchExpr *node) const {
+  // Don't check for exceptions here - we're in a catch block
   // For now, execute the first catch pattern
   // In a full implementation, we would match patterns against the exception
   if (!node->patterns.empty()) {
     auto result = visit(node->patterns[0]);
-    CHECK_EXCEPTION_RETURN();
+    // Don't check for exceptions - let them propagate
     return result;
   }
   return make_shared<RuntimeObject>(Unit, nullptr);
 }
 any Interpreter::visit(CatchPatternExpr *node) const {
+  // Don't check for exceptions here - we're in a catch block
   // For now, always execute the pattern body
   // In a full implementation, we would check if the pattern matches the exception
   if (holds_alternative<PatternWithoutGuards*>(node->pattern)) {
-    return visit(get<PatternWithoutGuards*>(node->pattern));
+    auto pattern = get<PatternWithoutGuards*>(node->pattern);
+    if (pattern) {
+      return visit(pattern);
+    }
   } else {
     auto patterns = get<vector<PatternWithGuards*>>(node->pattern);
-    if (!patterns.empty()) {
+    if (!patterns.empty() && patterns[0]) {
       return visit(patterns[0]);
     }
   }
@@ -828,22 +833,22 @@ any Interpreter::visit(FunctionExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Determine arity from patterns
   size_t arity = node->patterns.size();
-  BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Creating function with arity=" << arity 
-                           << ", name=" << (node->name.empty() ? "<lambda>" : node->name);
+  // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Creating function with arity=" << arity 
+  //                          << ", name=" << (node->name.empty() ? "<lambda>" : node->name);
   
   function code = [this, node](const vector<RuntimeObjectPtr> &args) -> RuntimeObjectPtr {
-    BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing function with " << args.size() << " args";
+    // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing function with " << args.size() << " args";
     
     if (match_fun_args(node->patterns, args)) {
-      BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments matched patterns";
+      // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments matched patterns";
       // match_fun_args pushes a frame and merges it if successful
       
       for (const auto body : node->bodies) {
-        BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Processing body";
+        // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Processing body";
         if (dynamic_cast<BodyWithoutGuards *>(body)) {
-          BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing body without guards";
+          // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing body without guards";
           auto result = visit(body);
-          BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Body execution complete";
+          // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Body execution complete";
           return any_cast<RuntimeObjectPtr>(result);
         }
 
@@ -855,7 +860,7 @@ any Interpreter::visit(FunctionExpr *node) const {
         return any_cast<RuntimeObjectPtr>(visit(body_with_guards->expr));
       }
     } else {
-      BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments did not match patterns";
+      // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments did not match patterns";
     }
 
     return nullptr;
@@ -1034,7 +1039,7 @@ any Interpreter::visit(KeyValueCollectionExtractorExpr *node) const {
 }
 any Interpreter::visit(LambdaAlias *node) const { 
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Creating lambda for name=" << node->name->value;
+  // BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Creating lambda for name=" << node->name->value;
   
   // Evaluate the lambda expression
   auto lambda_result = visit(node->lambda);
@@ -1043,7 +1048,7 @@ any Interpreter::visit(LambdaAlias *node) const {
   // Bind the function to the name in the current frame
   IS.frame->write(node->name->value, lambda_result);
   
-  BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Lambda bound to " << node->name->value;
+  // BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Lambda bound to " << node->name->value;
   return lambda_result;
 }
 
@@ -1080,14 +1085,14 @@ any Interpreter::visit(ModuleAlias *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ModuleCall *node) const { return expr_wrapper(node); }
 any Interpreter::visit(ExprCall *node) const { 
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "ExprCall: Evaluating expression for call";
-  BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression type = " << node->expr->get_type();
+  // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Evaluating expression for call";
+  // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression type = " << node->expr->get_type();
   
   // ExprCall handles general expression calls (e.g., (lambda)(args) or curried(args))
   // Simply evaluate the expression - it should return a function
   auto result = visit(node->expr);
-  BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression evaluated, type=" 
-                           << (result.has_value() ? to_string(any_cast<RuntimeObjectPtr>(result)->type) : "no value");
+  // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression evaluated, type=" 
+  //                          << (result.has_value() ? to_string(any_cast<RuntimeObjectPtr>(result)->type) : "no value");
   return result;
 }
 
@@ -1484,7 +1489,13 @@ any Interpreter::visit(TryCatchExpr *node) const {
   IS.clear_exception();
   
   // Execute the try expression
-  auto result = visit(node->tryExpr);
+  any result;
+  try {
+    result = visit(node->tryExpr);
+  } catch (...) {
+    // If an exception was thrown during visit, just re-throw
+    throw;
+  }
   
   // If no exception was raised, return the result
   if (!IS.has_exception) {
@@ -1573,12 +1584,12 @@ any Interpreter::visit(TypeNode *node) const { return expr_wrapper(node); }
 any Interpreter::visit(TypeInstance *node) const { return expr_wrapper(node); }
 any Interpreter::visit(IdentifierExpr *node) const { 
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Looking up '" << node->name->value << "'";
+  // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Looking up '" << node->name->value << "'";
   auto result = IS.frame->lookup(node->source_context, node->name->value);
   if (result->type == Function) {
-    BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found function for '" << node->name->value << "'";
+    // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found function for '" << node->name->value << "'";
   } else {
-    BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found non-function type=" << result->type << " for '" << node->name->value << "'";
+    // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found non-function type=" << result->type << " for '" << node->name->value << "'";
   }
   return result;
 }
@@ -1592,9 +1603,9 @@ any Interpreter::visit(ScopedNode *node) const {
 
 any Interpreter::visit(ExprNode *node) const {
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "ExprNode: Visiting node type = " << node->get_type();
+  // BOOST_LOG_TRIVIAL(debug) << "ExprNode: Visiting node type = " << node->get_type();
   auto result = AstVisitor::visit(node);
-  BOOST_LOG_TRIVIAL(debug) << "ExprNode: Visit complete for type = " << node->get_type();
+  // BOOST_LOG_TRIVIAL(debug) << "ExprNode: Visit complete for type = " << node->get_type();
   return result;
 }
 any Interpreter::visit(AstNode *node) const {
@@ -1648,12 +1659,12 @@ any Interpreter::visit(TypeNameNode *node) const {
 }
 any Interpreter::visit(MainNode *node) const {
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "MainNode: Starting visit";
+  // BOOST_LOG_TRIVIAL(debug) << "MainNode: Starting visit";
   IS.push_frame();
   // Use accept() to ensure proper dynamic dispatch
-  BOOST_LOG_TRIVIAL(debug) << "MainNode: node type = " << (node->node ? node->node->get_type() : -1);
+  // BOOST_LOG_TRIVIAL(debug) << "MainNode: node type = " << (node->node ? node->node->get_type() : -1);
   auto result = node->node ? node->node->accept(*this) : any{};
-  BOOST_LOG_TRIVIAL(debug) << "MainNode: accept() returned";
+  // BOOST_LOG_TRIVIAL(debug) << "MainNode: accept() returned";
   // Preserve exception state when popping frame
   auto had_exception = IS.has_exception;
   auto exception_value = IS.exception_value;
@@ -1668,7 +1679,7 @@ any Interpreter::visit(MainNode *node) const {
     IS.exception_context = exception_context;
   }
 
-  BOOST_LOG_TRIVIAL(debug) << "MainNode: Visit complete";
+  // BOOST_LOG_TRIVIAL(debug) << "MainNode: Visit complete";
   return result;
 }
 any Interpreter::visit(BuiltinTypeNode *node) const { return expr_wrapper(node); }
@@ -1677,7 +1688,7 @@ any Interpreter::visit(UserDefinedTypeNode *node) const { return expr_wrapper(no
 // Visitor methods for intermediate base classes
 any Interpreter::visit(CallExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  BOOST_LOG_TRIVIAL(debug) << "CallExpr: Visiting call expression";
+  // BOOST_LOG_TRIVIAL(debug) << "CallExpr: Visiting call expression";
   // Let the base visitor dispatch to the concrete type
   return AstVisitor::visit(node);
 }
@@ -1740,9 +1751,15 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   }
   
   auto parse_result = parser.parse_input(file);
-  if (!parse_result.node) {
-    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, 
-                     "Failed to parse module: " + module_path);
+  if (!parse_result.success || !parse_result.node) {
+    string error_msg = "Failed to parse module: " + module_path;
+    if (parse_result.ast_ctx.hasErrors()) {
+      auto errors = parse_result.ast_ctx.getErrors();
+      if (!errors.empty()) {
+        error_msg = error_msg + " - " + errors.begin()->second->what();
+      }
+    }
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, error_msg);
   }
   
   // Visit the module to evaluate it
@@ -1765,7 +1782,7 @@ shared_ptr<ModuleValue> Interpreter::get_or_load_module(const shared_ptr<FqnValu
   // Convert FQN to cache key
   string cache_key;
   for (size_t i = 0; i < fqn->parts.size(); ++i) {
-    if (i > 0) cache_key += "\\";
+    if (i > 0) cache_key += "/";
     cache_key += fqn->parts[i];
   }
   

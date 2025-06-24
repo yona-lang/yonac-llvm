@@ -29,7 +29,8 @@ TEST_F(ModuleTest, SimpleModuleImport) {
     stringstream code("import add from Test\\Test in add(1, 2)");
     
     auto parse_result = parser.parse_input(code);
-    ASSERT_TRUE(parse_result.node != nullptr);
+    ASSERT_TRUE(parse_result.success) << "Parse failed";
+    ASSERT_TRUE(parse_result.node != nullptr) << "Parse result is null";
     
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
     

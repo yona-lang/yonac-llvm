@@ -1,5 +1,0 @@
-module Test\Test exports add, multiply as
-  add a b = a + b
-  multiply a b = a * b
-  internal_func x = x * 2  # This won't be exported
-end

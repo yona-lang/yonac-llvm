@@ -29,7 +29,7 @@ struct TypeVar {
 };
 
 // Type environment for tracking variable types
-class TypeEnvironment {
+class TypeEnvironment : public enable_shared_from_this<TypeEnvironment> {
 private:
     unordered_map<string, Type> bindings;
     shared_ptr<TypeEnvironment> parent;
@@ -55,10 +55,6 @@ public:
     
     shared_ptr<TypeEnvironment> extend() {
         return make_shared<TypeEnvironment>(shared_from_this());
-    }
-    
-    shared_ptr<TypeEnvironment> shared_from_this() {
-        return shared_ptr<TypeEnvironment>(this);
     }
 };
 
@@ -242,7 +238,7 @@ public:
     any visit(TailsHeadPattern *node) const override { return Type(nullptr); }
     any visit(HeadTailsHeadPattern *node) const override { return Type(nullptr); }
     any visit(DictPattern *node) const override { return Type(nullptr); }
-    any visit(ValueAlias *node) const override { return Type(nullptr); }
+    any visit(ValueAlias *node) const override;
     any visit(FunctionAlias *node) const override { return Type(nullptr); }
     any visit(ModuleImport *node) const override { return Type(nullptr); }
     any visit(FunctionsImport *node) const override { return Type(nullptr); }
@@ -264,9 +260,9 @@ public:
     any visit(TypeNode *node) const override { return Type(nullptr); }
     any visit(TypeInstance *node) const override { return Type(nullptr); }
     any visit(ModuleAlias *node) const override { return Type(nullptr); }
-    any visit(PatternAlias *node) const override { return Type(nullptr); }
+    any visit(PatternAlias *node) const override;
     any visit(FqnAlias *node) const override { return Type(nullptr); }
-    any visit(LambdaAlias *node) const override { return Type(nullptr); }
+    any visit(LambdaAlias *node) const override;
     any visit(ModuleCall *node) const override { return Type(nullptr); }
     any visit(ExprCall *node) const override { return Type(nullptr); }
     any visit(PatternWithGuards *node) const override { return Type(nullptr); }

@@ -634,8 +634,16 @@ any TypeChecker::visit(LetExpr *node) const {
             Type val_type = check(val_alias->expr);
             string name = val_alias->identifier->name->value;
             new_env->bind(name, generalize(val_type, *env));
+        } else if (auto lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
+            Type func_type = check(lambda_alias->lambda);
+            string name = lambda_alias->name->value;
+            new_env->bind(name, generalize(func_type, *env));
+        } else if (auto pattern_alias = dynamic_cast<PatternAlias*>(alias)) {
+            // Pattern aliases need special handling
+            Type expr_type = check(pattern_alias->expr);
+            // TODO: Extract bindings from pattern and add to environment
         }
-        // TODO: Handle function aliases
+        // TODO: Handle other alias types
     }
     
     // Type check body in new environment
@@ -865,6 +873,24 @@ any TypeChecker::visit(WithExpr *node) const {
     
     // Type check body
     return check(node->bodyExpr);
+}
+
+// Alias implementations
+any TypeChecker::visit(ValueAlias *node) const {
+    // Type check the expression being bound
+    return check(node->expr);
+}
+
+any TypeChecker::visit(LambdaAlias *node) const {
+    // Type check the lambda function
+    return check(node->lambda);
+}
+
+any TypeChecker::visit(PatternAlias *node) const {
+    // Type check the expression being matched
+    Type expr_type = check(node->expr);
+    // TODO: Type check pattern against expression type
+    return expr_type;
 }
 
 // Default implementations that need to be overridden

@@ -4,9 +4,24 @@
 cmake_minimum_required(VERSION 3.8)
 
 project(YONAC_LLVM CXX C)
-set(YONAC_LLVM_VERSION_MAJOR 0)
-set(YONAC_LLVM_VERSION_MINOR 1)
-set(YONAC_LLVM_VERSION_PATCH 0)
+
+# Read version from VERSION file
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VERSION_STRING)
+string(STRIP "${VERSION_STRING}" VERSION_STRING)
+
+# Parse version components
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" VERSION_MATCH "${VERSION_STRING}")
+set(YONAC_LLVM_VERSION_MAJOR ${CMAKE_MATCH_1})
+set(YONAC_LLVM_VERSION_MINOR ${CMAKE_MATCH_2})
+set(YONAC_LLVM_VERSION_PATCH ${CMAKE_MATCH_3})
+set(YONAC_LLVM_VERSION_STRING "${VERSION_STRING}")
+
+# Configure version header
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/include/version.h"
+    @ONLY
+)
 
 # Enable Hot Reload for MSVC compilers if supported.
 if (POLICY CMP0141)
@@ -48,31 +63,45 @@ file(GLOB all_TESTS
         "${PROJECT_SOURCE_DIR}/test/*.c"
 )
 
-file(GLOB all_cli_SRCS
+file(GLOB all_repl_SRCS
         "${PROJECT_SOURCE_DIR}/include/*.h"
-        "${PROJECT_SOURCE_DIR}/cli/*.cpp"
-        "${PROJECT_SOURCE_DIR}/cli/*.c"
+        "${PROJECT_SOURCE_DIR}/repl/*.cpp"
+        "${PROJECT_SOURCE_DIR}/repl/*.c"
+)
+
+file(GLOB all_yonac_SRCS
+        "${PROJECT_SOURCE_DIR}/include/*.h"
+        "${PROJECT_SOURCE_DIR}/yonac/*.cpp"
+        "${PROJECT_SOURCE_DIR}/yonac/*.c"
 )
 
 # Add source to this project's executable.
-add_library(yona SHARED ${all_lib_SRCS})
+add_library(yona_lib SHARED ${all_lib_SRCS})
 
-target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(yona PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 # Find the libraries that correspond to the LLVM components that we wish to use
 llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
 
-target_link_libraries(yona PRIVATE Boost::boost Boost::log ${llvm_libs})
+target_link_libraries(yona_lib PRIVATE Boost::boost Boost::log ${llvm_libs})
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
-    set_property(TARGET yona PROPERTY CXX_STANDARD 23)
+    set_property(TARGET yona_lib PROPERTY CXX_STANDARD 23)
 endif ()
 
-add_executable(yonac ${all_cli_SRCS})
-target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# REPL executable
+add_executable(yona ${all_repl_SRCS})
+target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yona PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_link_libraries(yona PRIVATE yona_lib Boost::boost Boost::program_options Boost::log)
 
-target_link_libraries(yonac PRIVATE yona Boost::boost Boost::program_options Boost::log)
+# Compiler executable
+add_executable(yonac ${all_yonac_SRCS})
+target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_link_libraries(yonac PRIVATE yona_lib Boost::boost Boost::program_options Boost::log ${llvm_libs})
 
 
 enable_testing()
@@ -84,7 +113,8 @@ add_executable(
         tests
         ${all_TESTS}
 )
-target_link_libraries(tests PRIVATE yona GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main Boost::boost Boost::log)
+target_link_libraries(tests PRIVATE yona_lib GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main Boost::boost Boost::log)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 gtest_discover_tests(tests)

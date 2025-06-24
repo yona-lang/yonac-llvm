@@ -17,23 +17,24 @@ TEST(InterpreterGeneratorTest, SeqGeneratorTest) {
     seq_values.push_back(new IntegerExpr(TestSrcCtx, 1));
     seq_values.push_back(new IntegerExpr(TestSrcCtx, 2));
     seq_values.push_back(new IntegerExpr(TestSrcCtx, 3));
-    auto source_seq = make_unique<ValuesSequenceExpr>(TestSrcCtx, seq_values);
+    auto source_seq = new ValuesSequenceExpr(TestSrcCtx, seq_values);
     
     // Create a collection extractor with an identifier 'x'
-    auto name = make_unique<NameExpr>(TestSrcCtx, "x");
-    auto identifier = make_unique<IdentifierExpr>(TestSrcCtx, name.get());
-    auto extractor = make_unique<ValueCollectionExtractorExpr>(TestSrcCtx, identifier.get());
+    auto name = new NameExpr(TestSrcCtx, "x");
+    auto identifier = new IdentifierExpr(TestSrcCtx, name);
+    auto extractor = new ValueCollectionExtractorExpr(TestSrcCtx, identifier);
     
     // Create a reducer expression that doubles the value: x * 2
-    auto x_ref = make_unique<IdentifierExpr>(TestSrcCtx, name.get());
-    auto two = make_unique<IntegerExpr>(TestSrcCtx, 2);
-    auto reducer = make_unique<MultiplyExpr>(TestSrcCtx, x_ref.get(), two.get());
+    auto x_ref = new IdentifierExpr(TestSrcCtx, new NameExpr(TestSrcCtx, "x"));
+    auto two = new IntegerExpr(TestSrcCtx, 2);
+    auto reducer = new MultiplyExpr(TestSrcCtx, x_ref, two);
     
     // Create the sequence generator
-    auto generator = make_unique<SeqGeneratorExpr>(TestSrcCtx, reducer.get(), extractor.get(), source_seq.get());
+    auto generator = new SeqGeneratorExpr(TestSrcCtx, reducer, extractor, source_seq);
+    auto main = make_unique<MainNode>(TestSrcCtx, generator);
     
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(generator.get()));
+    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
     
     EXPECT_EQ(result->type, yona::interp::runtime::Seq);
     auto result_seq = result->get<shared_ptr<SeqValue>>();
@@ -49,23 +50,24 @@ TEST(InterpreterGeneratorTest, SetGeneratorTest) {
     set_values.push_back(new IntegerExpr(TestSrcCtx, 1));
     set_values.push_back(new IntegerExpr(TestSrcCtx, 2));
     set_values.push_back(new IntegerExpr(TestSrcCtx, 3));
-    auto source_set = make_unique<SetExpr>(TestSrcCtx, set_values);
+    auto source_set = new SetExpr(TestSrcCtx, set_values);
     
     // Create a collection extractor with an identifier 'x'
-    auto name = make_unique<NameExpr>(TestSrcCtx, "x");
-    auto identifier = make_unique<IdentifierExpr>(TestSrcCtx, name.get());
-    auto extractor = make_unique<ValueCollectionExtractorExpr>(TestSrcCtx, identifier.get());
+    auto name = new NameExpr(TestSrcCtx, "x");
+    auto identifier = new IdentifierExpr(TestSrcCtx, name);
+    auto extractor = new ValueCollectionExtractorExpr(TestSrcCtx, identifier);
     
     // Create a reducer expression that adds 10: x + 10
-    auto x_ref = make_unique<IdentifierExpr>(TestSrcCtx, name.get());
-    auto ten = make_unique<IntegerExpr>(TestSrcCtx, 10);
-    auto reducer = make_unique<AddExpr>(TestSrcCtx, x_ref.get(), ten.get());
+    auto x_ref = new IdentifierExpr(TestSrcCtx, new NameExpr(TestSrcCtx, "x"));
+    auto ten = new IntegerExpr(TestSrcCtx, 10);
+    auto reducer = new AddExpr(TestSrcCtx, x_ref, ten);
     
     // Create the set generator
-    auto generator = make_unique<SetGeneratorExpr>(TestSrcCtx, reducer.get(), extractor.get(), source_set.get());
+    auto generator = new SetGeneratorExpr(TestSrcCtx, reducer, extractor, source_set);
+    auto main = make_unique<MainNode>(TestSrcCtx, generator);
     
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(generator.get()));
+    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
     
     EXPECT_EQ(result->type, yona::interp::runtime::Set);
     auto result_set = result->get<shared_ptr<SetValue>>();

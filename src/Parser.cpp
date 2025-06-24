@@ -97,6 +97,7 @@ public:
         Lexer lexer(source, filename);
         // BOOST_LOG_TRIVIAL(debug) << "ParserImpl::parse_expression: Tokenizing...";
         auto token_result = lexer.tokenize();
+        // BOOST_LOG_TRIVIAL(debug) << "ParserImpl::parse_expression: Tokenization complete";
         if (!token_result) {
             // Convert lexer errors to parse errors
             vector<ParseError> parse_errors;
@@ -123,6 +124,7 @@ public:
         
         // BOOST_LOG_TRIVIAL(debug) << "ParserImpl::parse_expression: Calling parse_expr()";
         auto expr = parse_expr();
+        // BOOST_LOG_TRIVIAL(debug) << "ParserImpl::parse_expression: parse_expr() returned";
         
         if (!expr || !errors_.empty()) {
             return unexpected(std::move(errors_));
@@ -319,11 +321,22 @@ private:
     vector<string> parse_export_list() {
         vector<string> exports;
         
-        do {
-            if (check(TokenType::IDENTIFIER)) {
-                exports.push_back(string(advance().lexeme));
+        // First export is required
+        if (!check(TokenType::IDENTIFIER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected identifier in export list");
+            return exports;
+        }
+        
+        exports.push_back(string(advance().lexeme));
+        
+        // Additional exports separated by commas
+        while (match(TokenType::COMMA)) {
+            if (!check(TokenType::IDENTIFIER)) {
+                error(ParseError::Type::INVALID_SYNTAX, "Expected identifier after comma in export list");
+                break;
             }
-        } while (match(TokenType::COMMA));
+            exports.push_back(string(advance().lexeme));
+        }
         
         return exports;
     }
@@ -353,8 +366,8 @@ private:
         vector<PatternNode*> patterns;
         vector<FunctionBody*> function_bodies;
         
-        // Parse first clause
-        auto first_clause = parse_function_clause_with_patterns(name);
+        // Parse first clause - we already consumed the name, so parse patterns directly
+        auto first_clause = parse_function_clause_patterns_and_body();
         if (first_clause.first.empty() && first_clause.second.empty()) {
             return nullptr;
         }
@@ -425,6 +438,63 @@ private:
         } else {
             // No guards, just body
             expect(TokenType::ASSIGN, "Expected '=' after patterns");
+            auto body = parse_expr();
+            
+            if (body) {
+                bodies.push_back(make_unique<BodyWithoutGuards>(
+                    start_loc,
+                    body.release()
+                ));
+            }
+        }
+        
+        return {patterns, std::move(bodies)};
+    }
+    
+    // Parse function clause patterns and body (after name is already consumed)
+    pair<vector<PatternNode*>, vector<unique_ptr<FunctionBody>>> 
+    parse_function_clause_patterns_and_body() {
+        SourceLocation start_loc = current_location();
+        
+        // Parse patterns
+        vector<PatternNode*> patterns;
+        while (!check(TokenType::ASSIGN) && !is_at_end()) {
+            auto pattern = parse_pattern();
+            if (pattern) {
+                patterns.push_back(pattern.release());
+            } else {
+                break;
+            }
+        }
+        
+        expect(TokenType::ASSIGN, "Expected '=' after function patterns");
+        
+        // Parse body
+        vector<unique_ptr<FunctionBody>> bodies;
+        if (check(TokenType::PIPE)) {
+            // Multiple guard clauses
+            while (match(TokenType::PIPE)) {
+                // Parse guard expression (condition)
+                auto guard = parse_expr();
+                if (!guard) {
+                    error(ParseError::Type::INVALID_SYNTAX, "Expected guard expression after '|'");
+                    break;
+                }
+                
+                expect(TokenType::ARROW, "Expected '->' after guard");
+                
+                auto body = parse_expr();
+                
+                if (body) {
+                    bodies.push_back(make_unique<BodyWithGuards>(
+                        start_loc,
+                        guard.release(),
+                        body.release()
+                    ));
+                }
+            }
+        } else {
+            // Single body without guards
             auto body = parse_expr();
             
             if (body) {
@@ -800,7 +870,12 @@ private:
         // Symbol pattern
         if (check(TokenType::SYMBOL)) {
             auto token = advance();
-            auto symbol_expr = new SymbolExpr(loc, string(token.lexeme));
+            // Remove leading colon from symbol
+            string symbol_name(token.lexeme);
+            if (!symbol_name.empty() && symbol_name[0] == ':') {
+                symbol_name = symbol_name.substr(1);
+            }
+            auto symbol_expr = new SymbolExpr(loc, symbol_name);
             return make_unique<PatternValue>(loc, symbol_expr);
         }
         
@@ -1014,6 +1089,7 @@ private:
     
     // Expression parsing using Pratt parsing
     unique_ptr<ExprNode> parse_expr(Precedence min_prec = Precedence::LOWEST) {
+        // BOOST_LOG_TRIVIAL(debug) << "parse_expr: Starting, current token = " << peek().lexeme;
         static int recursion_depth = 0;
         
         // RAII helper to manage recursion depth
@@ -1118,14 +1194,14 @@ private:
         // Now continue parsing infix operations, but be careful with |
         while (!is_at_end()) {
             if (check(TokenType::END)) {
-                BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found END, stopping";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found END, stopping";
                 break;
             }
             
             if (check(TokenType::PIPE)) {
                 // This could be bitwise OR or start of new pattern
                 // For now, assume it's a new pattern and stop
-                BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found PIPE, stopping";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found PIPE, stopping";
                 break;
             }
             
@@ -1141,11 +1217,11 @@ private:
     
     // Parse expression but stop at IN token (for let expressions)
     unique_ptr<ExprNode> parse_expr_until_in() {
-        BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Starting, current token: " << peek().lexeme;
+        // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Starting, current token: " << peek().lexeme;
         auto left = parse_prefix_expr_until_in();
         if (!left) return nullptr;
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Got prefix expr, next token: " << peek().lexeme;
+        // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Got prefix expr, next token: " << peek().lexeme;
         
         int loop_count = 0;
         while (!is_at_end() && peek().type != TokenType::IN) {
@@ -1162,7 +1238,7 @@ private:
                 auto prec = get_infix_precedence(peek().type);
                 if (prec == Precedence::LOWEST) {
                     is_juxtaposition = true;
-                    BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Detected juxtaposition";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Detected juxtaposition";
                 }
             }*/
             
@@ -1173,13 +1249,13 @@ private:
                 auto prec = get_infix_precedence(peek().type);
                 if (prec < Precedence::LOWEST) break;
                 
-                BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Parsing infix, token=" << peek().lexeme;
+                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Parsing infix, token=" << peek().lexeme;
                 left = parse_infix_expr(std::move(left), prec);
                 if (!left) return nullptr;
             }
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Completed after " << loop_count << " iterations";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Completed after " << loop_count << " iterations";
         return left;
     }
     
@@ -1187,12 +1263,12 @@ private:
         SourceLocation loc = current_location();
         
         if (is_at_end()) {
-            BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr_until_in: At end of input";
+            // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr_until_in: At end of input";
             return nullptr;
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr_until_in: Current token: " << static_cast<int>(peek().type) 
-                                 << " = '" << peek().lexeme << "'";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr_until_in: Current token: " << static_cast<int>(peek().type) 
+        //                          << " = '" << peek().lexeme << "'";
         
         // Most cases are the same as parse_prefix_expr
         if (peek().type == TokenType::BACKSLASH) {
@@ -1205,16 +1281,17 @@ private:
     }
     
     unique_ptr<ExprNode> parse_prefix_expr() {
+        // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Starting, current token = " << peek().lexeme;
         SourceLocation loc = current_location();
         
         if (is_at_end()) {
-            BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: At end of input";
+            // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: At end of input";
             // Don't add an error here - let the caller decide if EOF is expected or not
             return nullptr;
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Current token: " << static_cast<int>(peek().type) 
-                                 << " = '" << peek().lexeme << "'";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Current token: " << static_cast<int>(peek().type) 
+        //                          << " = '" << peek().lexeme << "'";
         
         switch (peek().type) {
             // Literals
@@ -1263,7 +1340,12 @@ private:
                 
             case TokenType::SYMBOL: {
                 auto token = advance();
-                return make_unique<SymbolExpr>(loc, string(token.lexeme));
+                // Remove leading colon from symbol
+                string symbol_name(token.lexeme);
+                if (!symbol_name.empty() && symbol_name[0] == ':') {
+                    symbol_name = symbol_name.substr(1);
+                }
+                return make_unique<SymbolExpr>(loc, symbol_name);
             }
             
             case TokenType::IDENTIFIER: {
@@ -1301,18 +1383,18 @@ private:
             
             // Parenthesized expression or tuple
             case TokenType::LPAREN: {
-                BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing parenthesized expression";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing parenthesized expression";
                 advance();
                 
                 if (check(TokenType::RPAREN)) {
                     advance();
-                    BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Empty parens - unit expr";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Empty parens - unit expr";
                     return make_unique<UnitExpr>(loc);
                 }
                 
                 vector<ExprNode*> elements;
                 do {
-                    BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing element in parens";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing element in parens";
                     auto expr = parse_expr();
                     if (expr) elements.push_back(expr.release());
                 } while (match(TokenType::COMMA));
@@ -1321,11 +1403,11 @@ private:
                 
                 if (elements.size() == 1) {
                     // Single parenthesized expression
-                    BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Single element - returning unwrapped";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Single element - returning unwrapped";
                     return unique_ptr<ExprNode>(elements[0]);
                 } else {
                     // Tuple
-                    BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Multiple elements - creating tuple";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Multiple elements - creating tuple";
                     return make_unique<TupleExpr>(loc, elements);
                 }
             }
@@ -1428,7 +1510,7 @@ private:
                 return parse_with_expr();
                 
             case TokenType::BACKSLASH:
-                BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing lambda";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_prefix_expr: Parsing lambda";
                 return parse_lambda_expr();
                 
             case TokenType::IMPORT:
@@ -1443,7 +1525,7 @@ private:
     
     unique_ptr<ExprNode> parse_infix_expr(unique_ptr<ExprNode> left, Precedence prec) {
         SourceLocation loc = current_location();
-        BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Starting, token=" << peek().lexeme;
+        // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Starting, token=" << peek().lexeme;
         auto op = advance();
         
 #define BINARY_OP(TokenType, ExprType, OpStr) \
@@ -1531,32 +1613,32 @@ private:
             
             // Function call
             case TokenType::LPAREN: {
-                BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Parsing function call";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Parsing function call";
                 vector<ExprNode*> args;
                 
                 if (!check(TokenType::RPAREN)) {
                     do {
-                        BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Parsing argument";
+                        // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Parsing argument";
                         auto arg = parse_expr();
                         if (arg) args.push_back(arg.release());
                     } while (match(TokenType::COMMA));
                 }
                 
                 expect(TokenType::RPAREN, "Expected ')' after arguments");
-                BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Got " << args.size() << " arguments";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Got " << args.size() << " arguments";
                 
                 // Create appropriate CallExpr based on left expression type
                 CallExpr* call_expr = nullptr;
                 
                 if (auto id = dynamic_cast<IdentifierExpr*>(left.get())) {
                     // Direct name call
-                    BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating NameCall for " << id->name->value;
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating NameCall for " << id->name->value;
                     // Create a new NameExpr to avoid dangling pointer when IdentifierExpr is deleted
                     auto name_copy = new NameExpr(loc, id->name->value);
                     call_expr = new NameCall(loc, name_copy);
                 } else {
                     // General expression call (e.g., lambda call, curried function call)
-                    BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating ExprCall for expression";
+                    // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating ExprCall for expression";
                     call_expr = new ExprCall(loc, left.release());
                 }
                 
@@ -1566,14 +1648,14 @@ private:
                     apply_args.push_back(arg);
                 }
                 
-                BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating ApplyExpr";
+                // BOOST_LOG_TRIVIAL(debug) << "parse_infix_expr: Creating ApplyExpr";
                 return make_unique<ApplyExpr>(loc, call_expr, apply_args);
             }
             
             default:
                 // This shouldn't happen if precedence table is correct
-                BOOST_LOG_TRIVIAL(warning) << "parse_infix_expr: Unexpected token type in infix position: " 
-                                           << static_cast<int>(op.type) << " (" << op.lexeme << "), putting it back";
+                // BOOST_LOG_TRIVIAL(warning) << "parse_infix_expr: Unexpected token type in infix position: " 
+                //                            << static_cast<int>(op.type) << " (" << op.lexeme << "), putting it back";
                 current_--; // Put the token back
                 return left;
         }
@@ -1672,20 +1754,20 @@ private:
     
     unique_ptr<ExprNode> parse_let_expr() {
         SourceLocation loc = current_location();
-        BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Starting";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Starting";
         advance(); // consume 'let'
         
         vector<AliasExpr*> aliases;
         
         do {
-            BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing alias";
+            // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing alias";
             auto alias = parse_alias();
             if (alias) aliases.push_back(alias.release());
         } while (!check(TokenType::IN) && !is_at_end());
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Got " << aliases.size() << " aliases";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Got " << aliases.size() << " aliases";
         expect(TokenType::IN, "Expected 'in' after let bindings");
-        BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing body after 'in'";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing body after 'in'";
         auto body = parse_expr();
         
         if (!body) {
@@ -1693,7 +1775,7 @@ private:
             return nullptr;
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Creating LetExpr";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Creating LetExpr";
         return make_unique<LetExpr>(loc, aliases, body.release());
     }
     
@@ -1729,13 +1811,13 @@ private:
         
         // Check if the expression is a FunctionExpr (lambda)
         if (auto func_expr = dynamic_cast<FunctionExpr*>(expr.get())) {
-            BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating LambdaAlias for " << name;
+            // BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating LambdaAlias for " << name;
             // Create LambdaAlias for lambda expressions
             auto name_expr = new NameExpr(loc, name);
             expr.release(); // Release ownership from unique_ptr
             return make_unique<LambdaAlias>(loc, name_expr, func_expr);
         } else {
-            BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating ValueAlias for " << name;
+            // BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating ValueAlias for " << name;
             // ValueAlias expects IdentifierExpr*, not string
             auto id_expr = new IdentifierExpr(loc, new NameExpr(loc, name));
             return make_unique<ValueAlias>(loc, id_expr, expr.release());
@@ -1938,7 +2020,7 @@ private:
     }
     
     unique_ptr<ExprNode> parse_lambda_expr(bool stop_at_in = false) {
-        BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Starting, stop_at_in=" << stop_at_in;
+        // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Starting, stop_at_in=" << stop_at_in;
         SourceLocation loc = current_location();
         advance(); // consume '\\'
         
@@ -1953,7 +2035,7 @@ private:
         int param_count = 0;
         if (!check(TokenType::RPAREN)) {
             do {
-                BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Parsing parameter " << param_count++;
+                // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Parsing parameter " << param_count++;
                 auto param = parse_pattern();
                 if (param) params.push_back(param.release());
                 else {
@@ -1968,12 +2050,12 @@ private:
             return nullptr;
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Got " << params.size() << " parameters";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Got " << params.size() << " parameters";
         if (!expect(TokenType::ARROW, "Expected '->' in lambda expression")) {
             return nullptr;
         }
         
-        BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Parsing body, next token: " << (is_at_end() ? "EOF" : peek().lexeme);
+        // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Parsing body, next token: " << (is_at_end() ? "EOF" : peek().lexeme);
         // If we're in a context where we should stop at IN, use parse_expr_until_in
         auto body = stop_at_in ? parse_expr_until_in() : parse_expr();
         
@@ -1981,7 +2063,7 @@ private:
             error(ParseError::Type::INVALID_SYNTAX, "Expected expression after '->' in lambda");
             return nullptr;
         }
-        BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Body parsed successfully";
+        // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Body parsed successfully";
         
         // Create FunctionExpr for the lambda
         // Lambdas are anonymous, so use empty string for name
@@ -2096,17 +2178,36 @@ private:
     
     // Import expression parsing
     unique_ptr<ExprNode> parse_import_expr() {
+        // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: Starting";
         SourceLocation loc = current_location();
         advance(); // consume 'import'
+        // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: Consumed 'import', current token = " << peek().lexeme;
         
         vector<ImportClauseExpr*> clauses;
         
         // Parse import clauses
+        int loop_guard = 0;
         while (!check(TokenType::IN) && !is_at_end()) {
+            // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: Loop iteration " << loop_guard << ", current token = " << peek().lexeme;
+            if (++loop_guard > 100) {
+                error(ParseError::Type::INVALID_SYNTAX, "Too many import clauses");
+                return nullptr;
+            }
+            
+            auto old_pos = current_;
+            // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: About to call parse_import_clause";
             if (auto clause = parse_import_clause()) {
+                // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: parse_import_clause returned a clause";
                 clauses.push_back(clause.release());
             } else {
+                // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: parse_import_clause returned null, breaking";
                 break;
+            }
+            
+            // Make sure we consumed at least one token
+            if (current_ == old_pos) {
+                error(ParseError::Type::INVALID_SYNTAX, "Import clause parsing made no progress");
+                return nullptr;
             }
             
             // Check for comma between clauses or newline
@@ -2135,8 +2236,11 @@ private:
     unique_ptr<ImportClauseExpr> parse_import_clause() {
         SourceLocation loc = current_location();
         
+        // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: current token = " << peek().lexeme;
+        
         // Check if it's a module import or functions import
         if (check_fqn_start()) {
+            // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: detected FQN start";
             // Could be either module import or the end of functions import
             auto fqn = parse_fqn();
             if (!fqn) return nullptr;
@@ -2153,6 +2257,7 @@ private:
         }
         
         // Must be functions import
+        // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: parsing as functions import";
         return parse_functions_import();
     }
     
@@ -2160,8 +2265,11 @@ private:
         SourceLocation loc = current_location();
         vector<FunctionAlias*> aliases;
         
+        // BOOST_LOG_TRIVIAL(debug) << "parse_functions_import: starting";
+        
         // Parse function aliases
         do {
+            // BOOST_LOG_TRIVIAL(debug) << "parse_functions_import: parsing function name, current token = " << peek().lexeme;
             auto name = parse_name();
             if (!name) {
                 error(ParseError::Type::INVALID_SYNTAX, "Expected function name");
@@ -2181,6 +2289,7 @@ private:
             aliases.push_back(new FunctionAlias(loc, name.release(), alias));
         } while (match(TokenType::COMMA));
         
+        
         if (!expect(TokenType::FROM, "Expected 'from' after function list")) {
             return nullptr;
         }
@@ -2195,15 +2304,15 @@ private:
     }
     
     bool check_fqn_start() {
-        // FQN starts with an identifier, optionally followed by backslash
+        // FQN starts with an identifier
         if (!check(TokenType::IDENTIFIER)) return false;
         
-        // Look ahead to see if there's a backslash
+        // Look ahead to see if there's a backslash (indicating a package path)
         if (current_ + 1 < tokens_.size()) {
-            return tokens_[current_ + 1].type == TokenType::BACKSLASH || 
-                   tokens_[current_ + 1].type != TokenType::AS; // Not followed by AS means it's an FQN
+            return tokens_[current_ + 1].type == TokenType::BACKSLASH;
         }
-        return true;
+        // Single identifier could be a module name without package
+        return false; // We need more context to decide
     }
     
     unique_ptr<FqnExpr> parse_fqn() {
@@ -2212,7 +2321,13 @@ private:
         vector<NameExpr*> parts;
         
         // Parse package parts (everything before the last identifier)
+        int loop_count = 0;
         while (true) {
+            if (++loop_count > 100) {
+                error(ParseError::Type::INVALID_SYNTAX, "Module name too long");
+                return nullptr;
+            }
+            
             if (!check(TokenType::IDENTIFIER)) {
                 error(ParseError::Type::INVALID_SYNTAX, "Expected identifier in module name");
                 return nullptr;
@@ -2227,7 +2342,7 @@ private:
                 parts.push_back(name.release());
             } else {
                 // This is the module name (last part)
-                PackageNameExpr* package = nullptr;
+                optional<PackageNameExpr*> package;
                 if (!parts.empty()) {
                     package = new PackageNameExpr(loc, parts);
                 }
@@ -2312,7 +2427,7 @@ ParseResult Parser::parse_input(const vector<string>& module_name) {
             // Convert unique_ptr to shared_ptr for legacy interface
             shared_ptr<AstNode> node(module.release());
             
-            // Type is no longer inferred here - will be done by TypeChecker
+            // Type is inferred separately, not during parsing
             return ParseResult{!ast_ctx.hasErrors(), node, nullptr, ast_ctx};
         } else {
             // Convert parse errors to AstContext errors
@@ -2339,16 +2454,15 @@ ParseResult Parser::parse_input(const vector<string>& module_name) {
     }
 }
 
-ParseResult Parser::parse_input(istream& stream) const {
+ParseResult Parser::parse_input(istream& stream) {
     try {
         // Read stream
         stringstream buffer;
         buffer << stream.rdbuf();
         string source = buffer.str();
         
-        // Create a new parser instance for const method
-        Parser parser;
-        auto result = parser.parse_expression(source, "<stream>");
+        // Use this parser instance
+        auto result = parse_expression(source, "<stream>");
         
         if (result) {
             auto& expr = result.value();
@@ -2359,8 +2473,6 @@ ParseResult Parser::parse_input(istream& stream) const {
             
             // Convert unique_ptr to shared_ptr for legacy interface
             shared_ptr<AstNode> node(main_node.release());
-            
-            // Type is no longer inferred here - will be done by TypeChecker
             return ParseResult{!ast_ctx.hasErrors(), node, nullptr, ast_ctx};
         } else {
             // Convert parse errors to AstContext errors

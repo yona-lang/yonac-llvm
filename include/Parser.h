@@ -92,7 +92,7 @@ public:
     
     // Legacy interface for compatibility
     ParseResult parse_input(const vector<string>& module_name);
-    ParseResult parse_input(istream& stream) const;
+    ParseResult parse_input(istream& stream);
 };
 
 } // namespace yona::parser

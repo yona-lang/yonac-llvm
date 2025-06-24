@@ -999,7 +999,7 @@ FqnAlias::~FqnAlias() {
 void FqnAlias::print(std::ostream &os) const { os << *name << " = " << *fqn; }
 
 FunctionAlias::FunctionAlias(SourceContext token, NameExpr *name, NameExpr *alias)
-    : AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias->with_parent<NameExpr>(this)) {}
+    : AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias ? alias->with_parent<NameExpr>(this) : nullptr) {}
 
 any FunctionAlias::accept(const AstVisitor &visitor) { return visitor.visit(this); }
 

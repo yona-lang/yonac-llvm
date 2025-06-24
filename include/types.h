@@ -108,7 +108,7 @@ inline bool is_float(const Type &type) {
 inline bool is_integer(const Type &type) {
   if (holds_alternative<BuiltinType>(type)) {
     const auto btype = get<BuiltinType>(type);
-    return btype == is_signed(type) || is_unsigned(type);
+    return is_signed(type) || is_unsigned(type);
   }
   return false;
 }

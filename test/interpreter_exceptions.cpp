@@ -31,10 +31,12 @@ TEST(InterpreterExceptionTest, TryCatchExprTest) {
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
     auto raise = new RaiseExpr(TestSrcCtx, symbol, message);
     
-    // Create a catch expression that returns a value
+    // Create a catch expression with underscore pattern (catch-all)
+    // The pattern is: _ -> 42
     auto catch_value = new IntegerExpr(TestSrcCtx, 42);
+    auto underscore_pattern = new UnderscoreNode(TestSrcCtx);
     auto pattern_without_guards = new PatternWithoutGuards(TestSrcCtx, catch_value);
-    auto catch_pattern = new CatchPatternExpr(TestSrcCtx, nullptr, pattern_without_guards);
+    auto catch_pattern = new CatchPatternExpr(TestSrcCtx, underscore_pattern, pattern_without_guards);
     vector<CatchPatternExpr*> patterns = { catch_pattern };
     auto catch_expr = new CatchExpr(TestSrcCtx, patterns);
     
@@ -53,10 +55,11 @@ TEST(InterpreterExceptionTest, TryCatchNoExceptionTest) {
     // Create a try expression that doesn't raise an exception
     auto try_value = new IntegerExpr(TestSrcCtx, 100);
     
-    // Create a catch expression
+    // Create a catch expression with underscore pattern
     auto catch_value = new IntegerExpr(TestSrcCtx, 42);
+    auto underscore_pattern = new UnderscoreNode(TestSrcCtx);
     auto pattern_without_guards = new PatternWithoutGuards(TestSrcCtx, catch_value);
-    auto catch_pattern = new CatchPatternExpr(TestSrcCtx, nullptr, pattern_without_guards);
+    auto catch_pattern = new CatchPatternExpr(TestSrcCtx, underscore_pattern, pattern_without_guards);
     vector<CatchPatternExpr*> patterns = { catch_pattern };
     auto catch_expr = new CatchExpr(TestSrcCtx, patterns);
     
