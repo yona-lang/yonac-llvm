@@ -14,6 +14,13 @@
 #include "yona_export.h"
 #include "types.h"
 
+// Disable MSVC warning C4251 about STL types in exported class interfaces
+// This is safe for our use case as both the DLL and clients use the same STL
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace yona::interp::runtime {
 using namespace std;
 
@@ -32,20 +39,22 @@ struct FqnValue;
 // Helper function to convert wide character to UTF-8
 inline string wchar_to_utf8(wchar_t wc) {
     string result;
-    if (wc <= 0x7F) {
-        result += static_cast<char>(wc);
-    } else if (wc <= 0x7FF) {
-        result += static_cast<char>(0xC0 | (wc >> 6));
-        result += static_cast<char>(0x80 | (wc & 0x3F));
-    } else if (wc <= 0xFFFF) {
-        result += static_cast<char>(0xE0 | (wc >> 12));
-        result += static_cast<char>(0x80 | ((wc >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (wc & 0x3F));
-    } else if (wc <= 0x10FFFF) {
-        result += static_cast<char>(0xF0 | (wc >> 18));
-        result += static_cast<char>(0x80 | ((wc >> 12) & 0x3F));
-        result += static_cast<char>(0x80 | ((wc >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (wc & 0x3F));
+    uint32_t codepoint = static_cast<uint32_t>(wc);
+
+    if (codepoint <= 0x7F) {
+        result += static_cast<char>(codepoint);
+    } else if (codepoint <= 0x7FF) {
+        result += static_cast<char>(0xC0 | (codepoint >> 6));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0xFFFF) {
+        result += static_cast<char>(0xE0 | (codepoint >> 12));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
+    } else if (codepoint <= 0x10FFFF) {
+        result += static_cast<char>(0xF0 | (codepoint >> 18));
+        result += static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+        result += static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (codepoint & 0x3F));
     }
     return result;
 }
@@ -186,5 +195,9 @@ struct RuntimeObject {
 };
 
 YONA_API std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj);
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace yona::interp::runtime

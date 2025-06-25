@@ -159,7 +159,6 @@ jobs:
       run: |
         # Set environment variables
         echo "LLVM_INSTALL_PREFIX=D:\local\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
-        echo "D:\local\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest

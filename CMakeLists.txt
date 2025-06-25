@@ -1,14 +1,22 @@
 # CMakeList.txt : CMake project for yonac-llvm, include source and define
 # project specific logic here.
 #
-cmake_minimum_required(VERSION 3.8...4.0)
+cmake_minimum_required(VERSION 3.10..4.0)
 
 # Set policy for MSVC runtime library selection
 if(POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
 endif()
 
-project(YONAC_LLVM CXX C)
+if(POLICY CMP0135)
+	cmake_policy(SET CMP0135 NEW)
+	set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
+endif()
+
+project(YONAC_LLVM LANGUAGES CXX C)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Read version from VERSION file
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VERSION_STRING)
@@ -28,14 +36,9 @@ configure_file(
     @ONLY
 )
 
-# Enable Hot Reload for MSVC compilers if supported.
-if (POLICY CMP0141 AND MSVC)
-    cmake_policy(SET CMP0141 NEW)
-    set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
-endif ()
-
-# Use libc++ instead of platform's default STL
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+# Platform-specific compiler settings
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT WIN32)
+    # Use libc++ on non-Windows platforms with Clang
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++")
@@ -43,12 +46,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # Use lld linker for faster linking
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
-
-    # On Windows, use Clang's runtime libraries instead of MSVC's
-    if(WIN32)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -rtlib=compiler-rt")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -rtlib=compiler-rt")
-    endif()
 
     # On Linux, we need to link against libc++abi
     if(UNIX AND NOT APPLE)
@@ -58,9 +55,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 cmake_policy(SET CMP0167 NEW)
-
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
 
@@ -116,7 +110,6 @@ add_library(yona_lib SHARED ${all_lib_SRCS})
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
-
 
 # Find the libraries that correspond to the LLVM components that we wish to use
 llvm_map_components_to_libnames(llvm_libs Support Core IRReader)

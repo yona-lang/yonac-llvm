@@ -12,6 +12,13 @@
 
 #include <ostream>
 
+// Disable MSVC warning C4251 about STL types in exported class interfaces
+// This is safe for our use case as both the DLL and clients use the same STL
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace yona::ast {
 class FunctionDeclaration;
 class AstNode;
@@ -1827,4 +1834,9 @@ public:
   virtual any visit(GeneratorExpr *node) const;
   virtual any visit(CollectionExtractorExpr *node) const;
 };
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 } // namespace yona::ast

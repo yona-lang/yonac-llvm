@@ -8,14 +8,12 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "C:/local/LLVM/bin/clang.exe",
-        "CMAKE_CXX_COMPILER": "C:/local/LLVM/bin/clang++.exe",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "LLVM_INSTALL_PREFIX": "C:/local/LLVM",
         "CMAKE_TOOLCHAIN_FILE": {
           "value": "${sourceDir}/cmake/windows-llvm-toolchain.cmake",
           "type": "FILEPATH"
-        },
-        "LLVM_INSTALL_PREFIX": "C:/local/LLVM"
+        }
       },
       "condition": {
         "type": "equals",

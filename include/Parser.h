@@ -18,6 +18,13 @@
 #include "types.h"
 #include "Lexer.h"
 
+// Disable MSVC warning C4251 about STL types in exported class interfaces
+// This is safe for our use case as both the DLL and clients use the same STL
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#endif
+
 namespace yona::parser {
 using namespace std;
 using namespace ast;
@@ -95,5 +102,9 @@ public:
     ParseResult parse_input(const vector<string>& module_name);
     ParseResult parse_input(istream& stream);
 };
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 } // namespace yona::parser

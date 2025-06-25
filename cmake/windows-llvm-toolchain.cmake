@@ -7,19 +7,6 @@ endif()
 
 message(STATUS "Using LLVM toolchain for Windows from ${LLVM_INSTALL_PREFIX}")
 
-# Only set compiler paths if not already building with vcpkg
-if(NOT VCPKG_TOOLCHAIN)
-    # Use regular clang for our project
-    set(CMAKE_C_COMPILER "${LLVM_INSTALL_PREFIX}/bin/clang.exe" CACHE FILEPATH "C compiler")
-    set(CMAKE_CXX_COMPILER "${LLVM_INSTALL_PREFIX}/bin/clang++.exe" CACHE FILEPATH "C++ compiler")
-    set(CMAKE_AR "${LLVM_INSTALL_PREFIX}/bin/llvm-ar.exe" CACHE FILEPATH "Archiver")
-    set(CMAKE_LINKER "${LLVM_INSTALL_PREFIX}/bin/lld-link.exe" CACHE FILEPATH "Linker")
-
-    # Ensure CMake uses our LLVM, not Visual Studio's
-    set(CMAKE_C_COMPILER_FORCED TRUE)
-    set(CMAKE_CXX_COMPILER_FORCED TRUE)
-endif()
-
 # First try to find LLVM using standard paths
 list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_PREFIX}")
 list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm")
@@ -52,16 +39,4 @@ if(NOT EXISTS "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm/LLVMConfig.cmake")
 else()
     # Use the standard LLVM cmake config
     set(LLVM_DIR "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm" CACHE PATH "Path to LLVMConfig.cmake")
-endif()
-
-# Windows specific flags
-if(WIN32)
-    if(MSVC)
-        # MSVC specific flags
-        add_compile_options(/EHsc)  # Enable C++ exceptions
-        add_compile_options(/utf-8) # Set source and execution character sets to UTF-8
-
-        # Disable specific warnings
-        add_compile_options(/wd4996) # Disable deprecation warnings
-    endif()
 endif()

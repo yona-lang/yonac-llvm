@@ -14,6 +14,14 @@
 #include "runtime.h"
 #include "TypeChecker.h"
 
+// Disable MSVC warnings about STL types in exported class interfaces and DLL interface inheritance
+// This is safe for our use case as both the DLL and clients use the same STL and compiler
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251)
+#pragma warning(disable: 4275)
+#endif
+
 namespace yona::interp {
 using namespace std;
 using namespace ast;
@@ -264,4 +272,9 @@ public:
   any visit(GeneratorExpr *node) const override;
   any visit(CollectionExtractorExpr *node) const override;
 };
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 } // namespace yona::interp
