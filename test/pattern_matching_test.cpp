@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -9,13 +9,13 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-class PatternMatchingTest : public ::testing::Test {
-protected:
+struct PatternMatchingTest {
     parser::Parser parser;
     Interpreter interp;
 };
 
-TEST_F(PatternMatchingTest, SimpleIdentifierPattern) {
+TEST_CASE("SimpleIdentifierPattern", "[PatternMatchingTest]") /* FIXTURE */ {
+    PatternMatchingTest fixture;
     // let x = 42 in x
     auto x_identifier = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
     auto pattern = new PatternValue(EMPTY_SOURCE_LOCATION, x_identifier);
@@ -24,13 +24,14 @@ TEST_F(PatternMatchingTest, SimpleIdentifierPattern) {
     auto pattern_alias = new PatternAlias(EMPTY_SOURCE_LOCATION, pattern, value_expr);
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, x_identifier);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(let_expr));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
 
-    EXPECT_EQ(result->type, Int);
-    EXPECT_EQ(result->get<int>(), 42);
+    CHECK(result->type == Int);
+    CHECK(result->get<int>() == 42);
 }
 
-TEST_F(PatternMatchingTest, TuplePatternMatch) {
+TEST_CASE("TuplePatternMatch", "[PatternMatchingTest]") /* FIXTURE */ {
+    PatternMatchingTest fixture;
     // let (x, y) = (1, 2) in x + y
     auto x_id = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
     auto y_id = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "y"));
@@ -56,13 +57,14 @@ TEST_F(PatternMatchingTest, TuplePatternMatch) {
 
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, add_expr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(let_expr));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
 
-    EXPECT_EQ(result->type, Int);
-    EXPECT_EQ(result->get<int>(), 3);
+    CHECK(result->type == Int);
+    CHECK(result->get<int>() == 3);
 }
 
-TEST_F(PatternMatchingTest, UnderscorePattern) {
+TEST_CASE("UnderscorePattern", "[PatternMatchingTest]") /* FIXTURE */ {
+    PatternMatchingTest fixture;
     // let (_, y) = (1, 2) in y
     auto underscore = new UnderscoreNode(EMPTY_SOURCE_LOCATION);
     auto y_id = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "y"));
@@ -80,13 +82,14 @@ TEST_F(PatternMatchingTest, UnderscorePattern) {
     auto y_ref = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "y"));
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, y_ref);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(let_expr));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
 
-    EXPECT_EQ(result->type, Int);
-    EXPECT_EQ(result->get<int>(), 2);
+    CHECK(result->type == Int);
+    CHECK(result->get<int>() == 2);
 }
 
-TEST_F(PatternMatchingTest, PatternMatchFailure) {
+TEST_CASE("PatternMatchFailure", "[PatternMatchingTest]") /* FIXTURE */ {
+    PatternMatchingTest fixture;
     // let (1, y) = (2, 3) in y  -- should raise :nomatch
     auto one_literal = new IntegerExpr(EMPTY_SOURCE_LOCATION, 1);
     auto one_pattern = new PatternValue(EMPTY_SOURCE_LOCATION,
@@ -107,16 +110,17 @@ TEST_F(PatternMatchingTest, PatternMatchFailure) {
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, y_ref);
 
     // Should raise exception
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(let_expr));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
 
     // The result should be Unit with exception raised
     // We can't directly check IS since it's private
     // For now, just check that we got a Unit result
-    EXPECT_EQ(result->type, runtime::Unit);
+    CHECK(result->type == runtime::Unit);
     // TODO: Add a way to check exception state from tests
 }
 
-TEST_F(PatternMatchingTest, CaseExpressionSimple) {
+TEST_CASE("CaseExpressionSimple", "[PatternMatchingTest]") /* FIXTURE */ {
+    PatternMatchingTest fixture;
     // case 1 of
     //   1 -> "one"
     //   2 -> "two"

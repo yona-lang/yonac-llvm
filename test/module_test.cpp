@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
+#include "common.h"
 #include <cstdlib>
 #include <sstream>
 #include <filesystem>
@@ -12,79 +13,91 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-class ModuleTest : public ::testing::Test {
-protected:
+struct ModuleTest {
     parser::Parser parser;
-    Interpreter interp;
+    unique_ptr<Interpreter> interp;
 
-    void SetUp() override {
+    void SetUp() {
         // Set YONA_PATH to include test/code directory
-        string yona_path = filesystem::current_path().string() + "/test/code";
+        // Navigate from build directory to project root
+        filesystem::path current = filesystem::current_path();
+        filesystem::path test_code_path = current / "../../../test/code";
+        string yona_path = filesystem::canonical(test_code_path).string();
+
 #ifdef _WIN32
         _putenv_s("YONA_PATH", yona_path.c_str());
 #else
         setenv("YONA_PATH", yona_path.c_str(), 1);
 #endif
+
+        // Create interpreter after setting YONA_PATH
+        interp = make_unique<Interpreter>();
     }
 };
 
-TEST_F(ModuleTest, SimpleModuleImport) {
+TEST_CASE("SimpleModuleImport", "[ModuleTest]") {
+    ModuleTest fixture;
+    fixture.SetUp();
     // Test: import add from Test\Test in add(1, 2)
     stringstream code("import add from Test\\Test in add(1, 2)");
 
-    auto parse_result = parser.parse_input(code);
-    ASSERT_TRUE(parse_result.success) << "Parse failed";
-    ASSERT_TRUE(parse_result.node != nullptr) << "Parse result is null";
+    auto parse_result = fixture.parser.parse_input(code);
+    REQUIRE(parse_result.success); // Parse failed;
+    REQUIRE(parse_result.node != nullptr); // Parse result is null;
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result.node.get()));
 
-    EXPECT_EQ(result->type, Int);
-    EXPECT_EQ(result->get<int>(), 3);
+    CHECK(result->type == Int);
+    CHECK(result->get<int>() == 3);
 }
 
-TEST_F(ModuleTest, ImportWithAlias) {
+TEST_CASE("ImportWithAlias", "[ModuleTest]") {
+    ModuleTest fixture;
+    fixture.SetUp();
     // Test: import multiply as mult from Test\Test in mult(3, 4)
     stringstream code("import multiply as mult from Test\\Test in mult(3, 4)");
 
-    auto parse_result = parser.parse_input(code);
-    ASSERT_TRUE(parse_result.node != nullptr);
+    auto parse_result = fixture.parser.parse_input(code);
+    REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result.node.get()));
 
-    EXPECT_EQ(result->type, Int);
-    EXPECT_EQ(result->get<int>(), 12);
+    CHECK(result->type == Int);
+    CHECK(result->get<int>() == 12);
 }
 
-TEST_F(ModuleTest, ImportNonExportedFunction) {
+TEST_CASE("ImportNonExportedFunction", "[ModuleTest]") {
+    ModuleTest fixture;
+    fixture.SetUp();
     // Test: import internal_func from Test\Test - should fail
     stringstream code("import internal_func from Test\\Test in internal_func(5)");
 
-    auto parse_result = parser.parse_input(code);
-    ASSERT_TRUE(parse_result.node != nullptr);
+    auto parse_result = fixture.parser.parse_input(code);
+    REQUIRE(parse_result.node != nullptr);
 
-    EXPECT_THROW({
-        interp.visit(parse_result.node.get());
-    }, yona_error);
+    CHECK_THROWS_AS(fixture.interp->visit(parse_result.node.get()), yona_error);
 }
 
-TEST_F(ModuleTest, ModuleCaching) {
+TEST_CASE("ModuleCaching", "[ModuleTest]") {
+    ModuleTest fixture;
+    fixture.SetUp();
     // Import same module twice, should use cache
 
     // First import
     stringstream code1("import add from Test\\Test in add(10, 20)");
-    auto parse_result1 = parser.parse_input(code1);
-    ASSERT_TRUE(parse_result1.node != nullptr);
+    auto parse_result1 = fixture.parser.parse_input(code1);
+    REQUIRE(parse_result1.node != nullptr);
 
-    auto result1 = any_cast<RuntimeObjectPtr>(interp.visit(parse_result1.node.get()));
-    EXPECT_EQ(result1->type, Int);
-    EXPECT_EQ(result1->get<int>(), 30);
+    auto result1 = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result1.node.get()));
+    CHECK(result1->type == Int);
+    CHECK(result1->get<int>() == 30);
 
     // Second import - should use cached module
     stringstream code2("import multiply from Test\\Test in multiply(5, 6)");
-    auto parse_result2 = parser.parse_input(code2);
-    ASSERT_TRUE(parse_result2.node != nullptr);
+    auto parse_result2 = fixture.parser.parse_input(code2);
+    REQUIRE(parse_result2.node != nullptr);
 
-    auto result2 = any_cast<RuntimeObjectPtr>(interp.visit(parse_result2.node.get()));
-    EXPECT_EQ(result2->type, Int);
-    EXPECT_EQ(result2->get<int>(), 30);
+    auto result2 = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result2.node.get()));
+    CHECK(result2->type == Int);
+    CHECK(result2->get<int>() == 30);
 }

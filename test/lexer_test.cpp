@@ -1,27 +1,24 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/catch_approx.hpp>
 #include "Lexer.h"
 #include <sstream>
 
 using namespace yona::lexer;
 using namespace std;
 
-class LexerTest : public ::testing::Test {
-protected:
+struct LexerTest {
     void TestTokens(const string& input, const vector<TokenType>& expected_types) {
         Lexer lexer(input);
         auto result = lexer.tokenize();
 
-        ASSERT_TRUE(result.has_value()) << "Lexer returned errors";
+        REQUIRE(result.has_value());
 
         auto tokens = result.value();
-        ASSERT_EQ(tokens.size(), expected_types.size())
-            << "Expected " << expected_types.size() << " tokens, got " << tokens.size();
+        REQUIRE(tokens.size() == expected_types.size());
 
         for (size_t i = 0; i < expected_types.size(); ++i) {
-            EXPECT_EQ(tokens[i].type, expected_types[i])
-                << "Token " << i << ": expected " << token_type_to_string(expected_types[i])
-                << ", got " << token_type_to_string(tokens[i].type)
-                << " ('" << tokens[i].lexeme << "')";
+            CHECK(tokens[i].type == expected_types[i]);
         }
     }
 
@@ -29,32 +26,28 @@ protected:
         Lexer lexer(input);
         auto result = lexer.tokenize();
 
-        ASSERT_TRUE(result.has_value()) << "Lexer returned errors";
+        REQUIRE(result.has_value());
 
         auto tokens = result.value();
-        ASSERT_EQ(tokens.size(), expected.size() + 1) // +1 for EOF
-            << "Expected " << expected.size() << " tokens (+ EOF), got " << tokens.size();
+        REQUIRE(tokens.size() == expected.size() + 1); // +1 for EOF
 
         for (size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_EQ(tokens[i].type, expected[i].first)
-                << "Token " << i << ": type mismatch";
+            CHECK(tokens[i].type == expected[i].first);
 
             if (holds_alternative<int64_t>(expected[i].second)) {
-                EXPECT_EQ(get<int64_t>(tokens[i].value), get<int64_t>(expected[i].second))
-                    << "Token " << i << ": integer value mismatch";
+                CHECK(get<int64_t>(tokens[i].value) == get<int64_t>(expected[i].second));
             } else if (holds_alternative<double>(expected[i].second)) {
-                EXPECT_DOUBLE_EQ(get<double>(tokens[i].value), get<double>(expected[i].second))
-                    << "Token " << i << ": float value mismatch";
+                CHECK(get<double>(tokens[i].value) == Catch::Approx(get<double>(expected[i].second)));
             } else if (holds_alternative<string>(expected[i].second)) {
-                EXPECT_EQ(get<string>(tokens[i].value), get<string>(expected[i].second))
-                    << "Token " << i << ": string value mismatch";
+                CHECK(get<string>(tokens[i].value) == get<string>(expected[i].second));
             }
         }
     }
 };
 
-TEST_F(LexerTest, SimpleArithmetic) {
-    TestTokens("10 + 20", {
+TEST_CASE("SimpleArithmetic", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("10 + 20", {
         TokenType::YINTEGER,
         TokenType::YPLUS,
         TokenType::YINTEGER,
@@ -62,16 +55,18 @@ TEST_F(LexerTest, SimpleArithmetic) {
     });
 }
 
-TEST_F(LexerTest, IntegerLiterals) {
-    TestTokenValues("42 1000 1_000_000", {
+TEST_CASE("IntegerLiterals", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokenValues("42 1000 1_000_000", {
         {TokenType::YINTEGER, int64_t(42)},
         {TokenType::YINTEGER, int64_t(1000)},
         {TokenType::YINTEGER, int64_t(1000000)}
     });
 }
 
-TEST_F(LexerTest, FloatLiterals) {
-    TestTokenValues("3.14 2.0 1e10 1.5e-3", {
+TEST_CASE("FloatLiterals", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokenValues("3.14 2.0 1e10 1.5e-3", {
         {TokenType::YFLOAT, 3.14},
         {TokenType::YFLOAT, 2.0},
         {TokenType::YFLOAT, 1e10},
@@ -79,8 +74,9 @@ TEST_F(LexerTest, FloatLiterals) {
     });
 }
 
-TEST_F(LexerTest, StringLiterals) {
-    TestTokenValues(R"("hello" "world\n" "quote:\"" "unicode:\u0041")", {
+TEST_CASE("StringLiterals", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokenValues(R"("hello" "world\n" "quote:\"" "unicode:\u0041")", {
         {TokenType::YSTRING, string("hello")},
         {TokenType::YSTRING, string("world\n")},
         {TokenType::YSTRING, string("quote:\"")},
@@ -88,8 +84,9 @@ TEST_F(LexerTest, StringLiterals) {
     });
 }
 
-TEST_F(LexerTest, Identifiers) {
-    TestTokens("foo bar_baz x' _test", {
+TEST_CASE("Identifiers", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("foo bar_baz x' _test", {
         TokenType::YIDENTIFIER,
         TokenType::YIDENTIFIER,
         TokenType::YIDENTIFIER,
@@ -98,8 +95,9 @@ TEST_F(LexerTest, Identifiers) {
     });
 }
 
-TEST_F(LexerTest, Keywords) {
-    TestTokens("let if then else true false", {
+TEST_CASE("Keywords", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("let if then else true false", {
         TokenType::YLET,
         TokenType::YIF,
         TokenType::YTHEN,
@@ -110,8 +108,9 @@ TEST_F(LexerTest, Keywords) {
     });
 }
 
-TEST_F(LexerTest, Operators) {
-    TestTokens("+ - * / % ** == != < > <= >= && || ! & | ^ ~ << >> >>>", {
+TEST_CASE("Operators", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("+ - * / % ** == != < > <= >= && || ! & | ^ ~ << >> >>>", {
         TokenType::YPLUS,
         TokenType::YMINUS,
         TokenType::YSTAR,
@@ -138,8 +137,9 @@ TEST_F(LexerTest, Operators) {
     });
 }
 
-TEST_F(LexerTest, Delimiters) {
-    TestTokens("( ) [ ] { } , ; : . .. = -> =>", {
+TEST_CASE("Delimiters", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("( ) [ ] { } , ; : . .. = -> =>", {
         TokenType::YLPAREN,
         TokenType::YRPAREN,
         TokenType::YLBRACKET,
@@ -158,8 +158,9 @@ TEST_F(LexerTest, Delimiters) {
     });
 }
 
-TEST_F(LexerTest, ListOperators) {
-    TestTokens(":: <| |> ++ @ _", {
+TEST_CASE("ListOperators", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens(":: <| |> ++ @ _", {
         TokenType::YCONS,
         TokenType::YPIPE_LEFT,
         TokenType::YPIPE_RIGHT,
@@ -170,8 +171,9 @@ TEST_F(LexerTest, ListOperators) {
     });
 }
 
-TEST_F(LexerTest, YonaSequenceOperators) {
-    TestTokens("-- -| |-", {
+TEST_CASE("YonaSequenceOperators", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("-- -| |-", {
         TokenType::YREMOVE,
         TokenType::YPREPEND,
         TokenType::YAPPEND,
@@ -179,8 +181,9 @@ TEST_F(LexerTest, YonaSequenceOperators) {
     });
 }
 
-TEST_F(LexerTest, Comments) {
-    TestTokens(R"(
+TEST_CASE("Comments", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens(R"(
         # Single line comment
         42 # Another comment
         /* Multi-line
@@ -196,26 +199,28 @@ TEST_F(LexerTest, Comments) {
     });
 }
 
-TEST_F(LexerTest, Symbols) {
+TEST_CASE("Symbols", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
     Lexer lexer(":foo :+ :==");
     auto result = lexer.tokenize();
 
-    ASSERT_TRUE(result.has_value());
+    REQUIRE(result.has_value());
     auto tokens = result.value();
-    ASSERT_EQ(tokens.size(), 4); // 3 symbols + EOF
+    REQUIRE(tokens.size() == 4); // 3 symbols + EOF
 
-    EXPECT_EQ(tokens[0].type, TokenType::YSYMBOL);
-    EXPECT_EQ(get<string_view>(tokens[0].value), "foo");
+    CHECK(tokens[0].type == TokenType::YSYMBOL);
+    CHECK(get<string_view>(tokens[0].value) == "foo");
 
-    EXPECT_EQ(tokens[1].type, TokenType::YSYMBOL);
-    EXPECT_EQ(get<string_view>(tokens[1].value), "+");
+    CHECK(tokens[1].type == TokenType::YSYMBOL);
+    CHECK(get<string_view>(tokens[1].value) == "+");
 
-    EXPECT_EQ(tokens[2].type, TokenType::YSYMBOL);
-    EXPECT_EQ(get<string_view>(tokens[2].value), "==");
+    CHECK(tokens[2].type == TokenType::YSYMBOL);
+    CHECK(get<string_view>(tokens[2].value) == "==");
 }
 
-TEST_F(LexerTest, ComplexExpression) {
-    TestTokens("let x = if y > 0 then y * 2 else -y", {
+TEST_CASE("ComplexExpression", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("let x = if y > 0 then y * 2 else -y", {
         TokenType::YLET,
         TokenType::YIDENTIFIER,
         TokenType::YASSIGN,
@@ -234,36 +239,39 @@ TEST_F(LexerTest, ComplexExpression) {
     });
 }
 
-TEST_F(LexerTest, ErrorHandling) {
+TEST_CASE("ErrorHandling", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
     Lexer lexer(R"("unterminated string)");
     auto result = lexer.tokenize();
 
-    ASSERT_FALSE(result.has_value());
+    REQUIRE_FALSE(result.has_value());
     auto errors = result.error();
-    ASSERT_GE(errors.size(), 1);
-    EXPECT_EQ(errors[0].type, LexError::Type::UNTERMINATED_STRING);
+    REQUIRE(errors.size() >= 1);
+    CHECK(errors[0].type == LexError::Type::UNTERMINATED_STRING);
 }
 
-TEST_F(LexerTest, CharacterLiterals) {
+TEST_CASE("CharacterLiterals", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
     Lexer lexer("'a' '\\n' '\\u0041'");
     auto result = lexer.tokenize();
 
-    ASSERT_TRUE(result.has_value());
+    REQUIRE(result.has_value());
     auto tokens = result.value();
-    ASSERT_EQ(tokens.size(), 4); // 3 chars + EOF
+    REQUIRE(tokens.size() == 4); // 3 chars + EOF
 
-    EXPECT_EQ(tokens[0].type, TokenType::YCHARACTER);
-    EXPECT_EQ(get<char32_t>(tokens[0].value), U'a');
+    CHECK(tokens[0].type == TokenType::YCHARACTER);
+    CHECK(get<char32_t>(tokens[0].value) == U'a');
 
-    EXPECT_EQ(tokens[1].type, TokenType::YCHARACTER);
-    EXPECT_EQ(get<char32_t>(tokens[1].value), U'\n');
+    CHECK(tokens[1].type == TokenType::YCHARACTER);
+    CHECK(get<char32_t>(tokens[1].value) == U'\n');
 
-    EXPECT_EQ(tokens[2].type, TokenType::YCHARACTER);
-    EXPECT_EQ(get<char32_t>(tokens[2].value), U'A');
+    CHECK(tokens[2].type == TokenType::YCHARACTER);
+    CHECK(get<char32_t>(tokens[2].value) == U'A');
 }
 
-TEST_F(LexerTest, UnicodeIdentifiers) {
-    TestTokens("λ пользователь 用户", {
+TEST_CASE("UnicodeIdentifiers", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
+    fixture.TestTokens("λ пользователь 用户", {
         TokenType::YIDENTIFIER,
         TokenType::YIDENTIFIER,
         TokenType::YIDENTIFIER,
@@ -271,17 +279,18 @@ TEST_F(LexerTest, UnicodeIdentifiers) {
     });
 }
 
-TEST_F(LexerTest, LocationTracking) {
+TEST_CASE("LocationTracking", "[LexerTest]") /* FIXTURE */ {
+    LexerTest fixture;
     Lexer lexer("foo\nbar");
     auto result = lexer.tokenize();
 
-    ASSERT_TRUE(result.has_value());
+    REQUIRE(result.has_value());
     auto tokens = result.value();
-    ASSERT_GE(tokens.size(), 2);
+    REQUIRE(tokens.size() >= 2);
 
-    EXPECT_EQ(tokens[0].location.line, 1);
-    EXPECT_EQ(tokens[0].location.column, 1);
+    CHECK(tokens[0].location.line == 1);
+    CHECK(tokens[0].location.column == 1);
 
-    EXPECT_EQ(tokens[1].location.line, 2);
-    EXPECT_EQ(tokens[1].location.column, 1);
+    CHECK(tokens[1].location.line == 2);
+    CHECK(tokens[1].location.column == 1);
 }

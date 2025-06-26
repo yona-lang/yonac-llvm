@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <cmath>
 
 #include "common.h"
 #include "utils.h"
@@ -222,7 +223,7 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
       // HACK: We're using void* to smuggle in IntegerExpr and ByteExpr
       // Cast to base AstNode to check the type
       auto node = reinterpret_cast<AstNode*>(arg);
-      
+
       if (node->get_type() == AST_INTEGER_EXPR) {
         auto int_expr = static_cast<IntegerExpr*>(node);
         if (value->type != Int) return false;
@@ -452,23 +453,23 @@ bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPt
 
 any Interpreter::visit(AddExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Handle byte promotion to int
   if (left->type == Byte || right->type == Byte) {
-    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
-                   (left->type == Int) ? left->get<int>() : 
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) :
+                   (left->type == Int) ? left->get<int>() :
                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
-    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) :
                     (right->type == Int) ? right->get<int>() :
                     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
     return make_shared<RuntimeObject>(Int, left_val + right_val);
   }
-  
+
   // Original int/float handling
   if (auto result = first_defined_optional({
     BINARY_OP_EXTRACTION(Int, int, 0, 0, plus<>),
@@ -481,23 +482,23 @@ any Interpreter::visit(AddExpr *node) const {
 }
 any Interpreter::visit(MultiplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Handle byte promotion to int
   if (left->type == Byte || right->type == Byte) {
-    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
-                   (left->type == Int) ? left->get<int>() : 
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) :
+                   (left->type == Int) ? left->get<int>() :
                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
-    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) :
                     (right->type == Int) ? right->get<int>() :
                     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
     return make_shared<RuntimeObject>(Int, left_val * right_val);
   }
-  
+
   // Original int/float handling
   if (auto result = first_defined_optional({
     BINARY_OP_EXTRACTION(Int, int, 1, 0, multiplies<>),
@@ -510,23 +511,23 @@ any Interpreter::visit(MultiplyExpr *node) const {
 }
 any Interpreter::visit(SubtractExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   auto left = any_cast<RuntimeObjectPtr>(visit(node->left));
   CHECK_EXCEPTION_RETURN();
   auto right = any_cast<RuntimeObjectPtr>(visit(node->right));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Handle byte promotion to int
   if (left->type == Byte || right->type == Byte) {
-    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) : 
-                   (left->type == Int) ? left->get<int>() : 
+    int left_val = (left->type == Byte) ? static_cast<int>(static_cast<uint8_t>(left->get<std::byte>())) :
+                   (left->type == Int) ? left->get<int>() :
                    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
-    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) : 
+    int right_val = (right->type == Byte) ? static_cast<int>(static_cast<uint8_t>(right->get<std::byte>())) :
                     (right->type == Int) ? right->get<int>() :
                     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Int or Byte");
     return make_shared<RuntimeObject>(Int, left_val - right_val);
   }
-  
+
   // Original int/float handling
   if (auto result = first_defined_optional({
     BINARY_OP_EXTRACTION(Int, int, 0, 1, minus<>),
@@ -1010,7 +1011,7 @@ any Interpreter::visit(FunctionsImport *node) const {
     // Use alias if provided, otherwise use original name
     const string& import_name = alias->alias ? alias->alias->value : func_name;
     IS.frame->write(import_name, make_shared<RuntimeObject>(Function, func));
-    
+
     // Debug: Verify the function was written
     // std::cout << "Imported function '" << import_name << "' to frame" << std::endl;
   }
@@ -1058,7 +1059,7 @@ any Interpreter::visit(ImportExpr *node) const {
 
   // Process all import clauses
   for (auto clause : node->clauses) {
-    auto clause_result = any_cast<RuntimeObjectPtr>(visit(clause));
+    clause->accept(*this);
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -1070,7 +1071,7 @@ any Interpreter::visit(ImportExpr *node) const {
 
   // Restore the previous frame
   IS.frame = saved_frame;
-  
+
   return result;
 }
 any Interpreter::visit(InExpr *node) const {
@@ -1454,34 +1455,34 @@ any Interpreter::visit(RaiseExpr *node) const {
 }
 any Interpreter::visit(RangeSequenceExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  
+
   // Evaluate start, end, and step expressions
   auto start_obj = any_cast<RuntimeObjectPtr>(visit(node->start));
   CHECK_EXCEPTION_RETURN();
-  
+
   auto end_obj = any_cast<RuntimeObjectPtr>(visit(node->end));
   CHECK_EXCEPTION_RETURN();
-  
+
   // Evaluate step if provided
   RuntimeObjectPtr step_obj;
   if (node->step) {
     step_obj = any_cast<RuntimeObjectPtr>(visit(node->step));
     CHECK_EXCEPTION_RETURN();
   }
-  
+
   vector<RuntimeObjectPtr> result_fields;
-  
+
   // Handle integer ranges
   if (start_obj->type == Int && end_obj->type == Int && (!step_obj || step_obj->type == Int)) {
     int start = start_obj->get<int>();
     int end = end_obj->get<int>();
     // If no step provided, determine direction automatically
     int step = step_obj ? step_obj->get<int>() : (start <= end ? 1 : -1);
-    
+
     if (step == 0) {
       throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Range step cannot be zero");
     }
-    
+
     // Handle forward and reverse ranges
     if ((step > 0 && start <= end) || (step < 0 && start >= end)) {
       for (int i = start; (step > 0 ? i <= end : i >= end); i += step) {
@@ -1491,20 +1492,20 @@ any Interpreter::visit(RangeSequenceExpr *node) const {
     // Empty range if direction doesn't match
   }
   // Handle float ranges
-  else if ((start_obj->type == Float || start_obj->type == Int) && 
+  else if ((start_obj->type == Float || start_obj->type == Int) &&
            (end_obj->type == Float || end_obj->type == Int) &&
            (!step_obj || step_obj->type == Float || step_obj->type == Int)) {
     double start = (start_obj->type == Float) ? start_obj->get<double>() : start_obj->get<int>();
     double end = (end_obj->type == Float) ? end_obj->get<double>() : end_obj->get<int>();
     // If no step provided, determine direction automatically
-    double step = step_obj ? 
+    double step = step_obj ?
       ((step_obj->type == Float) ? step_obj->get<double>() : step_obj->get<int>()) :
       (start <= end ? 1.0 : -1.0);
-    
+
     if (step == 0.0) {
       throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Range step cannot be zero");
     }
-    
+
     // Handle forward and reverse ranges with floating point comparison tolerance
     const double epsilon = 1e-10;
     if ((step > 0 && start <= end + epsilon) || (step < 0 && start >= end - epsilon)) {
@@ -1516,7 +1517,7 @@ any Interpreter::visit(RangeSequenceExpr *node) const {
   } else {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Range bounds and step must be numeric types");
   }
-  
+
   return make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(result_fields));
 }
 any Interpreter::visit(RecordInstanceExpr *node) const { return expr_wrapper(node); }
@@ -1946,8 +1947,18 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, error_msg);
   }
 
+  // Move the AST to a shared_ptr so we can keep it alive
+  shared_ptr<ModuleExpr> module_ast(parse_result.value().release());
+
+  // Save current frame and create a new one for module evaluation
+  auto saved_frame = IS.frame;
+  IS.frame = make_shared<InterepterFrame>(nullptr);  // Module gets its own top-level frame
+
   // Visit the module to evaluate it
-  auto result = any_cast<RuntimeObjectPtr>(visit(parse_result.value().get()));
+  auto result = any_cast<RuntimeObjectPtr>(visit(module_ast.get()));
+
+  // Restore the frame
+  IS.frame = saved_frame;
 
   if (result->type != Module) {
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE,
@@ -1956,6 +1967,9 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
 
   auto module = result->get<shared_ptr<ModuleValue>>();
   module->source_path = module_path;
+
+  // Keep the AST alive as long as the module is alive
+  module->ast_keeper = module_ast;
 
   // TODO: Process exports list from ModuleExpr
 

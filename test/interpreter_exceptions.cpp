@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "ast.h"
 
@@ -10,7 +10,7 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
-TEST(InterpreterExceptionTest, RaiseExprTest) {
+TEST_CASE("RaiseExprTest", "[InterpreterExceptionTest]") {
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
     auto raise = new RaiseExpr(TestSrcCtx, symbol, message);
@@ -22,10 +22,10 @@ TEST(InterpreterExceptionTest, RaiseExprTest) {
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
     // The result should be Unit since an exception was raised
-    EXPECT_EQ(result->type, yona::interp::runtime::Unit);
+    CHECK(result->type == yona::interp::runtime::Unit);
 }
 
-TEST(InterpreterExceptionTest, TryCatchExprTest) {
+TEST_CASE("TryCatchExprTest", "[InterpreterExceptionTest]") {
     // Create a try expression that raises an exception
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
@@ -47,11 +47,11 @@ TEST(InterpreterExceptionTest, TryCatchExprTest) {
     Interpreter interpreter;
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 42);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 42);
 }
 
-TEST(InterpreterExceptionTest, TryCatchNoExceptionTest) {
+TEST_CASE("TryCatchNoExceptionTest", "[InterpreterExceptionTest]") {
     // Create a try expression that doesn't raise an exception
     auto try_value = new IntegerExpr(TestSrcCtx, 100);
 
@@ -71,6 +71,6 @@ TEST(InterpreterExceptionTest, TryCatchNoExceptionTest) {
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
     // Should return the try value, not the catch value
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 100);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 100);
 }

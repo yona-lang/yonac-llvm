@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -10,7 +10,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST(LambdaMinimalTest, JustLambda) {
+TEST_CASE("JustLambda", "[LambdaMinimalTest]") {
     std::cerr << "TEST: Testing just lambda evaluation" << std::endl;
     parser::Parser parser;
     Interpreter interp;
@@ -18,15 +18,15 @@ TEST(LambdaMinimalTest, JustLambda) {
     stringstream ss("\\(x) -> x");
     auto parse_result = parser.parse_input(ss);
 
-    ASSERT_TRUE(parse_result.success);
-    ASSERT_NE(parse_result.node, nullptr);
+    REQUIRE(parse_result.success);
+    REQUIRE(parse_result.node != nullptr);
 
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     std::cerr << "TEST: About to evaluate lambda" << std::endl;
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
     std::cerr << "TEST: Lambda evaluated" << std::endl;
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Function);
+    CHECK(result->type == yona::interp::runtime::Function);
 }

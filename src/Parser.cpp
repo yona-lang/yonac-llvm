@@ -286,9 +286,39 @@ private:
         expect(TokenType::YEND, "Expected 'end' at end of module");
 
         // Convert PackageNameExpr to FqnExpr
-        // Extract the module name (last part) from the package name
-        auto module_name = name->parts.empty() ? nullptr : name->parts.back();
-        auto fqn = make_unique<FqnExpr>(name->source_context, name.release(), module_name);
+        // For modules, we need to extract the last part as the module name
+        // and create a new package with remaining parts
+        if (name->parts.empty()) {
+            error(ParseError::Type::INVALID_SYNTAX, "Module name cannot be empty");
+            return nullptr;
+        }
+
+        auto source_ctx = name->source_context;
+
+        // If there's only one part, it's just the module name
+        if (name->parts.size() == 1) {
+            auto module_name = name->parts[0];
+            name->parts.clear();  // Remove from package to avoid double delete
+            delete name.release();
+            auto fqn = std::unique_ptr<FqnExpr>(new FqnExpr(source_ctx, nullopt, module_name));
+            return make_unique<ModuleExpr>(
+                start_loc,
+                fqn.release(),
+                exports,
+                records,
+                functions,
+                function_declarations
+            );
+        }
+
+        // Multiple parts: split into package and module
+        auto module_name_node = name->parts.back();
+        name->parts.pop_back();  // Remove module name from package parts
+
+        // Create new module name node (can't reuse the one from parts as it will be deleted)
+        auto module_name = new NameExpr(module_name_node->source_context, module_name_node->value);
+
+        auto fqn = std::unique_ptr<FqnExpr>(new FqnExpr(source_ctx, name.release(), module_name));
 
         return make_unique<ModuleExpr>(
             start_loc,
@@ -313,7 +343,7 @@ private:
             auto token = advance();
             auto name_expr = make_unique<NameExpr>(token_location(token), string(token.lexeme));
             parts.push_back(name_expr.release());
-        } while (match(TokenType::YDOT)); // Use dot for module path separator
+        } while (match(TokenType::YBACKSLASH)); // Use backslash for module path separator
 
         return make_unique<PackageNameExpr>(start_loc, parts);
     }
@@ -889,7 +919,7 @@ private:
             // Cast to void* to fit in PatternValue (ugly hack)
             return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(literal_expr));
         }
-        
+
         // Byte literal pattern
         if (check(TokenType::YBYTE)) {
             auto token = advance();
@@ -899,10 +929,10 @@ private:
             // Cast to void* to fit in PatternValue (ugly hack)
             return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(byte_expr));
         }
-        
+
         // Other literal patterns - currently not properly supported
-        if (check(TokenType::YFLOAT) || check(TokenType::YSTRING) || 
-            check(TokenType::YCHARACTER) || check(TokenType::YTRUE) || 
+        if (check(TokenType::YFLOAT) || check(TokenType::YSTRING) ||
+            check(TokenType::YCHARACTER) || check(TokenType::YTRUE) ||
             check(TokenType::YFALSE)) {
             advance(); // consume the literal
             // TODO: The AST needs to be updated to support literal patterns
@@ -1454,7 +1484,7 @@ private:
                         error(ParseError::Type::INVALID_SYNTAX, "Expected numeric expression after '..' in range");
                         return nullptr;
                     }
-                    
+
                     ExprNode* step = nullptr;
                     if (match(TokenType::YDOTDOT)) {
                         auto step_expr = parse_range_bound();
@@ -1689,13 +1719,13 @@ private:
     // Only supports: integer, float, -integer, -float
     unique_ptr<ExprNode> parse_range_bound() {
         SourceLocation loc = current_location();
-        
+
         bool negative = false;
         if (check(TokenType::YMINUS)) {
             advance();
             negative = true;
         }
-        
+
         if (check(TokenType::YINTEGER)) {
             auto token = advance();
             auto value = get<int64_t>(token.value);
@@ -1709,7 +1739,7 @@ private:
             if (negative) float_value = -float_value;
             return make_unique<FloatExpr>(loc, float_value);
         }
-        
+
         return nullptr;
     }
 
@@ -2315,26 +2345,26 @@ private:
         // To distinguish between module import and function import:
         // - Module import: import Module\Name [as alias] in ...
         // - Function import: import func1, func2 from Module\Name in ...
-        
+
         // We need to look ahead for 'from' keyword to determine if this is a function import
         int lookahead = current_;
         int depth = 0;
-        
+
         while (lookahead < tokens_.size() && depth < 10) {
             TokenType type = tokens_[lookahead].type;
-            
+
             // If we find 'from', this is a function import, not module import
             if (type == TokenType::YFROM) {
                 return false;
             }
-            
+
             // If we find 'in', we've gone too far - this must be a module import
             if (type == TokenType::YIN) {
                 break;
             }
-            
+
             // Skip over expected tokens in import clause
-            if (type == TokenType::YIDENTIFIER || type == TokenType::YBACKSLASH || 
+            if (type == TokenType::YIDENTIFIER || type == TokenType::YBACKSLASH ||
                 type == TokenType::YAS || type == TokenType::YCOMMA) {
                 lookahead++;
                 depth++;
@@ -2342,15 +2372,15 @@ private:
                 break;
             }
         }
-        
+
         // If we have an identifier possibly followed by backslash, it could be FQN
         if (!check(TokenType::YIDENTIFIER)) return false;
-        
+
         // Check if next token suggests FQN
         if (current_ + 1 < tokens_.size()) {
             return tokens_[current_ + 1].type == TokenType::YBACKSLASH;
         }
-        
+
         // Single identifier - could be module name if no 'from' found
         return true;
     }
@@ -2505,14 +2535,17 @@ ParseResult Parser::parse_input(istream& stream) {
         auto result = parse_expression(source, "<stream>");
 
         if (result) {
-            auto& expr = result.value();
             auto ast_ctx = AstContext();
 
-            // Wrap expression in MainNode for interpreter
-            auto main_node = make_unique<MainNode>(expr->source_context, expr.release());
+            // Extract the expression and its context before moving
+            auto expr_ptr = result.value().release();
+            auto source_ctx = expr_ptr->source_context;
 
-            // Convert unique_ptr to shared_ptr for legacy interface
-            shared_ptr<AstNode> node(main_node.release());
+            // Wrap expression in MainNode for interpreter
+            auto main_node = new MainNode(source_ctx, expr_ptr);
+
+            // Create shared_ptr directly
+            shared_ptr<AstNode> node(main_node);
             return ParseResult{!ast_ctx.hasErrors(), node, nullptr, ast_ctx};
         } else {
             // Convert parse errors to AstContext errors

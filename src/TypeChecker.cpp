@@ -104,7 +104,7 @@ Type TypeChecker::check(AstNode* node) const {
     // Extract Type from any
     try {
         return any_cast<Type>(result);
-    } catch (const bad_any_cast& e) {
+    } catch (const bad_any_cast&) {
         context.add_error(node->source_context,
                          "Internal error: visitor did not return Type");
         return Type(nullptr);

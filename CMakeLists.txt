@@ -5,13 +5,15 @@ cmake_minimum_required(VERSION 3.10..4.0)
 
 # Set policy for MSVC runtime library selection
 if(POLICY CMP0091)
-    cmake_policy(SET CMP0091 NEW)
+	cmake_policy(SET CMP0091 NEW)
 endif()
 
 if(POLICY CMP0135)
 	cmake_policy(SET CMP0135 NEW)
 	set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 endif()
+
+cmake_policy(SET CMP0167 NEW)
 
 project(YONAC_LLVM LANGUAGES CXX C)
 
@@ -31,38 +33,18 @@ set(YONAC_LLVM_VERSION_STRING "${VERSION_STRING}")
 
 # Configure version header
 configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/include/version.h"
-    @ONLY
+	"${CMAKE_CURRENT_SOURCE_DIR}/include/version.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/include/version.h"
+	@ONLY
 )
-
-# Platform-specific compiler settings
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT WIN32)
-    # Use libc++ on non-Windows platforms with Clang
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -stdlib=libc++")
-
-    # Use lld linker for faster linking
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
-
-    # On Linux, we need to link against libc++abi
-    if(UNIX AND NOT APPLE)
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++abi")
-        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -lc++abi")
-    endif()
-endif()
-
-cmake_policy(SET CMP0167 NEW)
 
 include(FetchContent)
 
 FetchContent_Declare(
-    cli11
-    QUIET
-    GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-    GIT_TAG v2.5.0
+	cli11
+	QUIET
+	GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+	GIT_TAG v2.5.0
 )
 
 FetchContent_MakeAvailable(cli11)
@@ -81,27 +63,27 @@ add_definitions(${LLVM_DEFINITIONS_LIST})
 #set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 
 file(GLOB all_lib_SRCS
-        "${PROJECT_SOURCE_DIR}/include/*.h"
-        "${PROJECT_SOURCE_DIR}/src/*.cpp"
-        "${PROJECT_SOURCE_DIR}/src/*.c"
+		"${PROJECT_SOURCE_DIR}/include/*.h"
+		"${PROJECT_SOURCE_DIR}/src/*.cpp"
+		"${PROJECT_SOURCE_DIR}/src/*.c"
 )
 
 file(GLOB all_TESTS
-        "${PROJECT_SOURCE_DIR}/test/*.h"
-        "${PROJECT_SOURCE_DIR}/test/*.cpp"
-        "${PROJECT_SOURCE_DIR}/test/*.c"
+		"${PROJECT_SOURCE_DIR}/test/*.h"
+		"${PROJECT_SOURCE_DIR}/test/*.cpp"
+		"${PROJECT_SOURCE_DIR}/test/*.c"
 )
 
 file(GLOB all_repl_SRCS
-        "${PROJECT_SOURCE_DIR}/include/*.h"
-        "${PROJECT_SOURCE_DIR}/repl/*.cpp"
-        "${PROJECT_SOURCE_DIR}/repl/*.c"
+		"${PROJECT_SOURCE_DIR}/include/*.h"
+		"${PROJECT_SOURCE_DIR}/repl/*.cpp"
+		"${PROJECT_SOURCE_DIR}/repl/*.c"
 )
 
 file(GLOB all_yonac_SRCS
-        "${PROJECT_SOURCE_DIR}/include/*.h"
-        "${PROJECT_SOURCE_DIR}/cli/*.cpp"
-        "${PROJECT_SOURCE_DIR}/cli/*.c"
+		"${PROJECT_SOURCE_DIR}/include/*.h"
+		"${PROJECT_SOURCE_DIR}/cli/*.cpp"
+		"${PROJECT_SOURCE_DIR}/cli/*.c"
 )
 
 # Add source to this project's executable.
@@ -118,11 +100,11 @@ target_link_libraries(yona_lib PRIVATE ${llvm_libs})
 
 # For DLL builds on Windows, we need to export symbols
 if(WIN32)
-    set_target_properties(yona_lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+	set_target_properties(yona_lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
-    set_property(TARGET yona_lib PROPERTY CXX_STANDARD 23)
+	set_property(TARGET yona_lib PROPERTY CXX_STANDARD 23)
 endif ()
 
 # REPL executable
@@ -135,26 +117,30 @@ target_link_libraries(yona PRIVATE yona_lib CLI11::CLI11)
 add_executable(yonac ${all_yonac_SRCS})
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11 ${llvm_libs})
+target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
 
 enable_testing()
 
 FetchContent_Declare(
-  googletest
-  URL https://github.com/google/googletest/releases/download/v1.17.0/googletest-1.17.0.tar.gz
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.8.1
 )
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
 
-include(GoogleTest)
+FetchContent_MakeAvailable(Catch2)
 
 add_executable(
-        tests
-        ${all_TESTS}
+		tests
+		${all_TESTS}
 )
-target_link_libraries(tests PRIVATE yona_lib GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+# We provide our own main for consistency across all platforms
+target_sources(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/catch_main.cpp)
+target_link_libraries(tests PRIVATE Catch2::Catch2 yona_lib)
+
+# Include Catch2's cmake integration AFTER defining the test executable
+include(CTest)
+include(Catch)
+catch_discover_tests(tests)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-
-gtest_discover_tests(tests)

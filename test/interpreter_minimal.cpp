@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "ast.h"
 
@@ -10,7 +10,7 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
-TEST(InterpreterMinimalTest, DirectASTTest) {
+TEST_CASE("DirectASTTest", "[InterpreterMinimalTest]") {
     // Create AST nodes directly without parsing
     auto left = new IntegerExpr(TestSrcCtx, 10);
     auto right = new IntegerExpr(TestSrcCtx, 20);
@@ -23,31 +23,31 @@ TEST(InterpreterMinimalTest, DirectASTTest) {
     // Execute
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 30);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 30);
 }
 
-TEST(InterpreterMinimalTest, IntegerLiteralTest) {
+TEST_CASE("IntegerLiteralTest", "[InterpreterMinimalTest]") {
     auto integer = make_unique<IntegerExpr>(TestSrcCtx, 42);
     Interpreter interpreter;
 
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(integer.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 42);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 42);
 }
 
-TEST(InterpreterMinimalTest, BooleanLiteralTest) {
+TEST_CASE("BooleanLiteralTest", "[InterpreterMinimalTest]") {
     auto true_lit = make_unique<TrueLiteralExpr>(TestSrcCtx);
     Interpreter interpreter;
 
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(true_lit.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Bool);
-    EXPECT_TRUE(result->get<bool>());
+    CHECK(result->type == yona::interp::runtime::Bool);
+    CHECK(result->get<bool>());
 }
 
-TEST(InterpreterMinimalTest, ComparisonTest) {
+TEST_CASE("ComparisonTest", "[InterpreterMinimalTest]") {
     auto left = new IntegerExpr(TestSrcCtx, 10);
     auto right = new IntegerExpr(TestSrcCtx, 10);
     auto eq = new EqExpr(TestSrcCtx, left, right);
@@ -56,11 +56,11 @@ TEST(InterpreterMinimalTest, ComparisonTest) {
     Interpreter interpreter;
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Bool);
-    EXPECT_TRUE(result->get<bool>());
+    CHECK(result->type == yona::interp::runtime::Bool);
+    CHECK(result->get<bool>());
 }
 
-TEST(InterpreterMinimalTest, IfExpressionTest) {
+TEST_CASE("IfExpressionTest", "[InterpreterMinimalTest]") {
     auto condition = new TrueLiteralExpr(TestSrcCtx);
     auto then_expr = new IntegerExpr(TestSrcCtx, 100);
     auto else_expr = new IntegerExpr(TestSrcCtx, 200);
@@ -70,6 +70,6 @@ TEST(InterpreterMinimalTest, IfExpressionTest) {
     Interpreter interpreter;
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 100);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 100);
 }

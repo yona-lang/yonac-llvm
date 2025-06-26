@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include <algorithm>
 #include "Interpreter.h"
 #include "ast.h"
@@ -11,7 +11,7 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
-TEST(InterpreterGeneratorTest, SeqGeneratorTest) {
+TEST_CASE("SeqGeneratorTest", "[InterpreterGeneratorTest]") {
     // Create a source sequence [1, 2, 3]
     vector<ExprNode*> seq_values;
     seq_values.push_back(new IntegerExpr(TestSrcCtx, 1));
@@ -36,15 +36,15 @@ TEST(InterpreterGeneratorTest, SeqGeneratorTest) {
     Interpreter interpreter;
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Seq);
+    CHECK(result->type == yona::interp::runtime::Seq);
     auto result_seq = result->get<shared_ptr<SeqValue>>();
-    ASSERT_EQ(result_seq->fields.size(), 3);
-    EXPECT_EQ(result_seq->fields[0]->get<int>(), 2);
-    EXPECT_EQ(result_seq->fields[1]->get<int>(), 4);
-    EXPECT_EQ(result_seq->fields[2]->get<int>(), 6);
+    REQUIRE(result_seq->fields.size() == 3);
+    CHECK(result_seq->fields[0]->get<int>() == 2);
+    CHECK(result_seq->fields[1]->get<int>() == 4);
+    CHECK(result_seq->fields[2]->get<int>() == 6);
 }
 
-TEST(InterpreterGeneratorTest, SetGeneratorTest) {
+TEST_CASE("SetGeneratorTest", "[InterpreterGeneratorTest]") {
     // Create a source set {1, 2, 3}
     vector<ExprNode*> set_values;
     set_values.push_back(new IntegerExpr(TestSrcCtx, 1));
@@ -69,9 +69,9 @@ TEST(InterpreterGeneratorTest, SetGeneratorTest) {
     Interpreter interpreter;
     auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Set);
+    CHECK(result->type == yona::interp::runtime::Set);
     auto result_set = result->get<shared_ptr<SetValue>>();
-    ASSERT_EQ(result_set->fields.size(), 3);
+    REQUIRE(result_set->fields.size() == 3);
 
     // Check that the set contains the expected values (order doesn't matter in sets)
     vector<int> values;
@@ -79,7 +79,7 @@ TEST(InterpreterGeneratorTest, SetGeneratorTest) {
         values.push_back(field->get<int>());
     }
     sort(values.begin(), values.end());
-    EXPECT_EQ(values[0], 11);
-    EXPECT_EQ(values[1], 12);
-    EXPECT_EQ(values[2], 13);
+    CHECK(values[0] == 11);
+    CHECK(values[1] == 12);
+    CHECK(values[2] == 13);
 }

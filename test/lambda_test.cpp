@@ -1,7 +1,8 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
+#include <iostream>
 
 using namespace yona;
 using namespace yona::ast;
@@ -9,7 +10,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST(LambdaTest, SimpleLambda) {
+TEST_CASE("SimpleLambda", "[LambdaTest]") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -22,19 +23,19 @@ TEST(LambdaTest, SimpleLambda) {
                 std::cerr << "Parse error: " << error->what() << std::endl;
             }
         }
-        FAIL() << "Parse failed";
+        FAIL("Parse failed");
     }
 
     // MainNode wraps the expression
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Function);
+    CHECK(result->type == yona::interp::runtime::Function);
 }
 
-TEST(LambdaTest, LambdaApplication) {
+TEST_CASE("LambdaApplication", "[LambdaTest]") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -47,14 +48,14 @@ TEST(LambdaTest, LambdaApplication) {
                 std::cerr << "Parse error: " << error->what() << std::endl;
             }
         }
-        FAIL() << "Parse failed";
+        FAIL("Parse failed");
     }
 
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 6);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 6);
 }

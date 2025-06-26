@@ -1,8 +1,7 @@
-#include <catch2/catch_test_macros.hpp>
+#include <gtest/gtest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
-#include <iostream>
 
 using namespace yona;
 using namespace yona::ast;
@@ -11,7 +10,7 @@ using namespace yona::interp::runtime;
 using namespace std;
 
 
-TEST_CASE("IdentityLambda", "[IdentityTest]") {
+TEST(IdentityTest, IdentityLambda) {
     std::cerr << "TEST: Starting IdentityLambda test" << std::endl;
     parser::Parser parser;
     Interpreter interp;
@@ -29,12 +28,12 @@ TEST_CASE("IdentityLambda", "[IdentityTest]") {
                 std::cerr << "Parse error: " << error->what() << std::endl;
             }
         }
-        FAIL("Parse failed");
+        FAIL() << "Parse failed";
     }
 
     std::cerr << "TEST: Checking for MainNode" << std::endl;
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    REQUIRE(main != nullptr);
+    ASSERT_NE(main, nullptr);
 
     std::cerr << "TEST: Calling interpreter" << std::endl;
     std::cerr << "TEST: About to call interp.visit(main)" << std::endl;
@@ -47,10 +46,10 @@ TEST_CASE("IdentityLambda", "[IdentityTest]") {
         std::cerr << "TEST: Interpreter returned" << std::endl;
 
         // The result should be an integer 42
-        CHECK(result->type == yona::interp::runtime::Int);
-        CHECK(result->get<int>() == 42);
+        EXPECT_EQ(result->type, yona::interp::runtime::Int);
+        EXPECT_EQ(result->get<int>(), 42);
     } catch (const std::exception& e) {
         std::cerr << "TEST: Exception caught: " << e.what() << std::endl;
-        FAIL("Exception: " << e.what());
+        FAIL() << "Exception: " << e.what();
     }
 }

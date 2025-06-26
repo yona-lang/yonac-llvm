@@ -155,6 +155,10 @@ struct ModuleValue {
   // Export table: maps exported names to functions (this is the only function storage)
   unordered_map<string, shared_ptr<FunctionValue>> exports;
 
+  // Keep the AST alive as long as the module is alive
+  // This is needed because functions capture pointers to AST nodes
+  shared_ptr<void> ast_keeper;
+
   // Module source file path (for debugging and reloading)
   string source_path;
 

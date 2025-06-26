@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -10,7 +10,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST(LetWithFunctionTest, LetWithLambda) {
+TEST_CASE("LetWithLambda", "[LetWithFunctionTest]") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -19,23 +19,23 @@ TEST(LetWithFunctionTest, LetWithLambda) {
     cout << "Parsing: " << ss.str() << endl;
     auto parse_result = parser.parse_input(ss);
 
-    ASSERT_TRUE(parse_result.success);
-    ASSERT_NE(parse_result.node, nullptr);
+    REQUIRE(parse_result.success);
+    REQUIRE(parse_result.node != nullptr);
 
     cout << "AST: " << *parse_result.node << endl;
 
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     cout << "About to evaluate..." << endl;
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
     cout << "Evaluation complete" << endl;
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 42);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 42);
 }
 
-TEST(LetWithFunctionTest, NestedLets) {
+TEST_CASE("NestedLets", "[LetWithFunctionTest]") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -44,23 +44,23 @@ TEST(LetWithFunctionTest, NestedLets) {
     cout << "Parsing: " << ss.str() << endl;
     auto parse_result = parser.parse_input(ss);
 
-    ASSERT_TRUE(parse_result.success);
-    ASSERT_NE(parse_result.node, nullptr);
+    REQUIRE(parse_result.success);
+    REQUIRE(parse_result.node != nullptr);
 
     cout << "AST: " << *parse_result.node << endl;
 
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     cout << "About to evaluate..." << endl;
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
     cout << "Evaluation complete" << endl;
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 8);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 8);
 }
 
-TEST(LetWithFunctionTest, SimpleCurryingWithLet) {
+TEST_CASE("SimpleCurryingWithLet", "[LetWithFunctionTest]") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -69,18 +69,18 @@ TEST(LetWithFunctionTest, SimpleCurryingWithLet) {
     cout << "Parsing: " << ss.str() << endl;
     auto parse_result = parser.parse_input(ss);
 
-    ASSERT_TRUE(parse_result.success);
-    ASSERT_NE(parse_result.node, nullptr);
+    REQUIRE(parse_result.success);
+    REQUIRE(parse_result.node != nullptr);
 
     cout << "AST: " << *parse_result.node << endl;
 
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    ASSERT_NE(main, nullptr);
+    REQUIRE(main != nullptr);
 
     cout << "About to evaluate..." << endl;
     auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
     cout << "Evaluation complete" << endl;
 
-    EXPECT_EQ(result->type, yona::interp::runtime::Int);
-    EXPECT_EQ(result->get<int>(), 8);
+    CHECK(result->type == yona::interp::runtime::Int);
+    CHECK(result->get<int>() == 8);
 }

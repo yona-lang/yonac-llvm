@@ -1,4 +1,4 @@
-#include <gtest/gtest.h>
+#include <catch2/catch_test_macros.hpp>
 #include "Parser.h"
 #include "ast.h"
 #include <iostream>
@@ -67,14 +67,14 @@ void trace_ast(AstNode* node, int depth = 0, set<AstNode*>* visited = nullptr) {
     }
 }
 
-TEST(TraceLetParse, LetWithLambda) {
+TEST_CASE("LetWithLambda", "[TraceLetParse]") {
     Parser parser;
 
     stringstream ss("let f = \\(x) -> x in f(42)");
     cout << "Parsing: " << ss.str() << endl;
     auto parse_result = parser.parse_input(ss);
 
-    ASSERT_TRUE(parse_result.success);
+    REQUIRE(parse_result.success);
 
     cout << "\nTracing AST structure:" << endl;
     trace_ast(parse_result.node.get());
