@@ -99,16 +99,7 @@ Type TypeChecker::check(AstNode* node) const {
         return Type(nullptr);
     }
 
-    auto result = node->accept(*this);
-
-    // Extract Type from any
-    try {
-        return any_cast<Type>(result);
-    } catch (const bad_any_cast&) {
-        context.add_error(node->source_context,
-                         "Internal error: visitor did not return Type");
-        return Type(nullptr);
-    }
+    return node->accept(*this);
 }
 
 void TypeChecker::import_module_types(const string& module_name,
@@ -215,44 +206,44 @@ Type TypeChecker::generalize(const Type& type, const TypeEnvironment& env) const
 }
 
 // Visitor implementations for literals
-any TypeChecker::visit(IntegerExpr *node) const {
+Type TypeChecker::visit(IntegerExpr *node) const {
     return Type(compiler::types::SignedInt64);
 }
 
-any TypeChecker::visit(FloatExpr *node) const {
+Type TypeChecker::visit(FloatExpr *node) const {
     return Type(compiler::types::Float64);
 }
 
-any TypeChecker::visit(ByteExpr *node) const {
+Type TypeChecker::visit(ByteExpr *node) const {
     return Type(compiler::types::Byte);
 }
 
-any TypeChecker::visit(CharacterExpr *node) const {
+Type TypeChecker::visit(CharacterExpr *node) const {
     return Type(compiler::types::Char);
 }
 
-any TypeChecker::visit(StringExpr *node) const {
+Type TypeChecker::visit(StringExpr *node) const {
     return Type(compiler::types::String);
 }
 
-any TypeChecker::visit(TrueLiteralExpr *node) const {
+Type TypeChecker::visit(TrueLiteralExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(FalseLiteralExpr *node) const {
+Type TypeChecker::visit(FalseLiteralExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(UnitExpr *node) const {
+Type TypeChecker::visit(UnitExpr *node) const {
     return Type(compiler::types::Unit);
 }
 
-any TypeChecker::visit(SymbolExpr *node) const {
+Type TypeChecker::visit(SymbolExpr *node) const {
     return Type(compiler::types::Symbol);
 }
 
 // Visitor for identifiers
-any TypeChecker::visit(IdentifierExpr *node) const {
+Type TypeChecker::visit(IdentifierExpr *node) const {
     if (!node->name) {
         context.add_error(node->source_context,
                          "Identifier has no name");
@@ -272,7 +263,7 @@ any TypeChecker::visit(IdentifierExpr *node) const {
 }
 
 // Visitor for collections
-any TypeChecker::visit(TupleExpr *node) const {
+Type TypeChecker::visit(TupleExpr *node) const {
     auto product = make_shared<ProductType>();
 
     for (auto* expr : node->values) {
@@ -283,7 +274,7 @@ any TypeChecker::visit(TupleExpr *node) const {
     return Type(product);
 }
 
-any TypeChecker::visit(ValuesSequenceExpr *node) const {
+Type TypeChecker::visit(ValuesSequenceExpr *node) const {
     if (!node->values.empty()) {
         // Infer element type from first element
         Type elem_type = check(node->values[0]);
@@ -317,7 +308,7 @@ any TypeChecker::visit(ValuesSequenceExpr *node) const {
     return Type(seq_type);
 }
 
-any TypeChecker::visit(SetExpr *node) const {
+Type TypeChecker::visit(SetExpr *node) const {
     if (!node->values.empty()) {
         // Infer element type from first element
         Type elem_type = check(node->values[0]);
@@ -351,7 +342,7 @@ any TypeChecker::visit(SetExpr *node) const {
     return Type(set_type);
 }
 
-any TypeChecker::visit(DictExpr *node) const {
+Type TypeChecker::visit(DictExpr *node) const {
     if (!node->values.empty()) {
         // Infer key and value types from first pair
         Type key_type = check(node->values[0].first);
@@ -401,7 +392,7 @@ any TypeChecker::visit(DictExpr *node) const {
 }
 
 // Binary operators
-any TypeChecker::visit(AddExpr *node) const {
+Type TypeChecker::visit(AddExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -422,7 +413,7 @@ any TypeChecker::visit(AddExpr *node) const {
     return Type(nullptr);
 }
 
-any TypeChecker::visit(SubtractExpr *node) const {
+Type TypeChecker::visit(SubtractExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -435,7 +426,7 @@ any TypeChecker::visit(SubtractExpr *node) const {
     return derive_bin_op_result_type(left_type, right_type);
 }
 
-any TypeChecker::visit(MultiplyExpr *node) const {
+Type TypeChecker::visit(MultiplyExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -448,7 +439,7 @@ any TypeChecker::visit(MultiplyExpr *node) const {
     return derive_bin_op_result_type(left_type, right_type);
 }
 
-any TypeChecker::visit(DivideExpr *node) const {
+Type TypeChecker::visit(DivideExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -462,7 +453,7 @@ any TypeChecker::visit(DivideExpr *node) const {
     return Type(compiler::types::Float64);
 }
 
-any TypeChecker::visit(ModuloExpr *node) const {
+Type TypeChecker::visit(ModuloExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -475,7 +466,7 @@ any TypeChecker::visit(ModuloExpr *node) const {
     return derive_bin_op_result_type(left_type, right_type);
 }
 
-any TypeChecker::visit(PowerExpr *node) const {
+Type TypeChecker::visit(PowerExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -490,7 +481,7 @@ any TypeChecker::visit(PowerExpr *node) const {
 }
 
 // Comparison operators
-any TypeChecker::visit(EqExpr *node) const {
+Type TypeChecker::visit(EqExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -503,7 +494,7 @@ any TypeChecker::visit(EqExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(NeqExpr *node) const {
+Type TypeChecker::visit(NeqExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -516,7 +507,7 @@ any TypeChecker::visit(NeqExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(LtExpr *node) const {
+Type TypeChecker::visit(LtExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -528,7 +519,7 @@ any TypeChecker::visit(LtExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(GtExpr *node) const {
+Type TypeChecker::visit(GtExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -540,7 +531,7 @@ any TypeChecker::visit(GtExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(LteExpr *node) const {
+Type TypeChecker::visit(LteExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -552,7 +543,7 @@ any TypeChecker::visit(LteExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(GteExpr *node) const {
+Type TypeChecker::visit(GteExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -565,7 +556,7 @@ any TypeChecker::visit(GteExpr *node) const {
 }
 
 // Logical operators
-any TypeChecker::visit(LogicalAndExpr *node) const {
+Type TypeChecker::visit(LogicalAndExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -578,7 +569,7 @@ any TypeChecker::visit(LogicalAndExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(LogicalOrExpr *node) const {
+Type TypeChecker::visit(LogicalOrExpr *node) const {
     Type left_type = check(node->left);
     Type right_type = check(node->right);
 
@@ -591,7 +582,7 @@ any TypeChecker::visit(LogicalOrExpr *node) const {
     return Type(compiler::types::Bool);
 }
 
-any TypeChecker::visit(LogicalNotOpExpr *node) const {
+Type TypeChecker::visit(LogicalNotOpExpr *node) const {
     Type operand_type = check(node->expr);
 
     if (!holds_alternative<BuiltinType>(operand_type) || get<BuiltinType>(operand_type) != compiler::types::Bool) {
@@ -603,7 +594,7 @@ any TypeChecker::visit(LogicalNotOpExpr *node) const {
 }
 
 // Control flow
-any TypeChecker::visit(IfExpr *node) const {
+Type TypeChecker::visit(IfExpr *node) const {
     Type cond_type = check(node->condition);
 
     if (!holds_alternative<BuiltinType>(cond_type) || get<BuiltinType>(cond_type) != compiler::types::Bool) {
@@ -624,7 +615,7 @@ any TypeChecker::visit(IfExpr *node) const {
     return unif_result.substitution.apply(then_type);
 }
 
-any TypeChecker::visit(LetExpr *node) const {
+Type TypeChecker::visit(LetExpr *node) const {
     // Create new environment for let bindings
     auto new_env = env->extend();
 
@@ -655,7 +646,7 @@ any TypeChecker::visit(LetExpr *node) const {
     return body_type;
 }
 
-any TypeChecker::visit(DoExpr *node) const {
+Type TypeChecker::visit(DoExpr *node) const {
     Type result_type = Type(compiler::types::Unit);
 
     for (auto* expr : node->steps) {
@@ -666,7 +657,7 @@ any TypeChecker::visit(DoExpr *node) const {
 }
 
 // Function-related
-any TypeChecker::visit(FunctionExpr *node) const {
+Type TypeChecker::visit(FunctionExpr *node) const {
     // TODO: Implement function type inference
     // This requires pattern matching and multiple clauses
     auto var = context.fresh_type_var();
@@ -676,7 +667,7 @@ any TypeChecker::visit(FunctionExpr *node) const {
     return Type(type_name);
 }
 
-any TypeChecker::visit(ApplyExpr *node) const {
+Type TypeChecker::visit(ApplyExpr *node) const {
     // Type check the function
     Type func_type = check(node->call);
 
@@ -698,7 +689,7 @@ any TypeChecker::visit(ApplyExpr *node) const {
     return Type(result_type);
 }
 
-any TypeChecker::visit(RecordInstanceExpr *node) const {
+Type TypeChecker::visit(RecordInstanceExpr *node) const {
     // Look up record type
     string record_name = node->recordType->value;
 
@@ -758,7 +749,7 @@ any TypeChecker::visit(RecordInstanceExpr *node) const {
 }
 
 // Pattern matching
-any TypeChecker::visit(CaseExpr *node) const {
+Type TypeChecker::visit(CaseExpr *node) const {
     Type scrutinee_type = check(node->expr);
 
     // Check all clauses and ensure they have the same type
@@ -779,7 +770,7 @@ any TypeChecker::visit(CaseExpr *node) const {
     return result_type.value_or(Type(compiler::types::Unit));
 }
 
-any TypeChecker::visit(CaseClause *node) const {
+Type TypeChecker::visit(CaseClause *node) const {
     // This method should not be called directly - CaseClause is handled within CaseExpr
     // But if it is called, just return a type variable
     auto var = context.fresh_type_var();
@@ -796,7 +787,7 @@ Type TypeChecker::infer_pattern_type(PatternNode* pattern, const Type& scrutinee
 }
 
 // Exception handling
-any TypeChecker::visit(RaiseExpr *node) const {
+Type TypeChecker::visit(RaiseExpr *node) const {
     // Type check the symbol and message
     if (node->symbol) check(node->symbol);
     if (node->message) check(node->message);
@@ -809,7 +800,7 @@ any TypeChecker::visit(RaiseExpr *node) const {
     return Type(type_name);
 }
 
-any TypeChecker::visit(TryCatchExpr *node) const {
+Type TypeChecker::visit(TryCatchExpr *node) const {
     Type try_type = check(node->tryExpr);
 
     // TODO: Implement proper try-catch type checking
@@ -822,7 +813,7 @@ any TypeChecker::visit(TryCatchExpr *node) const {
 }
 
 // Module system
-any TypeChecker::visit(ImportExpr *node) const {
+Type TypeChecker::visit(ImportExpr *node) const {
     // Process imports but don't change the type
     if (node->expr) {
         return check(node->expr);
@@ -830,7 +821,7 @@ any TypeChecker::visit(ImportExpr *node) const {
     return Type(compiler::types::Unit);
 }
 
-any TypeChecker::visit(ModuleExpr *node) const {
+Type TypeChecker::visit(ModuleExpr *node) const {
     // Type check all functions in module
     for (auto* func : node->functions) {
         check(func);
@@ -865,7 +856,7 @@ any TypeChecker::visit(ModuleExpr *node) const {
 }
 
 // With expressions
-any TypeChecker::visit(WithExpr *node) const {
+Type TypeChecker::visit(WithExpr *node) const {
     // Type check context expression
     if (node->contextExpr) {
         check(node->contextExpr);
@@ -876,17 +867,17 @@ any TypeChecker::visit(WithExpr *node) const {
 }
 
 // Alias implementations
-any TypeChecker::visit(ValueAlias *node) const {
+Type TypeChecker::visit(ValueAlias *node) const {
     // Type check the expression being bound
     return check(node->expr);
 }
 
-any TypeChecker::visit(LambdaAlias *node) const {
+Type TypeChecker::visit(LambdaAlias *node) const {
     // Type check the lambda function
     return check(node->lambda);
 }
 
-any TypeChecker::visit(PatternAlias *node) const {
+Type TypeChecker::visit(PatternAlias *node) const {
     // Type check the expression being matched
     Type expr_type = check(node->expr);
     // TODO: Type check pattern against expression type
@@ -894,7 +885,7 @@ any TypeChecker::visit(PatternAlias *node) const {
 }
 
 // Default implementations that need to be overridden
-any TypeChecker::visit(ExprNode *node) const {
+Type TypeChecker::visit(ExprNode *node) const {
     context.add_error(node->source_context,
                      "Unhandled expression type in type checker");
     return Type(nullptr);

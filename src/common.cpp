@@ -5,8 +5,6 @@
 namespace yona {
 template <typename T> void Frame<T>::write(const string &name, T value) { locals_[name] = std::move(value); }
 
-template <typename T> void Frame<T>::write(const string &name, any value) { write(name, any_cast<T>(value)); }
-
 template <typename T> T Frame<T>::lookup(SourceInfo source_token, const string &name) {
   auto value = try_lookup(source_token, name);
   if (value.has_value()) {

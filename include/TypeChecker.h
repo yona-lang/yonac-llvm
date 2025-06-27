@@ -113,7 +113,7 @@ struct UnificationResult {
 };
 
 // Main type checker class
-class TypeChecker : public AstVisitor {
+class YONA_API TypeChecker : public AstVisitor<Type> {
 private:
     mutable shared_ptr<TypeEnvironment> env;
     TypeInferenceContext& context;
@@ -143,132 +143,133 @@ public:
                            const unordered_map<string, Type>& exports);
 
     // Visitor methods for type inference
-    any visit(ExprNode *node) const override;
-    any visit(IntegerExpr *node) const override;
-    any visit(FloatExpr *node) const override;
-    any visit(ByteExpr *node) const override;
-    any visit(CharacterExpr *node) const override;
-    any visit(StringExpr *node) const override;
-    any visit(TrueLiteralExpr *node) const override;
-    any visit(FalseLiteralExpr *node) const override;
-    any visit(UnitExpr *node) const override;
-    any visit(SymbolExpr *node) const override;
-    any visit(IdentifierExpr *node) const override;
-    any visit(TupleExpr *node) const override;
-    any visit(ValuesSequenceExpr *node) const override;
-    any visit(SetExpr *node) const override;
-    any visit(DictExpr *node) const override;
-    any visit(RecordInstanceExpr *node) const override;
-    any visit(FunctionExpr *node) const override;
-    any visit(ApplyExpr *node) const override;
-    any visit(LetExpr *node) const override;
-    any visit(IfExpr *node) const override;
-    any visit(CaseExpr *node) const override;
-    any visit(CaseClause *node) const override;
-    any visit(RaiseExpr *node) const override;
-    any visit(TryCatchExpr *node) const override;
-    any visit(WithExpr *node) const override;
-    any visit(DoExpr *node) const override;
-    any visit(ImportExpr *node) const override;
-    any visit(ModuleExpr *node) const override;
+    Type visit(ExprNode *node) const override;
+    Type visit(IntegerExpr *node) const override;
+    Type visit(FloatExpr *node) const override;
+    Type visit(ByteExpr *node) const override;
+    Type visit(CharacterExpr *node) const override;
+    Type visit(StringExpr *node) const override;
+    Type visit(TrueLiteralExpr *node) const override;
+    Type visit(FalseLiteralExpr *node) const override;
+    Type visit(UnitExpr *node) const override;
+    Type visit(SymbolExpr *node) const override;
+    Type visit(IdentifierExpr *node) const override;
+    Type visit(TupleExpr *node) const override;
+    Type visit(ValuesSequenceExpr *node) const override;
+    Type visit(SetExpr *node) const override;
+    Type visit(DictExpr *node) const override;
+    Type visit(RecordInstanceExpr *node) const override;
+    Type visit(FunctionExpr *node) const override;
+    Type visit(ApplyExpr *node) const override;
+    Type visit(LetExpr *node) const override;
+    Type visit(IfExpr *node) const override;
+    Type visit(CaseExpr *node) const override;
+    Type visit(CaseClause *node) const override;
+    Type visit(RaiseExpr *node) const override;
+    Type visit(TryCatchExpr *node) const override;
+    Type visit(WithExpr *node) const override;
+    Type visit(DoExpr *node) const override;
+    Type visit(ImportExpr *node) const override;
+    Type visit(ModuleExpr *node) const override;
 
     // Binary operators
-    any visit(AddExpr *node) const override;
-    any visit(SubtractExpr *node) const override;
-    any visit(MultiplyExpr *node) const override;
-    any visit(DivideExpr *node) const override;
-    any visit(ModuloExpr *node) const override;
-    any visit(PowerExpr *node) const override;
-    any visit(EqExpr *node) const override;
-    any visit(NeqExpr *node) const override;
-    any visit(LtExpr *node) const override;
-    any visit(GtExpr *node) const override;
-    any visit(LteExpr *node) const override;
-    any visit(GteExpr *node) const override;
-    any visit(LogicalAndExpr *node) const override;
-    any visit(LogicalOrExpr *node) const override;
-    any visit(LogicalNotOpExpr *node) const override;
+    Type visit(AddExpr *node) const override;
+    Type visit(SubtractExpr *node) const override;
+    Type visit(MultiplyExpr *node) const override;
+    Type visit(DivideExpr *node) const override;
+    Type visit(ModuloExpr *node) const override;
+    Type visit(PowerExpr *node) const override;
+    Type visit(EqExpr *node) const override;
+    Type visit(NeqExpr *node) const override;
+    Type visit(LtExpr *node) const override;
+    Type visit(GtExpr *node) const override;
+    Type visit(LteExpr *node) const override;
+    Type visit(GteExpr *node) const override;
+    Type visit(LogicalAndExpr *node) const override;
+    Type visit(LogicalOrExpr *node) const override;
+    Type visit(LogicalNotOpExpr *node) const override;
 
 
     // Missing visitor methods
-    any visit(DictGeneratorExpr *node) const override { return Type(nullptr); }
-    any visit(FieldAccessExpr *node) const override { return Type(nullptr); }
-    any visit(RecordNode *node) const override { return Type(nullptr); }
-    any visit(SeqGeneratorExpr *node) const override { return Type(nullptr); }
-    any visit(SetGeneratorExpr *node) const override { return Type(nullptr); }
+    Type visit(DictGeneratorExpr *node) const override { return Type(nullptr); }
+    Type visit(FieldAccessExpr *node) const override { return Type(nullptr); }
+    Type visit(RecordNode *node) const override { return Type(nullptr); }
+    Type visit(SeqGeneratorExpr *node) const override { return Type(nullptr); }
+    Type visit(SetGeneratorExpr *node) const override { return Type(nullptr); }
 
     // Other visitor methods (can be left as default for now)
-    any visit(AstNode *node) const override { return Type(nullptr); }
-    any visit(PatternNode *node) const override { return Type(nullptr); }
-    any visit(UnderscoreNode *node) const override { return Type(nullptr); }
-    any visit(ValueExpr *node) const override { return Type(nullptr); }
-    any visit(ScopedNode *node) const override { return Type(nullptr); }
-    any visit(OpExpr *node) const override { return Type(nullptr); }
-    any visit(BinaryOpExpr *node) const override { return Type(nullptr); }
-    any visit(AliasExpr *node) const override { return Type(nullptr); }
-    any visit(CallExpr *node) const override { return Type(nullptr); }
-    any visit(ImportClauseExpr *node) const override { return Type(nullptr); }
-    any visit(GeneratorExpr *node) const override { return Type(nullptr); }
-    any visit(CollectionExtractorExpr *node) const override { return Type(nullptr); }
-    any visit(FunctionBody *node) const override { return Type(nullptr); }
-    any visit(NameExpr *node) const override { return Type(nullptr); }
-    any visit(FqnExpr *node) const override { return Type(nullptr); }
-    any visit(BodyWithGuards *node) const override { return Type(nullptr); }
-    any visit(BodyWithoutGuards *node) const override { return Type(nullptr); }
-    any visit(BitwiseAndExpr *node) const override { return Type(nullptr); }
-    any visit(BitwiseXorExpr *node) const override { return Type(nullptr); }
-    any visit(BitwiseOrExpr *node) const override { return Type(nullptr); }
-    any visit(BinaryNotOpExpr *node) const override { return Type(nullptr); }
-    any visit(ConsLeftExpr *node) const override { return Type(nullptr); }
-    any visit(ConsRightExpr *node) const override { return Type(nullptr); }
-    any visit(JoinExpr *node) const override { return Type(nullptr); }
-    any visit(LeftShiftExpr *node) const override { return Type(nullptr); }
-    any visit(RightShiftExpr *node) const override { return Type(nullptr); }
-    any visit(ZerofillRightShiftExpr *node) const override { return Type(nullptr); }
-    any visit(InExpr *node) const override { return Type(nullptr); }
-    any visit(PipeLeftExpr *node) const override { return Type(nullptr); }
-    any visit(PipeRightExpr *node) const override { return Type(nullptr); }
-    any visit(PatternExpr *node) const override { return Type(nullptr); }
-    any visit(PatternValue *node) const override { return Type(nullptr); }
-    any visit(AsDataStructurePattern *node) const override { return Type(nullptr); }
-    any visit(RecordPattern *node) const override { return Type(nullptr); }
-    any visit(TuplePattern *node) const override { return Type(nullptr); }
-    any visit(SeqPattern *node) const override { return Type(nullptr); }
-    any visit(HeadTailsPattern *node) const override { return Type(nullptr); }
-    any visit(TailsHeadPattern *node) const override { return Type(nullptr); }
-    any visit(HeadTailsHeadPattern *node) const override { return Type(nullptr); }
-    any visit(DictPattern *node) const override { return Type(nullptr); }
-    any visit(ValueAlias *node) const override;
-    any visit(FunctionAlias *node) const override { return Type(nullptr); }
-    any visit(ModuleImport *node) const override { return Type(nullptr); }
-    any visit(FunctionsImport *node) const override { return Type(nullptr); }
-    any visit(ValueCollectionExtractorExpr *node) const override { return Type(nullptr); }
-    any visit(KeyValueCollectionExtractorExpr *node) const override { return Type(nullptr); }
-    any visit(RangeSequenceExpr *node) const override { return Type(nullptr); }
-    any visit(FunctionDeclaration *node) const override { return Type(nullptr); }
-    any visit(NameCall *node) const override { return Type(nullptr); }
-    any visit(AliasCall *node) const override { return Type(nullptr); }
-    any visit(CatchPatternExpr *node) const override { return Type(nullptr); }
-    any visit(CatchExpr *node) const override { return Type(nullptr); }
-    any visit(FieldUpdateExpr *node) const override { return Type(nullptr); }
-    any visit(MainNode *node) const override { return Type(nullptr); }
-    any visit(TypeNameNode *node) const override { return Type(nullptr); }
-    any visit(BuiltinTypeNode *node) const override { return Type(nullptr); }
-    any visit(UserDefinedTypeNode *node) const override { return Type(nullptr); }
-    any visit(TypeDeclaration *node) const override { return Type(nullptr); }
-    any visit(TypeDefinition *node) const override { return Type(nullptr); }
-    any visit(TypeNode *node) const override { return Type(nullptr); }
-    any visit(TypeInstance *node) const override { return Type(nullptr); }
-    any visit(ModuleAlias *node) const override { return Type(nullptr); }
-    any visit(PatternAlias *node) const override;
-    any visit(FqnAlias *node) const override { return Type(nullptr); }
-    any visit(LambdaAlias *node) const override;
-    any visit(ModuleCall *node) const override { return Type(nullptr); }
-    any visit(ExprCall *node) const override { return Type(nullptr); }
-    any visit(PatternWithGuards *node) const override { return Type(nullptr); }
-    any visit(PatternWithoutGuards *node) const override { return Type(nullptr); }
-    any visit(DictGeneratorReducer *node) const override { return Type(nullptr); }
-    any visit(PackageNameExpr *node) const override { return Type(nullptr); }
+    Type visit(AstNode *node) const override { return Type(nullptr); }
+    Type visit(PatternNode *node) const override { return Type(nullptr); }
+    Type visit(UnderscoreNode *node) const override { return Type(nullptr); }
+    Type visit(ValueExpr *node) const override { return Type(nullptr); }
+    Type visit(SequenceExpr *node) const override { return Type(nullptr); }
+    Type visit(ScopedNode *node) const override { return Type(nullptr); }
+    Type visit(OpExpr *node) const override { return Type(nullptr); }
+    Type visit(BinaryOpExpr *node) const override { return Type(nullptr); }
+    Type visit(AliasExpr *node) const override { return Type(nullptr); }
+    Type visit(CallExpr *node) const override { return Type(nullptr); }
+    Type visit(ImportClauseExpr *node) const override { return Type(nullptr); }
+    Type visit(GeneratorExpr *node) const override { return Type(nullptr); }
+    Type visit(CollectionExtractorExpr *node) const override { return Type(nullptr); }
+    Type visit(FunctionBody *node) const override { return Type(nullptr); }
+    Type visit(NameExpr *node) const override { return Type(nullptr); }
+    Type visit(FqnExpr *node) const override { return Type(nullptr); }
+    Type visit(BodyWithGuards *node) const override { return Type(nullptr); }
+    Type visit(BodyWithoutGuards *node) const override { return Type(nullptr); }
+    Type visit(BitwiseAndExpr *node) const override { return Type(nullptr); }
+    Type visit(BitwiseXorExpr *node) const override { return Type(nullptr); }
+    Type visit(BitwiseOrExpr *node) const override { return Type(nullptr); }
+    Type visit(BinaryNotOpExpr *node) const override { return Type(nullptr); }
+    Type visit(ConsLeftExpr *node) const override { return Type(nullptr); }
+    Type visit(ConsRightExpr *node) const override { return Type(nullptr); }
+    Type visit(JoinExpr *node) const override { return Type(nullptr); }
+    Type visit(LeftShiftExpr *node) const override { return Type(nullptr); }
+    Type visit(RightShiftExpr *node) const override { return Type(nullptr); }
+    Type visit(ZerofillRightShiftExpr *node) const override { return Type(nullptr); }
+    Type visit(InExpr *node) const override { return Type(nullptr); }
+    Type visit(PipeLeftExpr *node) const override { return Type(nullptr); }
+    Type visit(PipeRightExpr *node) const override { return Type(nullptr); }
+    Type visit(PatternExpr *node) const override { return Type(nullptr); }
+    Type visit(PatternValue *node) const override { return Type(nullptr); }
+    Type visit(AsDataStructurePattern *node) const override { return Type(nullptr); }
+    Type visit(RecordPattern *node) const override { return Type(nullptr); }
+    Type visit(TuplePattern *node) const override { return Type(nullptr); }
+    Type visit(SeqPattern *node) const override { return Type(nullptr); }
+    Type visit(HeadTailsPattern *node) const override { return Type(nullptr); }
+    Type visit(TailsHeadPattern *node) const override { return Type(nullptr); }
+    Type visit(HeadTailsHeadPattern *node) const override { return Type(nullptr); }
+    Type visit(DictPattern *node) const override { return Type(nullptr); }
+    Type visit(ValueAlias *node) const override;
+    Type visit(FunctionAlias *node) const override { return Type(nullptr); }
+    Type visit(ModuleImport *node) const override { return Type(nullptr); }
+    Type visit(FunctionsImport *node) const override { return Type(nullptr); }
+    Type visit(ValueCollectionExtractorExpr *node) const override { return Type(nullptr); }
+    Type visit(KeyValueCollectionExtractorExpr *node) const override { return Type(nullptr); }
+    Type visit(RangeSequenceExpr *node) const override { return Type(nullptr); }
+    Type visit(FunctionDeclaration *node) const override { return Type(nullptr); }
+    Type visit(NameCall *node) const override { return Type(nullptr); }
+    Type visit(AliasCall *node) const override { return Type(nullptr); }
+    Type visit(CatchPatternExpr *node) const override { return Type(nullptr); }
+    Type visit(CatchExpr *node) const override { return Type(nullptr); }
+    Type visit(FieldUpdateExpr *node) const override { return Type(nullptr); }
+    Type visit(MainNode *node) const override { return Type(nullptr); }
+    Type visit(TypeNameNode *node) const override { return Type(nullptr); }
+    Type visit(BuiltinTypeNode *node) const override { return Type(nullptr); }
+    Type visit(UserDefinedTypeNode *node) const override { return Type(nullptr); }
+    Type visit(TypeDeclaration *node) const override { return Type(nullptr); }
+    Type visit(TypeDefinition *node) const override { return Type(nullptr); }
+    Type visit(TypeNode *node) const override { return Type(nullptr); }
+    Type visit(TypeInstance *node) const override { return Type(nullptr); }
+    Type visit(ModuleAlias *node) const override { return Type(nullptr); }
+    Type visit(PatternAlias *node) const override;
+    Type visit(FqnAlias *node) const override { return Type(nullptr); }
+    Type visit(LambdaAlias *node) const override;
+    Type visit(ModuleCall *node) const override { return Type(nullptr); }
+    Type visit(ExprCall *node) const override { return Type(nullptr); }
+    Type visit(PatternWithGuards *node) const override { return Type(nullptr); }
+    Type visit(PatternWithoutGuards *node) const override { return Type(nullptr); }
+    Type visit(DictGeneratorReducer *node) const override { return Type(nullptr); }
+    Type visit(PackageNameExpr *node) const override { return Type(nullptr); }
 };
 
 } // namespace yona::typechecker

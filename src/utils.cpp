@@ -52,4 +52,5 @@ template <typename T> optional<T> first_defined_optional(initializer_list<option
 }
 
 template optional<any> first_defined_optional(initializer_list<optional<any>> optionals);
+template optional<ast::InterpreterResult> first_defined_optional(initializer_list<optional<ast::InterpreterResult>> optionals);
 } // namespace yona

@@ -8,6 +8,24 @@ if(POLICY CMP0091)
 	cmake_policy(SET CMP0091 NEW)
 endif()
 
+# Ensure consistent MSVC runtime library usage across all targets
+if(MSVC)
+	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
+	# Force all targets to use the same runtime
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MD$<$<CONFIG:Debug>:d>")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MD$<$<CONFIG:Debug>:d>")
+
+	# Enable RTTI and exception handling consistently
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR /EHsc")
+
+	# Remove any conflicting runtime flags
+	string(REGEX REPLACE "/M[TD]d?" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+	string(REGEX REPLACE "/M[TD]d?" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+	string(REGEX REPLACE "/M[TD]d?" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+	string(REGEX REPLACE "/M[TD]d?" "" CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE}")
+endif()
+
 if(POLICY CMP0135)
 	cmake_policy(SET CMP0135 NEW)
 	set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
@@ -98,8 +116,8 @@ llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
 
 target_link_libraries(yona_lib PRIVATE ${llvm_libs})
 
-# For DLL builds on Windows, we need to export symbols
-if(WIN32)
+# For DLL builds on Windows, we need to export symbols (only for SHARED libraries)
+if(WIN32 AND BUILD_SHARED_LIBS)
 	set_target_properties(yona_lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
@@ -126,6 +144,12 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/catchorg/Catch2.git
   GIT_TAG        v3.8.1
 )
+
+# Ensure Catch2 uses the same runtime library as our project
+if(MSVC)
+  set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+  set(CATCH_CONFIG_SHARED_LIBRARY OFF)
+endif()
 
 FetchContent_MakeAvailable(Catch2)
 

@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <format>
 
+#include "yona_export.h"
 #include "SourceLocation.h"
 
 namespace yona::lexer {
@@ -170,7 +171,7 @@ struct LexError {
 };
 
 // Modern C++23 lexer with zero-copy tokenization where possible
-class Lexer {
+class YONA_API Lexer {
 public:
     explicit Lexer(std::string_view source, std::string_view filename = "<input>");
 

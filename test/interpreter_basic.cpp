@@ -20,7 +20,7 @@ TEST_CASE("AdditionInt", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 30);
@@ -35,7 +35,7 @@ TEST_CASE("ComparisonEqual", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Bool);
     CHECK(result->get<bool>());
@@ -50,7 +50,7 @@ TEST_CASE("IfExpression", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 100);
@@ -65,7 +65,7 @@ TEST_CASE("SequenceConsLeft", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Seq);
     auto seq = result->get<shared_ptr<SeqValue>>();
@@ -83,7 +83,7 @@ TEST_CASE("InOperatorSeq", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Bool);
     CHECK(result->get<bool>());
@@ -98,7 +98,7 @@ TEST_CASE("LetExpression", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 15);
@@ -113,7 +113,7 @@ TEST_CASE("LogicalAnd", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Bool);
     CHECK_FALSE(result->get<bool>());
@@ -128,7 +128,7 @@ TEST_CASE("PowerOperation", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Float);
     CHECK(result->get<double>() == Catch::Approx(8.0));
@@ -143,7 +143,7 @@ TEST_CASE("ModuloOperation", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 6);
@@ -158,7 +158,7 @@ TEST_CASE("JoinSequences", "[InterpreterBasicTest]") {
 
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+    auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Seq);
     auto seq = result->get<shared_ptr<SeqValue>>();
