@@ -2,21 +2,19 @@
 // Created by akovari on 17.11.24.
 //
 
-#include "Interpreter.h"
-
-#include <print>
 #include <numeric>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <cmath>
+#include <ranges>
 
+#include "Interpreter.h"
 #include "common.h"
 #include "utils.h"
 #include "Parser.h"
 
-#include <ranges>
 
 using namespace yona::compiler::types;
 using namespace yona::typechecker;

@@ -1,12 +1,11 @@
-#include "ast.h"
-
-#include <variant>
 #include <iostream>
 #include <utility>
+#include <variant>
+#include <numeric>
 
+#include "ast.h"
 #include "utils.h"
 
-#include <numeric>
 
 namespace yona::ast {
 
@@ -32,17 +31,8 @@ template <typename T> LiteralExpr<T>::LiteralExpr(SourceContext token, T value) 
 
 // Template accept methods are now defined in the header
 
-
-
-
-
-
 BinaryOpExpr::BinaryOpExpr(SourceContext token, ExprNode *left, ExprNode *right)
-    : OpExpr(token),
-      left(left ? left->with_parent<ExprNode>(this) : nullptr),
-      right(right ? right->with_parent<ExprNode>(this) : nullptr) {}
-
-
+    : OpExpr(token), left(left ? left->with_parent<ExprNode>(this) : nullptr), right(right ? right->with_parent<ExprNode>(this) : nullptr) {}
 
 BinaryOpExpr::~BinaryOpExpr() {
   delete left;
@@ -51,25 +41,9 @@ BinaryOpExpr::~BinaryOpExpr() {
 
 NameExpr::NameExpr(SourceContext token, string value) : ExprNode(token), value(std::move(value)) {}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 void NameExpr::print(std::ostream &os) const { os << value; }
 
 IdentifierExpr::IdentifierExpr(SourceContext token, NameExpr *name) : ValueExpr(token), name(name->with_parent<NameExpr>(this)) {}
-
-
-
 
 IdentifierExpr::~IdentifierExpr() { delete name; }
 
@@ -77,9 +51,6 @@ void IdentifierExpr::print(std::ostream &os) const { os << *name; }
 
 RecordNode::RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers)
     : AstNode(token), recordType(recordType->with_parent<NameExpr>(this)), identifiers(nodes_with_parent(std::move(identifiers), this)) {}
-
-
-
 
 RecordNode::~RecordNode() {
   delete recordType;
@@ -103,58 +74,31 @@ void RecordNode::print(std::ostream &os) const {
 
 TrueLiteralExpr::TrueLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, true) {}
 
-
-
-
 void TrueLiteralExpr::print(std::ostream &os) const { os << "true"; }
 
 FalseLiteralExpr::FalseLiteralExpr(SourceContext token) : LiteralExpr<bool>(token, false) {}
-
-
-
 
 void FalseLiteralExpr::print(std::ostream &os) const { os << "false"; }
 
 FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float>(token, value) {}
 
-
-
-
 void FloatExpr::print(std::ostream &os) const { os << value; }
 
 IntegerExpr::IntegerExpr(SourceContext token, const int value) : LiteralExpr<int>(token, value) {}
 
-
-
-
 void IntegerExpr::print(std::ostream &os) const { os << value; }
-
-
 
 void UnderscoreNode::print(std::ostream &os) const { os << "_"; }
 
-
-
-
-
 ByteExpr::ByteExpr(SourceContext token, const unsigned char value) : LiteralExpr<unsigned char>(token, value) {}
-
-
-
 
 void ByteExpr::print(std::ostream &os) const { os << value; }
 
 StringExpr::StringExpr(SourceContext token, string value) : LiteralExpr<string>(token, std::move(value)) {}
 
-
-
-
 void StringExpr::print(std::ostream &os) const { os << value; }
 
 CharacterExpr::CharacterExpr(SourceContext token, const wchar_t value) : LiteralExpr<wchar_t>(token, value) {}
-
-
-
 
 void CharacterExpr::print(std::ostream &os) const {
   os << (char)value; // TODO
@@ -162,15 +106,9 @@ void CharacterExpr::print(std::ostream &os) const {
 
 UnitExpr::UnitExpr(SourceContext token) : LiteralExpr<nullptr_t>(token, nullptr) {}
 
-
-
-
 void UnitExpr::print(std::ostream &os) const { os << "()"; }
 
 TupleExpr::TupleExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(std::move(values), this)) {}
-
-
-
 
 TupleExpr::~TupleExpr() {
   for (const auto p : values)
@@ -190,9 +128,6 @@ void TupleExpr::print(std::ostream &os) const {
 
 DictExpr::DictExpr(SourceContext token, vector<pair<ExprNode *, ExprNode *>> values)
     : ValueExpr(token), values(nodes_with_parent(std::move(values), this)) {}
-
-
-
 
 DictExpr::~DictExpr() {
   for (const auto [fst, snd] : values) {
@@ -215,9 +150,6 @@ void DictExpr::print(std::ostream &os) const {
 ValuesSequenceExpr::ValuesSequenceExpr(SourceContext token, vector<ExprNode *> values)
     : SequenceExpr(token), values(nodes_with_parent(std::move(values), this)) {}
 
-
-
-
 ValuesSequenceExpr::~ValuesSequenceExpr() {
   for (const auto p : values)
     delete p;
@@ -235,14 +167,8 @@ void ValuesSequenceExpr::print(std::ostream &os) const {
 }
 
 RangeSequenceExpr::RangeSequenceExpr(SourceContext token, ExprNode *start, ExprNode *end, ExprNode *step)
-    : SequenceExpr(token),
-      start(start->with_parent<ExprNode>(this)),
-      end(end->with_parent<ExprNode>(this)),
-      step(step ? step->with_parent<ExprNode>(this) : nullptr) {
-}
-
-
-
+    : SequenceExpr(token), start(start->with_parent<ExprNode>(this)), end(end->with_parent<ExprNode>(this)),
+      step(step ? step->with_parent<ExprNode>(this) : nullptr) {}
 
 RangeSequenceExpr::~RangeSequenceExpr() {
   delete start;
@@ -259,9 +185,6 @@ void RangeSequenceExpr::print(std::ostream &os) const {
 }
 
 SetExpr::SetExpr(SourceContext token, vector<ExprNode *> values) : ValueExpr(token), values(nodes_with_parent(std::move(values), this)) {}
-
-
-
 
 SetExpr::~SetExpr() {
   for (const auto p : values)
@@ -281,16 +204,10 @@ void SetExpr::print(std::ostream &os) const {
 
 SymbolExpr::SymbolExpr(SourceContext token, string value) : ValueExpr(token), value(std::move(value)) {}
 
-
-
-
 void SymbolExpr::print(std::ostream &os) const { os << ':' << value; }
 
 PackageNameExpr::PackageNameExpr(SourceContext token, vector<NameExpr *> parts)
     : ValueExpr(token), parts(nodes_with_parent(std::move(parts), this)) {}
-
-
-
 
 PackageNameExpr::~PackageNameExpr() {
   for (const auto p : parts)
@@ -303,18 +220,14 @@ string PackageNameExpr::to_string() const {
   for (const auto part : parts) {
     names.push_back(part->value);
   }
-  return std::accumulate(
-      std::next(names.begin()), names.end(), names.empty() ? std::string() : names.front(),
-      [](const std::string &a, const std::string &b) { return a + PACKAGE_DELIMITER + b; });
+  return std::accumulate(std::next(names.begin()), names.end(), names.empty() ? std::string() : names.front(),
+                         [](const std::string &a, const std::string &b) { return a + PACKAGE_DELIMITER + b; });
 }
 
 void PackageNameExpr::print(std::ostream &os) const { os << to_string(); }
 
 FqnExpr::FqnExpr(SourceContext token, optional<PackageNameExpr *> packageName, NameExpr *moduleName)
     : ValueExpr(token), packageName(node_with_parent<PackageNameExpr>(packageName, this)), moduleName(moduleName->with_parent<NameExpr>(this)) {}
-
-
-
 
 FqnExpr::~FqnExpr() {
   if (packageName.has_value()) {
@@ -337,9 +250,6 @@ void FqnExpr::print(std::ostream &os) const { os << to_string(); }
 FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies)
     : ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(std::move(patterns), this)),
       bodies(nodes_with_parent(std::move(bodies), this)) {}
-
-
-
 
 FunctionExpr::~FunctionExpr() {
   for (const auto p : patterns)
@@ -365,9 +275,6 @@ void FunctionExpr::print(std::ostream &os) const {
 BodyWithGuards::BodyWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr)
     : FunctionBody(token), guard(guard->with_parent<ExprNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
-
-
-
 void BodyWithGuards::print(std::ostream &os) const { os << " | " << *guard << " = " << *expr; }
 
 BodyWithGuards::~BodyWithGuards() {
@@ -377,9 +284,6 @@ BodyWithGuards::~BodyWithGuards() {
 
 BodyWithoutGuards::BodyWithoutGuards(SourceContext token, ExprNode *expr) : FunctionBody(token), expr(expr->with_parent<ExprNode>(this)) {}
 
-
-
-
 BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
 void BodyWithoutGuards::print(std::ostream &os) const { os << " = " << *expr; }
@@ -388,9 +292,6 @@ ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &
                        const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations)
     : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), records(nodes_with_parent(std::move(records), this)),
       functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)) {}
-
-
-
 
 ModuleExpr::~ModuleExpr() {
   delete fqn;
@@ -432,9 +333,6 @@ void ModuleExpr::print(std::ostream &os) const {
 RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items)
     : ValueExpr(token), recordType(recordType->with_parent<NameExpr>(this)), items(nodes_with_parent(std::move(items), this)) {}
 
-
-
-
 RecordInstanceExpr::~RecordInstanceExpr() {
   delete recordType;
   for (const auto [fst, snd] : items) {
@@ -458,17 +356,11 @@ void RecordInstanceExpr::print(std::ostream &os) const {
 
 LogicalNotOpExpr::LogicalNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
 
-
-
-
 LogicalNotOpExpr::~LogicalNotOpExpr() { delete expr; }
 
 void LogicalNotOpExpr::print(std::ostream &os) const { os << '!' << *expr; }
 
 BinaryNotOpExpr::BinaryNotOpExpr(SourceContext token, ExprNode *expr) : OpExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
-
-
-
 
 BinaryNotOpExpr::~BinaryNotOpExpr() { delete expr; }
 
@@ -476,191 +368,110 @@ void BinaryNotOpExpr::print(std::ostream &os) const { os << '~' << *expr; }
 
 PowerExpr::PowerExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void PowerExpr::print(std::ostream &os) const { os << *left << "**" << *right; }
 
 MultiplyExpr::MultiplyExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void MultiplyExpr::print(std::ostream &os) const { os << *left << "*" << *right; }
 
 DivideExpr::DivideExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void DivideExpr::print(std::ostream &os) const { os << *left << "/" << *right; }
 
 ModuloExpr::ModuloExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void ModuloExpr::print(std::ostream &os) const { os << *left << "%" << *right; }
 
 AddExpr::AddExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void AddExpr::print(std::ostream &os) const { os << *left << "+" << *right; }
 
 SubtractExpr::SubtractExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void SubtractExpr::print(std::ostream &os) const { os << *left << "-" << *right; }
 
 LeftShiftExpr::LeftShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void LeftShiftExpr::print(std::ostream &os) const { os << *left << "<<" << *right; }
 
 RightShiftExpr::RightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void RightShiftExpr::print(std::ostream &os) const { os << *left << ">>" << *right; }
 
 ZerofillRightShiftExpr::ZerofillRightShiftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void ZerofillRightShiftExpr::print(std::ostream &os) const { os << *left << ">>>" << *right; }
 
 GteExpr::GteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void GteExpr::print(std::ostream &os) const { os << *left << ">=" << *right; }
 
 LteExpr::LteExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void LteExpr::print(std::ostream &os) const { os << *left << "<=" << *right; }
 
 GtExpr::GtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void GtExpr::print(std::ostream &os) const { os << *left << ">" << *right; }
 
 LtExpr::LtExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void LtExpr::print(std::ostream &os) const { os << *left << "<" << *right; }
 
 EqExpr::EqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void EqExpr::print(std::ostream &os) const { os << *left << "==" << *right; }
 
 NeqExpr::NeqExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void NeqExpr::print(std::ostream &os) const { os << *left << "!=" << *right; }
 
 ConsLeftExpr::ConsLeftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void ConsLeftExpr::print(std::ostream &os) const { os << *left << "-|" << *right; }
 
 ConsRightExpr::ConsRightExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void ConsRightExpr::print(std::ostream &os) const { os << *left << "|-" << *right; }
 
 JoinExpr::JoinExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void JoinExpr::print(std::ostream &os) const { os << *left << "++" << *right; }
 
 BitwiseAndExpr::BitwiseAndExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void BitwiseAndExpr::print(std::ostream &os) const { os << *left << "&" << *right; }
 
 BitwiseXorExpr::BitwiseXorExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void BitwiseXorExpr::print(std::ostream &os) const { os << *left << "^" << *right; }
 
 BitwiseOrExpr::BitwiseOrExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void BitwiseOrExpr::print(std::ostream &os) const { os << *left << "|" << *right; }
 
 LogicalAndExpr::LogicalAndExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void LogicalAndExpr::print(std::ostream &os) const { os << *left << "&&" << *right; }
 
 LogicalOrExpr::LogicalOrExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void LogicalOrExpr::print(std::ostream &os) const { os << *left << "||" << *right; }
 
 InExpr::InExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void InExpr::print(std::ostream &os) const { os << *left << " in " << *right; }
 
 PipeLeftExpr::PipeLeftExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
 
-
-
-
 void PipeLeftExpr::print(std::ostream &os) const { os << *left << " <| " << *right; }
 
 PipeRightExpr::PipeRightExpr(SourceContext token, ExprNode *left, ExprNode *right) : BinaryOpExpr(token, left, right) {}
-
-
-
 
 void PipeRightExpr::print(std::ostream &os) const { os << *left << " |> " << *right; }
 
 LetExpr::LetExpr(SourceContext token, vector<AliasExpr *> aliases, ExprNode *expr)
     : ScopedNode(token), aliases(nodes_with_parent(std::move(aliases), this)), expr(expr->with_parent<ExprNode>(this)) {}
-
-
-
 
 LetExpr::~LetExpr() {
   for (const auto p : aliases)
@@ -678,9 +489,6 @@ void LetExpr::print(std::ostream &os) const {
 
 MainNode::MainNode(SourceContext token, AstNode *node) : ScopedNode(token), node(node->with_parent<AstNode>(this)) {}
 
-
-
-
 MainNode::~MainNode() { delete node; }
 
 void MainNode::print(std::ostream &os) const { os << "main = " << *node; }
@@ -688,9 +496,6 @@ void MainNode::print(std::ostream &os) const { os << "main = " << *node; }
 IfExpr::IfExpr(SourceContext token, ExprNode *condition, ExprNode *thenExpr, ExprNode *elseExpr)
     : ExprNode(token), condition(condition->with_parent<ExprNode>(this)), thenExpr(thenExpr->with_parent<ExprNode>(this)),
       elseExpr(elseExpr->with_parent<ExprNode>(this)) {}
-
-
-
 
 IfExpr::~IfExpr() {
   delete condition;
@@ -707,9 +512,6 @@ void IfExpr::print(std::ostream &os) const {
 
 ApplyExpr::ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args)
     : ExprNode(token), call(call->with_parent<CallExpr>(this)), args(nodes_with_parent(std::move(args), this)) {}
-
-
-
 
 ApplyExpr::~ApplyExpr() {
   delete call;
@@ -740,9 +542,6 @@ void ApplyExpr::print(std::ostream &os) const {
 
 DoExpr::DoExpr(SourceContext token, vector<ExprNode *> steps) : ExprNode(token), steps(steps) {}
 
-
-
-
 DoExpr::~DoExpr() {
   for (const auto p : steps) {
     delete p;
@@ -759,9 +558,6 @@ void DoExpr::print(std::ostream &os) const {
 
 ImportExpr::ImportExpr(SourceContext token, vector<ImportClauseExpr *> clauses, ExprNode *expr)
     : ScopedNode(token), clauses(nodes_with_parent(std::move(clauses), this)), expr(expr->with_parent<ExprNode>(this)) {}
-
-
-
 
 ImportExpr::~ImportExpr() {
   for (const auto p : clauses) {
@@ -782,9 +578,6 @@ void ImportExpr::print(std::ostream &os) const {
 RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message)
     : ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this)) {}
 
-
-
-
 RaiseExpr::~RaiseExpr() {
   delete symbol;
   delete message;
@@ -795,9 +588,6 @@ void RaiseExpr::print(std::ostream &os) const { os << "raise " << *symbol << " "
 WithExpr::WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr)
     : ScopedNode(token), daemon(daemon), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(name->with_parent<NameExpr>(this)),
       bodyExpr(bodyExpr->with_parent<ExprNode>(this)) {}
-
-
-
 
 WithExpr::~WithExpr() {
   delete contextExpr;
@@ -821,9 +611,6 @@ void WithExpr::print(std::ostream &os) const {
 FieldAccessExpr::FieldAccessExpr(SourceContext token, IdentifierExpr *identifier, NameExpr *name)
     : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
 
-
-
-
 FieldAccessExpr::~FieldAccessExpr() {
   delete identifier;
   delete name;
@@ -833,9 +620,6 @@ void FieldAccessExpr::print(std::ostream &os) const { os << *identifier << '.' <
 
 FieldUpdateExpr::FieldUpdateExpr(SourceContext token, IdentifierExpr *identifier, vector<pair<NameExpr *, ExprNode *>> updates)
     : ExprNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), updates(nodes_with_parent(std::move(updates), this)) {}
-
-
-
 
 FieldUpdateExpr::~FieldUpdateExpr() {
   delete identifier;
@@ -860,9 +644,6 @@ void FieldUpdateExpr::print(std::ostream &os) const {
 LambdaAlias::LambdaAlias(SourceContext token, NameExpr *name, FunctionExpr *lambda)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), lambda(lambda->with_parent<FunctionExpr>(this)) {}
 
-
-
-
 LambdaAlias::~LambdaAlias() {
   delete name;
   delete lambda;
@@ -872,9 +653,6 @@ void LambdaAlias::print(std::ostream &os) const { os << *name << " = " << *lambd
 
 ModuleAlias::ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this)) {}
-
-
-
 
 ModuleAlias::~ModuleAlias() {
   delete name;
@@ -886,9 +664,6 @@ void ModuleAlias::print(std::ostream &os) const { os << *name << " = " << *modul
 ValueAlias::ValueAlias(SourceContext token, IdentifierExpr *identifier, ExprNode *expr)
     : AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
-
-
-
 ValueAlias::~ValueAlias() {
   delete identifier;
   delete expr;
@@ -898,9 +673,6 @@ void ValueAlias::print(std::ostream &os) const { os << *identifier << " = " << *
 
 PatternAlias::PatternAlias(SourceContext token, PatternNode *pattern, ExprNode *expr)
     : AliasExpr(token), pattern(pattern->with_parent<PatternNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
-
-
-
 
 PatternAlias::~PatternAlias() {
   delete pattern;
@@ -912,9 +684,6 @@ void PatternAlias::print(std::ostream &os) const { os << *pattern << " = " << *e
 FqnAlias::FqnAlias(SourceContext token, NameExpr *name, FqnExpr *fqn)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), fqn(fqn->with_parent<FqnExpr>(this)) {}
 
-
-
-
 FqnAlias::~FqnAlias() {
   delete name;
   delete fqn;
@@ -924,9 +693,6 @@ void FqnAlias::print(std::ostream &os) const { os << *name << " = " << *fqn; }
 
 FunctionAlias::FunctionAlias(SourceContext token, NameExpr *name, NameExpr *alias)
     : AliasExpr(token), name(name->with_parent<NameExpr>(this)), alias(alias ? alias->with_parent<NameExpr>(this) : nullptr) {}
-
-
-
 
 FunctionAlias::~FunctionAlias() {
   delete name;
@@ -938,9 +704,6 @@ void FunctionAlias::print(std::ostream &os) const { os << *name << " = " << *ali
 AliasCall::AliasCall(SourceContext token, NameExpr *alias, NameExpr *funName)
     : CallExpr(token), alias(alias->with_parent<NameExpr>(this)), funName(funName->with_parent<NameExpr>(this)) {}
 
-
-
-
 AliasCall::~AliasCall() {
   delete alias;
   delete funName;
@@ -950,20 +713,12 @@ void AliasCall::print(std::ostream &os) const { os << *alias << "::" << *funName
 
 NameCall::NameCall(SourceContext token, NameExpr *name) : CallExpr(token), name(name->with_parent<NameExpr>(this)) {}
 
-
-
-
 NameCall::~NameCall() { delete name; }
 
-void NameCall::print(std::ostream &os) const {
-    os << *name;
-}
+void NameCall::print(std::ostream &os) const { os << *name; }
 
 ModuleCall::ModuleCall(SourceContext token, const variant<FqnExpr *, ExprNode *> &fqn, NameExpr *funName)
     : CallExpr(token), fqn(node_with_parent(fqn, this)), funName(funName->with_parent<NameExpr>(this)) {}
-
-
-
 
 ModuleCall::~ModuleCall() {
   if (holds_alternative<FqnExpr *>(fqn)) {
@@ -983,23 +738,14 @@ void ModuleCall::print(std::ostream &os) const {
   os << "::" << *funName;
 }
 
-ExprCall::ExprCall(SourceContext token, ExprNode *expr)
-    : CallExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
+ExprCall::ExprCall(SourceContext token, ExprNode *expr) : CallExpr(token), expr(expr->with_parent<ExprNode>(this)) {}
 
+ExprCall::~ExprCall() { delete expr; }
 
-ExprCall::~ExprCall() {
-  delete expr;
-}
-
-void ExprCall::print(std::ostream &os) const {
-  os << "(" << *expr << ")";
-}
+void ExprCall::print(std::ostream &os) const { os << "(" << *expr << ")"; }
 
 ModuleImport::ModuleImport(SourceContext token, FqnExpr *fqn, NameExpr *name)
     : ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
-
-
-
 
 ModuleImport::~ModuleImport() {
   delete fqn;
@@ -1015,9 +761,6 @@ void ModuleImport::print(std::ostream &os) const {
 
 FunctionsImport::FunctionsImport(SourceContext token, vector<FunctionAlias *> aliases, FqnExpr *fromFqn)
     : ImportClauseExpr(token), aliases(nodes_with_parent(std::move(aliases), this)), fromFqn(fromFqn->with_parent<FqnExpr>(this)) {}
-
-
-
 
 FunctionsImport::~FunctionsImport() {
   for (const auto p : aliases) {
@@ -1042,9 +785,6 @@ SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, C
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
       stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
 
-
-
-
 SeqGeneratorExpr::~SeqGeneratorExpr() {
   delete reducerExpr;
   delete collectionExtractor;
@@ -1060,9 +800,6 @@ SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode *reducerExpr, C
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
       stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
 
-
-
-
 SetGeneratorExpr::~SetGeneratorExpr() {
   delete reducerExpr;
   delete collectionExtractor;
@@ -1075,9 +812,6 @@ void SetGeneratorExpr::print(std::ostream &os) const {
 
 DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode *key, ExprNode *value)
     : ExprNode(token), key(key->with_parent<ExprNode>(this)), value(value->with_parent<ExprNode>(this)) {}
-
-
-
 
 DictGeneratorReducer::~DictGeneratorReducer() {
   delete key;
@@ -1092,9 +826,6 @@ DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer *
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
       stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
 
-
-
-
 DictGeneratorExpr::~DictGeneratorExpr() {
   delete reducerExpr;
   delete collectionExtractor;
@@ -1107,10 +838,6 @@ void DictGeneratorExpr::print(std::ostream &os) const {
 
 ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore identifier_or_underscore)
     : CollectionExtractorExpr(token), expr(node_with_parent(identifier_or_underscore, this)) {}
-
-
-
-
 
 void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
   if (holds_alternative<IdentifierExpr *>(expr)) {
@@ -1134,9 +861,6 @@ KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext t
                                                                  const IdentifierOrUnderscore valueExpr)
     : CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)), valueExpr(node_with_parent(valueExpr, this)) {}
 
-
-
-
 KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr() {
   release_identifier_or_underscore(keyExpr);
   release_identifier_or_underscore(valueExpr);
@@ -1159,9 +883,6 @@ void KeyValueCollectionExtractorExpr::print(std::ostream &os) const {
 PatternWithGuards::PatternWithGuards(SourceContext token, ExprNode *guard, ExprNode *expr)
     : PatternNode(token), guard(guard->with_parent<ExprNode>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
-
-
-
 PatternWithGuards::~PatternWithGuards() {
   delete guard;
   delete expr;
@@ -1170,9 +891,6 @@ PatternWithGuards::~PatternWithGuards() {
 void PatternWithGuards::print(std::ostream &os) const { os << *expr << " if " << *guard; }
 
 PatternWithoutGuards::PatternWithoutGuards(SourceContext token, ExprNode *expr) : PatternNode(token), expr(expr->with_parent<ExprNode>(this)) {}
-
-
-
 
 PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
 
@@ -1188,8 +906,6 @@ PatternExpr::PatternExpr(SourceContext token, const variant<Pattern *, PatternWi
   //              nodes_with_parent(std::move(arg), this); } },
   //            patternExpr); // TODO
 }
-
-
 
 PatternExpr::~PatternExpr() {
   if (holds_alternative<Pattern *>(patternExpr)) {
@@ -1229,9 +945,6 @@ CatchPatternExpr::CatchPatternExpr(SourceContext token, Pattern *matchPattern,
   //            pattern); // TODO
 }
 
-
-
-
 CatchPatternExpr::~CatchPatternExpr() {
   delete matchPattern;
   if (holds_alternative<PatternWithoutGuards *>(pattern)) {
@@ -1261,9 +974,6 @@ void CatchPatternExpr::print(std::ostream &os) const {
 CatchExpr::CatchExpr(SourceContext token, vector<CatchPatternExpr *> patterns)
     : ExprNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
 
-
-
-
 CatchExpr::~CatchExpr() {
   for (const auto p : patterns) {
     delete p;
@@ -1283,9 +993,6 @@ void CatchExpr::print(std::ostream &os) const {
 TryCatchExpr::TryCatchExpr(SourceContext token, ExprNode *tryExpr, CatchExpr *catchExpr)
     : ExprNode(token), tryExpr(tryExpr->with_parent<ExprNode>(this)), catchExpr(catchExpr->with_parent<CatchExpr>(this)) {}
 
-
-
-
 TryCatchExpr::~TryCatchExpr() {
   delete tryExpr;
   delete catchExpr;
@@ -1295,9 +1002,6 @@ void TryCatchExpr::print(std::ostream &os) const { os << "try" << endl << "  " <
 
 PatternValue::PatternValue(SourceContext token, const variant<LiteralExpr<nullptr_t> *, LiteralExpr<void *> *, SymbolExpr *, IdentifierExpr *> &expr)
     : PatternNode(token), expr(node_with_parent(expr, this)) {}
-
-
-
 
 PatternValue::~PatternValue() {
   if (holds_alternative<LiteralExpr<nullptr_t> *>(expr)) {
@@ -1324,9 +1028,6 @@ void PatternValue::print(std::ostream &os) const {
 AsDataStructurePattern::AsDataStructurePattern(SourceContext token, IdentifierExpr *identifier, DataStructurePattern *pattern)
     : PatternNode(token), identifier(identifier->with_parent<IdentifierExpr>(this)), pattern(pattern->with_parent<DataStructurePattern>(this)) {}
 
-
-
-
 AsDataStructurePattern::~AsDataStructurePattern() {
   delete identifier;
   delete pattern;
@@ -1334,16 +1035,10 @@ AsDataStructurePattern::~AsDataStructurePattern() {
 
 void AsDataStructurePattern::print(std::ostream &os) const { os << *identifier << "@(" << *pattern << ")"; }
 
-
-
-
 void UnderscorePattern::print(std::ostream &os) const { os << '_'; }
 
 TuplePattern::TuplePattern(SourceContext token, vector<Pattern *> patterns)
     : PatternNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
-
-
-
 
 TuplePattern::~TuplePattern() {
   for (const auto p : patterns) {
@@ -1366,9 +1061,6 @@ void TuplePattern::print(std::ostream &os) const {
 SeqPattern::SeqPattern(SourceContext token, vector<Pattern *> patterns)
     : PatternNode(token), patterns(nodes_with_parent(std::move(patterns), this)) {}
 
-
-
-
 SeqPattern::~SeqPattern() {
   for (const auto p : patterns) {
     delete p;
@@ -1389,9 +1081,6 @@ void SeqPattern::print(std::ostream &os) const {
 
 HeadTailsPattern::HeadTailsPattern(SourceContext token, vector<PatternWithoutSequence *> heads, TailPattern *tail)
     : PatternNode(token), heads(nodes_with_parent(std::move(heads), this)), tail(tail->with_parent<TailPattern>(this)) {}
-
-
-
 
 HeadTailsPattern::~HeadTailsPattern() {
   for (const auto p : heads) {
@@ -1414,9 +1103,6 @@ void HeadTailsPattern::print(std::ostream &os) const {
 
 TailsHeadPattern::TailsHeadPattern(SourceContext token, TailPattern *tail, vector<PatternWithoutSequence *> heads)
     : PatternNode(token), tail(tail->with_parent<TailPattern>(this)), heads(nodes_with_parent(std::move(heads), this)) {}
-
-
-
 
 TailsHeadPattern::~TailsHeadPattern() {
   delete tail;
@@ -1441,9 +1127,6 @@ HeadTailsHeadPattern::HeadTailsHeadPattern(SourceContext token, vector<PatternWi
                                            vector<PatternWithoutSequence *> right)
     : PatternNode(token), left(nodes_with_parent(std::move(left), this)), tail(tail->with_parent<TailPattern>(this)),
       right(nodes_with_parent(std::move(right), this)) {}
-
-
-
 
 HeadTailsHeadPattern::~HeadTailsHeadPattern() {
   for (const auto p : left) {
@@ -1477,9 +1160,6 @@ void HeadTailsHeadPattern::print(std::ostream &os) const {
 DictPattern::DictPattern(SourceContext token, vector<pair<PatternValue *, Pattern *>> keyValuePairs)
     : PatternNode(token), keyValuePairs(nodes_with_parent(std::move(keyValuePairs), this)) {}
 
-
-
-
 DictPattern::~DictPattern() {
   for (const auto [fst, snd] : keyValuePairs) {
     delete fst;
@@ -1501,9 +1181,6 @@ void DictPattern::print(std::ostream &os) const {
 
 RecordPattern::RecordPattern(SourceContext token, string recordType, vector<pair<NameExpr *, Pattern *>> items)
     : PatternNode(token), recordType(std::move(recordType)), items(nodes_with_parent(std::move(items), this)) {}
-
-
-
 
 RecordPattern::~RecordPattern() {
   for (const auto [fst, snd] : items) {
@@ -1533,17 +1210,11 @@ CaseClause::~CaseClause() {
   delete body;
 }
 
-
-void CaseClause::print(std::ostream &os) const {
-  os << *pattern << " -> " << *body;
-}
+void CaseClause::print(std::ostream &os) const { os << *pattern << " -> " << *body; }
 
 // CaseExpr implementation
 CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<CaseClause *> clauses)
     : ExprNode(token), expr(expr->with_parent<ExprNode>(this)), clauses(nodes_with_parent(std::move(clauses), this)) {}
-
-
-
 
 CaseExpr::~CaseExpr() {
   delete expr;
@@ -1559,12 +1230,9 @@ void CaseExpr::print(std::ostream &os) const {
   }
 }
 
-
 void BuiltinTypeNode::print(std::ostream &os) const { os << BuiltinTypeStrings[type]; }
 
-
 UserDefinedTypeNode::UserDefinedTypeNode(SourceContext token, NameExpr *name) : TypeNameNode(token), name(name->with_parent<NameExpr>(this)) {}
-
 
 UserDefinedTypeNode::~UserDefinedTypeNode() { delete name; }
 
@@ -1572,9 +1240,6 @@ void UserDefinedTypeNode::print(std::ostream &os) const { os << *name; }
 
 TypeDeclaration::TypeDeclaration(SourceContext token, TypeNameNode *name, vector<NameExpr *> type_vars)
     : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeVars(nodes_with_parent(std::move(type_vars), this)) {}
-
-
-
 
 TypeDeclaration::~TypeDeclaration() {
   delete name;
@@ -1597,9 +1262,6 @@ void TypeDeclaration::print(std::ostream &os) const {
 TypeDefinition::TypeDefinition(SourceContext token, TypeNameNode *name, vector<TypeNameNode *> type_names)
     : AstNode(token), name(name->with_parent<TypeNameNode>(this)), typeNames(nodes_with_parent(std::move(type_names), this)) {}
 
-
-
-
 TypeDefinition::~TypeDefinition() {
   delete name;
   for (const auto p : typeNames) {
@@ -1621,9 +1283,6 @@ void TypeDefinition::print(std::ostream &os) const {
 TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions)
     : AstNode(token), declaration(declaration->with_parent<TypeDeclaration>(this)), definitions(nodes_with_parent(std::move(definitions), this)) {}
 
-
-
-
 TypeNode::~TypeNode() {
   delete declaration;
   for (const auto p : definitions) {
@@ -1644,9 +1303,6 @@ void TypeNode::print(std::ostream &os) const {
 
 TypeInstance::TypeInstance(SourceContext token, TypeNameNode *name, vector<ExprNode *> exprs)
     : AstNode(token), name(name->with_parent<TypeNameNode>(this)), exprs(nodes_with_parent(std::move(exprs), this)) {}
-
-
-
 
 TypeInstance::~TypeInstance() {
   delete name;
@@ -1670,9 +1326,6 @@ void TypeInstance::print(std::ostream &os) const {
 FunctionDeclaration::FunctionDeclaration(SourceContext token, NameExpr *function_name, vector<TypeDefinition *> type_definitions)
     : AstNode(token), functionName(function_name->with_parent<NameExpr>(this)),
       typeDefinitions(nodes_with_parent(std::move(type_definitions), this)) {}
-
-
-
 
 FunctionDeclaration::~FunctionDeclaration() {
   delete functionName;

@@ -7,6 +7,8 @@
 #include <expected>
 #include <unordered_map>
 #include <format>
+#include <cstdint>
+#include <string_view>
 
 #include "yona_export.h"
 #include "SourceLocation.h"
