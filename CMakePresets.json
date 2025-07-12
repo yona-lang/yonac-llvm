@@ -28,7 +28,11 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": {
+          "value": "${sourceDir}/cmake/linux-llvm-toolchain.cmake",
+          "type": "FILEPATH"
+        }
       },
       "condition": {
         "type": "equals",

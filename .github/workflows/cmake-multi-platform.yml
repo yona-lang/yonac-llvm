@@ -97,6 +97,7 @@ jobs:
           libclang1-${{ matrix.llvm_version }} \
           clang-format-${{ matrix.llvm_version }} \
           clangd-${{ matrix.llvm_version }} \
+          lld-${{ matrix.llvm_version }} \
           libc++-${{ matrix.llvm_version }}-dev \
           libc++abi-${{ matrix.llvm_version }}-dev
 
