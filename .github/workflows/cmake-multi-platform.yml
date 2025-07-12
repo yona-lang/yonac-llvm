@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest, windows-2025]
+        os: [ubuntu-24.04, macos-15, windows-2025]
         build_type: [Debug, Release]
         include:
           # Linux Debug
@@ -35,7 +35,7 @@ jobs:
             llvm_version: 20
 
           # macOS Debug
-          - os: macos-latest
+          - os: macos-15
             build_type: Debug
             name: macOS Debug
             configure_preset: x64-debug-macos
@@ -44,7 +44,7 @@ jobs:
             llvm_version: 20
 
           # macOS Release
-          - os: macos-latest
+          - os: macos-15
             build_type: Release
             name: macOS Release
             configure_preset: x64-release-macos
