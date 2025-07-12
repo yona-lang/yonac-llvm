@@ -8,6 +8,7 @@
 #include "Parser.h"
 #include "runtime.h"
 #include "common.h"
+#include "ast_visitor_impl.h"
 #include <unordered_map>
 #include <optional>
 #include <sstream>
@@ -48,7 +49,8 @@ TEST_CASE("YonaTest", "[AstTest]") {
 
     if (parse_result.success && test_case.expected.has_value()) {
       Interpreter interpreter;
-      auto result = any_cast<RuntimeObjectPtr>(node->accept(interpreter));
+      auto interpreter_result = node->accept(interpreter);
+      auto result = interpreter_result.value;
       CHECK(result->type == get<0>(test_case.expected.value()));
 
       stringstream res_ss;

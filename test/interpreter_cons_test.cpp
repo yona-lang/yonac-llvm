@@ -3,6 +3,7 @@
 #include "Parser.h"
 #include "runtime.h"
 #include <sstream>
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -20,7 +21,7 @@ struct InterpreterConsTest {
         if (!parse_result.success || !parse_result.node) {
             throw runtime_error("Parse failed");
         }
-        return any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+        return interp.visit(parse_result.node.get()).value;
     }
 };
 

@@ -1,5 +1,6 @@
 #include "interpreter_facade.h"
 #include "Interpreter.h"
+#include "ast_visitor_impl.h"
 #include <any>
 
 namespace yona::interp {

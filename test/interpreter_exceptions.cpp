@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "ast.h"
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -19,7 +20,8 @@ TEST_CASE("RaiseExprTest", "[InterpreterExceptionTest]") {
     Interpreter interpreter;
 
     // Execute the raise expression
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     // The result should be Unit since an exception was raised
     CHECK(result->type == yona::interp::runtime::Unit);
@@ -45,7 +47,8 @@ TEST_CASE("TryCatchExprTest", "[InterpreterExceptionTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, try_catch);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 42);
@@ -68,7 +71,8 @@ TEST_CASE("TryCatchNoExceptionTest", "[InterpreterExceptionTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, try_catch);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     // Should return the try value, not the catch value
     CHECK(result->type == yona::interp::runtime::Int);

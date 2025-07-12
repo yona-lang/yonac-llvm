@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <filesystem>
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -45,7 +46,8 @@ TEST_CASE("SimpleModuleImport", "[ModuleTest]") {
     REQUIRE(parse_result.success); // Parse failed;
     REQUIRE(parse_result.node != nullptr); // Parse result is null;
 
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result.node.get()));
+    auto interpreter_result = fixture.interp->visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == Int);
     CHECK(result->get<int>() == 3);
@@ -60,7 +62,8 @@ TEST_CASE("ImportWithAlias", "[ModuleTest]") {
     auto parse_result = fixture.parser.parse_input(code);
     REQUIRE(parse_result.node != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result.node.get()));
+    auto interpreter_result = fixture.interp->visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == Int);
     CHECK(result->get<int>() == 12);
@@ -88,7 +91,7 @@ TEST_CASE("ModuleCaching", "[ModuleTest]") {
     auto parse_result1 = fixture.parser.parse_input(code1);
     REQUIRE(parse_result1.node != nullptr);
 
-    auto result1 = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result1.node.get()));
+    auto result1 = fixture.interp->visit(parse_result1.node.get()).value;
     CHECK(result1->type == Int);
     CHECK(result1->get<int>() == 30);
 
@@ -97,7 +100,7 @@ TEST_CASE("ModuleCaching", "[ModuleTest]") {
     auto parse_result2 = fixture.parser.parse_input(code2);
     REQUIRE(parse_result2.node != nullptr);
 
-    auto result2 = any_cast<RuntimeObjectPtr>(fixture.interp->visit(parse_result2.node.get()));
+    auto result2 = fixture.interp->visit(parse_result2.node.get()).value;
     CHECK(result2->type == Int);
     CHECK(result2->get<int>() == 30);
 }

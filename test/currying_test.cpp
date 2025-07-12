@@ -1,6 +1,7 @@
 #include <memory>
 #include <sstream>
 #include <catch2/catch_test_macros.hpp>
+#include "ast_visitor_impl.h"
 
 #include "Interpreter.h"
 #include "Parser.h"
@@ -32,7 +33,7 @@ struct CurryingTest {
             throw runtime_error(error_msg);
         }
 
-        return any_cast<RuntimeObjectPtr>(parse_result.node->accept(interpreter));
+        return parse_result.node->accept(interpreter).value;
     }
 };
 

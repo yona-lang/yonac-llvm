@@ -2,6 +2,7 @@
 #include <iostream>
 #include "Parser.h"
 #include "Interpreter.h"
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::interp;
@@ -25,7 +26,8 @@ TEST_CASE("SimpleAddition", "[InterpreterDebugTest]") {
         Interpreter interpreter;
 
         // Execute
-        auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(parse_result.node.get()));
+        auto interpreter_result = interpreter.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
         CHECK(result->type == yona::interp::runtime::Int);
         CHECK(result->get<int>() == 3);

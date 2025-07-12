@@ -2,6 +2,7 @@
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -24,7 +25,8 @@ TEST_CASE("SimpleIdentifierPattern", "[PatternMatchingTest]") /* FIXTURE */ {
     auto pattern_alias = new PatternAlias(EMPTY_SOURCE_LOCATION, pattern, value_expr);
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, x_identifier);
 
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
+    auto interpreter_result = fixture.interp.visit(let_expr);
+      auto result = interpreter_result.value;
 
     CHECK(result->type == Int);
     CHECK(result->get<int>() == 42);
@@ -57,7 +59,8 @@ TEST_CASE("TuplePatternMatch", "[PatternMatchingTest]") /* FIXTURE */ {
 
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, add_expr);
 
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
+    auto interpreter_result = fixture.interp.visit(let_expr);
+      auto result = interpreter_result.value;
 
     CHECK(result->type == Int);
     CHECK(result->get<int>() == 3);
@@ -82,7 +85,8 @@ TEST_CASE("UnderscorePattern", "[PatternMatchingTest]") /* FIXTURE */ {
     auto y_ref = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "y"));
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, y_ref);
 
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
+    auto interpreter_result = fixture.interp.visit(let_expr);
+      auto result = interpreter_result.value;
 
     CHECK(result->type == Int);
     CHECK(result->get<int>() == 2);
@@ -110,7 +114,8 @@ TEST_CASE("PatternMatchFailure", "[PatternMatchingTest]") /* FIXTURE */ {
     auto let_expr = new LetExpr(EMPTY_SOURCE_LOCATION, {pattern_alias}, y_ref);
 
     // Should raise exception
-    auto result = any_cast<RuntimeObjectPtr>(fixture.interp.visit(let_expr));
+    auto interpreter_result = fixture.interp.visit(let_expr);
+      auto result = interpreter_result.value;
 
     // The result should be Unit with exception raised
     // We can't directly check IS since it's private

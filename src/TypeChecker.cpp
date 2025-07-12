@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "TypeChecker.h"
+#include "ast_visitor_impl.h"
 
 namespace yona::typechecker {
 

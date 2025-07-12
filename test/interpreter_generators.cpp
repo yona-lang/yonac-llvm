@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "Interpreter.h"
 #include "ast.h"
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -34,7 +35,8 @@ TEST_CASE("SeqGeneratorTest", "[InterpreterGeneratorTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, generator);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Seq);
     auto result_seq = result->get<shared_ptr<SeqValue>>();
@@ -67,7 +69,8 @@ TEST_CASE("SetGeneratorTest", "[InterpreterGeneratorTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, generator);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Set);
     auto result_set = result->get<shared_ptr<SetValue>>();

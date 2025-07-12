@@ -3,6 +3,7 @@
 #include "Parser.h"
 #include "runtime.h"
 #include <iostream>
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -25,7 +26,8 @@ TEST_CASE("JustLambda", "[LambdaMinimalTest]") {
     REQUIRE(main != nullptr);
 
     std::cerr << "TEST: About to evaluate lambda" << std::endl;
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
+    auto interpreter_result = interp.visit(main);
+      auto result = interpreter_result.value;
     std::cerr << "TEST: Lambda evaluated" << std::endl;
 
     CHECK(result->type == yona::interp::runtime::Function);

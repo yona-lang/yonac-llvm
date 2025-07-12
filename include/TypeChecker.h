@@ -198,20 +198,20 @@ public:
     Type visit(SetGeneratorExpr *node) const override { return Type(nullptr); }
 
     // Other visitor methods (can be left as default for now)
-    Type visit(AstNode *node) const override { return Type(nullptr); }
-    Type visit(PatternNode *node) const override { return Type(nullptr); }
+    Type visit(AstNode *node) const override { return dispatchVisit(node); }
+    Type visit(PatternNode *node) const override { return dispatchVisit(node); }
     Type visit(UnderscoreNode *node) const override { return Type(nullptr); }
-    Type visit(ValueExpr *node) const override { return Type(nullptr); }
-    Type visit(SequenceExpr *node) const override { return Type(nullptr); }
-    Type visit(ScopedNode *node) const override { return Type(nullptr); }
-    Type visit(OpExpr *node) const override { return Type(nullptr); }
-    Type visit(BinaryOpExpr *node) const override { return Type(nullptr); }
-    Type visit(AliasExpr *node) const override { return Type(nullptr); }
-    Type visit(CallExpr *node) const override { return Type(nullptr); }
+    Type visit(ValueExpr *node) const override { return dispatchVisit(node); }
+    Type visit(SequenceExpr *node) const override { return dispatchVisit(node); }
+    Type visit(ScopedNode *node) const override { return dispatchVisit(node); }
+    Type visit(OpExpr *node) const override { return dispatchVisit(node); }
+    Type visit(BinaryOpExpr *node) const override { return dispatchVisit(node); }
+    Type visit(AliasExpr *node) const override { return dispatchVisit(node); }
+    Type visit(CallExpr *node) const override { return dispatchVisit(node); }
     Type visit(ImportClauseExpr *node) const override { return Type(nullptr); }
-    Type visit(GeneratorExpr *node) const override { return Type(nullptr); }
-    Type visit(CollectionExtractorExpr *node) const override { return Type(nullptr); }
-    Type visit(FunctionBody *node) const override { return Type(nullptr); }
+    Type visit(GeneratorExpr *node) const override { return dispatchVisit(node); }
+    Type visit(CollectionExtractorExpr *node) const override { return dispatchVisit(node); }
+    Type visit(FunctionBody *node) const override { return dispatchVisit(node); }
     Type visit(NameExpr *node) const override { return Type(nullptr); }
     Type visit(FqnExpr *node) const override { return Type(nullptr); }
     Type visit(BodyWithGuards *node) const override { return Type(nullptr); }

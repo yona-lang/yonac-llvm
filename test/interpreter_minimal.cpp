@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "Interpreter.h"
 #include "ast.h"
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -21,7 +22,8 @@ TEST_CASE("DirectASTTest", "[InterpreterMinimalTest]") {
     Interpreter interpreter;
 
     // Execute
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 30);
@@ -31,7 +33,8 @@ TEST_CASE("IntegerLiteralTest", "[InterpreterMinimalTest]") {
     auto integer = make_unique<IntegerExpr>(TestSrcCtx, 42);
     Interpreter interpreter;
 
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(integer.get()));
+    auto interpreter_result = interpreter.visit(integer.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 42);
@@ -41,7 +44,8 @@ TEST_CASE("BooleanLiteralTest", "[InterpreterMinimalTest]") {
     auto true_lit = make_unique<TrueLiteralExpr>(TestSrcCtx);
     Interpreter interpreter;
 
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(true_lit.get()));
+    auto interpreter_result = interpreter.visit(true_lit.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Bool);
     CHECK(result->get<bool>());
@@ -54,7 +58,8 @@ TEST_CASE("ComparisonTest", "[InterpreterMinimalTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, eq);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Bool);
     CHECK(result->get<bool>());
@@ -68,7 +73,8 @@ TEST_CASE("IfExpressionTest", "[InterpreterMinimalTest]") {
     auto main = make_unique<MainNode>(TestSrcCtx, if_expr);
 
     Interpreter interpreter;
-    auto result = any_cast<RuntimeObjectPtr>(interpreter.visit(main.get()));
+    auto interpreter_result = interpreter.visit(main.get());
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 100);

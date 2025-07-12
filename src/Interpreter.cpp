@@ -14,6 +14,7 @@
 #include "common.h"
 #include "utils.h"
 #include "Parser.h"
+#include "ast_visitor_impl.h"
 
 
 using namespace yona::compiler::types;

@@ -3,6 +3,7 @@
 #include "Parser.h"
 #include "runtime.h"
 #include <iostream>
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -42,8 +43,9 @@ TEST_CASE("IdentityLambda", "[IdentityTest]") {
     try {
         auto visit_result = interp.visit(main);
         std::cerr << "TEST: interp.visit(main) returned" << std::endl;
-        auto result = any_cast<RuntimeObjectPtr>(visit_result);
-        std::cerr << "TEST: any_cast complete" << std::endl;
+        auto interpreter_result = visit_result;
+      auto result = interpreter_result.value;
+        std::cerr << "TEST: result extraction complete" << std::endl;
         std::cerr << "TEST: Interpreter returned" << std::endl;
 
         // The result should be an integer 42

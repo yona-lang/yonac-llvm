@@ -2,6 +2,7 @@
 #include "TypeChecker.h"
 #include "Parser.h"
 #include "ast.h"
+#include "ast_visitor_impl.h"
 #include <sstream>
 
 using namespace yona;
@@ -54,6 +55,20 @@ struct TypeCheckerTest {
 TEST_CASE("IntegerLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("42");
+
+    // Debug output
+    if (holds_alternative<nullptr_t>(t)) {
+        INFO("Type is nullptr");
+    } else if (holds_alternative<BuiltinType>(t)) {
+        INFO("Type is BuiltinType");
+    } else if (holds_alternative<shared_ptr<NamedType>>(t)) {
+        INFO("Type is NamedType");
+    } else if (holds_alternative<shared_ptr<FunctionType>>(t)) {
+        INFO("Type is FunctionType");
+    } else {
+        INFO("Type is something else, index: " << t.index());
+    }
+
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }

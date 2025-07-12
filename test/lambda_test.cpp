@@ -3,6 +3,7 @@
 #include "Parser.h"
 #include "runtime.h"
 #include <iostream>
+#include "ast_visitor_impl.h"
 
 using namespace yona;
 using namespace yona::ast;
@@ -30,7 +31,8 @@ TEST_CASE("SimpleLambda", "[LambdaTest]") {
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
     REQUIRE(main != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
+    auto interpreter_result = interp.visit(main);
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Function);
 }
@@ -54,7 +56,8 @@ TEST_CASE("LambdaApplication", "[LambdaTest]") {
     auto main = dynamic_cast<MainNode*>(parse_result.node.get());
     REQUIRE(main != nullptr);
 
-    auto result = any_cast<RuntimeObjectPtr>(interp.visit(main));
+    auto interpreter_result = interp.visit(main);
+      auto result = interpreter_result.value;
 
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 6);

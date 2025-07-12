@@ -15,6 +15,7 @@
 #include "terminal.h"
 #include "types.h"
 #include "version.h"
+#include "ast_visitor_impl.h"
 
 using namespace std;
 
@@ -192,7 +193,8 @@ int main(const int argc, const char *argv[]) {
         compiler::Optimizer optimizer;
         interp::Interpreter interpreter;
 
-        auto optimized_ast = any_cast<expr_wrapper>(parse_result.node->accept(optimizer)).get_node<AstNode>();
+        auto optimizer_result = parse_result.node->accept(optimizer);
+        auto optimized_ast = optimizer_result.node;
 
         // Type check before interpretation
         interpreter.enable_type_checking(true);
@@ -204,7 +206,8 @@ int main(const int argc, const char *argv[]) {
         }
 
         // Interpret the expression
-        auto result = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
+        auto interpreter_result = optimized_ast->accept(interpreter);
+        auto result = interpreter_result.value;
 
         // Show the result
         cout << *result << endl;
@@ -231,7 +234,8 @@ int main(const int argc, const char *argv[]) {
     compiler::Optimizer optimizer;
     interp::Interpreter interpreter;
 
-    auto optimized_ast = any_cast<expr_wrapper>(parse_result.node->accept(optimizer)).get_node<AstNode>();
+    auto optimizer_result = parse_result.node->accept(optimizer);
+    auto optimized_ast = optimizer_result.node;
 
     // Only show AST for module files, not for expressions
     if (!opts.has_expr && opts.print_ast) {
@@ -251,7 +255,8 @@ int main(const int argc, const char *argv[]) {
     }
 
     // Interpret the type-checked AST
-    auto result = any_cast<shared_ptr<interp::RuntimeObject>>(optimized_ast->accept(interpreter));
+    auto interpreter_result = optimized_ast->accept(interpreter);
+    auto result = interpreter_result.value;
 
     // For expressions, just show the result
     if (opts.has_expr) {

@@ -4,6 +4,7 @@
 #include "Parser.h"
 #include "Interpreter.h"
 #include "runtime.h"
+#include "ast_visitor_impl.h"
 
 using namespace std;
 using namespace yona::parser;
@@ -19,7 +20,8 @@ TEST_CASE("SimpleRange", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -41,7 +43,8 @@ TEST_CASE("RangeWithStep", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -64,7 +67,8 @@ TEST_CASE("ReverseRange", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -86,7 +90,8 @@ TEST_CASE("ReverseRangeWithNegativeStep", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -109,7 +114,8 @@ TEST_CASE("EmptyRange", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -126,7 +132,8 @@ TEST_CASE("SingleElementRange", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -145,7 +152,8 @@ TEST_CASE("FloatRange", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
@@ -167,7 +175,8 @@ TEST_CASE("FloatRangeWithStep", "[RangeSequenceTest]") {
 
   REQUIRE(parse_result.node != nullptr);
 
-  auto result = any_cast<RuntimeObjectPtr>(interp.visit(parse_result.node.get()));
+  auto interpreter_result = interp.visit(parse_result.node.get());
+      auto result = interpreter_result.value;
 
   CHECK(result->type == runtime::Seq);
   auto seq_value = result->get<shared_ptr<SeqValue>>();
