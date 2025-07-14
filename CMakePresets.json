@@ -9,7 +9,10 @@
       "installDir": "${sourceDir}/out/install/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "LLVM_INSTALL_PREFIX": "C:/local/LLVM",
+        "LLVM_INSTALL_PREFIX": {
+          "value": "$env{LLVM_INSTALL_PREFIX}",
+          "type": "STRING"
+        },
         "CMAKE_TOOLCHAIN_FILE": {
           "value": "${sourceDir}/cmake/windows-llvm-toolchain.cmake",
           "type": "FILEPATH"

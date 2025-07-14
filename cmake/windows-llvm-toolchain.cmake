@@ -2,7 +2,12 @@
 
 # Set LLVM installation path
 if(NOT DEFINED LLVM_INSTALL_PREFIX)
-    set(LLVM_INSTALL_PREFIX "C:/local/LLVM")
+    # Check environment variable first (used in CI)
+    if(DEFINED ENV{LLVM_INSTALL_PREFIX})
+        set(LLVM_INSTALL_PREFIX "$ENV{LLVM_INSTALL_PREFIX}")
+    else()
+        set(LLVM_INSTALL_PREFIX "C:/local/LLVM")
+    endif()
 endif()
 
 message(STATUS "Using LLVM toolchain for Windows from ${LLVM_INSTALL_PREFIX}")
@@ -10,6 +15,7 @@ message(STATUS "Using LLVM toolchain for Windows from ${LLVM_INSTALL_PREFIX}")
 # First try to find LLVM using standard paths
 list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_PREFIX}")
 list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm")
+list(APPEND CMAKE_PREFIX_PATH "${LLVM_INSTALL_PREFIX}/lib/cmake")
 
 # If LLVM cmake files are missing, we need to manually configure LLVM
 if(NOT EXISTS "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm/LLVMConfig.cmake")
@@ -39,4 +45,10 @@ if(NOT EXISTS "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm/LLVMConfig.cmake")
 else()
     # Use the standard LLVM cmake config
     set(LLVM_DIR "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm" CACHE PATH "Path to LLVMConfig.cmake")
+endif()
+
+# Set LLVM_DIR in cache for find_package
+if(EXISTS "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm/LLVMConfig.cmake")
+    set(LLVM_DIR "${LLVM_INSTALL_PREFIX}/lib/cmake/llvm" CACHE PATH "Path to LLVMConfig.cmake" FORCE)
+    message(STATUS "Setting LLVM_DIR to ${LLVM_DIR}")
 endif()

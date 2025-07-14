@@ -151,7 +151,13 @@ jobs:
           # Extract .tar.xz (requires 7zip, available on GitHub runners)
           7z x $tempArchive -o"$env:RUNNER_TEMP\llvm-extract" | Out-Null
           $tarFile = Get-ChildItem "$env:RUNNER_TEMP\llvm-extract" -Filter *.tar | Select-Object -First 1
-          7z x $tarFile.FullName -o"$destDir" | Out-Null
+          7z x $tarFile.FullName -o"$env:RUNNER_TEMP\llvm-final" | Out-Null
+
+          # Move the nested directory content to the final destination
+          $extractedDir = Get-ChildItem "$env:RUNNER_TEMP\llvm-final" -Directory | Select-Object -First 1
+          if ($extractedDir) {
+            Get-ChildItem -Path $extractedDir.FullName | Move-Item -Destination $destDir -Force
+          }
         }
 
     - name: Set Up LLVM (Windows)
