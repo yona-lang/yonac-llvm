@@ -187,6 +187,39 @@ jobs:
         name: test-results-${{ matrix.name }}
         path: '**/test-results.xml'
 
+    # Parse test results and create summary
+    - name: Parse Test Results
+      if: always()
+      shell: bash
+      run: |
+        # Find the test results file
+        TEST_FILE=$(find . -name "test-results.xml" -type f | head -n 1)
+        if [ -f "$TEST_FILE" ]; then
+          # Extract test counts using grep and sed
+          TOTAL=$(grep -o 'tests="[0-9]*"' "$TEST_FILE" | sed 's/tests="//' | sed 's/"//g' | head -n 1)
+          FAILURES=$(grep -o 'failures="[0-9]*"' "$TEST_FILE" | sed 's/failures="//' | sed 's/"//g' | head -n 1)
+          ERRORS=$(grep -o 'errors="[0-9]*"' "$TEST_FILE" | sed 's/errors="//' | sed 's/"//g' | head -n 1)
+
+          # Default to 0 if not found
+          TOTAL=${TOTAL:-0}
+          FAILURES=${FAILURES:-0}
+          ERRORS=${ERRORS:-0}
+          PASSED=$((TOTAL - FAILURES - ERRORS))
+
+          # Create summary
+          echo "### Test Results for ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔥 Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📊 Total | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ No test results found for ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
     # Test Report
     - name: Test Report
       uses: dorny/test-reporter@v1
@@ -195,3 +228,75 @@ jobs:
         name: Tests - ${{ matrix.name }}
         path: '**/test-results.xml'
         reporter: java-junit
+        fail-on-error: 'false'
+        fail-on-empty: 'false'
+
+  # Summary job to aggregate all test results
+  test-summary:
+    name: Test Summary
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Download all test results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: test-results-*
+        merge-multiple: true
+
+    - name: Create Test Summary
+      run: |
+        echo "# 📊 Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Platform Overview" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Platform | Total | ✅ Passed | ❌ Failed | 🔥 Errors | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|-------|-----------|-----------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+        TOTAL_ALL=0
+        PASSED_ALL=0
+        FAILED_ALL=0
+        ERRORS_ALL=0
+
+        # Process each test result file
+        for file in $(find . -name "test-results.xml" -type f); do
+          # Extract platform name from file path or use generic name
+          PLATFORM=$(echo "$file" | grep -oP '(?<=test-results-)[^/]*' || echo "Unknown")
+
+          # Extract test counts
+          TOTAL=$(grep -o 'tests="[0-9]*"' "$file" | sed 's/tests="//' | sed 's/"//g' | head -n 1)
+          FAILURES=$(grep -o 'failures="[0-9]*"' "$file" | sed 's/failures="//' | sed 's/"//g' | head -n 1)
+          ERRORS=$(grep -o 'errors="[0-9]*"' "$file" | sed 's/errors="//' | sed 's/"//g' | head -n 1)
+
+          # Default to 0 if not found
+          TOTAL=${TOTAL:-0}
+          FAILURES=${FAILURES:-0}
+          ERRORS=${ERRORS:-0}
+          PASSED=$((TOTAL - FAILURES - ERRORS))
+
+          # Update totals
+          TOTAL_ALL=$((TOTAL_ALL + TOTAL))
+          PASSED_ALL=$((PASSED_ALL + PASSED))
+          FAILED_ALL=$((FAILED_ALL + FAILURES))
+          ERRORS_ALL=$((ERRORS_ALL + ERRORS))
+
+          # Determine status icon
+          if [ "$FAILURES" -eq 0 ] && [ "$ERRORS" -eq 0 ]; then
+            STATUS="✅"
+          else
+            STATUS="❌"
+          fi
+
+          echo "| $PLATFORM | $TOTAL | $PASSED | $FAILURES | $ERRORS | $STATUS |" >> $GITHUB_STEP_SUMMARY
+        done
+
+        # Add totals row
+        echo "| **TOTAL** | **$TOTAL_ALL** | **$PASSED_ALL** | **$FAILED_ALL** | **$ERRORS_ALL** | - |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Add success rate
+        if [ "$TOTAL_ALL" -gt 0 ]; then
+          SUCCESS_RATE=$(( (PASSED_ALL * 100) / TOTAL_ALL ))
+          echo "### 📈 Success Rate: ${SUCCESS_RATE}%" >> $GITHUB_STEP_SUMMARY
+        fi
