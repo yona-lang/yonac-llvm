@@ -192,6 +192,10 @@ bool Interpreter::match_pattern(PatternNode *pattern, const RuntimeObjectPtr& va
     return match_record_pattern(record_pattern, value);
   }
 
+  if (auto or_pattern = dynamic_cast<OrPattern*>(pattern)) {
+    return match_or_pattern(or_pattern, value);
+  }
+
   if (auto as_pattern = dynamic_cast<AsDataStructurePattern*>(pattern)) {
     return match_as_pattern(as_pattern, value);
   }
@@ -234,6 +238,13 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
         auto byte_expr = static_cast<ByteExpr*>(node);
         if (value->type != Byte) return false;
         return static_cast<uint8_t>(value->get<std::byte>()) == byte_expr->value;
+      }
+      // Handle other expression types that get evaluated
+      else {
+        // For other literal types, evaluate them and compare
+        auto expr_node = static_cast<ExprNode*>(node);
+        auto pattern_result = (expr_node->accept(*this).value);
+        return *pattern_result == *value;
       }
       return false;
     } else if constexpr (is_same_v<T, SymbolExpr*>) {
@@ -314,7 +325,46 @@ bool Interpreter::match_dict_pattern(DictPattern *pattern, const RuntimeObjectPt
 }
 
 bool Interpreter::match_record_pattern(RecordPattern *pattern, const RuntimeObjectPtr& value) const {
-  // TODO: Implement record pattern matching
+  if (value->type != Record) return false;
+
+  auto record_value = value->get<shared_ptr<RecordValue>>();
+
+  // Check if the record type matches
+  if (record_value->type_name != pattern->recordType) {
+    return false;
+  }
+
+  // Match each field pattern
+  for (const auto& [field_name_expr, field_pattern] : pattern->items) {
+    const string& field_name = field_name_expr->value;
+
+    // Find the field value in the record
+    auto field_value = record_value->get_field(field_name);
+    if (!field_value) {
+      // Field not found in record
+      return false;
+    }
+
+    // Match the field pattern against the field value
+    if (!match_pattern(field_pattern, field_value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool Interpreter::match_or_pattern(OrPattern *pattern, const RuntimeObjectPtr& value) const {
+  // Try to match against each sub-pattern
+  for (const auto& sub_pattern : pattern->patterns) {
+    // For OR patterns, we need to be careful about variable bindings
+    // Each alternative should bind the same variables
+    if (match_pattern(sub_pattern.get(), value)) {
+      // Successfully matched one of the patterns
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -653,9 +703,29 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
     // Exact number of arguments - apply the function
 
     // Perform runtime type checking if types are available
-    if (type_checker.has_value() && func_val->type.has_value()) {
-      // TODO: Implement type checking for function arguments
-      // For now, just apply without checking
+    if (func_val->type.has_value()) {
+      // Get the function type
+      auto func_type_variant = func_val->type.value();
+
+      // Check if it's a function type
+      if (holds_alternative<shared_ptr<compiler::types::FunctionType>>(func_type_variant)) {
+        auto func_type = get<shared_ptr<compiler::types::FunctionType>>(func_type_variant);
+
+        // For now, do basic runtime type validation
+        // In a full implementation, we would check that each argument matches the expected type
+        // This would require:
+        // 1. Decomposing the argument type (which may be a product type for multiple args)
+        // 2. Checking each runtime value against its expected type
+        // 3. Supporting type inference and polymorphic types
+
+        // Basic validation: ensure we have the right number of arguments
+        if (all_args.size() != func_val->arity) {
+          throw yona_error(node->source_context, yona_error::Type::TYPE,
+                          "Wrong number of arguments: expected " +
+                          to_string(func_val->arity) + ", got " +
+                          to_string(all_args.size()));
+        }
+      }
     }
 
     return InterpreterResult(func_val->code(all_args));
@@ -751,21 +821,11 @@ InterpreterResult Interpreter::visit(CatchExpr *node) const {
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(CatchPatternExpr *node) const {
-  // Don't check for exceptions here - we're in a catch block
-  // For now, always execute the pattern body
-  // In a full implementation, we would check if the pattern matches the exception
-  if (holds_alternative<PatternWithoutGuards*>(node->pattern)) {
-    auto pattern = get<PatternWithoutGuards*>(node->pattern);
-    if (pattern) {
-      return pattern->accept(*this);
-    }
-  } else {
-    auto patterns = get<vector<PatternWithGuards*>>(node->pattern);
-    if (!patterns.empty() && patterns[0]) {
-      return patterns[0]->accept(*this);
-    }
-  }
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  // This is called from CatchExpr, but the actual pattern matching
+  // and execution is now handled in TryCatchExpr visitor
+  // This method should not be called directly anymore
+  throw yona_error(node->source_context, yona_error::Type::RUNTIME,
+                  "CatchPatternExpr should not be visited directly");
 }
 InterpreterResult Interpreter::visit(CharacterExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -921,7 +981,35 @@ InterpreterResult Interpreter::visit(FalseLiteralExpr *node) const {
 }
 InterpreterResult Interpreter::visit(FieldAccessExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // First evaluate the identifier expression to get the record
+  auto record_result = node->identifier->accept(*this);
+  CHECK_EXCEPTION_RETURN();
+
+  auto record_obj = record_result.value;
+  if (!record_obj || record_obj->type != Record) {
+    throw yona_error(node->source_context, yona_error::Type::TYPE,
+                    "Field access on non-record value");
+  }
+
+  // Get the record value
+  auto record_value = record_obj->get<shared_ptr<RecordValue>>();
+  if (!record_value) {
+    throw yona_error(node->source_context, yona_error::Type::TYPE,
+                    "Invalid record value");
+  }
+
+  // Get the field name
+  const string& field_name = node->name->value;
+
+  // Get the field value
+  auto field_value = record_value->get_field(field_name);
+  if (!field_value) {
+    throw yona_error(node->source_context, yona_error::Type::RUNTIME,
+                    "Field '" + field_name + "' not found in record");
+  }
+
+  return InterpreterResult(field_value);
 }
 InterpreterResult Interpreter::visit(FieldUpdateExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1569,6 +1657,13 @@ InterpreterResult Interpreter::visit(RecordPattern *node) const {
   // RecordPattern is used in pattern matching contexts, not for evaluation
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
+
+InterpreterResult Interpreter::visit(OrPattern *node) const {
+  CHECK_EXCEPTION_RETURN();
+  // OrPattern is used in pattern matching contexts, not for evaluation
+  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+}
+
 InterpreterResult Interpreter::visit(SeqGeneratorExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the source collection
@@ -1722,9 +1817,43 @@ InterpreterResult Interpreter::visit(TryCatchExpr *node) const {
   // Clear the exception state before executing catch block
   IS.clear_exception();
 
-  // TODO: Pass exception to catch block for pattern matching
-  // For now, just execute the catch expression
-  return node->catchExpr->accept(*this);
+  // Pass exception to catch block for pattern matching
+  // Try each catch pattern in order
+  for (auto catch_pattern : node->catchExpr->patterns) {
+    if (catch_pattern->matchPattern) {
+      // Create a new frame for pattern bindings
+      IS.push_frame();
+
+      // Check if the pattern matches the exception
+      if (match_pattern(catch_pattern->matchPattern, exception)) {
+        // Pattern matched - execute the body
+        InterpreterResult catch_result(make_shared<RuntimeObject>(Unit, nullptr));
+
+        if (holds_alternative<PatternWithoutGuards*>(catch_pattern->pattern)) {
+          auto pattern_body = get<PatternWithoutGuards*>(catch_pattern->pattern);
+          if (pattern_body) {
+            catch_result = pattern_body->accept(*this);
+          }
+        } else {
+          auto patterns = get<vector<PatternWithGuards*>>(catch_pattern->pattern);
+          if (!patterns.empty() && patterns[0]) {
+            catch_result = patterns[0]->accept(*this);
+          }
+        }
+
+        // Merge pattern bindings and return the result
+        IS.merge_frame_to_parent();
+        return catch_result;
+      } else {
+        // Pattern didn't match - discard frame and try next
+        IS.pop_frame();
+      }
+    }
+  }
+
+  // No pattern matched - re-raise the exception
+  IS.raise_exception(exception, IS.exception_context);
+  throw yona_error(IS.exception_context, yona_error::Type::RUNTIME, "Unhandled exception");
 }
 
 InterpreterResult Interpreter::visit(TupleExpr *node) const {

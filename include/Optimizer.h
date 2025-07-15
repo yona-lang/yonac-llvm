@@ -90,6 +90,7 @@ public:
   [[nodiscard]] OptimizerResult visit(RecordInstanceExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(RecordNode *node) const override;
   [[nodiscard]] OptimizerResult visit(RecordPattern *node) const override;
+  [[nodiscard]] OptimizerResult visit(OrPattern *node) const override;
   [[nodiscard]] OptimizerResult visit(RightShiftExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(SeqGeneratorExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(SeqPattern *node) const override;

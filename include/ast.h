@@ -163,6 +163,7 @@ enum AstNodeType {
   AST_HEAD_TAILS_HEAD_PATTERN,
   AST_DICT_PATTERN,
   AST_RECORD_PATTERN,
+  AST_OR_PATTERN,
   AST_CASE_EXPR,
   AST_CASE_CLAUSE
 };
@@ -1934,6 +1935,22 @@ public:
   }
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_PATTERN; };
   ~RecordPattern() override;
+};
+
+class OrPattern final : public PatternNode {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  vector<unique_ptr<PatternNode>> patterns;
+
+  explicit OrPattern(SourceContext token, vector<unique_ptr<PatternNode>> patterns);
+  template<typename ResultType>
+  ResultType accept(const AstVisitor<ResultType> &visitor) const {
+    return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+  }
+  [[nodiscard]] AstNodeType get_type() const override { return AST_OR_PATTERN; };
+  ~OrPattern() override;
 };
 
 class YONA_API CaseExpr final : public ExprNode {

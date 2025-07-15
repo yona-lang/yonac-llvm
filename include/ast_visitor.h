@@ -90,6 +90,7 @@ class RangeSequenceExpr;
 class RecordInstanceExpr;
 class RecordNode;
 class RecordPattern;
+class OrPattern;
 class RightShiftExpr;
 class SeqGeneratorExpr;
 class SeqPattern;
@@ -221,6 +222,7 @@ public:
   virtual ResultType visit(RecordInstanceExpr *node) const = 0;
   virtual ResultType visit(RecordNode *node) const = 0;
   virtual ResultType visit(RecordPattern *node) const = 0;
+  virtual ResultType visit(OrPattern *node) const = 0;
   virtual ResultType visit(RightShiftExpr *node) const = 0;
   virtual ResultType visit(SeqGeneratorExpr *node) const = 0;
   virtual ResultType visit(SeqPattern *node) const = 0;

@@ -1201,6 +1201,24 @@ void RecordPattern::print(std::ostream &os) const {
   os << ')';
 }
 
+OrPattern::OrPattern(SourceContext token, vector<unique_ptr<PatternNode>> patterns)
+    : PatternNode(token), patterns(std::move(patterns)) {
+  for (auto& pattern : this->patterns) {
+    pattern->parent = this;
+  }
+}
+
+OrPattern::~OrPattern() = default;
+
+void OrPattern::print(std::ostream &os) const {
+  for (size_t i = 0; i < patterns.size(); ++i) {
+    os << *patterns[i];
+    if (i < patterns.size() - 1) {
+      os << " | ";
+    }
+  }
+}
+
 // CaseClause implementation
 CaseClause::CaseClause(SourceContext token, Pattern *pattern, ExprNode *body)
     : ExprNode(token), pattern(pattern->with_parent<Pattern>(this)), body(body->with_parent<ExprNode>(this)) {}

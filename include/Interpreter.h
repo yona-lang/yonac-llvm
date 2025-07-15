@@ -124,6 +124,7 @@ private:
   bool match_seq_pattern(SeqPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_dict_pattern(DictPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_record_pattern(RecordPattern *pattern, const RuntimeObjectPtr& value) const;
+  bool match_or_pattern(OrPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_as_pattern(AsDataStructurePattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_head_tails_pattern(HeadTailsPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_tails_head_pattern(TailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
@@ -227,6 +228,7 @@ public:
   InterpreterResult visit(RecordInstanceExpr *node) const override;
   InterpreterResult visit(RecordNode *node) const override;
   InterpreterResult visit(RecordPattern *node) const override;
+  InterpreterResult visit(OrPattern *node) const override;
   InterpreterResult visit(RightShiftExpr *node) const override;
   InterpreterResult visit(SeqGeneratorExpr *node) const override;
   InterpreterResult visit(SeqPattern *node) const override;

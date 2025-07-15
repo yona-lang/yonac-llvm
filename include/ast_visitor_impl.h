@@ -80,6 +80,7 @@ ResultType AstVisitor<ResultType>::dispatchVisit(AstNode *node) const {
     if (auto* n = dynamic_cast<SeqPattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<DictPattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<RecordPattern*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<OrPattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<AsDataStructurePattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<HeadTailsPattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<TailsHeadPattern*>(node)) return visit(n);

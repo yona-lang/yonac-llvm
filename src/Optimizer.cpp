@@ -85,6 +85,7 @@ OptimizerResult Optimizer::visit(RangeSequenceExpr *node) const { return Optimiz
 OptimizerResult Optimizer::visit(RecordInstanceExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(RecordNode *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(RecordPattern *node) const { return OptimizerResult(node); }
+OptimizerResult Optimizer::visit(OrPattern *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(RightShiftExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(SeqGeneratorExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(SeqPattern *node) const { return OptimizerResult(node); }

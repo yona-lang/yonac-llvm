@@ -881,12 +881,19 @@ private:
     unique_ptr<PatternNode> parse_pattern_or() {
         auto left = parse_pattern_primary();
 
+        vector<unique_ptr<PatternNode>> patterns;
+        patterns.push_back(std::move(left));
+
         while (match(TokenType::YPIPE)) {
             auto right = parse_pattern_primary();
-            // TODO: Create OR pattern node
+            patterns.push_back(std::move(right));
         }
 
-        return left;
+        if (patterns.size() == 1) {
+            return std::move(patterns[0]);
+        }
+
+        return make_unique<OrPattern>(peek().location, std::move(patterns));
     }
 
     unique_ptr<PatternNode> parse_pattern_primary() {
@@ -930,14 +937,46 @@ private:
             return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(byte_expr));
         }
 
-        // Other literal patterns - currently not properly supported
-        if (check(TokenType::YFLOAT) || check(TokenType::YSTRING) ||
-            check(TokenType::YCHARACTER) || check(TokenType::YTRUE) ||
-            check(TokenType::YFALSE)) {
-            advance(); // consume the literal
-            // TODO: The AST needs to be updated to support literal patterns
-            // For now, return underscore pattern as a placeholder
-            return make_unique<UnderscorePattern>(loc);
+        // Float literal pattern
+        if (check(TokenType::YFLOAT)) {
+            auto token = advance();
+            auto value = get<double>(token.value);
+            auto float_expr = new FloatExpr(loc, value);
+            // Cast to void* to fit in PatternValue (using the same hack as integer)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(float_expr));
+        }
+
+        // String literal pattern
+        if (check(TokenType::YSTRING)) {
+            auto token = advance();
+            auto value = get<string>(token.value);
+            auto string_expr = new StringExpr(loc, value);
+            // Cast to void* to fit in PatternValue (using the same hack as integer)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(string_expr));
+        }
+
+        // Character literal pattern
+        if (check(TokenType::YCHARACTER)) {
+            auto token = advance();
+            auto value = get<char32_t>(token.value);
+            auto char_expr = new CharacterExpr(loc, static_cast<char>(value));
+            // Cast to void* to fit in PatternValue (using the same hack as integer)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(char_expr));
+        }
+
+        // Boolean literal patterns
+        if (check(TokenType::YTRUE)) {
+            advance();
+            auto true_expr = new TrueLiteralExpr(loc);
+            // Cast to void* to fit in PatternValue (using the same hack as integer)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(true_expr));
+        }
+
+        if (check(TokenType::YFALSE)) {
+            advance();
+            auto false_expr = new FalseLiteralExpr(loc);
+            // Cast to void* to fit in PatternValue (using the same hack as integer)
+            return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(false_expr));
         }
 
         // Tuple pattern
@@ -1123,17 +1162,16 @@ private:
         // TODO: Fix this to properly handle non-identifier functions
         // BOOST_LOG_TRIVIAL(debug) << "parse_juxtaposition_apply: Creating ApplyExpr";
 
-        // For now, if func is an identifier, use NameCall
+        // Handle different function expression types
         if (auto id = dynamic_cast<IdentifierExpr*>(func.get())) {
-            // Create a new NameExpr to avoid dangling pointer when IdentifierExpr is deleted
+            // For identifiers, use NameCall
             auto name_copy = new NameExpr(loc, id->name->value);
             auto name_call = new NameCall(loc, name_copy);
             return make_unique<ApplyExpr>(loc, name_call, args);
         } else {
-            // For other expressions, we need to handle them specially
-            std::cerr << "parse_juxtaposition_apply: Non-identifier function application not yet supported" << std::endl;
-            error(ParseError::Type::INVALID_SYNTAX, "Function application of non-identifier expressions not yet supported");
-            return func;
+            // For other expressions, use ExprCall
+            auto expr_call = new ExprCall(loc, func.release());
+            return make_unique<ApplyExpr>(loc, expr_call, args);
         }
     }
 

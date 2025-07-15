@@ -233,6 +233,7 @@ public:
     Type visit(PatternValue *node) const override { return Type(nullptr); }
     Type visit(AsDataStructurePattern *node) const override { return Type(nullptr); }
     Type visit(RecordPattern *node) const override { return Type(nullptr); }
+    Type visit(OrPattern *node) const override { return Type(nullptr); }
     Type visit(TuplePattern *node) const override { return Type(nullptr); }
     Type visit(SeqPattern *node) const override { return Type(nullptr); }
     Type visit(HeadTailsPattern *node) const override { return Type(nullptr); }
