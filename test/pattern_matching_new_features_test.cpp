@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include <sstream>
 #include "Interpreter.h"
 #include "Parser.h"
@@ -9,7 +10,7 @@ using namespace yona::ast;
 using namespace yona::interp;
 using namespace yona::parser;
 
-TEST_CASE("Parser can handle OR patterns", "[parser][patterns]") {
+TEST_CASE("Parser can handle OR patterns") {
     Parser parser;
     Interpreter interp;
 
@@ -32,7 +33,7 @@ TEST_CASE("Parser can handle OR patterns", "[parser][patterns]") {
     REQUIRE(interp_result.value->get<std::string>() == "small");
 }
 
-TEST_CASE("Parser can handle literal patterns", "[parser][patterns]") {
+TEST_CASE("Parser can handle literal patterns") {
     Parser parser;
 
     // Test float literal pattern
@@ -76,7 +77,7 @@ TEST_CASE("Parser can handle literal patterns", "[parser][patterns]") {
     REQUIRE(bool_result.node != nullptr);
 }
 
-TEST_CASE("Interpreter handles OR patterns correctly", "[interpreter][patterns]") {
+TEST_CASE("Interpreter handles OR patterns correctly") {
     Parser parser;
     Interpreter interp;
 
@@ -114,7 +115,7 @@ TEST_CASE("Interpreter handles OR patterns correctly", "[interpreter][patterns]"
     REQUIRE(result2.value->get<std::string>() == "medium");
 }
 
-TEST_CASE("Interpreter handles string literal patterns", "[interpreter][patterns]") {
+TEST_CASE("Interpreter handles string literal patterns") {
     Parser parser;
     Interpreter interp;
 
@@ -136,7 +137,7 @@ TEST_CASE("Interpreter handles string literal patterns", "[interpreter][patterns
     REQUIRE(result.value->get<bool>() == true);
 }
 
-TEST_CASE("Interpreter handles record patterns", "[interpreter][patterns]") {
+TEST_CASE("Interpreter handles record patterns") {
     Parser parser;
     Interpreter interp;
 
@@ -159,7 +160,7 @@ TEST_CASE("Interpreter handles record patterns", "[interpreter][patterns]") {
     REQUIRE(result.value->get<std::string>() == "Alice");
 }
 
-TEST_CASE("Interpreter handles all literal pattern types", "[interpreter][patterns]") {
+TEST_CASE("Interpreter handles all literal pattern types") {
     Parser parser;
     Interpreter interp;
 

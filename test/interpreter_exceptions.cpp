@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "ast.h"
 #include "ast_visitor_impl.h"
@@ -11,7 +11,7 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
-TEST_CASE("RaiseExprTest", "[InterpreterExceptionTest]") {
+TEST_CASE("RaiseExprTest") {
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
     auto raise = new RaiseExpr(TestSrcCtx, symbol, message);
@@ -27,7 +27,7 @@ TEST_CASE("RaiseExprTest", "[InterpreterExceptionTest]") {
     CHECK(result->type == yona::interp::runtime::Unit);
 }
 
-TEST_CASE("TryCatchExprTest", "[InterpreterExceptionTest]") {
+TEST_CASE("TryCatchExprTest") {
     // Create a try expression that raises an exception
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
@@ -54,7 +54,7 @@ TEST_CASE("TryCatchExprTest", "[InterpreterExceptionTest]") {
     CHECK(result->get<int>() == 42);
 }
 
-TEST_CASE("TryCatchNoExceptionTest", "[InterpreterExceptionTest]") {
+TEST_CASE("TryCatchNoExceptionTest") {
     // Create a try expression that doesn't raise an exception
     auto try_value = new IntegerExpr(TestSrcCtx, 100);
 

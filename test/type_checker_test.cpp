@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "TypeChecker.h"
 #include "Parser.h"
 #include "ast.h"
@@ -52,7 +53,7 @@ struct TypeCheckerTest {
 };
 
 // Tests for literal type inference
-TEST_CASE("IntegerLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("IntegerLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("42");
 
@@ -73,21 +74,21 @@ TEST_CASE("IntegerLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("FloatLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("FloatLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("3.14");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Float64);
 }
 
-TEST_CASE("StringLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("StringLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("\"hello\"");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::String);
 }
 
-TEST_CASE("BooleanLiteralTypes", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("BooleanLiteralTypes") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t1 = fixture.check_expr("true");
     CHECK(holds_alternative<BuiltinType>(t1));
@@ -98,21 +99,21 @@ TEST_CASE("BooleanLiteralTypes", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(t2) == compiler::types::Bool);
 }
 
-TEST_CASE("CharacterLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("CharacterLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("'a'");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Char);
 }
 
-TEST_CASE("UnitLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("UnitLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("()");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Unit);
 }
 
-TEST_CASE("SymbolLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("SymbolLiteralType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr(":symbol");
     CHECK(holds_alternative<BuiltinType>(t));
@@ -120,7 +121,7 @@ TEST_CASE("SymbolLiteralType", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for collection types
-TEST_CASE("SequenceType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("SequenceType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("[1, 2, 3]");
     CHECK(holds_alternative<shared_ptr<SingleItemCollectionType>>(t));
@@ -130,7 +131,7 @@ TEST_CASE("SequenceType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(seq_type->valueType) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("EmptySequenceType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("EmptySequenceType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("[]");
     CHECK(holds_alternative<shared_ptr<SingleItemCollectionType>>(t));
@@ -140,7 +141,7 @@ TEST_CASE("EmptySequenceType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(holds_alternative<shared_ptr<NamedType>>(seq_type->valueType));
 }
 
-TEST_CASE("SetType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("SetType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("{1, 2, 3}");
     CHECK(holds_alternative<shared_ptr<SingleItemCollectionType>>(t));
@@ -150,7 +151,7 @@ TEST_CASE("SetType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(set_type->valueType) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("DictType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("DictType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("{\"a\": 1, \"b\": 2}");
     CHECK(holds_alternative<shared_ptr<DictCollectionType>>(t));
@@ -161,7 +162,7 @@ TEST_CASE("DictType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(dict_type->valueType) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("TupleType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TupleType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("(1, \"hello\", true)");
     CHECK(holds_alternative<shared_ptr<ProductType>>(t));
@@ -176,7 +177,7 @@ TEST_CASE("TupleType", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for arithmetic operators
-TEST_CASE("AdditionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("AdditionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t1 = fixture.check_expr("1 + 2");
     CHECK(holds_alternative<BuiltinType>(t1));
@@ -191,35 +192,35 @@ TEST_CASE("AdditionType", "[TypeCheckerTest]") /* FIXTURE */ {
     CHECK(get<BuiltinType>(t3) == compiler::types::String);
 }
 
-TEST_CASE("SubtractionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("SubtractionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("5 - 3");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("MultiplicationType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("MultiplicationType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("3 * 4");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("DivisionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("DivisionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("10 / 2");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Float64); // Division always returns float
 }
 
-TEST_CASE("ModuloType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("ModuloType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("10 % 3");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("PowerType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("PowerType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("2 ** 3");
     CHECK(holds_alternative<BuiltinType>(t));
@@ -227,21 +228,21 @@ TEST_CASE("PowerType", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for comparison operators
-TEST_CASE("EqualityType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("EqualityType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("1 == 2");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Bool);
 }
 
-TEST_CASE("InequalityType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("InequalityType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("1 != 2");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Bool);
 }
 
-TEST_CASE("ComparisonTypes", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("ComparisonTypes") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t1 = fixture.check_expr("1 < 2");
     CHECK(holds_alternative<BuiltinType>(t1));
@@ -261,21 +262,21 @@ TEST_CASE("ComparisonTypes", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for logical operators
-TEST_CASE("LogicalAndType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("LogicalAndType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("true && false");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Bool);
 }
 
-TEST_CASE("LogicalOrType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("LogicalOrType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("true || false");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::Bool);
 }
 
-TEST_CASE("LogicalNotType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("LogicalNotType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("!true");
     CHECK(holds_alternative<BuiltinType>(t));
@@ -283,21 +284,21 @@ TEST_CASE("LogicalNotType", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for control flow
-TEST_CASE("IfExpressionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("IfExpressionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("if true then 1 else 2");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("LetExpressionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("LetExpressionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("let x = 42 in x + 1");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64);
 }
 
-TEST_CASE("DoExpressionType", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("DoExpressionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
     Type t = fixture.check_expr("do 1 2 3 end");
     CHECK(holds_alternative<BuiltinType>(t));
@@ -305,52 +306,52 @@ TEST_CASE("DoExpressionType", "[TypeCheckerTest]") /* FIXTURE */ {
 }
 
 // Tests for type errors
-TEST_CASE("TypeMismatchInArithmetic", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInArithmetic") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("1 + \"string\"")); // Can't add int and string (except for string concat)
     CHECK(fixture.has_type_errors("true - false")); // Can't subtract booleans
 }
 
-TEST_CASE("TypeMismatchInComparison", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInComparison") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("1 < \"string\"")); // Can't compare int and string
 }
 
-TEST_CASE("TypeMismatchInLogical", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInLogical") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("1 && 2")); // Logical operators require booleans
     CHECK(fixture.has_type_errors("!42")); // Not operator requires boolean
 }
 
-TEST_CASE("TypeMismatchInIf", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInIf") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("if 42 then 1 else 2")); // Condition must be boolean
     CHECK(fixture.has_type_errors("if true then 1 else \"string\"")); // Branches must have same type
 }
 
-TEST_CASE("UndefinedVariable", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("UndefinedVariable") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("undefined_var"));
 }
 
-TEST_CASE("TypeMismatchInSequence", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInSequence") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("[1, \"string\", 3]")); // Mixed types in sequence
 }
 
-TEST_CASE("TypeMismatchInSet", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInSet") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("{1, \"string\", 3}")); // Mixed types in set
 }
 
-TEST_CASE("TypeMismatchInDict", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("TypeMismatchInDict") /* FIXTURE */ {
     TypeCheckerTest fixture;
     CHECK(fixture.has_type_errors("{1: \"a\", \"b\": \"c\"}")); // Mixed key types
     CHECK(fixture.has_type_errors("{\"a\": 1, \"b\": \"c\"}")); // Mixed value types
 }
 
 // Tests for let polymorphism
-TEST_CASE("LetPolymorphism", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("LetPolymorphism") /* FIXTURE */ {
     TypeCheckerTest fixture;
     // Identity function should work with different types
     Type t = fixture.check_expr("let id = \\(x) -> x in (id(1), id(\"hello\"))");
@@ -361,7 +362,7 @@ TEST_CASE("LetPolymorphism", "[TypeCheckerTest]") /* FIXTURE */ {
 // Tests for type unification
 // Note: unify is now private, so these tests are commented out
 /*
-TEST_CASE("UnificationBasic", "[TypeCheckerTest]") {
+TEST_CASE("UnificationBasic") {
     TypeCheckerTest fixture;
     TypeInferenceContext ctx;
     TypeChecker checker(ctx);
@@ -375,7 +376,7 @@ TEST_CASE("UnificationBasic", "[TypeCheckerTest]") {
     CHECK_FALSE(result2.success);
 }
 
-TEST_CASE("UnificationWithTypeVariables", "[TypeCheckerTest]") {
+TEST_CASE("UnificationWithTypeVariables") {
     TypeCheckerTest fixture;
     TypeInferenceContext ctx;
     TypeChecker checker(ctx);
@@ -396,7 +397,7 @@ TEST_CASE("UnificationWithTypeVariables", "[TypeCheckerTest]") {
 */
 
 // Tests for numeric type promotion
-TEST_CASE("NumericPromotion", "[TypeCheckerTest]") /* FIXTURE */ {
+TEST_CASE("NumericPromotion") /* FIXTURE */ {
     TypeCheckerTest fixture;
     // Test that derive_bin_op_result_type works correctly
     Type int_type(SignedInt64);

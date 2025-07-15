@@ -1,6 +1,7 @@
+#include <sstream>
 #include <memory>
 #include <sstream>
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 #include "ast_visitor_impl.h"
 
 #include "Interpreter.h"
@@ -38,7 +39,7 @@ struct CurryingTest {
 };
 
 // Test basic currying with 2 arguments
-TEST_CASE("BasicCurrying", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("BasicCurrying") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let add = \(x) -> \(y) -> x + y in
@@ -51,7 +52,7 @@ TEST_CASE("BasicCurrying", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test currying with 3 arguments
-TEST_CASE("MultipleArgumentCurrying", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("MultipleArgumentCurrying") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let sum3 = \(x) -> \(y) -> \(z) -> x + y + z in
@@ -65,7 +66,7 @@ TEST_CASE("MultipleArgumentCurrying", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test partial application with multiple arguments at once
-TEST_CASE("PartialApplicationMultipleArgs", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("PartialApplicationMultipleArgs") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let sum3 = \(x) -> \(y) -> \(z) -> x + y + z in
@@ -78,7 +79,7 @@ TEST_CASE("PartialApplicationMultipleArgs", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test full application
-TEST_CASE("FullApplication", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("FullApplication") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let sum3 = \(x) -> \(y) -> \(z) -> x + y + z in
@@ -90,7 +91,7 @@ TEST_CASE("FullApplication", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test over-application (too many arguments)
-TEST_CASE("OverApplication", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("OverApplication") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let add = \(x) -> \(y) -> x + y in
@@ -105,7 +106,7 @@ TEST_CASE("OverApplication", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test currying with higher-order functions
-TEST_CASE("HigherOrderFunctionCurrying", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("HigherOrderFunctionCurrying") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let map = \(f) -> \(list) ->
@@ -128,7 +129,7 @@ TEST_CASE("HigherOrderFunctionCurrying", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test currying with nested functions
-TEST_CASE("NestedFunctionCurrying", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("NestedFunctionCurrying") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let makeAdder = \(x) ->
@@ -143,7 +144,7 @@ TEST_CASE("NestedFunctionCurrying", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test currying preserves function identity
-TEST_CASE("CurryingPreservesFunctionIdentity", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("CurryingPreservesFunctionIdentity") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let add = \(x) -> \(y) -> x + y in
@@ -161,7 +162,7 @@ TEST_CASE("CurryingPreservesFunctionIdentity", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test currying with pattern matching
-TEST_CASE("CurryingWithPatternMatching", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("CurryingWithPatternMatching") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let processList = \(default) -> \(list) ->
@@ -182,7 +183,7 @@ TEST_CASE("CurryingWithPatternMatching", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test zero-argument functions (should not be curried)
-TEST_CASE("ZeroArgumentFunction", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("ZeroArgumentFunction") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let getConstant = 42 in
@@ -194,7 +195,7 @@ TEST_CASE("ZeroArgumentFunction", "[CurryingTest]") /* FIXTURE */ {
 }
 
 // Test single-argument functions (effectively no currying but should work)
-TEST_CASE("SingleArgumentFunction", "[CurryingTest]") /* FIXTURE */ {
+TEST_CASE("SingleArgumentFunction") /* FIXTURE */ {
     CurryingTest fixture;
     auto result = fixture.eval(R"(
         let double = \(x) -> x * 2 in

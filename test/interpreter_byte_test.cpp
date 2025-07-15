@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -26,7 +27,7 @@ struct InterpreterByteTest {
 };
 
 // Test basic byte literals
-TEST_CASE("BasicByteLiteral", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("BasicByteLiteral") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("42b");
 
@@ -34,7 +35,7 @@ TEST_CASE("BasicByteLiteral", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(static_cast<uint8_t>(result->get<std::byte>()) == 42);
 }
 
-TEST_CASE("ByteLiteralUppercase", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteLiteralUppercase") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("100B");
 
@@ -42,7 +43,7 @@ TEST_CASE("ByteLiteralUppercase", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(static_cast<uint8_t>(result->get<std::byte>()) == 100);
 }
 
-TEST_CASE("ByteLiteralZero", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteLiteralZero") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("0b");
 
@@ -50,7 +51,7 @@ TEST_CASE("ByteLiteralZero", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(static_cast<uint8_t>(result->get<std::byte>()) == 0);
 }
 
-TEST_CASE("ByteLiteralMax", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteLiteralMax") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("255b");
 
@@ -59,7 +60,7 @@ TEST_CASE("ByteLiteralMax", "[InterpreterByteTest]") /* FIXTURE */ {
 }
 
 // Test byte arithmetic
-TEST_CASE("ByteAddition", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteAddition") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("10b + 20b");
 
@@ -67,7 +68,7 @@ TEST_CASE("ByteAddition", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 30);
 }
 
-TEST_CASE("ByteSubtraction", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteSubtraction") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("100b - 50b");
 
@@ -75,7 +76,7 @@ TEST_CASE("ByteSubtraction", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 50);
 }
 
-TEST_CASE("ByteMultiplication", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteMultiplication") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("5b * 6b");
 
@@ -84,7 +85,7 @@ TEST_CASE("ByteMultiplication", "[InterpreterByteTest]") /* FIXTURE */ {
 }
 
 // Test byte comparisons
-TEST_CASE("ByteEquality", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteEquality") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("42b == 42b");
 
@@ -92,7 +93,7 @@ TEST_CASE("ByteEquality", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<bool>());
 }
 
-TEST_CASE("ByteInequality", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteInequality") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("10b != 20b");
 
@@ -100,7 +101,7 @@ TEST_CASE("ByteInequality", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<bool>());
 }
 
-TEST_CASE("ByteLessThan", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteLessThan") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("10b < 20b");
 
@@ -109,7 +110,7 @@ TEST_CASE("ByteLessThan", "[InterpreterByteTest]") /* FIXTURE */ {
 }
 
 // Test byte in collections
-TEST_CASE("ByteInList", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteInList") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("[1b, 2b, 3b]");
 
@@ -123,7 +124,7 @@ TEST_CASE("ByteInList", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(static_cast<uint8_t>(seq->fields[2]->get<std::byte>()) == 3);
 }
 
-TEST_CASE("ByteInTuple", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteInTuple") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate("(255b, 0b, 128b)");
 
@@ -138,7 +139,7 @@ TEST_CASE("ByteInTuple", "[InterpreterByteTest]") /* FIXTURE */ {
 }
 
 // Test byte in pattern matching
-TEST_CASE("ByteInPatternMatch", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteInPatternMatch") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate(R"(
         case 42b of
@@ -152,7 +153,7 @@ TEST_CASE("ByteInPatternMatch", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<string>() == "forty-two");
 }
 
-TEST_CASE("BytePatternWithVariable", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("BytePatternWithVariable") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate(R"(
         case 100b of
@@ -166,7 +167,7 @@ TEST_CASE("BytePatternWithVariable", "[InterpreterByteTest]") /* FIXTURE */ {
 }
 
 // Test byte with functions
-TEST_CASE("ByteAsParameter", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteAsParameter") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate(R"(
         let inc = \(x) -> x + 1b in
@@ -177,7 +178,7 @@ TEST_CASE("ByteAsParameter", "[InterpreterByteTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 11);
 }
 
-TEST_CASE("ByteInLetBinding", "[InterpreterByteTest]") /* FIXTURE */ {
+TEST_CASE("ByteInLetBinding") /* FIXTURE */ {
     InterpreterByteTest fixture;
     auto result = fixture.evaluate(R"(
         let x = 50b in

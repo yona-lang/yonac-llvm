@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -11,7 +12,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST_CASE("BasicLet", "[SimpleLetTest]") {
+TEST_CASE("BasicLet") {
     parser::Parser parser;
     Interpreter interp;
 

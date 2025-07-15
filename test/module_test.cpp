@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -36,7 +37,7 @@ struct ModuleTest {
     }
 };
 
-TEST_CASE("SimpleModuleImport", "[ModuleTest]") {
+TEST_CASE("SimpleModuleImport") {
     ModuleTest fixture;
     fixture.SetUp();
     // Test: import add from Test\Test in add(1, 2)
@@ -53,7 +54,7 @@ TEST_CASE("SimpleModuleImport", "[ModuleTest]") {
     CHECK(result->get<int>() == 3);
 }
 
-TEST_CASE("ImportWithAlias", "[ModuleTest]") {
+TEST_CASE("ImportWithAlias") {
     ModuleTest fixture;
     fixture.SetUp();
     // Test: import multiply as mult from Test\Test in mult(3, 4)
@@ -69,7 +70,7 @@ TEST_CASE("ImportWithAlias", "[ModuleTest]") {
     CHECK(result->get<int>() == 12);
 }
 
-TEST_CASE("ImportNonExportedFunction", "[ModuleTest]") {
+TEST_CASE("ImportNonExportedFunction") {
     ModuleTest fixture;
     fixture.SetUp();
     // Test: import internal_func from Test\Test - should fail
@@ -81,7 +82,7 @@ TEST_CASE("ImportNonExportedFunction", "[ModuleTest]") {
     CHECK_THROWS_AS(fixture.interp->visit(parse_result.node.get()), yona_error);
 }
 
-TEST_CASE("ModuleCaching", "[ModuleTest]") {
+TEST_CASE("ModuleCaching") {
     ModuleTest fixture;
     fixture.SetUp();
     // Import same module twice, should use cache

@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -11,7 +12,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST_CASE("SimpleLambda", "[LambdaTest]") {
+TEST_CASE("SimpleLambda") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -37,7 +38,7 @@ TEST_CASE("SimpleLambda", "[LambdaTest]") {
     CHECK(result->type == yona::interp::runtime::Function);
 }
 
-TEST_CASE("LambdaApplication", "[LambdaTest]") {
+TEST_CASE("LambdaApplication") {
     parser::Parser parser;
     Interpreter interp;
 

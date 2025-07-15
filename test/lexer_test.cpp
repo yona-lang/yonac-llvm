@@ -1,6 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
-#include <catch2/catch_approx.hpp>
+#include <doctest/doctest.h>
 #include "Lexer.h"
 #include <sstream>
 
@@ -37,7 +35,7 @@ struct LexerTest {
             if (holds_alternative<int64_t>(expected[i].second)) {
                 CHECK(get<int64_t>(tokens[i].value) == get<int64_t>(expected[i].second));
             } else if (holds_alternative<double>(expected[i].second)) {
-                CHECK(get<double>(tokens[i].value) == Catch::Approx(get<double>(expected[i].second)));
+                CHECK(get<double>(tokens[i].value) == doctest::Approx(get<double>(expected[i].second)));
             } else if (holds_alternative<string>(expected[i].second)) {
                 CHECK(get<string>(tokens[i].value) == get<string>(expected[i].second));
             }
@@ -45,7 +43,7 @@ struct LexerTest {
     }
 };
 
-TEST_CASE("SimpleArithmetic", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("SimpleArithmetic") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("10 + 20", {
         TokenType::YINTEGER,
@@ -55,7 +53,7 @@ TEST_CASE("SimpleArithmetic", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("IntegerLiterals", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("IntegerLiterals") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokenValues("42 1000 1_000_000", {
         {TokenType::YINTEGER, int64_t(42)},
@@ -64,7 +62,7 @@ TEST_CASE("IntegerLiterals", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("FloatLiterals", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("FloatLiterals") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokenValues("3.14 2.0 1e10 1.5e-3", {
         {TokenType::YFLOAT, 3.14},
@@ -74,7 +72,7 @@ TEST_CASE("FloatLiterals", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("StringLiterals", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("StringLiterals") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokenValues(R"("hello" "world\n" "quote:\"" "unicode:\u0041")", {
         {TokenType::YSTRING, string("hello")},
@@ -84,7 +82,7 @@ TEST_CASE("StringLiterals", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Identifiers", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Identifiers") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("foo bar_baz x' _test", {
         TokenType::YIDENTIFIER,
@@ -95,7 +93,7 @@ TEST_CASE("Identifiers", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Keywords", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Keywords") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("let if then else true false", {
         TokenType::YLET,
@@ -108,7 +106,7 @@ TEST_CASE("Keywords", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Operators", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Operators") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("+ - * / % ** == != < > <= >= && || ! & | ^ ~ << >> >>>", {
         TokenType::YPLUS,
@@ -137,7 +135,7 @@ TEST_CASE("Operators", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Delimiters", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Delimiters") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("( ) [ ] { } , ; : . .. = -> =>", {
         TokenType::YLPAREN,
@@ -158,7 +156,7 @@ TEST_CASE("Delimiters", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("ListOperators", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("ListOperators") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens(":: <| |> ++ @ _", {
         TokenType::YCONS,
@@ -171,7 +169,7 @@ TEST_CASE("ListOperators", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("YonaSequenceOperators", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("YonaSequenceOperators") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("-- -| |-", {
         TokenType::YREMOVE,
@@ -181,7 +179,7 @@ TEST_CASE("YonaSequenceOperators", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Comments", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Comments") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens(R"(
         # Single line comment
@@ -199,7 +197,7 @@ TEST_CASE("Comments", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("Symbols", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("Symbols") /* FIXTURE */ {
     LexerTest fixture;
     Lexer lexer(":foo :+ :==");
     auto result = lexer.tokenize();
@@ -218,7 +216,7 @@ TEST_CASE("Symbols", "[LexerTest]") /* FIXTURE */ {
     CHECK(get<string_view>(tokens[2].value) == "==");
 }
 
-TEST_CASE("ComplexExpression", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("ComplexExpression") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("let x = if y > 0 then y * 2 else -y", {
         TokenType::YLET,
@@ -239,7 +237,7 @@ TEST_CASE("ComplexExpression", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("ErrorHandling", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("ErrorHandling") /* FIXTURE */ {
     LexerTest fixture;
     Lexer lexer(R"("unterminated string)");
     auto result = lexer.tokenize();
@@ -250,7 +248,7 @@ TEST_CASE("ErrorHandling", "[LexerTest]") /* FIXTURE */ {
     CHECK(errors[0].type == LexError::Type::UNTERMINATED_STRING);
 }
 
-TEST_CASE("CharacterLiterals", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("CharacterLiterals") /* FIXTURE */ {
     LexerTest fixture;
     Lexer lexer("'a' '\\n' '\\u0041'");
     auto result = lexer.tokenize();
@@ -269,7 +267,7 @@ TEST_CASE("CharacterLiterals", "[LexerTest]") /* FIXTURE */ {
     CHECK(get<char32_t>(tokens[2].value) == U'A');
 }
 
-TEST_CASE("UnicodeIdentifiers", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("UnicodeIdentifiers") /* FIXTURE */ {
     LexerTest fixture;
     fixture.TestTokens("λ пользователь 用户", {
         TokenType::YIDENTIFIER,
@@ -279,7 +277,7 @@ TEST_CASE("UnicodeIdentifiers", "[LexerTest]") /* FIXTURE */ {
     });
 }
 
-TEST_CASE("LocationTracking", "[LexerTest]") /* FIXTURE */ {
+TEST_CASE("LocationTracking") /* FIXTURE */ {
     LexerTest fixture;
     Lexer lexer("foo\nbar");
     auto result = lexer.tokenize();

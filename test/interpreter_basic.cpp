@@ -1,6 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -11,7 +10,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST_CASE("AdditionInt", "[InterpreterBasicTest]") {
+TEST_CASE("AdditionInt") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -26,7 +25,7 @@ TEST_CASE("AdditionInt", "[InterpreterBasicTest]") {
     CHECK(result->get<int>() == 30);
 }
 
-TEST_CASE("ComparisonEqual", "[InterpreterBasicTest]") {
+TEST_CASE("ComparisonEqual") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -41,7 +40,7 @@ TEST_CASE("ComparisonEqual", "[InterpreterBasicTest]") {
     CHECK(result->get<bool>());
 }
 
-TEST_CASE("IfExpression", "[InterpreterBasicTest]") {
+TEST_CASE("IfExpression") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -56,7 +55,7 @@ TEST_CASE("IfExpression", "[InterpreterBasicTest]") {
     CHECK(result->get<int>() == 100);
 }
 
-TEST_CASE("SequenceConsLeft", "[InterpreterBasicTest]") {
+TEST_CASE("SequenceConsLeft") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -74,7 +73,7 @@ TEST_CASE("SequenceConsLeft", "[InterpreterBasicTest]") {
     CHECK(seq->fields[1]->get<int>() == 1);
 }
 
-TEST_CASE("InOperatorSeq", "[InterpreterBasicTest]") {
+TEST_CASE("InOperatorSeq") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -89,7 +88,7 @@ TEST_CASE("InOperatorSeq", "[InterpreterBasicTest]") {
     CHECK(result->get<bool>());
 }
 
-TEST_CASE("LetExpression", "[InterpreterBasicTest]") {
+TEST_CASE("LetExpression") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -104,7 +103,7 @@ TEST_CASE("LetExpression", "[InterpreterBasicTest]") {
     CHECK(result->get<int>() == 15);
 }
 
-TEST_CASE("LogicalAnd", "[InterpreterBasicTest]") {
+TEST_CASE("LogicalAnd") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -119,7 +118,7 @@ TEST_CASE("LogicalAnd", "[InterpreterBasicTest]") {
     CHECK_FALSE(result->get<bool>());
 }
 
-TEST_CASE("PowerOperation", "[InterpreterBasicTest]") {
+TEST_CASE("PowerOperation") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -131,10 +130,10 @@ TEST_CASE("PowerOperation", "[InterpreterBasicTest]") {
     auto result = interp.visit(parse_result.node.get()).value;
 
     CHECK(result->type == yona::interp::runtime::Float);
-    CHECK(result->get<double>() == Catch::Approx(8.0));
+    CHECK(result->get<double>() == doctest::Approx(8.0));
 }
 
-TEST_CASE("ModuloOperation", "[InterpreterBasicTest]") {
+TEST_CASE("ModuloOperation") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -149,7 +148,7 @@ TEST_CASE("ModuloOperation", "[InterpreterBasicTest]") {
     CHECK(result->get<int>() == 6);
 }
 
-TEST_CASE("JoinSequences", "[InterpreterBasicTest]") {
+TEST_CASE("JoinSequences") {
     parser::Parser parser;
     Interpreter interp;
 

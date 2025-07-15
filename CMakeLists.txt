@@ -140,18 +140,12 @@ target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
 enable_testing()
 
 FetchContent_Declare(
-  Catch2
-  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG        v3.8.1
+  doctest
+  GIT_REPOSITORY https://github.com/doctest/doctest.git
+  GIT_TAG        v2.4.12
 )
 
-# Ensure Catch2 uses the same runtime library as our project
-if(MSVC)
-  set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
-  set(CATCH_CONFIG_SHARED_LIBRARY OFF)
-endif()
-
-FetchContent_MakeAvailable(Catch2)
+FetchContent_MakeAvailable(doctest)
 
 add_executable(
 		tests
@@ -159,12 +153,19 @@ add_executable(
 )
 
 # We provide our own main for consistency across all platforms
-target_sources(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/catch_main.cpp)
-target_link_libraries(tests PRIVATE Catch2::Catch2 yona_lib)
+target_sources(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/doctest_main.cpp)
 
-# Include Catch2's cmake integration AFTER defining the test executable
+# Link with doctest and yona_lib
+target_link_libraries(tests PRIVATE doctest::doctest yona_lib)
+
+# For DLL builds on Windows, we need special configuration
+if(WIN32)
+	target_compile_definitions(tests PRIVATE DOCTEST_CONFIG_IMPLEMENTATION_IN_DLL)
+endif()
+
+# Include CTest
 include(CTest)
-include(Catch)
-catch_discover_tests(tests)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+
+# Removed temporary test executables - tests are now using doctest

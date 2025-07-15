@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -15,7 +15,7 @@ struct PatternMatchingTest {
     Interpreter interp;
 };
 
-TEST_CASE("SimpleIdentifierPattern", "[PatternMatchingTest]") /* FIXTURE */ {
+TEST_CASE("SimpleIdentifierPattern") /* FIXTURE */ {
     PatternMatchingTest fixture;
     // let x = 42 in x
     auto x_identifier = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
@@ -32,7 +32,7 @@ TEST_CASE("SimpleIdentifierPattern", "[PatternMatchingTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 42);
 }
 
-TEST_CASE("TuplePatternMatch", "[PatternMatchingTest]") /* FIXTURE */ {
+TEST_CASE("TuplePatternMatch") /* FIXTURE */ {
     PatternMatchingTest fixture;
     // let (x, y) = (1, 2) in x + y
     auto x_id = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
@@ -66,7 +66,7 @@ TEST_CASE("TuplePatternMatch", "[PatternMatchingTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 3);
 }
 
-TEST_CASE("UnderscorePattern", "[PatternMatchingTest]") /* FIXTURE */ {
+TEST_CASE("UnderscorePattern") /* FIXTURE */ {
     PatternMatchingTest fixture;
     // let (_, y) = (1, 2) in y
     auto underscore = new UnderscoreNode(EMPTY_SOURCE_LOCATION);
@@ -92,7 +92,7 @@ TEST_CASE("UnderscorePattern", "[PatternMatchingTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 2);
 }
 
-TEST_CASE("PatternMatchFailure", "[PatternMatchingTest]") /* FIXTURE */ {
+TEST_CASE("PatternMatchFailure") /* FIXTURE */ {
     PatternMatchingTest fixture;
     // let (1, y) = (2, 3) in y  -- should raise :nomatch
     auto one_literal = new IntegerExpr(EMPTY_SOURCE_LOCATION, 1);
@@ -124,7 +124,7 @@ TEST_CASE("PatternMatchFailure", "[PatternMatchingTest]") /* FIXTURE */ {
     // TODO: Add a way to check exception state from tests
 }
 
-TEST_CASE("CaseExpressionSimple", "[PatternMatchingTest]") /* FIXTURE */ {
+TEST_CASE("CaseExpressionSimple") /* FIXTURE */ {
     PatternMatchingTest fixture;
     // case 1 of
     //   1 -> "one"

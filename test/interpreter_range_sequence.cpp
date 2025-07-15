@@ -1,6 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
-#include <catch2/catch_approx.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Parser.h"
 #include "Interpreter.h"
 #include "runtime.h"
@@ -10,7 +9,7 @@ using namespace std;
 using namespace yona::parser;
 using namespace yona::interp;
 
-TEST_CASE("SimpleRange", "[RangeSequenceTest]") {
+TEST_CASE("SimpleRange") {
   Parser parser;
   Interpreter interp;
 
@@ -33,7 +32,7 @@ TEST_CASE("SimpleRange", "[RangeSequenceTest]") {
   }
 }
 
-TEST_CASE("RangeWithStep", "[RangeSequenceTest]") {
+TEST_CASE("RangeWithStep") {
   Parser parser;
   Interpreter interp;
 
@@ -57,7 +56,7 @@ TEST_CASE("RangeWithStep", "[RangeSequenceTest]") {
   }
 }
 
-TEST_CASE("ReverseRange", "[RangeSequenceTest]") {
+TEST_CASE("ReverseRange") {
   Parser parser;
   Interpreter interp;
 
@@ -80,7 +79,7 @@ TEST_CASE("ReverseRange", "[RangeSequenceTest]") {
   }
 }
 
-TEST_CASE("ReverseRangeWithNegativeStep", "[RangeSequenceTest]") {
+TEST_CASE("ReverseRangeWithNegativeStep") {
   Parser parser;
   Interpreter interp;
 
@@ -104,7 +103,7 @@ TEST_CASE("ReverseRangeWithNegativeStep", "[RangeSequenceTest]") {
   }
 }
 
-TEST_CASE("EmptyRange", "[RangeSequenceTest]") {
+TEST_CASE("EmptyRange") {
   Parser parser;
   Interpreter interp;
 
@@ -122,7 +121,7 @@ TEST_CASE("EmptyRange", "[RangeSequenceTest]") {
   CHECK(seq_value->fields.size() == 0);
 }
 
-TEST_CASE("SingleElementRange", "[RangeSequenceTest]") {
+TEST_CASE("SingleElementRange") {
   Parser parser;
   Interpreter interp;
 
@@ -142,7 +141,7 @@ TEST_CASE("SingleElementRange", "[RangeSequenceTest]") {
   CHECK(seq_value->fields[0]->get<int>() == 5);
 }
 
-TEST_CASE("FloatRange", "[RangeSequenceTest]") {
+TEST_CASE("FloatRange") {
   Parser parser;
   Interpreter interp;
 
@@ -161,11 +160,11 @@ TEST_CASE("FloatRange", "[RangeSequenceTest]") {
 
   for (int i = 0; i < 4; i++) {
     CHECK(seq_value->fields[i]->type == runtime::Float);
-    CHECK(seq_value->fields[i]->get<double>() == Catch::Approx(1.5 + i));
+    CHECK(seq_value->fields[i]->get<double>() == doctest::Approx(1.5 + i));
   }
 }
 
-TEST_CASE("FloatRangeWithStep", "[RangeSequenceTest]") {
+TEST_CASE("FloatRangeWithStep") {
   Parser parser;
   Interpreter interp;
 
@@ -184,6 +183,6 @@ TEST_CASE("FloatRangeWithStep", "[RangeSequenceTest]") {
 
   for (int i = 0; i < 5; i++) {
     CHECK(seq_value->fields[i]->type == runtime::Float);
-    CHECK(seq_value->fields[i]->get<double>() == Catch::Approx(i * 0.25));
+    CHECK(seq_value->fields[i]->get<double>() == doctest::Approx(i * 0.25));
   }
 }

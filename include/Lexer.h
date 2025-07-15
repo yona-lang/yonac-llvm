@@ -13,6 +13,13 @@
 #include "yona_export.h"
 #include "SourceLocation.h"
 
+// Disable warnings about STL types needing DLL interfaces
+// These are safe when using consistent runtime libraries
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4251) // class needs to have dll-interface
+#endif
+
 namespace yona::lexer {
 
 using ::yona::SourceLocation;
@@ -204,8 +211,8 @@ private:
     size_t token_start_line_ = 1;
     size_t token_start_column_ = 1;
 
-    // Keyword lookup table
-    static const std::unordered_map<std::string_view, TokenType> keywords_;
+    // Keyword lookup table - use function to avoid DLL boundary issues
+    [[nodiscard]] static const std::unordered_map<std::string_view, TokenType>& get_keywords() noexcept;
 
     // Character classification
     [[nodiscard]] static bool is_alpha(char32_t ch) noexcept;
@@ -259,3 +266,7 @@ private:
 [[nodiscard]] std::string_view token_type_to_string(TokenType type) noexcept;
 
 } // namespace yona::lexer
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif

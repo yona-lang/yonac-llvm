@@ -627,7 +627,35 @@ InterpreterResult Interpreter::visit(BinaryNotOpExpr *node) const {
 
 InterpreterResult Interpreter::visit(AliasCall *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // AliasCall represents calling a function through an alias: alias.funName(args)
+  // First resolve the alias to get the module or value
+  auto alias_result = node->alias->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  if (alias_result->type == Module) {
+    auto module_value = alias_result->get<shared_ptr<ModuleValue>>();
+    string fun_name = node->funName->value;
+
+    // Look up the function in the module's exports
+    auto it = module_value->exports.find(fun_name);
+    if (it == module_value->exports.end()) {
+      auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"function_not_found"}));
+      auto message = make_shared<RuntimeObject>(String, string("Function '" + fun_name + "' not found in module"));
+      auto exception = make_exception(symbol, message);
+      IS.raise_exception(exception, node->source_context);
+      return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+    }
+
+    return InterpreterResult(make_shared<RuntimeObject>(Function, it->second));
+  } else {
+    // Not a module - raise error
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"type_error"}));
+    auto message = make_shared<RuntimeObject>(String, string("Cannot call function on non-module value"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
 }
 InterpreterResult Interpreter::visit(ApplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -759,7 +787,33 @@ InterpreterResult Interpreter::visit(AsDataStructurePattern *node) const {
 
 InterpreterResult Interpreter::visit(BodyWithGuards *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // BodyWithGuards represents a function body with a guard condition
+  // First evaluate the guard expression
+  auto guard_result = node->guard->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  // Check if the guard evaluates to true
+  if (guard_result->type != Bool) {
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"type_error"}));
+    auto message = make_shared<RuntimeObject>(String, string("Guard expression must evaluate to boolean"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
+
+  bool guard_value = guard_result->get<bool>();
+  if (guard_value) {
+    // Guard passed, evaluate the body expression
+    return node->expr->accept(*this);
+  } else {
+    // Guard failed, return a special value indicating guard failure
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"guard_failed"}));
+    auto message = make_shared<RuntimeObject>(String, string("Function guard condition failed"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
 }
 InterpreterResult Interpreter::visit(BodyWithoutGuards *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -797,7 +851,7 @@ InterpreterResult Interpreter::visit(CaseExpr *node) const {
   }
 
   // No pattern matched - raise :nomatch exception
-  auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>("nomatch"));
+  auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"nomatch"}));
   auto message = make_shared<RuntimeObject>(String, string("No pattern matched in case expression"));
   auto exception = make_exception(symbol, message);
   IS.raise_exception(exception, node->source_context);
@@ -1013,7 +1067,44 @@ InterpreterResult Interpreter::visit(FieldAccessExpr *node) const {
 }
 InterpreterResult Interpreter::visit(FieldUpdateExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // FieldUpdateExpr updates fields in a record: record{field1: new_value, field2: new_value}
+  // First evaluate the identifier to get the original record
+  auto record_result = node->identifier->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  if (record_result->type != Record) {
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"type_error"}));
+    auto message = make_shared<RuntimeObject>(String, string("Cannot update fields on non-record value"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
+
+  // Get the original record value
+  auto original_record = record_result->get<shared_ptr<RecordValue>>();
+
+  // Create a copy of the record for updating
+  auto updated_record = make_shared<RecordValue>(*original_record);
+
+  // Apply each field update
+  for (const auto& update : node->updates) {
+    string field_name = update.first->value;
+    auto new_value = update.second->accept(*this).value;
+    CHECK_EXCEPTION_RETURN();
+
+    // Update the field in the record
+    if (!updated_record->set_field(field_name, new_value)) {
+      auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"field_not_found"}));
+      auto message = make_shared<RuntimeObject>(String, string("Field '" + field_name + "' not found in record"));
+      auto exception = make_exception(symbol, message);
+      IS.raise_exception(exception, node->source_context);
+      return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+    }
+  }
+
+  // Return the updated record
+  return InterpreterResult(make_shared<RuntimeObject>(Record, updated_record));
 }
 InterpreterResult Interpreter::visit(FloatExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1021,7 +1112,18 @@ InterpreterResult Interpreter::visit(FloatExpr *node) const {
 }
 InterpreterResult Interpreter::visit(FqnAlias *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // FqnAlias binds a fully-qualified name to a local name: name = Pkg\Module
+  // Evaluate the FQN to get a module
+  auto fqn_result = node->fqn->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  // Bind the result to the local name in the current frame
+  string alias_name = node->name->value;
+  IS.frame->write(alias_name, fqn_result);
+
+  // Return the bound value
+  return InterpreterResult(fqn_result);
 }
 
 InterpreterResult Interpreter::visit(FqnExpr *node) const {
@@ -1038,7 +1140,27 @@ InterpreterResult Interpreter::visit(FqnExpr *node) const {
 
 InterpreterResult Interpreter::visit(FunctionAlias *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // FunctionAlias creates a local alias for a function: name = alias
+  // Look up the alias function in the current frame
+  RuntimeObjectPtr alias_result;
+  try {
+    alias_result = IS.frame->lookup(node->source_context, node->alias->value);
+  } catch (const yona_error& e) {
+    // Variable not found
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"undefined_variable"}));
+    auto message = make_shared<RuntimeObject>(String, string("Undefined variable: " + node->alias->value));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
+
+  // Bind the function to the new name
+  string new_name = node->name->value;
+  IS.frame->write(new_name, alias_result);
+
+  // Return the aliased function
+  return InterpreterResult(alias_result);
 }
 
 InterpreterResult Interpreter::visit(FunctionExpr *node) const {
@@ -1306,11 +1428,61 @@ InterpreterResult Interpreter::visit(ModuloExpr *node) const {
 }
 InterpreterResult Interpreter::visit(ModuleAlias *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // ModuleAlias binds a module to a local name: name = module
+  // Evaluate the module expression
+  auto module_result = node->module->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  // Bind the module to the local name
+  string alias_name = node->name->value;
+  IS.frame->write(alias_name, module_result);
+
+  // Return the module
+  return InterpreterResult(module_result);
 }
 InterpreterResult Interpreter::visit(ModuleCall *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // ModuleCall calls a function from a module: Module\Function(args)
+  // First resolve the module from the FQN or expression
+  RuntimeObjectPtr module_result;
+
+  if (holds_alternative<FqnExpr*>(node->fqn)) {
+    // FQN case: direct module reference
+    auto fqn_expr = get<FqnExpr*>(node->fqn);
+    module_result = fqn_expr->accept(*this).value;
+  } else {
+    // Expression case: evaluate expression to get module
+    auto expr = get<ExprNode*>(node->fqn);
+    module_result = expr->accept(*this).value;
+  }
+
+  CHECK_EXCEPTION_RETURN();
+
+  if (module_result->type != Module) {
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"type_error"}));
+    auto message = make_shared<RuntimeObject>(String, string("Cannot call function on non-module value"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
+
+  // Get the module and look up the function
+  auto module_value = module_result->get<shared_ptr<ModuleValue>>();
+  string fun_name = node->funName->value;
+
+  auto it = module_value->exports.find(fun_name);
+  if (it == module_value->exports.end()) {
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"function_not_found"}));
+    auto message = make_shared<RuntimeObject>(String, string("Function '" + fun_name + "' not found in module"));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
+
+  // Return the function for later application
+  return InterpreterResult(make_shared<RuntimeObject>(Function, it->second));
 }
 InterpreterResult Interpreter::visit(ExprCall *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1413,7 +1585,47 @@ InterpreterResult Interpreter::visit(NeqExpr *node) const {
 }
 InterpreterResult Interpreter::visit(PackageNameExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // PackageNameExpr represents a package name like Package\SubPackage
+  // Build the fully qualified name from the parts
+  string fqn_str = "";
+  for (size_t i = 0; i < node->parts.size(); ++i) {
+    if (i > 0) fqn_str += "\\";
+    fqn_str += node->parts[i]->value;
+  }
+
+  // Create an FQN value
+  auto fqn_value = make_shared<FqnValue>();
+  // Split the FQN string by backslashes to create parts
+  vector<string> parts;
+  string current_part;
+  for (char c : fqn_str) {
+    if (c == '\\') {
+      if (!current_part.empty()) {
+        parts.push_back(current_part);
+        current_part.clear();
+      }
+    } else {
+      current_part += c;
+    }
+  }
+  if (!current_part.empty()) {
+    parts.push_back(current_part);
+  }
+  fqn_value->parts = parts;
+
+  // Try to load the module at this package path
+  try {
+    auto module = get_or_load_module(fqn_value);
+    return InterpreterResult(make_shared<RuntimeObject>(Module, module));
+  } catch (const yona_error& e) {
+    // Module not found or failed to load
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"module_not_found"}));
+    auto message = make_shared<RuntimeObject>(String, string("Module not found: " + fqn_str));
+    auto exception = make_exception(symbol, message);
+    IS.raise_exception(exception, node->source_context);
+    return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  }
 }
 
 InterpreterResult Interpreter::visit(PipeLeftExpr *node) const {
@@ -1469,7 +1681,7 @@ InterpreterResult Interpreter::visit(PatternAlias *node) const {
   if (!match_pattern(node->pattern, expr_result)) {
     // Pattern didn't match - raise :nomatch exception
     IS.pop_frame();
-    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>("nomatch"));
+    auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"nomatch"}));
     auto message = make_shared<RuntimeObject>(String, string("Pattern match failed"));
     auto exception = make_exception(symbol, message);
     IS.raise_exception(exception, node->source_context);
@@ -1638,7 +1850,37 @@ InterpreterResult Interpreter::visit(RangeSequenceExpr *node) const {
 }
 InterpreterResult Interpreter::visit(RecordInstanceExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // RecordInstanceExpr creates a record instance: RecordType{field1: value1, field2: value2}
+  string record_type_name = node->recordType->value;
+
+  // Create field names and values vectors
+  vector<string> field_names;
+  vector<RuntimeObjectPtr> field_values;
+
+  // Evaluate each field assignment
+  for (const auto& item : node->items) {
+    string field_name = item.first->value;
+    auto field_value = item.second->accept(*this).value;
+    CHECK_EXCEPTION_RETURN();
+
+    field_names.push_back(field_name);
+    field_values.push_back(field_value);
+  }
+
+  // Create the record value
+  auto record_value = make_shared<RecordValue>();
+  record_value->type_name = record_type_name;
+  record_value->field_names = field_names;
+  record_value->field_values = field_values;
+
+  // Store record type information in current module if we're in a module context
+  if (!IS.module_stack.empty()) {
+    auto current_module = IS.module_stack.top();
+    // TODO: Store record type information in module->record_types
+  }
+
+  return InterpreterResult(make_shared<RuntimeObject>(Record, record_value));
 }
 
 InterpreterResult Interpreter::visit(RecordNode *node) const {
@@ -1781,7 +2023,7 @@ InterpreterResult Interpreter::visit(StringExpr *node) const {
 }
 InterpreterResult Interpreter::visit(SymbolExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_typed_object(Symbol, make_shared<SymbolValue>(node->value), node));
+  return InterpreterResult(make_typed_object(Symbol, make_shared<SymbolValue>(SymbolValue{node->value}), node));
 }
 InterpreterResult Interpreter::visit(TailsHeadPattern *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1920,26 +2162,73 @@ InterpreterResult Interpreter::visit(ValuesSequenceExpr *node) const {
 
 InterpreterResult Interpreter::visit(WithExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+
+  // WithExpr provides resource management: with resource_expr as name do body_expr end
+  // First evaluate the context expression to get the resource
+  auto context_result = node->contextExpr->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  // Create a new frame for the with expression
+  IS.push_frame();
+
+  // Bind the resource to the specified name
+  string resource_name = node->name->value;
+  IS.frame->write(resource_name, context_result);
+
+  // Execute the body expression
+  auto body_result = node->bodyExpr->accept(*this);
+
+  // Pop the frame before returning
+  IS.pop_frame();
+
+  // Check if an exception occurred during body execution
+  if (IS.has_exception) {
+    // Still return the result, the exception is in the interpreter state
+    return body_result;
+  }
+
+  // Note: In a full implementation, we would handle resource cleanup here
+  // For now, we just return the body result
+  return body_result;
 }
 InterpreterResult Interpreter::visit(FunctionDeclaration *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // FunctionDeclaration represents a function type declaration
+  // In the interpreter, we mainly just return Unit as this is for type checking
+  // The actual function implementation should be handled separately
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(TypeDeclaration *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // TypeDeclaration represents a type declaration in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as declarations don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(TypeDefinition *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // TypeDefinition represents a type definition in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as definitions don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(TypeNode *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // TypeNode represents a type node in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as type nodes don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(TypeInstance *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // TypeInstance represents a type instance in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as type instances don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(IdentifierExpr *node) const {
@@ -2006,10 +2295,18 @@ InterpreterResult Interpreter::visit(MainNode *node) const {
 }
 InterpreterResult Interpreter::visit(BuiltinTypeNode *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // BuiltinTypeNode represents a builtin type in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as type nodes don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(UserDefinedTypeNode *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // UserDefinedTypeNode represents a user-defined type in the AST
+  // In the interpreter, this is mainly used for type checking
+  // Return Unit as type nodes don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 

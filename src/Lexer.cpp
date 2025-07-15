@@ -5,33 +5,36 @@
 
 namespace yona::lexer {
 
-// Keyword lookup table
-const std::unordered_map<std::string_view, TokenType> Lexer::keywords_ = {
-    {"module", TokenType::YMODULE},
-    {"import", TokenType::YIMPORT},
-    {"from", TokenType::YFROM},
-    {"as", TokenType::YAS},
-    {"exports", TokenType::YEXPORT},
-    {"let", TokenType::YLET},
-    {"in", TokenType::YIN},
-    {"if", TokenType::YIF},
-    {"then", TokenType::YTHEN},
-    {"else", TokenType::YELSE},
-    {"case", TokenType::YCASE},
-    {"of", TokenType::YOF},
-    {"do", TokenType::YDO},
-    {"end", TokenType::YEND},
-    {"try", TokenType::YTRY},
-    {"catch", TokenType::YCATCH},
-    {"raise", TokenType::YRAISE},
-    {"with", TokenType::YWITH},
-    {"fun", TokenType::YFUN},
-    {"lambda", TokenType::YLAMBDA},
-    {"record", TokenType::YRECORD},
-    {"type", TokenType::YTYPE},
-    {"true", TokenType::YTRUE},
-    {"false", TokenType::YFALSE},
-};
+// Keyword lookup table - use function to avoid DLL boundary issues
+const std::unordered_map<std::string_view, TokenType>& Lexer::get_keywords() noexcept {
+    static const std::unordered_map<std::string_view, TokenType> keywords = {
+        {"module", TokenType::YMODULE},
+        {"import", TokenType::YIMPORT},
+        {"from", TokenType::YFROM},
+        {"as", TokenType::YAS},
+        {"exports", TokenType::YEXPORT},
+        {"let", TokenType::YLET},
+        {"in", TokenType::YIN},
+        {"if", TokenType::YIF},
+        {"then", TokenType::YTHEN},
+        {"else", TokenType::YELSE},
+        {"case", TokenType::YCASE},
+        {"of", TokenType::YOF},
+        {"do", TokenType::YDO},
+        {"end", TokenType::YEND},
+        {"try", TokenType::YTRY},
+        {"catch", TokenType::YCATCH},
+        {"raise", TokenType::YRAISE},
+        {"with", TokenType::YWITH},
+        {"fun", TokenType::YFUN},
+        {"lambda", TokenType::YLAMBDA},
+        {"record", TokenType::YRECORD},
+        {"type", TokenType::YTYPE},
+        {"true", TokenType::YTRUE},
+        {"false", TokenType::YFALSE},
+    };
+    return keywords;
+}
 
 // Token methods
 std::string Token::to_string() const {
@@ -270,7 +273,7 @@ std::expected<Token, LexError> Lexer::scan_identifier() {
     std::string_view lexeme = current_lexeme();
 
     // Check if it's a keyword
-    if (auto it = keywords_.find(lexeme); it != keywords_.end()) {
+    if (auto it = get_keywords().find(lexeme); it != get_keywords().end()) {
         return make_token(it->second);
     }
 

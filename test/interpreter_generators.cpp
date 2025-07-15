@@ -1,4 +1,4 @@
-#include <catch2/catch_test_macros.hpp>
+#include <doctest/doctest.h>
 #include <algorithm>
 #include "Interpreter.h"
 #include "ast.h"
@@ -12,7 +12,7 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
-TEST_CASE("SeqGeneratorTest", "[InterpreterGeneratorTest]") {
+TEST_CASE("SeqGeneratorTest") {
     // Create a source sequence [1, 2, 3]
     vector<ExprNode*> seq_values;
     seq_values.push_back(new IntegerExpr(TestSrcCtx, 1));
@@ -46,7 +46,7 @@ TEST_CASE("SeqGeneratorTest", "[InterpreterGeneratorTest]") {
     CHECK(result_seq->fields[2]->get<int>() == 6);
 }
 
-TEST_CASE("SetGeneratorTest", "[InterpreterGeneratorTest]") {
+TEST_CASE("SetGeneratorTest") {
     // Create a source set {1, 2, 3}
     vector<ExprNode*> set_values;
     set_values.push_back(new IntegerExpr(TestSrcCtx, 1));

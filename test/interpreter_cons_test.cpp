@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -26,7 +27,7 @@ struct InterpreterConsTest {
 };
 
 // Test cons left operator (::)
-TEST_CASE("ConsLeftBasic", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsLeftBasic") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("1 :: [2, 3, 4]");
 
@@ -41,7 +42,7 @@ TEST_CASE("ConsLeftBasic", "[InterpreterConsTest]") /* FIXTURE */ {
     CHECK(seq->fields[3]->get<int>() == 4);
 }
 
-TEST_CASE("ConsLeftEmpty", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsLeftEmpty") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("42 :: []");
 
@@ -53,7 +54,7 @@ TEST_CASE("ConsLeftEmpty", "[InterpreterConsTest]") /* FIXTURE */ {
     CHECK(seq->fields[0]->get<int>() == 42);
 }
 
-TEST_CASE("ConsLeftChained", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsLeftChained") /* FIXTURE */ {
     InterpreterConsTest fixture;
     // Test right associativity: 1 :: 2 :: 3 :: [] should be 1 :: (2 :: (3 :: []))
     auto result = fixture.evaluate("1 :: 2 :: 3 :: []");
@@ -68,7 +69,7 @@ TEST_CASE("ConsLeftChained", "[InterpreterConsTest]") /* FIXTURE */ {
 }
 
 // Test cons right operator (:>)
-TEST_CASE("ConsRightBasic", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsRightBasic") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("[1, 2, 3] :> 4");
 
@@ -82,7 +83,7 @@ TEST_CASE("ConsRightBasic", "[InterpreterConsTest]") /* FIXTURE */ {
     CHECK(seq->fields[3]->get<int>() == 4);
 }
 
-TEST_CASE("ConsRightEmpty", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsRightEmpty") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("[] :> 42");
 
@@ -94,7 +95,7 @@ TEST_CASE("ConsRightEmpty", "[InterpreterConsTest]") /* FIXTURE */ {
     CHECK(seq->fields[0]->get<int>() == 42);
 }
 
-TEST_CASE("ConsRightChained", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsRightChained") /* FIXTURE */ {
     InterpreterConsTest fixture;
     // Test associativity: [] :> 1 :> 2 :> 3
     auto result = fixture.evaluate("[] :> 1 :> 2 :> 3");
@@ -109,7 +110,7 @@ TEST_CASE("ConsRightChained", "[InterpreterConsTest]") /* FIXTURE */ {
 }
 
 // Test mixing cons operators
-TEST_CASE("MixedConsOperators", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("MixedConsOperators") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("0 :: [1, 2] :> 3");
 
@@ -124,7 +125,7 @@ TEST_CASE("MixedConsOperators", "[InterpreterConsTest]") /* FIXTURE */ {
 }
 
 // Test cons with different types
-TEST_CASE("ConsWithStrings", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsWithStrings") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate(R"("hello" :: ["world"])");
 
@@ -138,18 +139,18 @@ TEST_CASE("ConsWithStrings", "[InterpreterConsTest]") /* FIXTURE */ {
 }
 
 // Test type errors
-TEST_CASE("ConsLeftTypeError", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsLeftTypeError") /* FIXTURE */ {
     InterpreterConsTest fixture;
     CHECK_THROWS_AS(fixture.evaluate("1 :: 2"), yona_error); // Right side must be a sequence
 }
 
-TEST_CASE("ConsRightTypeError", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsRightTypeError") /* FIXTURE */ {
     InterpreterConsTest fixture;
     CHECK_THROWS_AS(fixture.evaluate("1 :> 2"), yona_error); // Left side must be a sequence
 }
 
 // Test cons in pattern matching
-TEST_CASE("ConsInPatternMatch", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsInPatternMatch") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate(R"(
         case [1, 2, 3] of
@@ -162,7 +163,7 @@ TEST_CASE("ConsInPatternMatch", "[InterpreterConsTest]") /* FIXTURE */ {
     CHECK(result->get<int>() == 1);
 }
 
-TEST_CASE("ConsPatternWithTail", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsPatternWithTail") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate(R"(
         case [1, 2, 3] of
@@ -179,7 +180,7 @@ TEST_CASE("ConsPatternWithTail", "[InterpreterConsTest]") /* FIXTURE */ {
 }
 
 // Test cons with byte literals
-TEST_CASE("ConsWithBytes", "[InterpreterConsTest]") /* FIXTURE */ {
+TEST_CASE("ConsWithBytes") /* FIXTURE */ {
     InterpreterConsTest fixture;
     auto result = fixture.evaluate("10b :: [20b, 30b]");
 

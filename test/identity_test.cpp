@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -12,7 +13,7 @@ using namespace yona::interp::runtime;
 using namespace std;
 
 
-TEST_CASE("IdentityLambda", "[IdentityTest]") {
+TEST_CASE("IdentityLambda") {
     std::cerr << "TEST: Starting IdentityLambda test" << std::endl;
     parser::Parser parser;
     Interpreter interp;

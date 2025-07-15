@@ -1,4 +1,5 @@
-#include <catch2/catch_test_macros.hpp>
+#include <sstream>
+#include <doctest/doctest.h>
 #include "Interpreter.h"
 #include "Parser.h"
 #include "runtime.h"
@@ -11,7 +12,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
-TEST_CASE("LetWithLambda", "[LetWithFunctionTest]") {
+TEST_CASE("LetWithLambda") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -37,7 +38,7 @@ TEST_CASE("LetWithLambda", "[LetWithFunctionTest]") {
     CHECK(result->get<int>() == 42);
 }
 
-TEST_CASE("NestedLets", "[LetWithFunctionTest]") {
+TEST_CASE("NestedLets") {
     parser::Parser parser;
     Interpreter interp;
 
@@ -63,7 +64,7 @@ TEST_CASE("NestedLets", "[LetWithFunctionTest]") {
     CHECK(result->get<int>() == 8);
 }
 
-TEST_CASE("SimpleCurryingWithLet", "[LetWithFunctionTest]") {
+TEST_CASE("SimpleCurryingWithLet") {
     parser::Parser parser;
     Interpreter interp;
 
