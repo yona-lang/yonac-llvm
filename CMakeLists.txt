@@ -114,7 +114,6 @@ target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/i
 target_include_directories(yona_lib_static PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(yona_lib_static PRIVATE ${llvm_libs})
 target_compile_definitions(yona_lib_static PRIVATE YONA_STATIC_BUILD)
-set_target_properties(yona_lib_static PROPERTIES CXX_STANDARD 23)
 
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
@@ -180,5 +179,14 @@ add_test(NAME doctest_tests COMMAND tests)
 
 # Set working directory for the test to the binary directory
 set_tests_properties(doctest_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+# Enable doctest discovery for Visual Studio Test Explorer
+set_target_properties(tests PROPERTIES
+	VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+	VS_DEBUGGER_COMMAND_ARGUMENTS "--reporters=xml"
+)
+
+# Add labels for better test organization
+set_tests_properties(doctest_tests PROPERTIES LABELS "unit")
 
 # Removed temporary test executables - tests are now using doctest
