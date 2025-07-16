@@ -166,6 +166,8 @@ jobs:
       run: |
         # Set environment variables
         echo "LLVM_INSTALL_PREFIX=C:\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "CC=C:\LLVM\bin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "CXX=C:\LLVM\bin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
