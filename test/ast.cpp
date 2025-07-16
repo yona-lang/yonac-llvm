@@ -34,7 +34,7 @@ TEST_CASE("YonaTest - SimpleAddition") {
       Interpreter interpreter;
       auto interpreter_result = node->accept(interpreter);
       auto result = interpreter_result.value;
-      CHECK(result->type == Int);
+      CHECK(result->type == runtime::Int);
 
       stringstream res_ss;
       res_ss << *result;
@@ -55,7 +55,7 @@ TEST_CASE("YonaTest - SimpleSubtraction") {
       Interpreter interpreter;
       auto interpreter_result = node->accept(interpreter);
       auto result = interpreter_result.value;
-      CHECK(result->type == Int);
+      CHECK(result->type == runtime::Int);
 
       stringstream res_ss;
       res_ss << *result;

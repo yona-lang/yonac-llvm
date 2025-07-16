@@ -121,7 +121,7 @@ jobs:
       if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
-        path: D:\local\LLVM
+        path: C:\LLVM
         key: llvm-${{ matrix.llvm_version }}-${{ matrix.llvm_minor_version }}
 
     # Install LLVM on Windows
@@ -131,7 +131,7 @@ jobs:
       run: |
         $llvmVersion = "${{ matrix.llvm_version }}"
         $llvmMinorVersion = "${{ matrix.llvm_minor_version }}"
-        $destDir = "D:\local\LLVM"
+        $destDir = "C:\LLVM"
         $clangExe = Join-Path $destDir "bin\clang.exe"
         if (!(Test-Path $clangExe)) {
           $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
@@ -165,7 +165,7 @@ jobs:
       shell: pwsh
       run: |
         # Set environment variables
-        echo "LLVM_INSTALL_PREFIX=D:\local\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "LLVM_INSTALL_PREFIX=C:\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
