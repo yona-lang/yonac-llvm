@@ -107,6 +107,15 @@ file(GLOB all_yonac_SRCS
 # Add source to this project's executable.
 add_library(yona_lib SHARED ${all_lib_SRCS})
 
+# Create a static version of the library for tests only
+add_library(yona_lib_static STATIC ${all_lib_SRCS})
+target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_include_directories(yona_lib_static PRIVATE ${LLVM_INCLUDE_DIRS})
+target_link_libraries(yona_lib_static PRIVATE ${llvm_libs})
+target_compile_definitions(yona_lib_static PRIVATE YONA_STATIC_BUILD)
+set_target_properties(yona_lib_static PROPERTIES CXX_STANDARD 23)
+
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
@@ -155,17 +164,21 @@ add_executable(
 # We provide our own main for consistency across all platforms
 target_sources(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test/doctest_main.cpp)
 
-# Link with doctest and yona_lib
-target_link_libraries(tests PRIVATE doctest::doctest yona_lib)
+# Link with doctest and yona_lib_static for tests
+target_link_libraries(tests PRIVATE doctest::doctest yona_lib_static)
 
-# For DLL builds on Windows, we need special configuration
-if(WIN32)
-	target_compile_definitions(tests PRIVATE DOCTEST_CONFIG_IMPLEMENTATION_IN_DLL)
-endif()
+# Define YONA_STATIC_BUILD for tests to avoid DLL export/import issues
+target_compile_definitions(tests PRIVATE YONA_STATIC_BUILD)
 
 # Include CTest
 include(CTest)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+
+# Register the test executable with CTest
+add_test(NAME doctest_tests COMMAND tests)
+
+# Set working directory for the test to the binary directory
+set_tests_properties(doctest_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 # Removed temporary test executables - tests are now using doctest
