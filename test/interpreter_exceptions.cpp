@@ -14,8 +14,8 @@ static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 TEST_CASE("RaiseExprTest") {
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
-    auto raise = new RaiseExpr(TestSrcCtx, symbol, message);
-    auto main = make_unique<MainNode>(TestSrcCtx, raise);
+    auto raiseExpr = new RaiseExpr(TestSrcCtx, symbol, message);
+    auto main = make_unique<MainNode>(TestSrcCtx, raiseExpr);
 
     Interpreter interpreter;
 
@@ -31,7 +31,7 @@ TEST_CASE("TryCatchExprTest") {
     // Create a try expression that raises an exception
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
-    auto raise = new RaiseExpr(TestSrcCtx, symbol, message);
+    auto raiseExpr = new RaiseExpr(TestSrcCtx, symbol, message);
 
     // Create a catch expression with underscore pattern (catch-all)
     // The pattern is: _ -> 42
@@ -43,7 +43,7 @@ TEST_CASE("TryCatchExprTest") {
     auto catch_expr = new CatchExpr(TestSrcCtx, patterns);
 
     // Create try-catch expression
-    auto try_catch = new TryCatchExpr(TestSrcCtx, raise, catch_expr);
+    auto try_catch = new TryCatchExpr(TestSrcCtx, raiseExpr, catch_expr);
     auto main = make_unique<MainNode>(TestSrcCtx, try_catch);
 
     Interpreter interpreter;

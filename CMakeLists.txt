@@ -104,6 +104,9 @@ file(GLOB all_yonac_SRCS
 		"${PROJECT_SOURCE_DIR}/cli/*.c"
 )
 
+# Find the libraries that correspond to the LLVM components that we wish to use
+llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
+
 # Add source to this project's executable.
 add_library(yona_lib SHARED ${all_lib_SRCS})
 
@@ -118,9 +121,6 @@ target_compile_definitions(yona_lib_static PRIVATE YONA_STATIC_BUILD)
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
-
-# Find the libraries that correspond to the LLVM components that we wish to use
-llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
 
 target_link_libraries(yona_lib PRIVATE ${llvm_libs})
 
@@ -148,16 +148,16 @@ target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
 enable_testing()
 
 FetchContent_Declare(
-  doctest
-  GIT_REPOSITORY https://github.com/doctest/doctest.git
-  GIT_TAG        v2.4.12
+	doctest
+	GIT_REPOSITORY https://github.com/doctest/doctest.git
+	GIT_TAG        v2.4.12
 )
 
 FetchContent_MakeAvailable(doctest)
 
 add_executable(
-		tests
-		${all_TESTS}
+	tests
+	${all_TESTS}
 )
 
 # We provide our own main for consistency across all platforms
@@ -172,7 +172,6 @@ target_compile_definitions(tests PRIVATE YONA_STATIC_BUILD)
 # Include CTest
 include(CTest)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(tests PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 # Register the test executable with CTest
 add_test(NAME doctest_tests COMMAND tests)
