@@ -172,18 +172,16 @@ jobs:
     # Install CMake and Ninja
     - uses: lukka/get-cmake@latest
 
-    # Configure, Build and Test
-    - name: Run CMake
+    # Configure and Build
+    - name: Configure and Build
       uses: lukka/run-cmake@v10
       with:
         configurePreset: ${{ matrix.configure_preset }}
         buildPreset: ${{ matrix.build_preset }}
-        testPreset: ${{ matrix.test_preset }}
-        testPresetAdditionalArgs: "['--output-junit', 'test-results.xml']"
 
     # Run tests directly with doctest JUnit reporter for detailed results
     - name: Run Tests with Detailed Output
-      if: always()
+      if: success()
       shell: bash
       run: |
         # Find the test executable
@@ -195,13 +193,28 @@ jobs:
 
         if [ -f "$TEST_EXE" ]; then
           echo "Running tests: $TEST_EXE"
+          # Set YONA_PATH for module tests
+          export YONA_PATH="${GITHUB_WORKSPACE}/test/code"
+
           # Run with JUnit reporter for detailed test results
           "$TEST_EXE" --reporters=junit --out=doctest-results.xml || true
+
           # Also run with console reporter for logs
+          echo ""
+          echo "=== Console Output ==="
           "$TEST_EXE" --reporters=console || true
         else
           echo "Test executable not found!"
+          exit 1
         fi
+
+    # Run CTest for overall pass/fail status
+    - name: Run CTest
+      if: success()
+      uses: lukka/run-cmake@v10
+      with:
+        testPreset: ${{ matrix.test_preset }}
+        testPresetAdditionalArgs: "['--output-junit', 'test-results.xml']"
 
     # Upload test results
     - name: Upload test results
