@@ -10,6 +10,8 @@ using namespace yona::ast;
 using namespace yona::interp;
 using namespace yona::parser;
 
+TEST_SUITE("PatternMatching.NewFeatures") {
+
 TEST_CASE("Parser can handle OR patterns") {
     Parser parser;
     Interpreter interp;
@@ -211,3 +213,5 @@ TEST_CASE("Interpreter handles all literal pattern types") {
     REQUIRE(bool_result.value->type == runtime::Int);
     REQUIRE(bool_result.value->get<int>() == 1);
 }
+
+} // TEST_SUITE("PatternMatching.NewFeatures")

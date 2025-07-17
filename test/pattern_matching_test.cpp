@@ -15,7 +15,9 @@ struct PatternMatchingTest {
     Interpreter interp;
 };
 
-TEST_CASE("SimpleIdentifierPattern") /* FIXTURE */ {
+TEST_SUITE("PatternMatching") {
+
+TEST_CASE("SimpleIdentifierPattern") {
     PatternMatchingTest fixture;
     // let x = 42 in x
     auto x_identifier = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
@@ -32,7 +34,7 @@ TEST_CASE("SimpleIdentifierPattern") /* FIXTURE */ {
     CHECK(result->get<int>() == 42);
 }
 
-TEST_CASE("TuplePatternMatch") /* FIXTURE */ {
+TEST_CASE("TuplePatternMatch") {
     PatternMatchingTest fixture;
     // let (x, y) = (1, 2) in x + y
     auto x_id = new IdentifierExpr(EMPTY_SOURCE_LOCATION, new NameExpr(EMPTY_SOURCE_LOCATION, "x"));
@@ -66,7 +68,7 @@ TEST_CASE("TuplePatternMatch") /* FIXTURE */ {
     CHECK(result->get<int>() == 3);
 }
 
-TEST_CASE("UnderscorePattern") /* FIXTURE */ {
+TEST_CASE("UnderscorePattern") {
     PatternMatchingTest fixture;
     // let (_, y) = (1, 2) in y
     auto underscore = new UnderscoreNode(EMPTY_SOURCE_LOCATION);
@@ -92,7 +94,7 @@ TEST_CASE("UnderscorePattern") /* FIXTURE */ {
     CHECK(result->get<int>() == 2);
 }
 
-TEST_CASE("PatternMatchFailure") /* FIXTURE */ {
+TEST_CASE("PatternMatchFailure") {
     PatternMatchingTest fixture;
     // let (1, y) = (2, 3) in y  -- should raise :nomatch
     auto one_literal = new IntegerExpr(EMPTY_SOURCE_LOCATION, 1);
@@ -124,7 +126,7 @@ TEST_CASE("PatternMatchFailure") /* FIXTURE */ {
     // TODO: Add a way to check exception state from tests
 }
 
-TEST_CASE("CaseExpressionSimple") /* FIXTURE */ {
+TEST_CASE("CaseExpressionSimple") {
     PatternMatchingTest fixture;
     // case 1 of
     //   1 -> "one"
@@ -157,3 +159,5 @@ TEST_CASE("CaseExpressionSimple") /* FIXTURE */ {
     // For now this test is incomplete - we need proper literal patterns in PatternValue
     // which currently doesn't support integer literals properly
 }
+
+} // TEST_SUITE("PatternMatching")

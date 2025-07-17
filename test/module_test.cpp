@@ -15,6 +15,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Modules") {
+
 struct ModuleTest {
     parser::Parser parser;
     unique_ptr<Interpreter> interp;
@@ -105,3 +107,5 @@ TEST_CASE("ModuleCaching") {
     CHECK(result2->type == Int);
     CHECK(result2->get<int>() == 30);
 }
+
+} // TEST_SUITE("Modules")

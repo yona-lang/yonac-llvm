@@ -12,6 +12,8 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
+TEST_SUITE("Interpreter.Generators") {
+
 TEST_CASE("SeqGeneratorTest") {
     // Create a source sequence [1, 2, 3]
     vector<ExprNode*> seq_values;
@@ -86,3 +88,5 @@ TEST_CASE("SetGeneratorTest") {
     CHECK(values[1] == 12);
     CHECK(values[2] == 13);
 }
+
+} // TEST_SUITE("Interpreter.Generators")

@@ -12,6 +12,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.Lambda") {
+
 TEST_CASE("SimpleLambda") {
     parser::Parser parser;
     Interpreter interp;
@@ -63,3 +65,5 @@ TEST_CASE("LambdaApplication") {
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 6);
 }
+
+} // TEST_SUITE("Interpreter.Lambda")

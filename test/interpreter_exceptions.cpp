@@ -11,6 +11,8 @@ using namespace std;
 
 static const SourceContext TestSrcCtx = EMPTY_SOURCE_LOCATION;
 
+TEST_SUITE("Interpreter.Exceptions") {
+
 TEST_CASE("RaiseExprTest") {
     auto symbol = new SymbolExpr(TestSrcCtx, "TestError");
     auto message = new StringExpr(TestSrcCtx, "This is a test error");
@@ -78,3 +80,5 @@ TEST_CASE("TryCatchNoExceptionTest") {
     CHECK(test_result->type == runtime::Int);
     CHECK(test_result->get<int>() == 100);
 }
+
+} // TEST_SUITE("Interpreter.Exceptions")

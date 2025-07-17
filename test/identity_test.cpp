@@ -12,6 +12,7 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.Identity") {
 
 TEST_CASE("IdentityLambda") {
     std::cerr << "TEST: Starting IdentityLambda test" << std::endl;
@@ -57,3 +58,5 @@ TEST_CASE("IdentityLambda") {
         FAIL("Exception: " << e.what());
     }
 }
+
+} // TEST_SUITE("Interpreter.Identity")

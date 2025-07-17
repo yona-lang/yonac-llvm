@@ -13,6 +13,8 @@ using namespace yona::typechecker;
 using namespace yona::compiler::types;
 using namespace std;
 
+TEST_SUITE("TypeChecker") {
+
 struct TypeCheckerTest {
     Parser parser;
 
@@ -407,3 +409,5 @@ TEST_CASE("NumericPromotion") /* FIXTURE */ {
     CHECK(holds_alternative<BuiltinType>(result));
     CHECK(get<BuiltinType>(result) == Float64); // Float is "larger" than Int
 }
+
+} // TEST_SUITE("TypeChecker")

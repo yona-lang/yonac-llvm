@@ -12,6 +12,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.Cons") {
+
 struct InterpreterConsTest {
     parser::Parser parser;
     Interpreter interp;
@@ -193,3 +195,5 @@ TEST_CASE("ConsWithBytes") /* FIXTURE */ {
     CHECK(static_cast<uint8_t>(seq->fields[1]->get<std::byte>()) == 20);
     CHECK(static_cast<uint8_t>(seq->fields[2]->get<std::byte>()) == 30);
 }
+
+} // TEST_SUITE("Interpreter.Cons")

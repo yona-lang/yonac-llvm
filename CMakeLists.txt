@@ -181,13 +181,13 @@ set_tests_properties(doctest_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_
 
 # Set up test environment
 if(APPLE)
-    set_tests_properties(doctest_tests PROPERTIES
-        ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}"
-    )
+	set_tests_properties(doctest_tests PROPERTIES
+		ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}"
+	)
 elseif(UNIX)
-    set_tests_properties(doctest_tests PROPERTIES
-        ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}"
-    )
+	set_tests_properties(doctest_tests PROPERTIES
+		ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}"
+	)
 endif()
 
 # Enable doctest discovery for Visual Studio Test Explorer

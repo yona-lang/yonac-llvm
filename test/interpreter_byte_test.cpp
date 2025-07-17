@@ -12,6 +12,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.Byte") {
+
 struct InterpreterByteTest {
     parser::Parser parser;
     Interpreter interp;
@@ -189,3 +191,5 @@ TEST_CASE("ByteInLetBinding") /* FIXTURE */ {
     REQUIRE(result->type == RuntimeObjectType::Int);
     CHECK(result->get<int>() == 75);
 }
+
+} // TEST_SUITE("Interpreter.Byte")

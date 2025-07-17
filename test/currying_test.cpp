@@ -14,6 +14,8 @@ using namespace yona::parser;
 using namespace yona::interp;
 using namespace yona::interp::runtime;
 
+TEST_SUITE("Interpreter.Currying") {
+
 struct CurryingTest {
     Parser parser;
     Interpreter interpreter;
@@ -205,3 +207,5 @@ TEST_CASE("SingleArgumentFunction") /* FIXTURE */ {
     REQUIRE(result->type == runtime::Int);
     CHECK(result->get<int>() == 42);
 }
+
+} // TEST_SUITE("Interpreter.Currying")

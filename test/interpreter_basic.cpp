@@ -10,6 +10,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.BasicOperations") {
+
 TEST_CASE("AdditionInt") {
     parser::Parser parser;
     Interpreter interp;
@@ -165,3 +167,5 @@ TEST_CASE("JoinSequences") {
     CHECK(seq->fields[0]->get<int>() == 1);
     CHECK(seq->fields[3]->get<int>() == 4);
 }
+
+} // TEST_SUITE("Interpreter.BasicOperations")

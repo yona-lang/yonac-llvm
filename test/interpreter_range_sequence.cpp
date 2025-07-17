@@ -9,6 +9,8 @@ using namespace std;
 using namespace yona::parser;
 using namespace yona::interp;
 
+TEST_SUITE("Interpreter.RangeSequence") {
+
 TEST_CASE("SimpleRange") {
   Parser parser;
   Interpreter interp;
@@ -186,3 +188,5 @@ TEST_CASE("FloatRangeWithStep") {
     CHECK(seq_value->fields[i]->get<double>() == doctest::Approx(i * 0.25));
   }
 }
+
+} // TEST_SUITE("Interpreter.RangeSequence")

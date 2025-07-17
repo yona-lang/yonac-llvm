@@ -12,6 +12,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.LetWithFunction") {
+
 TEST_CASE("LetWithLambda") {
     parser::Parser parser;
     Interpreter interp;
@@ -89,3 +91,5 @@ TEST_CASE("SimpleCurryingWithLet") {
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 8);
 }
+
+} // TEST_SUITE("Interpreter.LetWithFunction")

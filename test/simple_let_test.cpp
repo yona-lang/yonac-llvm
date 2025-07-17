@@ -12,6 +12,8 @@ using namespace yona::interp;
 using namespace yona::interp::runtime;
 using namespace std;
 
+TEST_SUITE("Interpreter.Let") {
+
 TEST_CASE("BasicLet") {
     parser::Parser parser;
     Interpreter interp;
@@ -37,3 +39,5 @@ TEST_CASE("BasicLet") {
     CHECK(result->type == yona::interp::runtime::Int);
     CHECK(result->get<int>() == 5);
 }
+
+} // TEST_SUITE("Interpreter.Let")

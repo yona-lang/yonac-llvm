@@ -20,6 +20,8 @@ using namespace yona::interp::runtime;
 
 using ErrorMap = unordered_map<yona_error::Type, unsigned int>;
 
+TEST_SUITE("AST") {
+
 // Data-driven tests converted from Catch2
 TEST_CASE("YonaTest - SimpleAddition") {
     stringstream ss("1 + 2");
@@ -78,3 +80,5 @@ TEST_CASE("YonaTest - ParseError") {
         CHECK(type_ctx.getErrors().count(error_type) == cnt);
     }
 }
+
+} // TEST_SUITE("AST")
