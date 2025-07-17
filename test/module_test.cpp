@@ -22,17 +22,32 @@ struct ModuleTest {
     unique_ptr<Interpreter> interp;
 
     void SetUp() {
-        // Set YONA_PATH to include test/code directory
-        // Navigate from build directory to project root
-        filesystem::path current = filesystem::current_path();
-        filesystem::path test_code_path = current / "../../../test/code";
-        string yona_path = filesystem::canonical(test_code_path).string();
+        // Check if YONA_PATH is already set (e.g., by CTest)
+        const char* existing_path = getenv("YONA_PATH");
+        if (!existing_path) {
+            // Set YONA_PATH to include test/code directory
+            // Navigate from build directory to project root
+            filesystem::path current = filesystem::current_path();
+            filesystem::path test_code_path = current / "../../../test/code";
 
+            // Check if the path exists, if not try alternative paths
+            if (!filesystem::exists(test_code_path)) {
+                // Try from source directory
+                test_code_path = filesystem::path(__FILE__).parent_path().parent_path() / "test" / "code";
+            }
+
+            if (filesystem::exists(test_code_path)) {
+                string yona_path = filesystem::canonical(test_code_path).string();
 #ifdef _WIN32
-        _putenv_s("YONA_PATH", yona_path.c_str());
+                _putenv_s("YONA_PATH", yona_path.c_str());
 #else
-        setenv("YONA_PATH", yona_path.c_str(), 1);
+                setenv("YONA_PATH", yona_path.c_str(), 1);
 #endif
+            } else {
+                // Last resort: fail with informative message if we can't find test modules
+                FAIL("Cannot find test/code directory. YONA_PATH not set and could not locate test modules.");
+            }
+        }
 
         // Create interpreter after setting YONA_PATH
         interp = make_unique<Interpreter>();

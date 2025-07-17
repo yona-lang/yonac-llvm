@@ -181,21 +181,48 @@ jobs:
         testPreset: ${{ matrix.test_preset }}
         testPresetAdditionalArgs: "['--output-junit', 'test-results.xml']"
 
+    # Run tests directly with doctest JUnit reporter for detailed results
+    - name: Run Tests with Detailed Output
+      if: always()
+      shell: bash
+      run: |
+        # Find the test executable
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          TEST_EXE=$(find out/build -name "tests.exe" -type f | head -n 1)
+        else
+          TEST_EXE=$(find out/build -name "tests" -type f -executable | head -n 1)
+        fi
+
+        if [ -f "$TEST_EXE" ]; then
+          echo "Running tests: $TEST_EXE"
+          # Run with JUnit reporter for detailed test results
+          "$TEST_EXE" --reporters=junit --out=doctest-results.xml || true
+          # Also run with console reporter for logs
+          "$TEST_EXE" --reporters=console || true
+        else
+          echo "Test executable not found!"
+        fi
+
     # Upload test results
     - name: Upload test results
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results-${{ matrix.name }}
-        path: '**/test-results.xml'
+        path: |
+          **/test-results.xml
+          **/doctest-results.xml
 
     # Parse test results and create summary
     - name: Parse Test Results
       if: always()
       shell: bash
       run: |
-        # Find the test results file
-        TEST_FILE=$(find . -name "test-results.xml" -type f | head -n 1)
+        # Find the test results file (prefer doctest-results.xml for detailed info)
+        TEST_FILE=$(find . -name "doctest-results.xml" -type f | head -n 1)
+        if [ ! -f "$TEST_FILE" ]; then
+          TEST_FILE=$(find . -name "test-results.xml" -type f | head -n 1)
+        fi
         if [ -f "$TEST_FILE" ]; then
           # Extract test counts using grep and sed
           TOTAL=$(grep -o 'tests="[0-9]*"' "$TEST_FILE" | sed 's/tests="//' | sed 's/"//g' | head -n 1)
@@ -228,7 +255,7 @@ jobs:
       if: always()
       with:
         name: Tests - ${{ matrix.name }}
-        path: '**/test-results.xml'
+        path: '**/doctest-results.xml'
         reporter: java-junit
         fail-on-error: 'false'
         fail-on-empty: 'false'
@@ -266,8 +293,11 @@ jobs:
             # Extract platform name from directory name
             PLATFORM=${dir#test-results-}
 
-            # Find test results file in the directory
-            file=$(find "$dir" -name "test-results.xml" -type f | head -n 1)
+            # Find test results file in the directory (prefer doctest-results.xml for detailed info)
+            file=$(find "$dir" -name "doctest-results.xml" -type f | head -n 1)
+            if [ ! -f "$file" ]; then
+              file=$(find "$dir" -name "test-results.xml" -type f | head -n 1)
+            fi
 
             if [ -f "$file" ]; then
               # Extract test counts

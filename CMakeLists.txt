@@ -177,16 +177,20 @@ target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_test(NAME doctest_tests COMMAND tests)
 
 # Set working directory for the test to the binary directory
-set_tests_properties(doctest_tests PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(doctest_tests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    LABELS "unit"
+    ENVIRONMENT "YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code"
+)
 
 # Set up test environment
 if(APPLE)
 	set_tests_properties(doctest_tests PROPERTIES
-		ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH}"
+		ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH};YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code"
 	)
 elseif(UNIX)
 	set_tests_properties(doctest_tests PROPERTIES
-		ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH}"
+		ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH};YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code"
 	)
 endif()
 
