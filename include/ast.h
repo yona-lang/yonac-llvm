@@ -230,7 +230,9 @@ template <class T1, class T2>
 vector<pair<T1 *, T2 *>> nodes_with_parent(vector<pair<T1 *, T2 *>> nodes, AstNode *parent) {
   for (auto node : nodes) {
     node.first->parent = parent;
-    node.second->parent = parent;
+    if (node.second) {
+      node.second->parent = parent;
+    }
   }
   return nodes;
 }
@@ -450,7 +452,7 @@ public:
   ~IdentifierExpr() override;
 };
 
-class RecordNode final : public AstNode {
+class RecordNode final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
 
@@ -1220,6 +1222,8 @@ private:
 public:
   CallExpr *call;
   vector<variant<ExprNode *, ValueExpr *>> args;
+  // For named arguments: maps parameter name to argument
+  optional<vector<pair<string, variant<ExprNode *, ValueExpr *>>>> named_args;
 
   explicit ApplyExpr(SourceContext token, CallExpr *call, vector<variant<ExprNode *, ValueExpr *>> args);
   template<typename ResultType>

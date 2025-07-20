@@ -50,7 +50,7 @@ IdentifierExpr::~IdentifierExpr() { delete name; }
 void IdentifierExpr::print(std::ostream &os) const { os << *name; }
 
 RecordNode::RecordNode(SourceContext token, NameExpr *recordType, vector<pair<IdentifierExpr *, TypeDefinition *>> identifiers)
-    : AstNode(token), recordType(recordType->with_parent<NameExpr>(this)), identifiers(nodes_with_parent(std::move(identifiers), this)) {}
+    : ExprNode(token), recordType(recordType->with_parent<NameExpr>(this)), identifiers(nodes_with_parent(std::move(identifiers), this)) {}
 
 RecordNode::~RecordNode() {
   delete recordType;
@@ -61,10 +61,13 @@ RecordNode::~RecordNode() {
 }
 
 void RecordNode::print(std::ostream &os) const {
-  os << recordType << '(';
+  os << *recordType << '(';
   size_t i = 0;
   for (const auto [ident, type_def] : identifiers) {
-    os << *ident << ':' << *type_def;
+    os << *ident;
+    if (type_def) {
+      os << ':' << *type_def;
+    }
     if (i++ < identifiers.size() - 1) {
       os << ", ";
     }

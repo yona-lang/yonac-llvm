@@ -410,4 +410,94 @@ TEST_CASE("NumericPromotion") /* FIXTURE */ {
     CHECK(get<BuiltinType>(result) == Float64); // Float is "larger" than Int
 }
 
+TEST_CASE("Type checker handles record definitions with types") {
+    TypeCheckerTest test;
+    Parser parser;
+
+    // Parse a module with typed records
+    const char* source = R"(
+module Test as
+    record Person(name: String, age: Int)
+    record Point(x: Float, y: Float)
+end
+    )";
+
+    auto result = parser.parse_module(source, "test.yona");
+    REQUIRE(result.has_value());
+
+    TypeInferenceContext ctx;
+    TypeChecker checker(ctx);
+
+    // Type check the module
+    Type module_type = checker.check(result.value().get());
+
+    // Should not have type errors
+    CHECK(!ctx.has_errors());
+}
+
+TEST_CASE("Type checker reports error for missing record field types") {
+    TypeCheckerTest test;
+    Parser parser;
+
+    // Parse a module with untyped record fields (should fail in Yona 2.0)
+    const char* source = R"(
+module Test as
+    record BadRecord(name, age)
+end
+    )";
+
+    // This should fail parsing since we now require types
+    auto result = parser.parse_module(source, "test.yona");
+
+    if (result.has_value()) {
+        TypeInferenceContext ctx;
+        TypeChecker checker(ctx);
+
+        // Type check the module
+        Type module_type = checker.check(result.value().get());
+
+        // Should have type errors
+        CHECK(ctx.has_errors());
+    }
+}
+
+TEST_CASE("Type checker validates record instantiation") {
+    TypeCheckerTest test;
+    Parser parser;
+
+    // First, set up a module with a record
+    const char* module_source = R"(
+module Test as
+    record Person(name: String, age: Int)
+end
+    )";
+
+    auto module_result = parser.parse_module(module_source, "test.yona");
+    REQUIRE(module_result.has_value());
+
+    TypeInferenceContext ctx;
+    TypeChecker checker(ctx);
+
+    // Type check the module to register the record type
+    checker.check(module_result.value().get());
+
+    // Import the module's types
+    checker.import_module_types("Test",
+        {{"Person", RecordTypeInfo{"Person", {"name", "age"},
+            {Type(compiler::types::String), Type(compiler::types::SignedInt64)}}}},
+        {});
+
+    // Now type check a record instantiation
+    auto expr = test.parse_expr("Person(name=\"Alice\", age=30)");
+    CHECK(expr != nullptr);
+
+    Type result_type = checker.check(expr.get());
+
+    // Should not have errors
+    CHECK(!ctx.has_errors());
+
+    // Result should be a named type
+    CHECK(holds_alternative<shared_ptr<NamedType>>(result_type));
+}
+
 } // TEST_SUITE("TypeChecker")

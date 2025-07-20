@@ -48,6 +48,9 @@ struct InterpreterState {
   // Module search paths (initialized from YONA_PATH environment variable)
   vector<string> module_paths;
 
+  // Record type information for pattern matching
+  unordered_map<string, shared_ptr<RecordTypeInfo>> record_types;
+
   InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)) {
     // Initialize module paths from YONA_PATH environment variable
     const char* yona_path = std::getenv("YONA_PATH");

@@ -129,6 +129,7 @@ private:
     Type instantiate(const Type& type) const;
     Type generalize(const Type& type, const TypeEnvironment& env) const;
     Type infer_pattern_type(PatternNode* pattern, const Type& scrutinee_type) const;
+    Type type_node_to_type(TypeNameNode* type_node) const;
 
 public:
     TypeChecker(TypeInferenceContext& ctx, shared_ptr<TypeEnvironment> initial_env = nullptr)
@@ -193,7 +194,7 @@ public:
     // Missing visitor methods
     Type visit(DictGeneratorExpr *node) const override { return Type(nullptr); }
     Type visit(FieldAccessExpr *node) const override { return Type(nullptr); }
-    Type visit(RecordNode *node) const override { return Type(nullptr); }
+    Type visit(RecordNode *node) const override;
     Type visit(SeqGeneratorExpr *node) const override { return Type(nullptr); }
     Type visit(SetGeneratorExpr *node) const override { return Type(nullptr); }
 

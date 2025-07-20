@@ -822,6 +822,39 @@ Type TypeChecker::visit(ImportExpr *node) const {
     return Type(compiler::types::Unit);
 }
 
+// Helper function to convert TypeNameNode to Type
+Type TypeChecker::type_node_to_type(TypeNameNode* type_node) const {
+    if (auto builtin = dynamic_cast<BuiltinTypeNode*>(type_node)) {
+        return Type(builtin->type);
+    } else if (auto user_defined = dynamic_cast<UserDefinedTypeNode*>(type_node)) {
+        // Create a named type
+        auto named_type = make_shared<NamedType>();
+        named_type->name = user_defined->name->value;
+        named_type->type = nullptr; // Will be resolved during type checking
+        return Type(named_type);
+    }
+
+    // Unknown type node
+    return Type(nullptr);
+}
+
+Type TypeChecker::visit(RecordNode *node) const {
+    // Type check record definition
+    string record_name = node->recordType->value;
+
+    // Check each field has a valid type
+    for (const auto& [field_id, field_type_def] : node->identifiers) {
+        if (!field_type_def || !field_type_def->name) {
+            context.add_error(node->source_context,
+                            "Field '" + field_id->name->value +
+                            "' in record '" + record_name + "' must have a type annotation");
+        }
+    }
+
+    // Record definitions don't have a value type themselves
+    return Type(compiler::types::Unit);
+}
+
 Type TypeChecker::visit(ModuleExpr *node) const {
     // Type check all functions in module
     for (auto* func : node->functions) {
@@ -836,8 +869,18 @@ Type TypeChecker::visit(ModuleExpr *node) const {
 
         for (const auto& [field_id, field_type_def] : record->identifiers) {
             info.field_names.push_back(field_id->name->value);
-            // TODO: Convert TypeDefinition to Type
-            info.field_types.push_back(Type(compiler::types::String)); // Placeholder
+
+            // Convert TypeDefinition to Type
+            if (field_type_def && field_type_def->name) {
+                Type field_type = type_node_to_type(field_type_def->name);
+                info.field_types.push_back(field_type);
+            } else {
+                // No type specified, use Any type or report error
+                context.add_error(record->source_context,
+                                "Missing type annotation for field '" + field_id->name->value +
+                                "' in record '" + record->recordType->value + "'");
+                info.field_types.push_back(Type(nullptr));
+            }
         }
 
         // Store in current module's record types

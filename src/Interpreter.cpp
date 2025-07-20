@@ -694,6 +694,50 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
     CHECK_EXCEPTION_RETURN();
   }
 
+  // Handle named arguments for record constructors
+  if (node->named_args.has_value() && !node->named_args->empty()) {
+    // Check if this is a record constructor call
+    if (auto name_call = dynamic_cast<NameCall*>(node->call)) {
+      string func_name = name_call->name->value;
+
+      // Check if this is a record constructor
+      auto record_it = IS.record_types.find(func_name);
+      if (record_it != IS.record_types.end()) {
+        auto record_info = record_it->second;
+
+        // Create a map from field names to values
+        unordered_map<string, RuntimeObjectPtr> named_values;
+        for (const auto& [name, arg] : *node->named_args) {
+          RuntimeObjectPtr value;
+          if (holds_alternative<ValueExpr *>(arg)) {
+            value = get<ValueExpr *>(arg)->accept(*this).value;
+          } else {
+            value = get<ExprNode *>(arg)->accept(*this).value;
+          }
+          CHECK_EXCEPTION_RETURN();
+          named_values[name] = value;
+        }
+
+        // Reorder arguments based on field order
+        new_args.clear();
+        for (const auto& field_name : record_info->field_names) {
+          auto it = named_values.find(field_name);
+          if (it == named_values.end()) {
+            throw yona_error(node->source_context, yona_error::RUNTIME,
+              "Missing field '" + field_name + "' in record construction");
+          }
+          new_args.push_back(it->second);
+        }
+
+        // Check for extra fields
+        if (named_values.size() > record_info->field_names.size()) {
+          throw yona_error(node->source_context, yona_error::RUNTIME,
+            "Too many fields provided for record " + func_name);
+        }
+      }
+    }
+  }
+
   // Combine with any partial args
   vector<RuntimeObjectPtr> all_args;
   all_args.reserve(func_val->partial_args.size() + new_args.size());
@@ -1885,13 +1929,60 @@ InterpreterResult Interpreter::visit(RecordInstanceExpr *node) const {
 
 InterpreterResult Interpreter::visit(RecordNode *node) const {
   CHECK_EXCEPTION_RETURN();
-  vector<RuntimeObjectPtr> fields;
-  fields.reserve(node->identifiers.size());
-  for (const auto identifier : node->identifiers | views::keys) {
-    fields.push_back(identifier->accept(*this).value);
-    CHECK_EXCEPTION_RETURN();
+
+  // Get the record name
+  string record_name = node->recordType->value;
+
+  // Create a list of field names
+  vector<string> field_names;
+  field_names.reserve(node->identifiers.size());
+  for (const auto& [name_expr, _] : node->identifiers) {
+    // name_expr is an IdentifierExpr, which contains a NameExpr
+    field_names.push_back(name_expr->name->value);
   }
-  return InterpreterResult(make_shared<RuntimeObject>(Tuple, make_shared<TupleValue>(fields)));
+
+  // Create a constructor function for the record
+  // The constructor will take N arguments and create a RecordValue
+  auto constructor_func = make_shared<FunctionValue>();
+  constructor_func->fqn = make_shared<FqnValue>(vector{record_name});
+  constructor_func->arity = field_names.size();
+  constructor_func->partial_args = {};
+
+  // Capture the record name and field names in the lambda
+  constructor_func->code = [record_name, field_names](const vector<RuntimeObjectPtr>& args) -> RuntimeObjectPtr {
+    // Check arity
+    if (args.size() != field_names.size()) {
+      throw yona_error(SourceLocation{}, yona_error::RUNTIME,
+        "Record " + record_name + " expects " + to_string(field_names.size()) +
+        " arguments but got " + to_string(args.size()));
+    }
+
+    // Create field values map
+    vector<RuntimeObjectPtr> field_values;
+    field_values.reserve(args.size());
+    for (const auto& arg : args) {
+      field_values.push_back(arg);
+    }
+
+    // Create the record value
+    auto record_value = make_shared<RecordValue>(record_name, field_names, field_values);
+    return make_shared<RuntimeObject>(Record, record_value);
+  };
+
+  auto constructor = make_shared<RuntimeObject>(Function, constructor_func);
+
+  // Store the constructor in the current frame
+  IS.frame->locals_[record_name] = constructor;
+
+  // Also store record type information for pattern matching
+  RecordTypeInfo type_info;
+  type_info.name = record_name;
+  type_info.field_names = field_names;
+  // For now, leave field_types empty as Yona records are dynamically typed
+  IS.record_types[record_name] = make_shared<RecordTypeInfo>(type_info);
+
+  // Return the constructor function
+  return InterpreterResult(constructor);
 }
 
 InterpreterResult Interpreter::visit(RecordPattern *node) const {
