@@ -137,6 +137,9 @@ struct FunctionValue {
 
   // For partial application - stores already applied arguments
   vector<RuntimeObjectPtr> partial_args;
+
+  // Flag to indicate if this is a native (C++) function
+  bool is_native = false;
 };
 
 // Record type definition (metadata about a record type)

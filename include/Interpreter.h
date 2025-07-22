@@ -73,6 +73,12 @@ struct InterpreterState {
 
     // Always include current directory
     module_paths.insert(module_paths.begin(), ".");
+
+    // Add stdlib directory relative to executable
+    // In production, this should be determined at build time
+    module_paths.push_back("./stdlib");
+    module_paths.push_back("../stdlib");
+    module_paths.push_back("../../stdlib");
   }
 
   void push_frame() { frame = make_shared<InterepterFrame>(frame); }
@@ -142,7 +148,7 @@ private:
   compiler::types::Type runtime_type_to_static_type(RuntimeObjectType type) const;
 
 public:
-  Interpreter() = default;
+  Interpreter();
 
   // Enable/disable type checking
   void enable_type_checking(bool enable = true);

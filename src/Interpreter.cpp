@@ -15,6 +15,7 @@
 #include "utils.h"
 #include "Parser.h"
 #include "ast_visitor_impl.h"
+#include "stdlib/native_module.h"
 
 
 using namespace yona::compiler::types;
@@ -597,8 +598,56 @@ BITWISE_OP(BitwiseXorExpr, Int, int, ^)
 
 BITWISE_OP(LeftShiftExpr, Int, int, <<)
 BITWISE_OP(RightShiftExpr, Int, int, >>)
-BITWISE_OP(ZerofillRightShiftExpr, Int, int,
-           >>) // TODO https://stackoverflow.com/questions/8422424/can-you-control-what-a-bitwise-right-shift-will-fill-in-c
+// Zero-fill right shift implementation
+InterpreterResult Interpreter::visit(ZerofillRightShiftExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  const auto left = node->left->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+  const auto right = node->right->accept(*this).value;
+  CHECK_EXCEPTION_RETURN();
+
+  if (left->type == Int && right->type == Int) {
+    // Cast to unsigned to ensure zero-fill behavior
+    unsigned int left_val = static_cast<unsigned int>(left->get<int>());
+    int right_val = right->get<int>();
+
+    // Perform unsigned right shift (always zero-fills)
+    unsigned int result = left_val >> right_val;
+
+    // Cast back to signed int for storage
+    return InterpreterResult(make_shared<RuntimeObject>(Int, static_cast<int>(result)));
+  } else if (left->type == Byte && right->type == Int) {
+    // Handle byte >>> int
+    uint8_t left_val = static_cast<uint8_t>(left->get<std::byte>());
+    int right_val = right->get<int>();
+
+    // Perform unsigned right shift
+    uint8_t result = left_val >> right_val;
+
+    return InterpreterResult(make_shared<RuntimeObject>(Byte, static_cast<std::byte>(result)));
+  } else if (left->type == Int && right->type == Byte) {
+    // Handle int >>> byte
+    unsigned int left_val = static_cast<unsigned int>(left->get<int>());
+    int right_val = static_cast<int>(static_cast<uint8_t>(right->get<std::byte>()));
+
+    // Perform unsigned right shift
+    unsigned int result = left_val >> right_val;
+
+    return InterpreterResult(make_shared<RuntimeObject>(Int, static_cast<int>(result)));
+  } else if (left->type == Byte && right->type == Byte) {
+    // Handle byte >>> byte
+    uint8_t left_val = static_cast<uint8_t>(left->get<std::byte>());
+    int right_val = static_cast<int>(static_cast<uint8_t>(right->get<std::byte>()));
+
+    // Perform unsigned right shift
+    uint8_t result = left_val >> right_val;
+
+    return InterpreterResult(make_shared<RuntimeObject>(Byte, static_cast<std::byte>(result)));
+  } else {
+    throw yona_error(node->source_context, yona_error::Type::TYPE,
+                     "Type mismatch: zero-fill right shift requires Int or Byte operands");
+  }
+}
 BITWISE_OP(LogicalAndExpr, Bool, bool, &&)
 BITWISE_OP(LogicalOrExpr, Bool, bool, ||)
 
@@ -1326,9 +1375,9 @@ InterpreterResult Interpreter::visit(ImportClauseExpr *node) const {
 InterpreterResult Interpreter::visit(ImportExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  // Create a new frame for the imported bindings
-  auto saved_frame = IS.frame;
-  IS.frame = make_shared<InterepterFrame>(saved_frame);
+  // Create a new child frame for the imported bindings
+  // This frame inherits from the current frame, allowing access to parent bindings
+  IS.push_frame();
 
   // Process all import clauses
   for (auto clause : node->clauses) {
@@ -1342,8 +1391,8 @@ InterpreterResult Interpreter::visit(ImportExpr *node) const {
     result = node->expr->accept(*this);
   }
 
-  // Restore the previous frame
-  IS.frame = saved_frame;
+  // Pop the frame (imports go out of scope)
+  IS.pop_frame();
 
   return result;
 }
@@ -2578,6 +2627,14 @@ shared_ptr<ModuleValue> Interpreter::get_or_load_module(const shared_ptr<FqnValu
   IS.module_cache[cache_key] = module;
 
   return module;
+}
+
+// Constructor
+Interpreter::Interpreter() {
+  // Register all native modules
+  auto& registry = stdlib::NativeModuleRegistry::get_instance();
+  registry.register_all_modules();
+  registry.apply_to_interpreter(IS.module_cache);
 }
 
 // Helper to create runtime objects with type information

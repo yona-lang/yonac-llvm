@@ -84,12 +84,16 @@ file(GLOB all_lib_SRCS
 		"${PROJECT_SOURCE_DIR}/include/*.h"
 		"${PROJECT_SOURCE_DIR}/src/*.cpp"
 		"${PROJECT_SOURCE_DIR}/src/*.c"
+		"${PROJECT_SOURCE_DIR}/include/stdlib/*.h"
+		"${PROJECT_SOURCE_DIR}/src/stdlib/*.cpp"
 )
 
 file(GLOB all_TESTS
 		"${PROJECT_SOURCE_DIR}/test/*.h"
 		"${PROJECT_SOURCE_DIR}/test/*.cpp"
 		"${PROJECT_SOURCE_DIR}/test/*.c"
+		"${PROJECT_SOURCE_DIR}/test/stdlib/*.h"
+		"${PROJECT_SOURCE_DIR}/test/stdlib/*.cpp"
 )
 
 file(GLOB all_repl_SRCS
