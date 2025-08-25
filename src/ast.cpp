@@ -2,6 +2,7 @@
 #include <utility>
 #include <variant>
 #include <numeric>
+#include <iomanip>
 
 #include "ast.h"
 #include "utils.h"
@@ -104,7 +105,26 @@ void StringExpr::print(std::ostream &os) const { os << value; }
 CharacterExpr::CharacterExpr(SourceContext token, const wchar_t value) : LiteralExpr<wchar_t>(token, value) {}
 
 void CharacterExpr::print(std::ostream &os) const {
-  os << (char)value; // TODO
+  // Print character literals with proper escaping
+  os << '\'';
+  switch (value) {
+    case '\n': os << "\\n"; break;
+    case '\r': os << "\\r"; break;
+    case '\t': os << "\\t"; break;
+    case '\\': os << "\\\\"; break;
+    case '\'': os << "\\'"; break;
+    case '\0': os << "\\0"; break;
+    default:
+      if (value >= 32 && value <= 126) {
+        // Printable ASCII character
+        os << (char)value;
+      } else {
+        // Non-printable character - use hex escape
+        os << "\\x" << std::hex << std::setfill('0') << std::setw(2) << (int)value << std::dec;
+      }
+      break;
+  }
+  os << '\'';
 }
 
 UnitExpr::UnitExpr(SourceContext token) : LiteralExpr<nullptr_t>(token, nullptr) {}
@@ -900,14 +920,18 @@ PatternWithoutGuards::~PatternWithoutGuards() { delete expr; }
 void PatternWithoutGuards::print(std::ostream &os) const { os << *expr; }
 
 PatternExpr::PatternExpr(SourceContext token, const variant<Pattern *, PatternWithoutGuards *, vector<PatternWithGuards *>> &patternExpr)
-    : ExprNode(token), patternExpr(patternExpr) // TODO
+    : ExprNode(token), patternExpr(patternExpr)
 {
-  // std::visit({ [this](Pattern& arg) { arg.with_parent<Pattern>(this); },
-  //              [this](PatternWithoutGuards& arg) {
-  //              arg.with_parent<PatternWithGuards>(this); },
-  //              [this](vector<PatternWithGuards>& arg) {
-  //              nodes_with_parent(std::move(arg), this); } },
-  //            patternExpr); // TODO
+  // Set parent pointers for the pattern expressions
+  if (holds_alternative<Pattern *>(this->patternExpr)) {
+    get<Pattern *>(this->patternExpr)->parent = this;
+  } else if (holds_alternative<PatternWithoutGuards *>(this->patternExpr)) {
+    get<PatternWithoutGuards *>(this->patternExpr)->parent = this;
+  } else {
+    for (auto* p : get<vector<PatternWithGuards *>>(this->patternExpr)) {
+      p->parent = this;
+    }
+  }
 }
 
 PatternExpr::~PatternExpr() {
@@ -941,11 +965,14 @@ void PatternExpr::print(std::ostream &os) const {
 CatchPatternExpr::CatchPatternExpr(SourceContext token, Pattern *matchPattern,
                                    const variant<PatternWithoutGuards *, vector<PatternWithGuards *>> &pattern)
     : ExprNode(token), matchPattern(matchPattern->with_parent<Pattern>(this)), pattern(pattern) {
-  // std::visit({ [this](PatternWithoutGuards& arg) {
-  // arg.with_parent<PatternWithGuards>(this); },
-  //              [this](vector<PatternWithGuards>& arg) {
-  //              nodes_with_parent(std::move(arg), this); } },
-  //            pattern); // TODO
+  // Set parent pointers for the pattern expressions
+  if (holds_alternative<PatternWithoutGuards *>(this->pattern)) {
+    get<PatternWithoutGuards *>(this->pattern)->parent = this;
+  } else {
+    for (auto* p : get<vector<PatternWithGuards *>>(this->pattern)) {
+      p->parent = this;
+    }
+  }
 }
 
 CatchPatternExpr::~CatchPatternExpr() {

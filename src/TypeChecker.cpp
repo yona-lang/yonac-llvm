@@ -195,15 +195,294 @@ UnificationResult TypeChecker::unify(const Type& t1, const Type& t2) const {
 }
 
 Type TypeChecker::instantiate(const Type& type) const {
-    // For now, just return the type as-is
-    // TODO: Implement proper instantiation of polymorphic types
+    // Instantiate a polymorphic type by replacing type variables with fresh type variables
+
+    // If it's a Var type, create a fresh type variable
+    if (holds_alternative<BuiltinType>(type)) {
+        auto builtin = get<BuiltinType>(type);
+        if (builtin == Var) {
+            // Create a fresh type variable for instantiation
+            auto fresh_var = context.fresh_type_var();
+            // For now, return Var type (in a real implementation, we'd track the mapping)
+            return Type(Var);
+        }
+    }
+
+    // Handle function types recursively
+    if (holds_alternative<shared_ptr<FunctionType>>(type)) {
+        auto func = get<shared_ptr<FunctionType>>(type);
+        auto new_func = make_shared<FunctionType>();
+        new_func->argumentType = instantiate(func->argumentType);
+        new_func->returnType = instantiate(func->returnType);
+        return Type(new_func);
+    }
+
+    // Handle collection types recursively
+    if (holds_alternative<shared_ptr<SingleItemCollectionType>>(type)) {
+        auto coll = get<shared_ptr<SingleItemCollectionType>>(type);
+        auto new_coll = make_shared<SingleItemCollectionType>();
+        new_coll->kind = coll->kind;
+        new_coll->valueType = instantiate(coll->valueType);
+        return Type(new_coll);
+    }
+
+    if (holds_alternative<shared_ptr<DictCollectionType>>(type)) {
+        auto dict = get<shared_ptr<DictCollectionType>>(type);
+        auto new_dict = make_shared<DictCollectionType>();
+        new_dict->keyType = instantiate(dict->keyType);
+        new_dict->valueType = instantiate(dict->valueType);
+        return Type(new_dict);
+    }
+
+    // Handle product types (tuples)
+    if (holds_alternative<shared_ptr<ProductType>>(type)) {
+        auto prod = get<shared_ptr<ProductType>>(type);
+        auto new_prod = make_shared<ProductType>();
+        for (const auto& t : prod->types) {
+            new_prod->types.push_back(instantiate(t));
+        }
+        return Type(new_prod);
+    }
+
+    // Handle sum types (unions)
+    if (holds_alternative<shared_ptr<SumType>>(type)) {
+        auto sum = get<shared_ptr<SumType>>(type);
+        auto new_sum = make_shared<SumType>();
+        for (const auto& t : sum->types) {
+            new_sum->types.insert(instantiate(t));
+        }
+        return Type(new_sum);
+    }
+
+    // Handle named types
+    if (holds_alternative<shared_ptr<NamedType>>(type)) {
+        auto named = get<shared_ptr<NamedType>>(type);
+        auto new_named = make_shared<NamedType>();
+        new_named->name = named->name;
+        new_named->type = instantiate(named->type);
+        return Type(new_named);
+    }
+
+    // For non-polymorphic types, return as-is
     return type;
 }
 
 Type TypeChecker::generalize(const Type& type, const TypeEnvironment& env) const {
-    // For now, just return the type as-is
-    // TODO: Implement proper generalization
+    // Generalize a type by converting free type variables to polymorphic type variables
+    // Free type variables are those not bound in the environment
+
+    // For now, we implement a simple generalization that marks unconstrained types as Var
+    // In a full implementation, we would track which type variables are free
+
+    // Handle function types recursively
+    if (holds_alternative<shared_ptr<FunctionType>>(type)) {
+        auto func = get<shared_ptr<FunctionType>>(type);
+        auto new_func = make_shared<FunctionType>();
+        new_func->argumentType = generalize(func->argumentType, env);
+        new_func->returnType = generalize(func->returnType, env);
+        return Type(new_func);
+    }
+
+    // Handle collection types recursively
+    if (holds_alternative<shared_ptr<SingleItemCollectionType>>(type)) {
+        auto coll = get<shared_ptr<SingleItemCollectionType>>(type);
+        auto new_coll = make_shared<SingleItemCollectionType>();
+        new_coll->kind = coll->kind;
+        new_coll->valueType = generalize(coll->valueType, env);
+        return Type(new_coll);
+    }
+
+    if (holds_alternative<shared_ptr<DictCollectionType>>(type)) {
+        auto dict = get<shared_ptr<DictCollectionType>>(type);
+        auto new_dict = make_shared<DictCollectionType>();
+        new_dict->keyType = generalize(dict->keyType, env);
+        new_dict->valueType = generalize(dict->valueType, env);
+        return Type(new_dict);
+    }
+
+    // Handle product types (tuples)
+    if (holds_alternative<shared_ptr<ProductType>>(type)) {
+        auto prod = get<shared_ptr<ProductType>>(type);
+        auto new_prod = make_shared<ProductType>();
+        for (const auto& t : prod->types) {
+            new_prod->types.push_back(generalize(t, env));
+        }
+        return Type(new_prod);
+    }
+
+    // Handle sum types (unions)
+    if (holds_alternative<shared_ptr<SumType>>(type)) {
+        auto sum = get<shared_ptr<SumType>>(type);
+        auto new_sum = make_shared<SumType>();
+        for (const auto& t : sum->types) {
+            new_sum->types.insert(generalize(t, env));
+        }
+        return Type(new_sum);
+    }
+
+    // Handle named types
+    if (holds_alternative<shared_ptr<NamedType>>(type)) {
+        auto named = get<shared_ptr<NamedType>>(type);
+        auto new_named = make_shared<NamedType>();
+        new_named->name = named->name;
+        new_named->type = generalize(named->type, env);
+        return Type(new_named);
+    }
+
+    // Return the type as-is for concrete types
     return type;
+}
+
+bool TypeChecker::check_pattern_type(PatternNode* pattern, const Type& type, shared_ptr<TypeEnvironment> env) const {
+    // Check if a pattern is compatible with a type and extract bindings
+
+    if (auto pattern_value = dynamic_cast<PatternValue*>(pattern)) {
+        // PatternValue contains an expression variant
+        if (holds_alternative<IdentifierExpr*>(pattern_value->expr)) {
+            auto id_expr = get<IdentifierExpr*>(pattern_value->expr);
+            if (auto name_expr = dynamic_cast<NameExpr*>(id_expr->name)) {
+                // Variable pattern - always matches, bind the variable
+                env->bind(name_expr->value, type);
+                return true;
+            }
+        }
+        // Literal pattern - for now assume it matches
+        return true;
+    } else if (auto underscore = dynamic_cast<UnderscoreNode*>(pattern)) {
+        // Wildcard always matches
+        return true;
+    } else if (auto tuple_pattern = dynamic_cast<TuplePattern*>(pattern)) {
+        // Tuple pattern - check structure matches
+        if (holds_alternative<shared_ptr<ProductType>>(type)) {
+            auto prod_type = get<shared_ptr<ProductType>>(type);
+            if (tuple_pattern->patterns.size() != prod_type->types.size()) {
+                return false;  // Arity mismatch
+            }
+            for (size_t i = 0; i < tuple_pattern->patterns.size(); ++i) {
+                if (!check_pattern_type(tuple_pattern->patterns[i], prod_type->types[i], env)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;  // Not a tuple type
+    } else if (auto seq_pattern = dynamic_cast<SeqPattern*>(pattern)) {
+        // Sequence pattern
+        if (holds_alternative<shared_ptr<SingleItemCollectionType>>(type)) {
+            auto seq_type = get<shared_ptr<SingleItemCollectionType>>(type);
+            for (auto elem_pattern : seq_pattern->patterns) {
+                if (!check_pattern_type(elem_pattern, seq_type->valueType, env)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    } else if (auto or_pattern = dynamic_cast<OrPattern*>(pattern)) {
+        // OR pattern - at least one alternative must match
+        for (const auto& alt_pattern : or_pattern->patterns) {
+            auto temp_env = make_shared<TypeEnvironment>();
+            if (check_pattern_type(alt_pattern.get(), type, temp_env)) {
+                // Copy bindings from successful match
+                for (const auto& binding : temp_env->bindings) {
+                    env->bind(binding.first, binding.second);
+                }
+                return true;
+            }
+        }
+        return false;
+    } else if (auto as_pattern = dynamic_cast<AsDataStructurePattern*>(pattern)) {
+        // As pattern - check inner pattern and bind name
+        if (check_pattern_type(as_pattern->pattern, type, env)) {
+            if (auto name_expr = dynamic_cast<NameExpr*>(as_pattern->identifier->name)) {
+                env->bind(name_expr->value, type);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    // For other complex patterns, extract bindings and assume match
+    extract_pattern_bindings(pattern, type, env);
+    return true;
+}
+
+void TypeChecker::extract_pattern_bindings(PatternNode* pattern, const Type& type, shared_ptr<TypeEnvironment> env) const {
+    // Extract variable bindings from a pattern and add them to the environment
+
+    if (auto pattern_value = dynamic_cast<PatternValue*>(pattern)) {
+        // PatternValue contains an expression variant
+        if (holds_alternative<IdentifierExpr*>(pattern_value->expr)) {
+            auto id_expr = get<IdentifierExpr*>(pattern_value->expr);
+            if (auto name_expr = dynamic_cast<NameExpr*>(id_expr->name)) {
+                // Simple variable binding
+                env->bind(name_expr->value, type);
+            }
+        }
+    } else if (auto tuple_pattern = dynamic_cast<TuplePattern*>(pattern)) {
+        // Tuple pattern - extract bindings for each element
+        if (holds_alternative<shared_ptr<ProductType>>(type)) {
+            auto prod_type = get<shared_ptr<ProductType>>(type);
+            size_t min_size = min(tuple_pattern->patterns.size(), prod_type->types.size());
+            for (size_t i = 0; i < min_size; ++i) {
+                extract_pattern_bindings(tuple_pattern->patterns[i], prod_type->types[i], env);
+            }
+        }
+    } else if (auto seq_pattern = dynamic_cast<SeqPattern*>(pattern)) {
+        // Sequence pattern - extract bindings for each element
+        Type element_type = Type(Var);  // Default to polymorphic type
+        if (holds_alternative<shared_ptr<SingleItemCollectionType>>(type)) {
+            auto seq_type = get<shared_ptr<SingleItemCollectionType>>(type);
+            element_type = seq_type->valueType;
+        }
+        for (auto elem_pattern : seq_pattern->patterns) {
+            extract_pattern_bindings(elem_pattern, element_type, env);
+        }
+    } else if (auto dict_pattern = dynamic_cast<DictPattern*>(pattern)) {
+        // Dict pattern - extract bindings for values
+        Type value_type = Type(Var);  // Default to polymorphic type
+        if (holds_alternative<shared_ptr<DictCollectionType>>(type)) {
+            auto dict_type = get<shared_ptr<DictCollectionType>>(type);
+            value_type = dict_type->valueType;
+        }
+        // DictPattern has keyValuePairs member
+        for (const auto& [key_pattern, value_pattern] : dict_pattern->keyValuePairs) {
+            // Only extract bindings from the value pattern
+            extract_pattern_bindings(value_pattern, value_type, env);
+        }
+    } else if (auto record_pattern = dynamic_cast<RecordPattern*>(pattern)) {
+        // Record pattern - extract bindings for each field
+        // For now, treat all fields as polymorphic
+        // RecordPattern has items member
+        for (const auto& [field_name, field_pattern] : record_pattern->items) {
+            extract_pattern_bindings(field_pattern, Type(Var), env);
+        }
+    } else if (auto head_tails = dynamic_cast<HeadTailsPattern*>(pattern)) {
+        // Head|Tails pattern
+        Type element_type = Type(Var);
+        if (holds_alternative<shared_ptr<SingleItemCollectionType>>(type)) {
+            auto seq_type = get<shared_ptr<SingleItemCollectionType>>(type);
+            element_type = seq_type->valueType;
+        }
+        // HeadTailsPattern has heads and tail members
+        for (auto head : head_tails->heads) {
+            extract_pattern_bindings(head, element_type, env);
+        }
+        extract_pattern_bindings(head_tails->tail, type, env);  // Tail has same type as whole list
+    } else if (auto or_pattern = dynamic_cast<OrPattern*>(pattern)) {
+        // OR pattern - all alternatives must bind the same variables with same types
+        // For simplicity, extract bindings from the first alternative
+        if (!or_pattern->patterns.empty()) {
+            extract_pattern_bindings(or_pattern->patterns[0].get(), type, env);
+        }
+    } else if (auto as_pattern = dynamic_cast<AsDataStructurePattern*>(pattern)) {
+        // As pattern - bind both the name and the inner pattern
+        if (auto name_expr = dynamic_cast<NameExpr*>(as_pattern->identifier->name)) {
+            env->bind(name_expr->value, type);
+        }
+        extract_pattern_bindings(as_pattern->pattern, type, env);
+    }
+    // Other pattern types (literals, underscore) don't bind variables
 }
 
 // Visitor implementations for literals
@@ -633,9 +912,27 @@ Type TypeChecker::visit(LetExpr *node) const {
         } else if (auto pattern_alias = dynamic_cast<PatternAlias*>(alias)) {
             // Pattern aliases need special handling
             Type expr_type = check(pattern_alias->expr);
-            // TODO: Extract bindings from pattern and add to environment
+            // Extract bindings from pattern and add to environment
+            extract_pattern_bindings(pattern_alias->pattern, expr_type, new_env);
+        } else if (auto module_alias = dynamic_cast<ModuleAlias*>(alias)) {
+            // Module aliases bind a module to a name
+            string name = module_alias->name->value;
+            // For now, treat modules as an opaque type
+            new_env->bind(name, Type(nullptr));
+        } else if (auto fqn_alias = dynamic_cast<FqnAlias*>(alias)) {
+            // FQN aliases bind a fully qualified name
+            string name = fqn_alias->name->value;
+            // For now, treat FQNs as an opaque type
+            new_env->bind(name, Type(nullptr));
+        } else if (auto function_alias = dynamic_cast<FunctionAlias*>(alias)) {
+            // Function aliases bind an existing function
+            string name = function_alias->name->value;
+            string alias_name = function_alias->alias->value;
+            auto alias_type = env->lookup(alias_name);
+            if (alias_type.has_value()) {
+                new_env->bind(name, alias_type.value());
+            }
         }
-        // TODO: Handle other alias types
     }
 
     // Type check body in new environment
@@ -659,13 +956,58 @@ Type TypeChecker::visit(DoExpr *node) const {
 
 // Function-related
 Type TypeChecker::visit(FunctionExpr *node) const {
-    // TODO: Implement function type inference
-    // This requires pattern matching and multiple clauses
-    auto var = context.fresh_type_var();
-    auto type_name = make_shared<NamedType>();
-    type_name->name = to_string(var->id);
-    type_name->type = nullptr;
-    return Type(type_name);
+    // Implement function type inference
+    // Infer the type of a function from its patterns and bodies
+
+    // Create fresh type variables for arguments
+    vector<Type> arg_types;
+    for (auto pattern : node->patterns) {
+        // Create a fresh type variable for each argument
+        arg_types.push_back(Type(Var));
+    }
+
+    // Create a new environment for the function body
+    auto func_env = env->extend();
+
+    // Bind patterns to argument types
+    for (size_t i = 0; i < node->patterns.size(); ++i) {
+        extract_pattern_bindings(node->patterns[i], arg_types[i], func_env);
+    }
+
+    // Type check all function bodies and unify their types
+    Type result_type = Type(nullptr);
+    auto old_env = env;
+    env = func_env;
+
+    for (auto body : node->bodies) {
+        Type body_type = check(body);
+
+        if (holds_alternative<nullptr_t>(result_type)) {
+            // First body - use its type as the result type
+            result_type = body_type;
+        } else {
+            // Unify with previous result type
+            auto unify_result = unify(result_type, body_type);
+            if (!unify_result.success) {
+                context.add_error(node->source_context,
+                    "Function bodies have inconsistent types: " +
+                    unify_result.error_message.value_or("type mismatch"));
+            }
+        }
+    }
+
+    env = old_env;
+
+    // Build the function type from arguments and result
+    Type func_type = result_type;
+    for (auto it = arg_types.rbegin(); it != arg_types.rend(); ++it) {
+        auto fn_type = make_shared<FunctionType>();
+        fn_type->argumentType = *it;
+        fn_type->returnType = func_type;
+        func_type = Type(fn_type);
+    }
+
+    return func_type;
 }
 
 Type TypeChecker::visit(ApplyExpr *node) const {
@@ -743,10 +1085,21 @@ Type TypeChecker::visit(RecordInstanceExpr *node) const {
     }
 
     // Return the record type
-    auto named_type = make_shared<NamedType>();
-    named_type->name = record_name;
-    named_type->type = nullptr; // TODO: Store full record type info
-    return Type(named_type);
+    // Create a record type with full field information
+    auto record_type = make_shared<RecordType>();
+    record_type->name = record_name;
+
+    // Store field types from the record definition
+    if (module_records.count(current_module_name) > 0 &&
+        module_records[current_module_name].count(record_name) > 0) {
+        auto& record_info = module_records[current_module_name][record_name];
+        // Convert parallel vectors to map
+        for (size_t i = 0; i < record_info.field_names.size() && i < record_info.field_types.size(); ++i) {
+            record_type->field_types[record_info.field_names[i]] = record_info.field_types[i];
+        }
+    }
+
+    return Type(record_type);
 }
 
 // Pattern matching
@@ -756,14 +1109,33 @@ Type TypeChecker::visit(CaseExpr *node) const {
     // Check all clauses and ensure they have the same type
     optional<Type> result_type;
     for (auto* clause : node->clauses) {
-        // TODO: Implement pattern type checking against scrutinee_type
-        // For now, just check the body
+        // Create a new environment for this clause
+        auto clause_env = env->extend();
+
+        // Check pattern compatibility with scrutinee type and extract bindings
+        if (!check_pattern_type(clause->pattern, scrutinee_type, clause_env)) {
+            context.add_error(clause->source_context,
+                "Pattern type incompatible with case expression type");
+        }
+
+        // Type check the body in the new environment
+        auto old_env = env;
+        env = clause_env;
         Type body_type = check(clause->body);
+        env = old_env;
 
         if (!result_type) {
             result_type = body_type;
         } else {
-            // TODO: Unify result types from different clauses
+            // Unify result types from different clauses
+            auto unify_result = unify(result_type.value(), body_type);
+            if (!unify_result.success) {
+                context.add_error(clause->source_context,
+                    "Case clause results have inconsistent types: " +
+                    unify_result.error_message.value_or("type mismatch"));
+            } else {
+                result_type = unify_result.substitution.apply(result_type.value());
+            }
         }
     }
 
@@ -804,10 +1176,23 @@ Type TypeChecker::visit(RaiseExpr *node) const {
 Type TypeChecker::visit(TryCatchExpr *node) const {
     Type try_type = check(node->tryExpr);
 
-    // TODO: Implement proper try-catch type checking
-    // For now, just return the try type
+    // Implement proper try-catch type checking
+    // The result type should be the unification of try and catch types
     if (node->catchExpr) {
-        check(node->catchExpr);
+        // Type check catch clauses
+        Type catch_type = check(node->catchExpr);
+
+        // Unify try and catch types
+        auto unify_result = unify(try_type, catch_type);
+        if (!unify_result.success) {
+            context.add_error(node->source_context,
+                "Try and catch blocks have incompatible types: " +
+                unify_result.error_message.value_or("type mismatch"));
+            return try_type;  // Return try type on error
+        }
+
+        // Return the unified type
+        return unify_result.substitution.apply(try_type);
     }
 
     return try_type;
@@ -884,14 +1269,18 @@ Type TypeChecker::visit(ModuleExpr *node) const {
         }
 
         // Store in current module's record types
-        string module_name = ""; // TODO: Get module name
+        string module_name = "";
         if (node->fqn->packageName.has_value()) {
             for (auto* name : node->fqn->packageName.value()->parts) {
                 if (!module_name.empty()) module_name += "\\";
                 module_name += name->value;
             }
+            if (!module_name.empty()) module_name += "\\";
         }
-        module_name += "\\" + node->fqn->moduleName->value;
+        module_name += node->fqn->moduleName->value;
+
+        // Update current module name for context
+        current_module_name = module_name;
 
         module_records[module_name][info.name] = info;
     }

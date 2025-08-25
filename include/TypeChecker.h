@@ -30,7 +30,7 @@ struct TypeVar {
 
 // Type environment for tracking variable types
 class TypeEnvironment : public enable_shared_from_this<TypeEnvironment> {
-private:
+public:
     unordered_map<string, Type> bindings;
     shared_ptr<TypeEnvironment> parent;
 
@@ -121,6 +121,7 @@ private:
     // Module type information
     mutable unordered_map<string, unordered_map<string, RecordTypeInfo>> module_records;
     mutable unordered_map<string, unordered_map<string, Type>> module_exports;
+    mutable string current_module_name;  // Track current module being type checked
 
     // Unification algorithm
     UnificationResult unify(const Type& t1, const Type& t2) const;
@@ -130,6 +131,8 @@ private:
     Type generalize(const Type& type, const TypeEnvironment& env) const;
     Type infer_pattern_type(PatternNode* pattern, const Type& scrutinee_type) const;
     Type type_node_to_type(TypeNameNode* type_node) const;
+    void extract_pattern_bindings(PatternNode* pattern, const Type& type, shared_ptr<TypeEnvironment> env) const;
+    bool check_pattern_type(PatternNode* pattern, const Type& type, shared_ptr<TypeEnvironment> env) const;
 
 public:
     TypeChecker(TypeInferenceContext& ctx, shared_ptr<TypeEnvironment> initial_env = nullptr)

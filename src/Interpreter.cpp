@@ -1333,9 +1333,6 @@ InterpreterResult Interpreter::visit(FunctionsImport *node) const {
     // Use alias if provided, otherwise use original name
     const string& import_name = alias->alias ? alias->alias->value : func_name;
     IS.frame->write(import_name, make_shared<RuntimeObject>(Function, func));
-
-    // Debug: Verify the function was written
-    // std::cout << "Imported function '" << import_name << "' to frame" << std::endl;
   }
 
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
@@ -1368,9 +1365,16 @@ InterpreterResult Interpreter::visit(IfExpr *node) const {
 InterpreterResult Interpreter::visit(ImportClauseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  // ImportClauseExpr is a base class - the actual import is in derived classes
-  // This will be called via dynamic dispatch to ModuleImport or FunctionsImport
-  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+  // ImportClauseExpr is a base class - dispatch to the actual derived class
+  // Check the node type and cast to the appropriate derived class
+  if (node->get_type() == AST_FUNCTIONS_IMPORT) {
+    return visit(static_cast<FunctionsImport*>(node));
+  } else if (node->get_type() == AST_MODULE_IMPORT) {
+    return visit(static_cast<ModuleImport*>(node));
+  }
+
+  // Fallback - should not reach here
+  throw yona_error(node->source_context, yona_error::Type::RUNTIME, "Unknown import clause type");
 }
 InterpreterResult Interpreter::visit(ImportExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -1607,10 +1611,8 @@ InterpreterResult Interpreter::visit(ModuleExpr *node) const {
   for (auto record : node->records) {
     auto record_result = (record->accept(*this).value);
     CHECK_EXCEPTION_RETURN();
-    if (record_result->type == Tuple) {
-      // TODO: Store record type information in module->record_types
-      // For now, we're not storing runtime record instances in the module
-    }
+    // RecordNode visitor now stores the record type information in module->record_types
+    // The result is the constructor function which gets stored in the frame
   }
 
   // Process functions and populate exports
@@ -2023,12 +2025,22 @@ InterpreterResult Interpreter::visit(RecordNode *node) const {
   // Store the constructor in the current frame
   IS.frame->locals_[record_name] = constructor;
 
-  // Also store record type information for pattern matching
+  // Store record type information for pattern matching
   RecordTypeInfo type_info;
   type_info.name = record_name;
   type_info.field_names = field_names;
   // For now, leave field_types empty as Yona records are dynamically typed
+
+  // Store in global record types for pattern matching
   IS.record_types[record_name] = make_shared<RecordTypeInfo>(type_info);
+
+  // Also store in the current module if we're processing one
+  if (!IS.module_stack.empty()) {
+    auto& current_module = IS.module_stack.top().second;
+    if (current_module) {
+      current_module->record_types[record_name] = type_info;
+    }
+  }
 
   // Return the constructor function
   return InterpreterResult(constructor);
@@ -2192,9 +2204,9 @@ InterpreterResult Interpreter::visit(TryCatchExpr *node) const {
     return result;
   }
 
-  // Save the exception for pattern matching
+  // Save the exception and its context for pattern matching
   auto exception = IS.exception_value;
-  // TODO: Use exception_context for better error reporting
+  auto exception_context = IS.exception_context;  // Preserve the original exception context
 
   // Clear the exception state before executing catch block
   IS.clear_exception();
@@ -2233,9 +2245,9 @@ InterpreterResult Interpreter::visit(TryCatchExpr *node) const {
     }
   }
 
-  // No pattern matched - re-raise the exception
-  IS.raise_exception(exception, IS.exception_context);
-  throw yona_error(IS.exception_context, yona_error::Type::RUNTIME, "Unhandled exception");
+  // No pattern matched - re-raise the exception with original context
+  IS.raise_exception(exception, exception_context);
+  throw yona_error(exception_context, yona_error::Type::RUNTIME, "Unhandled exception");
 }
 
 InterpreterResult Interpreter::visit(TupleExpr *node) const {
@@ -2549,6 +2561,9 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   auto relative_path = fqn_to_path(fqn);
   auto module_path = find_module_file(relative_path);
 
+  // Debug: Print module loading attempt
+  // cerr << "Loading module: " << relative_path << " from " << module_path << endl;
+
   if (module_path.empty()) {
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME,
                      "Module not found: " + relative_path);
@@ -2601,7 +2616,7 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   // Keep the AST alive as long as the module is alive
   module->ast_keeper = module_ast;
 
-  // TODO: Process exports list from ModuleExpr
+  // Exports are already processed by ModuleExpr visitor during module->accept(*this)
 
   return module;
 }
@@ -2649,19 +2664,142 @@ RuntimeObjectPtr Interpreter::make_typed_object(RuntimeObjectType type, RuntimeO
   return make_shared<RuntimeObject>(type, std::move(data));
 }
 
+// Forward declaration
+static bool is_type_compatible(const Type& actual, const Type& expected);
+
 // Runtime type checking helpers
 bool Interpreter::check_runtime_type(const RuntimeObjectPtr& value, const Type& expected_type) const {
-  // If value has static type information, use it
+  // Get the actual type to check
+  Type actual_type;
   if (value->static_type.has_value()) {
-    // TODO: Implement proper type unification/subtyping check
-    // For now, just check exact match
-    return true;  // Placeholder
+    actual_type = value->static_type.value();
+  } else {
+    actual_type = runtime_type_to_static_type(value->type);
   }
 
-  // Otherwise, check based on runtime type
-  Type runtime_type = runtime_type_to_static_type(value->type);
-  // TODO: Implement proper type compatibility check
-  return true;  // Placeholder
+  // Check type compatibility (subtyping)
+  return is_type_compatible(actual_type, expected_type);
+}
+
+// Helper function to check if actual_type is compatible with expected_type (subtyping)
+static bool is_type_compatible(const Type& actual, const Type& expected) {
+  // Handle nullptr types
+  if (holds_alternative<nullptr_t>(actual) || holds_alternative<nullptr_t>(expected)) {
+    return holds_alternative<nullptr_t>(actual) && holds_alternative<nullptr_t>(expected);
+  }
+
+  // Check builtin types
+  if (holds_alternative<BuiltinType>(actual) && holds_alternative<BuiltinType>(expected)) {
+    auto actual_builtin = get<BuiltinType>(actual);
+    auto expected_builtin = get<BuiltinType>(expected);
+
+    // Exact match
+    if (actual_builtin == expected_builtin) return true;
+
+    // Numeric widening conversions
+    // Int can be widened to Float
+    if ((actual_builtin == SignedInt32 || actual_builtin == SignedInt64) &&
+        (expected_builtin == Float32 || expected_builtin == Float64)) {
+      return true;
+    }
+
+    // Smaller ints can be widened to larger ints
+    if (is_signed(actual) && is_signed(expected)) {
+      if (actual_builtin == SignedInt16 &&
+          (expected_builtin == SignedInt32 || expected_builtin == SignedInt64)) return true;
+      if (actual_builtin == SignedInt32 && expected_builtin == SignedInt64) return true;
+    }
+
+    // Var type is compatible with any type (polymorphic)
+    if (expected_builtin == Var) return true;
+
+    return false;
+  }
+
+  // Check collection types
+  if (holds_alternative<shared_ptr<SingleItemCollectionType>>(actual) &&
+      holds_alternative<shared_ptr<SingleItemCollectionType>>(expected)) {
+    auto actual_coll = get<shared_ptr<SingleItemCollectionType>>(actual);
+    auto expected_coll = get<shared_ptr<SingleItemCollectionType>>(expected);
+
+    // Must be same kind of collection and value types must be compatible
+    return actual_coll->kind == expected_coll->kind &&
+           is_type_compatible(actual_coll->valueType, expected_coll->valueType);
+  }
+
+  // Check dict types
+  if (holds_alternative<shared_ptr<DictCollectionType>>(actual) &&
+      holds_alternative<shared_ptr<DictCollectionType>>(expected)) {
+    auto actual_dict = get<shared_ptr<DictCollectionType>>(actual);
+    auto expected_dict = get<shared_ptr<DictCollectionType>>(expected);
+
+    // Key and value types must be compatible
+    return is_type_compatible(actual_dict->keyType, expected_dict->keyType) &&
+           is_type_compatible(actual_dict->valueType, expected_dict->valueType);
+  }
+
+  // Check function types (contravariant in arguments, covariant in return)
+  if (holds_alternative<shared_ptr<FunctionType>>(actual) &&
+      holds_alternative<shared_ptr<FunctionType>>(expected)) {
+    auto actual_func = get<shared_ptr<FunctionType>>(actual);
+    auto expected_func = get<shared_ptr<FunctionType>>(expected);
+
+    // Contravariant in arguments: expected arg type must be compatible with actual arg type
+    // Covariant in return: actual return type must be compatible with expected return type
+    return is_type_compatible(expected_func->argumentType, actual_func->argumentType) &&
+           is_type_compatible(actual_func->returnType, expected_func->returnType);
+  }
+
+  // Check named types
+  if (holds_alternative<shared_ptr<NamedType>>(actual) &&
+      holds_alternative<shared_ptr<NamedType>>(expected)) {
+    auto actual_named = get<shared_ptr<NamedType>>(actual);
+    auto expected_named = get<shared_ptr<NamedType>>(expected);
+
+    // Names must match and underlying types must be compatible
+    return actual_named->name == expected_named->name &&
+           is_type_compatible(actual_named->type, expected_named->type);
+  }
+
+  // Check product types (tuples)
+  if (holds_alternative<shared_ptr<ProductType>>(actual) &&
+      holds_alternative<shared_ptr<ProductType>>(expected)) {
+    auto actual_prod = get<shared_ptr<ProductType>>(actual);
+    auto expected_prod = get<shared_ptr<ProductType>>(expected);
+
+    // Must have same number of elements and each must be compatible
+    if (actual_prod->types.size() != expected_prod->types.size()) return false;
+
+    for (size_t i = 0; i < actual_prod->types.size(); ++i) {
+      if (!is_type_compatible(actual_prod->types[i], expected_prod->types[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Check sum types (unions)
+  if (holds_alternative<shared_ptr<SumType>>(actual) &&
+      holds_alternative<shared_ptr<SumType>>(expected)) {
+    auto actual_sum = get<shared_ptr<SumType>>(actual);
+    auto expected_sum = get<shared_ptr<SumType>>(expected);
+
+    // Actual must be a subset of expected (all actual types must be in expected)
+    for (const auto& actual_type : actual_sum->types) {
+      bool found = false;
+      for (const auto& expected_type : expected_sum->types) {
+        if (is_type_compatible(actual_type, expected_type)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) return false;
+    }
+    return true;
+  }
+
+  // No match found
+  return false;
 }
 
 Type Interpreter::runtime_type_to_static_type(RuntimeObjectType type) const {

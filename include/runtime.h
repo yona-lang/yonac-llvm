@@ -68,10 +68,10 @@ using RuntimeObjectData =
 
 using RuntimeObjectPtr = shared_ptr<RuntimeObject>;
 
-enum RuntimeObjectType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Dict, Seq, Set, Tuple, Record, FQN, Module, Function };
+enum RuntimeObjectType { Int, Float, Byte, Char, String, Bool, Unit, Symbol, Dict, Seq, Set, Tuple, Record, FQN, Module, Function, Promise, Error };
 
 inline string RuntimeObjectTypes[] = {"Int",  "Float", "Byte", "Char",  "String", "Bool",   "Unit",    "Symbol",
-                                      "Dict", "Seq",   "Set",  "Tuple", "Record", "FQN",    "Module", "Function"};
+                                      "Dict", "Seq",   "Set",  "Tuple", "Record", "FQN",    "Module", "Function", "Promise", "Error"};
 
 struct SymbolValue {
   string name;

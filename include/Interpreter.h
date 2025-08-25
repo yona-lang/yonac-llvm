@@ -13,6 +13,8 @@
 #include "ast.h"
 #include "runtime.h"
 #include "TypeChecker.h"
+#include "runtime_async.h"
+#include "dependency_analyzer.h"
 
 // Disable MSVC warnings about STL types in exported class interfaces and DLL interface inheritance
 // This is safe for our use case as both the DLL and clients use the same STL and compiler
@@ -51,7 +53,15 @@ struct InterpreterState {
   // Record type information for pattern matching
   unordered_map<string, shared_ptr<RecordTypeInfo>> record_types;
 
-  InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)) {
+  // Async execution context
+  shared_ptr<runtime::async::AsyncContext> async_ctx;
+  bool is_async_context = false;
+
+  // Current promise if executing async
+  shared_ptr<runtime::async::Promise> current_promise;
+
+  InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)),
+                       async_ctx(runtime::async::get_global_async_context()) {
     // Initialize module paths from YONA_PATH environment variable
     const char* yona_path = std::getenv("YONA_PATH");
     if (yona_path) {
@@ -79,6 +89,11 @@ struct InterpreterState {
     module_paths.push_back("./stdlib");
     module_paths.push_back("../stdlib");
     module_paths.push_back("../../stdlib");
+
+    // Add test module directory for test execution
+    module_paths.push_back("./test/code");
+    module_paths.push_back("../test/code");
+    module_paths.push_back("../../test/code");
   }
 
   void push_frame() { frame = make_shared<InterepterFrame>(frame); }
@@ -282,6 +297,12 @@ public:
   InterpreterResult visit(CallExpr *node) const override;
   InterpreterResult visit(GeneratorExpr *node) const override;
   InterpreterResult visit(CollectionExtractorExpr *node) const override;
+
+  // Async evaluation methods
+  shared_ptr<runtime::async::Promise> eval_async(AstNode* node) const;
+  RuntimeObjectPtr await_if_promise(RuntimeObjectPtr obj) const;
+  InterpreterResult visit_parallel_let(LetExpr* node) const;
+  InterpreterResult call_async(FunctionValue* func, const vector<RuntimeObjectPtr>& args) const;
 };
 
 #ifdef _MSC_VER

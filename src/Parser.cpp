@@ -895,18 +895,69 @@ private:
         // Create TypeNameNode for the definition
         auto name_node = new UserDefinedTypeNode(loc, new NameExpr(loc, type_name));
 
-        // Create TypeDefinition node
+        // Parse the type expression after '='
         vector<TypeNameNode*> type_names;
-        // TODO: Parse the actual type expression after '='
+
+        // Parse type alternatives (sum type) or single type
+        do {
+            auto type_expr = parse_type_name();
+            if (type_expr) {
+                type_names.push_back(type_expr.release());
+            }
+
+            // Check for sum type (alternatives separated by '|')
+            if (check(TokenType::YPIPE)) {
+                advance();
+            } else {
+                break;
+            }
+        } while (true);
 
         auto type_def = make_unique<TypeDefinition>(loc, name_node, type_names);
 
-        // Parse the type expression after '='
-        // This could be a sum type, product type, or simple type
-        // For now, we'll skip the implementation
-        synchronize();
-
         return type_def;
+    }
+
+    // Parse type name for type definitions
+    unique_ptr<TypeNameNode> parse_type_name() {
+        SourceLocation loc = current_location();
+
+        if (check(TokenType::YIDENTIFIER)) {
+            string type_name(advance().lexeme);
+
+            // Check for built-in types and map to BuiltinType enum
+            static const unordered_map<string, compiler::types::BuiltinType> builtin_types = {
+                {"Bool", compiler::types::Bool},
+                {"Byte", compiler::types::Byte},
+                {"Int", compiler::types::SignedInt64},
+                {"Int16", compiler::types::SignedInt16},
+                {"Int32", compiler::types::SignedInt32},
+                {"Int64", compiler::types::SignedInt64},
+                {"Int128", compiler::types::SignedInt128},
+                {"UInt16", compiler::types::UnsignedInt16},
+                {"UInt32", compiler::types::UnsignedInt32},
+                {"UInt64", compiler::types::UnsignedInt64},
+                {"UInt128", compiler::types::UnsignedInt128},
+                {"Float", compiler::types::Float64},
+                {"Float32", compiler::types::Float32},
+                {"Float64", compiler::types::Float64},
+                {"Float128", compiler::types::Float128},
+                {"Char", compiler::types::Char},
+                {"String", compiler::types::String},
+                {"Symbol", compiler::types::Symbol},
+                {"Unit", compiler::types::Unit}
+            };
+
+            auto it = builtin_types.find(type_name);
+            if (it != builtin_types.end()) {
+                return make_unique<BuiltinTypeNode>(loc, it->second);
+            } else {
+                return make_unique<UserDefinedTypeNode>(loc, new NameExpr(loc, type_name));
+            }
+        }
+
+        error(ParseError::Type::INVALID_SYNTAX, "Expected type name");
+        return nullptr;
     }
 
     // Pattern parsing
@@ -1389,12 +1440,20 @@ private:
         // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Got prefix expr, next token: " << peek().lexeme;
 
         int loop_count = 0;
+        size_t last_position = current_;
         while (!is_at_end() && peek().type != TokenType::YIN) {
             if (++loop_count > 1000) {
                 std::cerr << "parse_expr_until_in: Infinite loop detected!" << std::endl;
                 error(ParseError::Type::INVALID_SYNTAX, "Infinite loop in parse_expr_until_in");
                 return nullptr;
             }
+
+            // Check if we're making progress
+            if (current_ == last_position && loop_count > 1) {
+                // No progress made, break to avoid infinite loop
+                break;
+            }
+            last_position = current_;
 
             // Check for juxtaposition (function application)
             // DISABLED FOR NOW - causing infinite loops
@@ -1412,7 +1471,8 @@ private:
                 if (!left) return nullptr;
             } else {
                 auto prec = get_infix_precedence(peek().type);
-                if (prec < Precedence::LOWEST) break;
+                // Break if not an infix operator (includes LOWEST precedence)
+                if (prec <= Precedence::LOWEST) break;
 
                 // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Parsing infix, token=" << peek().lexeme;
                 left = parse_infix_expr(std::move(left), prec);
@@ -1777,10 +1837,45 @@ private:
                           "Expected field name after '.'");
                     return left;
                 }
-                string field_name(advance().lexeme);
-                // FieldAccessExpr constructor needs different parameters
-                // TODO: Fix FieldAccessExpr constructor call
-                return left;
+                auto field_token = advance();
+                string field_name(field_token.lexeme);
+
+                // Check if this is module access (Module.function) or field access (record.field)
+                // For now, we'll create a ModuleCall if the identifier starts with uppercase
+                // and FieldAccessExpr otherwise
+
+                if (left->get_type() == AST_IDENTIFIER_EXPR) {
+                    auto identifier = static_cast<IdentifierExpr*>(left.get());
+                    string id_name = identifier->name->value;
+
+                    // Create NameExpr for the field/function
+                    auto name_expr = make_unique<NameExpr>(token_location(field_token), field_name);
+
+                    if (!id_name.empty() && isupper(id_name[0])) {
+                        // Module access - create ModuleCall
+                        // ModuleCall expects an FQN or expression
+                        // Since we have a simple identifier, pass it as ExprNode*
+                        left = make_unique<ModuleCall>(
+                            token_location(op),
+                            static_cast<ExprNode*>(left.release()),
+                            name_expr.release()
+                        );
+                    } else {
+                        // Record field access - create FieldAccessExpr
+                        left = make_unique<FieldAccessExpr>(
+                            token_location(op),
+                            static_cast<IdentifierExpr*>(left.release()),
+                            name_expr.release()
+                        );
+                    }
+                } else {
+                    // For complex expressions (like function calls), we need general field access
+                    // For now, error out
+                    error(ParseError::Type::INVALID_SYNTAX,
+                          "Field access on complex expressions not yet supported");
+                    return left;
+                }
+                break;
             }
 
             // Function call

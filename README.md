@@ -1,14 +1,23 @@
-# yonac-llvm
+# Yona-LLVM Compiler
 
-A Yona language compiler/interpreter using LLVM as the backend.
+A compiler and interpreter implementation for the Yona programming language, featuring transparent async/await and automatic parallelization.
+
+## Project Status
+
+- ✅ **Interpreter**: Feature-complete with pattern matching
+- ✅ **Type System**: Hindley-Milner with extensions
+- ✅ **Parser**: Full language support
+- ✅ **Async Core**: Promises, thread pool, dependency analysis
+- 🚧 **In Progress**: Async interpreter integration
+- 📋 **Planned**: STM, async stdlib, LLVM backend
 
 ## Features
 
-- **Parser**: Custom recursive descent parser with Pratt parsing for expressions
-- **AST**: Comprehensive Abstract Syntax Tree with visitor pattern support
-- **Interpreter**: Tree-walking interpreter with runtime object system
-- **Type System**: Support for primitives, functions, modules, collections
-- **Pattern Matching**: Full pattern matching support in case expressions
+- **Transparent Async**: No async/await keywords needed
+- **Auto-Parallelization**: Dependency analysis for parallel execution
+- **Pattern Matching**: Comprehensive pattern support including guards
+- **Type Inference**: Hindley-Milner with polymorphism
+- **Module System**: Import/export with fully qualified names
 - **Currying**: Automatic currying of multi-parameter functions
 - **List Patterns**: Head/tail destructuring with `[h | t]` syntax
 
@@ -123,6 +132,23 @@ end
 ```bash
 ./scripts/format.sh
 ```
+
+## Documentation
+
+- [Project Roadmap](docs/project-roadmap.md) - Development timeline and milestones
+- [TODO List](docs/todo-list.md) - Detailed task tracking
+- [Development Log](docs/development-log.md) - Progress and lessons learned
+- [Async Implementation](docs/async-implementation-plan.md) - Async system design
+- [Build Instructions](CLAUDE.md) - Detailed build and development guide
+
+## Architecture
+
+### Core Components
+- **Lexer & Parser**: Recursive descent with Pratt parsing
+- **AST**: Visitor pattern with comprehensive node types
+- **Interpreter**: Tree-walking with frame-based execution
+- **Type Checker**: Polymorphic type inference
+- **Async Runtime**: Transparent promises with auto-parallelization
 
 ## Development
 

@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <variant>
 #include <vector>
@@ -21,6 +22,7 @@ struct FunctionType;
 struct SumType;
 struct ProductType;
 struct UnionType;
+struct RecordType;
 
 enum BuiltinType {
   Bool,
@@ -52,7 +54,7 @@ static const std::string BuiltinTypeStrings[] = {"Bool",          "Byte",       
                                                  "Seq",           "Var",           "Unit"};
 
 using Type = variant<BuiltinType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
-                     shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, nullptr_t>;
+                     shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, shared_ptr<RecordType>, nullptr_t>;
 
 struct SingleItemCollectionType final {
   enum CollectionKind { Set, Seq } kind;
@@ -80,6 +82,11 @@ struct ProductType final {
 struct NamedType final {
   string name;
   Type type;
+};
+
+struct RecordType final {
+  string name;
+  unordered_map<string, Type> field_types;
 };
 
 inline bool is_signed(const Type &type) {
