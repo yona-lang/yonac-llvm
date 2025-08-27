@@ -26,7 +26,7 @@ TEST_CASE("RaiseExprTest") {
     auto test_result = interpreter_result.value;
 
     // The result should be Unit since an exception was raised
-    CHECK(test_result->type == runtime::Unit);
+    CHECK(test_result->type == yona::interp::runtime::Unit);
 }
 
 TEST_CASE("TryCatchExprTest") {
@@ -52,7 +52,7 @@ TEST_CASE("TryCatchExprTest") {
     auto interpreter_result = interpreter.visit(main.get());
     auto test_result = interpreter_result.value;
 
-    CHECK(test_result->type == runtime::Int);
+    CHECK(test_result->type == yona::interp::runtime::Int);
     CHECK(test_result->get<int>() == 42);
 }
 
@@ -77,7 +77,7 @@ TEST_CASE("TryCatchNoExceptionTest") {
     auto test_result = interpreter_result.value;
 
     // Should return the try value, not the catch value
-    CHECK(test_result->type == runtime::Int);
+    CHECK(test_result->type == yona::interp::runtime::Int);
     CHECK(test_result->get<int>() == 100);
 }
 

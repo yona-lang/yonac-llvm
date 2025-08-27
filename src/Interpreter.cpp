@@ -51,9 +51,9 @@ using namespace yona::typechecker;
 #define COMPARISON_OP(T, op)                                                                                                                         \
   InterpreterResult Interpreter::visit(T *node) const {                                                                                                            \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
-    const auto left = (node->left->accept(*this).value);                                                                                \
+    const auto left = (node->left->template accept<InterpreterResult>(*this).value);                                                                                \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
-    const auto right = (node->right->accept(*this).value);                                                                              \
+    const auto right = (node->right->template accept<InterpreterResult>(*this).value);                                                                              \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
                                                                                                                                                      \
     if (left->type == Int && right->type == Int) {                                                                                                  \
@@ -79,7 +79,7 @@ namespace yona::interp {
 using namespace std::placeholders;
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
-  const auto runtime_object = (node->accept(*this).value);
+  const auto runtime_object = node->template accept<InterpreterResult>(*this).value;
 
   // Check for exception after visit
   if (IS.has_exception) {
@@ -244,14 +244,14 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
       else {
         // For other literal types, evaluate them and compare
         auto expr_node = static_cast<ExprNode*>(node);
-        auto pattern_result = (expr_node->accept(*this).value);
+        auto pattern_result = expr_node->template accept<InterpreterResult>(*this).value;
         return *pattern_result == *value;
       }
       return false;
     } else if constexpr (is_same_v<T, SymbolExpr*>) {
       // Symbol literal
       if (value->type != Symbol) return false;
-      auto symbol_result = (arg->accept(*this).value);
+      auto symbol_result = arg->template accept<InterpreterResult>(*this).value;
       return *symbol_result == *value;
     } else if constexpr (is_same_v<T, IdentifierExpr*>) {
       // Identifier - bind the value
@@ -302,7 +302,7 @@ bool Interpreter::match_dict_pattern(DictPattern *pattern, const RuntimeObjectPt
   // For each pattern key-value pair, find matching entry in dict
   for (const auto& [key_pattern, value_pattern] : pattern->keyValuePairs) {
     // Evaluate the key pattern
-    auto key_result = (key_pattern->accept(*this).value);
+    auto key_result = key_pattern->template accept<InterpreterResult>(*this).value;
 
     // Find matching key in dict
     bool found = false;
@@ -482,7 +482,7 @@ bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPt
         return true;
       } else {
         // Other pattern value types - evaluate and compare
-        auto pattern_result = (expr->accept(*this).value);
+        auto pattern_result = expr->template accept<InterpreterResult>(*this).value;
         return *pattern_result == *value;
       }
     }, pattern_value->expr);
@@ -506,9 +506,9 @@ bool Interpreter::match_tail_pattern(TailPattern *pattern, const RuntimeObjectPt
 InterpreterResult Interpreter::visit(AddExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  auto left = (node->left->accept(*this).value);
+  auto left = node->left->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = node->right->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   // Handle byte promotion to int
@@ -535,9 +535,9 @@ InterpreterResult Interpreter::visit(AddExpr *node) const {
 InterpreterResult Interpreter::visit(MultiplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Handle byte promotion to int
@@ -564,9 +564,9 @@ InterpreterResult Interpreter::visit(MultiplyExpr *node) const {
 InterpreterResult Interpreter::visit(SubtractExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Handle byte promotion to int
@@ -601,9 +601,9 @@ BITWISE_OP(RightShiftExpr, Int, int, >>)
 // Zero-fill right shift implementation
 InterpreterResult Interpreter::visit(ZerofillRightShiftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  const auto left = node->left->accept(*this).value;
+  const auto left = node->left->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
-  const auto right = node->right->accept(*this).value;
+  const auto right = node->right->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   if (left->type == Int && right->type == Int) {
@@ -653,7 +653,7 @@ BITWISE_OP(LogicalOrExpr, Bool, bool, ||)
 
 InterpreterResult Interpreter::visit(LogicalNotOpExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto operand = (node->expr->accept(*this).value);
+  auto operand = (node->expr->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (operand->type != Bool) {
@@ -664,7 +664,7 @@ InterpreterResult Interpreter::visit(LogicalNotOpExpr *node) const {
 }
 InterpreterResult Interpreter::visit(BinaryNotOpExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto operand = (node->expr->accept(*this).value);
+  auto operand = (node->expr->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (operand->type != Int) {
@@ -679,7 +679,7 @@ InterpreterResult Interpreter::visit(AliasCall *node) const {
 
   // AliasCall represents calling a function through an alias: alias.funName(args)
   // First resolve the alias to get the module or value
-  auto alias_result = node->alias->accept(*this).value;
+  auto alias_result = node->alias->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   if (alias_result->type == Module) {
@@ -713,7 +713,7 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
   // First visit the call expression to get the function
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: About to visit call expression of type: " << node->call->get_type();
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expr is " << typeid(*node->call).name();
-  auto call_result = node->call->accept(*this);
+  auto call_result = node->call->template accept<InterpreterResult>(*this);
   CHECK_EXCEPTION_RETURN();
 
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Call expression visited, result type: " << (call_result).value->type;
@@ -736,9 +736,9 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
 
   for (const auto arg : node->args) {
     if (holds_alternative<ValueExpr *>(arg)) {
-      new_args.push_back(get<ValueExpr *>(arg)->accept(*this).value);
+      new_args.push_back(get<ValueExpr *>(arg)->template accept<InterpreterResult>(*this).value);
     } else {
-      new_args.push_back(get<ExprNode *>(arg)->accept(*this).value);
+      new_args.push_back(get<ExprNode *>(arg)->template accept<InterpreterResult>(*this).value);
     }
     CHECK_EXCEPTION_RETURN();
   }
@@ -759,9 +759,9 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
         for (const auto& [name, arg] : *node->named_args) {
           RuntimeObjectPtr value;
           if (holds_alternative<ValueExpr *>(arg)) {
-            value = get<ValueExpr *>(arg)->accept(*this).value;
+            value = get<ValueExpr *>(arg)->template accept<InterpreterResult>(*this).value;
           } else {
-            value = get<ExprNode *>(arg)->accept(*this).value;
+            value = get<ExprNode *>(arg)->template accept<InterpreterResult>(*this).value;
           }
           CHECK_EXCEPTION_RETURN();
           named_values[name] = value;
@@ -883,7 +883,7 @@ InterpreterResult Interpreter::visit(BodyWithGuards *node) const {
 
   // BodyWithGuards represents a function body with a guard condition
   // First evaluate the guard expression
-  auto guard_result = node->guard->accept(*this).value;
+  auto guard_result = node->guard->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   // Check if the guard evaluates to true
@@ -898,7 +898,7 @@ InterpreterResult Interpreter::visit(BodyWithGuards *node) const {
   bool guard_value = guard_result->get<bool>();
   if (guard_value) {
     // Guard passed, evaluate the body expression
-    return node->expr->accept(*this);
+    return node->expr->template accept<InterpreterResult>(*this);
   } else {
     // Guard failed, return a special value indicating guard failure
     auto symbol = make_shared<RuntimeObject>(Symbol, make_shared<SymbolValue>(SymbolValue{"guard_failed"}));
@@ -910,7 +910,7 @@ InterpreterResult Interpreter::visit(BodyWithGuards *node) const {
 }
 InterpreterResult Interpreter::visit(BodyWithoutGuards *node) const {
   CHECK_EXCEPTION_RETURN();
-  return node->expr->accept(*this);
+  return node->expr->template accept<InterpreterResult>(*this);
 }
 InterpreterResult Interpreter::visit(ByteExpr *node) const {
   CHECK_EXCEPTION_RETURN();
@@ -920,7 +920,7 @@ InterpreterResult Interpreter::visit(CaseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
   // Evaluate the expression to match against
-  auto match_value = (node->expr->accept(*this).value);
+  auto match_value = (node->expr->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Try each clause in order
@@ -931,7 +931,7 @@ InterpreterResult Interpreter::visit(CaseExpr *node) const {
     // Try to match the pattern
     if (match_pattern(clause->pattern, match_value)) {
       // Pattern matched - evaluate the body and return
-      auto result = clause->body->accept(*this);
+      auto result = clause->body->template accept<InterpreterResult>(*this);
       IS.merge_frame_to_parent();
       return result;
     } else {
@@ -961,7 +961,7 @@ InterpreterResult Interpreter::visit(CatchExpr *node) const {
   // For now, execute the first catch pattern
   // In a full implementation, we would match patterns against the exception
   if (!node->patterns.empty()) {
-    auto result = node->patterns[0]->accept(*this);
+    auto result = node->patterns[0]->template accept<InterpreterResult>(*this);
     // Don't check for exceptions - let them propagate
     return result;
   }
@@ -980,9 +980,9 @@ InterpreterResult Interpreter::visit(CharacterExpr *node) const {
 }
 InterpreterResult Interpreter::visit(ConsLeftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (right->type != Seq) {
@@ -998,9 +998,9 @@ InterpreterResult Interpreter::visit(ConsLeftExpr *node) const {
 }
 InterpreterResult Interpreter::visit(ConsRightExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  const auto left = (node->left->accept(*this).value);
+  const auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  const auto right = (node->right->accept(*this).value);
+  const auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (left->type != Seq) {
@@ -1020,9 +1020,9 @@ InterpreterResult Interpreter::visit(DictExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto [fst, snd] : node->values) {
-    auto key = (fst->accept(*this).value);
+    auto key = (fst->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
-    auto value = (snd->accept(*this).value);
+    auto value = (snd->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     fields.emplace_back(key, value);
   }
@@ -1033,7 +1033,7 @@ InterpreterResult Interpreter::visit(DictExpr *node) const {
 InterpreterResult Interpreter::visit(DictGeneratorExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the source collection
-  auto source = (node->stepExpression->accept(*this).value);
+  auto source = (node->stepExpression->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Ensure source is a collection (Seq, Set, or Dict)
@@ -1048,12 +1048,12 @@ InterpreterResult Interpreter::visit(DictGeneratorExpr *node) const {
     for (const auto& elem : source_seq->fields) {
       IS.push_frame();
       IS.generator_current_element = elem;
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
       // For dict generator, evaluate the reducer to get key and value
-      auto key = (node->reducerExpr->key->accept(*this).value);
+      auto key = (node->reducerExpr->key->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
-      auto value = (node->reducerExpr->value->accept(*this).value);
+      auto value = (node->reducerExpr->value->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.emplace_back(key, value);
       IS.pop_frame();
@@ -1063,11 +1063,11 @@ InterpreterResult Interpreter::visit(DictGeneratorExpr *node) const {
     for (const auto& elem : source_set->fields) {
       IS.push_frame();
       IS.generator_current_element = elem;
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
-      auto key = (node->reducerExpr->key->accept(*this).value);
+      auto key = (node->reducerExpr->key->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
-      auto value = (node->reducerExpr->value->accept(*this).value);
+      auto value = (node->reducerExpr->value->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.emplace_back(key, value);
       IS.pop_frame();
@@ -1079,11 +1079,11 @@ InterpreterResult Interpreter::visit(DictGeneratorExpr *node) const {
       // For dict source, we need to pass both key and value
       IS.generator_current_key = key;
       IS.generator_current_element = value;
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
-      auto new_key = (node->reducerExpr->key->accept(*this).value);
+      auto new_key = (node->reducerExpr->key->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
-      auto new_value = (node->reducerExpr->value->accept(*this).value);
+      auto new_value = (node->reducerExpr->value->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.emplace_back(new_key, new_value);
       IS.pop_frame();
@@ -1107,7 +1107,7 @@ InterpreterResult Interpreter::visit(DoExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   InterpreterResult result;
   for (const auto child : node->steps) {
-    result = child->accept(*this);
+    result = child->template accept<InterpreterResult>(*this);
     CHECK_EXCEPTION_RETURN();
   }
   return result;
@@ -1115,9 +1115,9 @@ InterpreterResult Interpreter::visit(DoExpr *node) const {
 
 InterpreterResult Interpreter::visit(EqExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  const auto left = (node->left->accept(*this).value);
+  const auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  const auto right = (node->right->accept(*this).value);
+  const auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   return InterpreterResult(make_shared<RuntimeObject>(Bool, *left == *right));
@@ -1130,7 +1130,7 @@ InterpreterResult Interpreter::visit(FieldAccessExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
   // First evaluate the identifier expression to get the record
-  auto record_result = node->identifier->accept(*this);
+  auto record_result = node->identifier->template accept<InterpreterResult>(*this);
   CHECK_EXCEPTION_RETURN();
 
   auto record_obj = record_result.value;
@@ -1163,7 +1163,7 @@ InterpreterResult Interpreter::visit(FieldUpdateExpr *node) const {
 
   // FieldUpdateExpr updates fields in a record: record{field1: new_value, field2: new_value}
   // First evaluate the identifier to get the original record
-  auto record_result = node->identifier->accept(*this).value;
+  auto record_result = node->identifier->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   if (record_result->type != Record) {
@@ -1183,7 +1183,7 @@ InterpreterResult Interpreter::visit(FieldUpdateExpr *node) const {
   // Apply each field update
   for (const auto& update : node->updates) {
     string field_name = update.first->value;
-    auto new_value = update.second->accept(*this).value;
+    auto new_value = update.second->template accept<InterpreterResult>(*this).value;
     CHECK_EXCEPTION_RETURN();
 
     // Update the field in the record
@@ -1208,7 +1208,7 @@ InterpreterResult Interpreter::visit(FqnAlias *node) const {
 
   // FqnAlias binds a fully-qualified name to a local name: name = Pkg\Module
   // Evaluate the FQN to get a module
-  auto fqn_result = node->fqn->accept(*this).value;
+  auto fqn_result = node->fqn->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   // Bind the result to the local name in the current frame
@@ -1274,7 +1274,7 @@ InterpreterResult Interpreter::visit(FunctionExpr *node) const {
         // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Processing body";
         if (dynamic_cast<BodyWithoutGuards *>(body)) {
           // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing body without guards";
-          auto result = body->accept(*this);
+          auto result = body->template accept<InterpreterResult>(*this);
           // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Body execution complete";
           return (result).value;
         }
@@ -1284,7 +1284,7 @@ InterpreterResult Interpreter::visit(FunctionExpr *node) const {
           continue;
         }
 
-        return (body_with_guards->expr->accept(*this).value);
+        return (body_with_guards->expr->template accept<InterpreterResult>(*this).value);
       }
     } else {
       // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments did not match patterns";
@@ -1350,16 +1350,16 @@ InterpreterResult Interpreter::visit(HeadTailsPattern *node) const {
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(IfExpr *node) const {
-  auto condition = (node->condition->accept(*this).value);
+  auto condition = (node->condition->template accept<InterpreterResult>(*this).value);
 
   if (condition->type != Bool) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Bool for if condition");
   }
 
   if (condition->get<bool>()) {
-    return node->thenExpr->accept(*this);
+    return node->thenExpr->template accept<InterpreterResult>(*this);
   } else {
-    return node->elseExpr->accept(*this);
+    return node->elseExpr->template accept<InterpreterResult>(*this);
   }
 }
 InterpreterResult Interpreter::visit(ImportClauseExpr *node) const {
@@ -1385,14 +1385,14 @@ InterpreterResult Interpreter::visit(ImportExpr *node) const {
 
   // Process all import clauses
   for (auto clause : node->clauses) {
-    clause->accept(*this);
+    clause->template accept<InterpreterResult>(*this);
     CHECK_EXCEPTION_RETURN();
   }
 
   // Visit the expression that uses the imported functions
   InterpreterResult result(make_shared<RuntimeObject>(Unit, nullptr));
   if (node->expr) {
-    result = node->expr->accept(*this);
+    result = node->expr->template accept<InterpreterResult>(*this);
   }
 
   // Pop the frame (imports go out of scope)
@@ -1402,9 +1402,9 @@ InterpreterResult Interpreter::visit(ImportExpr *node) const {
 }
 InterpreterResult Interpreter::visit(InExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (right->type == Seq) {
@@ -1441,9 +1441,9 @@ InterpreterResult Interpreter::visit(IntegerExpr *node) const {
 }
 InterpreterResult Interpreter::visit(JoinExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (left->type != Seq || right->type != Seq) {
@@ -1484,7 +1484,7 @@ InterpreterResult Interpreter::visit(LambdaAlias *node) const {
   // BOOST_LOG_TRIVIAL(debug) << "LambdaAlias: Creating lambda for name=" << node->name->value;
 
   // Evaluate the lambda expression
-  auto lambda_result = node->lambda->accept(*this);
+  auto lambda_result = node->lambda->template accept<InterpreterResult>(*this);
   CHECK_EXCEPTION_RETURN();
 
   // Bind the function to the name in the current frame
@@ -1497,20 +1497,20 @@ InterpreterResult Interpreter::visit(LambdaAlias *node) const {
 InterpreterResult Interpreter::visit(LetExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   for (const auto alias : node->aliases) {
-    alias->accept(*this);
+    alias->template accept<InterpreterResult>(*this);
     CHECK_EXCEPTION_RETURN();
   }
 
-  return node->expr->accept(*this);
+  return node->expr->template accept<InterpreterResult>(*this);
 }
 
 COMPARISON_OP(LtExpr, <)
 COMPARISON_OP(LteExpr, <=)
 InterpreterResult Interpreter::visit(ModuloExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (left->type == Int && right->type == Int) {
@@ -1528,7 +1528,7 @@ InterpreterResult Interpreter::visit(ModuleAlias *node) const {
 
   // ModuleAlias binds a module to a local name: name = module
   // Evaluate the module expression
-  auto module_result = node->module->accept(*this).value;
+  auto module_result = node->module->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   // Bind the module to the local name
@@ -1548,11 +1548,11 @@ InterpreterResult Interpreter::visit(ModuleCall *node) const {
   if (holds_alternative<FqnExpr*>(node->fqn)) {
     // FQN case: direct module reference
     auto fqn_expr = get<FqnExpr*>(node->fqn);
-    module_result = fqn_expr->accept(*this).value;
+    module_result = fqn_expr->template accept<InterpreterResult>(*this).value;
   } else {
     // Expression case: evaluate expression to get module
     auto expr = get<ExprNode*>(node->fqn);
-    module_result = expr->accept(*this).value;
+    module_result = expr->template accept<InterpreterResult>(*this).value;
   }
 
   CHECK_EXCEPTION_RETURN();
@@ -1588,7 +1588,7 @@ InterpreterResult Interpreter::visit(ExprCall *node) const {
 
   // ExprCall handles general expression calls (e.g., (lambda)(args) or curried(args))
   // Simply evaluate the expression - it should return a function
-  auto result = node->expr->accept(*this);
+  auto result = node->expr->template accept<InterpreterResult>(*this);
   // BOOST_LOG_TRIVIAL(debug) << "ExprCall: Expression evaluated, type="
   //                          << (result.has_value() ? to_string((result).value->type) : "no value");
   return result;
@@ -1609,7 +1609,7 @@ InterpreterResult Interpreter::visit(ModuleExpr *node) const {
 
   // Process records
   for (auto record : node->records) {
-    auto record_result = (record->accept(*this).value);
+    auto record_result = (record->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     // RecordNode visitor now stores the record type information in module->record_types
     // The result is the constructor function which gets stored in the frame
@@ -1617,7 +1617,7 @@ InterpreterResult Interpreter::visit(ModuleExpr *node) const {
 
   // Process functions and populate exports
   for (auto func : node->functions) {
-    auto func_result = (func->accept(*this).value);
+    auto func_result = (func->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     if (func_result->type == Function) {
       auto func_value = func_result->get<shared_ptr<FunctionValue>>();
@@ -1671,9 +1671,9 @@ InterpreterResult Interpreter::visit(NameExpr *node) const {
 }
 InterpreterResult Interpreter::visit(NeqExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   return InterpreterResult(make_shared<RuntimeObject>(Bool, *left != *right));
@@ -1727,9 +1727,9 @@ InterpreterResult Interpreter::visit(PipeLeftExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Pipe left: right <| left
   // Apply left (function) to right (argument)
-  auto right_val = (node->right->accept(*this).value);
+  auto right_val = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto left_val = (node->left->accept(*this).value);
+  auto left_val = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (left_val->type != Function) {
@@ -1747,9 +1747,9 @@ InterpreterResult Interpreter::visit(PipeRightExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Pipe right: left |> right
   // Apply right (function) to left (argument)
-  auto left_val = (node->left->accept(*this).value);
+  auto left_val = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right_val = (node->right->accept(*this).value);
+  auto right_val = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (right_val->type != Function) {
@@ -1766,7 +1766,7 @@ InterpreterResult Interpreter::visit(PipeRightExpr *node) const {
 InterpreterResult Interpreter::visit(PatternAlias *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the expression
-  auto expr_result = (node->expr->accept(*this).value);
+  auto expr_result = (node->expr->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Try to match the pattern against the result
@@ -1796,13 +1796,13 @@ InterpreterResult Interpreter::visit(PatternExpr *node) const {
 
     if constexpr (is_same_v<T, Pattern*>) {
       // Just a pattern - used in context where pattern is evaluated
-      return arg->accept(*this);
+      return arg->template accept<InterpreterResult>(*this);
     } else if constexpr (is_same_v<T, PatternWithoutGuards*>) {
-      return arg->accept(*this);
+      return arg->template accept<InterpreterResult>(*this);
     } else if constexpr (is_same_v<T, vector<PatternWithGuards*>>) {
       // Multiple patterns with guards - evaluate first matching one
       for (auto* pattern_with_guard : arg) {
-        auto result = pattern_with_guard->accept(*this);
+        auto result = pattern_with_guard->template accept<InterpreterResult>(*this);
         // If pattern matched (didn't return Unit), return the result
         auto result_obj = result.value;
         // Check if we got a non-unit result (pattern matched and expression evaluated)
@@ -1819,13 +1819,13 @@ InterpreterResult Interpreter::visit(PatternValue *node) const {
   CHECK_EXCEPTION_RETURN();
   // PatternValue evaluates the contained expression
   return std::visit([this](auto&& arg) -> InterpreterResult {
-    return arg->accept(*this);
+    return arg->template accept<InterpreterResult>(*this);
   }, node->expr);
 }
 InterpreterResult Interpreter::visit(PatternWithGuards *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the guard expression
-  auto guard_result = (node->guard->accept(*this).value);
+  auto guard_result = (node->guard->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Check if guard is true
@@ -1835,14 +1835,14 @@ InterpreterResult Interpreter::visit(PatternWithGuards *node) const {
   }
 
   // Guard passed - evaluate the expression
-  return node->expr->accept(*this);
+  return node->expr->template accept<InterpreterResult>(*this);
 }
-InterpreterResult Interpreter::visit(PatternWithoutGuards *node) const { return node->expr->accept(*this); }
+InterpreterResult Interpreter::visit(PatternWithoutGuards *node) const { return node->expr->template accept<InterpreterResult>(*this); }
 InterpreterResult Interpreter::visit(PowerExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->accept(*this).value);
+  auto left = (node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->accept(*this).value);
+  auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   if (left->type == Int && right->type == Int) {
@@ -1859,8 +1859,8 @@ InterpreterResult Interpreter::visit(PowerExpr *node) const {
 }
 InterpreterResult Interpreter::visit(RaiseExpr *node) const {
   // Create an exception with symbol and message
-  auto symbol = (node->symbol->accept(*this).value);
-  auto message = (node->message->accept(*this).value);
+  auto symbol = (node->symbol->template accept<InterpreterResult>(*this).value);
+  auto message = (node->message->template accept<InterpreterResult>(*this).value);
 
   if (symbol->type != Symbol) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Symbol for exception type");
@@ -1880,16 +1880,16 @@ InterpreterResult Interpreter::visit(RangeSequenceExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
   // Evaluate start, end, and step expressions
-  auto start_obj = (node->start->accept(*this).value);
+  auto start_obj = (node->start->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
-  auto end_obj = (node->end->accept(*this).value);
+  auto end_obj = (node->end->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Evaluate step if provided
   RuntimeObjectPtr step_obj;
   if (node->step) {
-    step_obj = (node->step->accept(*this).value);
+    step_obj = (node->step->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -1956,7 +1956,7 @@ InterpreterResult Interpreter::visit(RecordInstanceExpr *node) const {
   // Evaluate each field assignment
   for (const auto& item : node->items) {
     string field_name = item.first->value;
-    auto field_value = item.second->accept(*this).value;
+    auto field_value = item.second->template accept<InterpreterResult>(*this).value;
     CHECK_EXCEPTION_RETURN();
 
     field_names.push_back(field_name);
@@ -2061,7 +2061,7 @@ InterpreterResult Interpreter::visit(OrPattern *node) const {
 InterpreterResult Interpreter::visit(SeqGeneratorExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the source collection
-  auto source = (node->stepExpression->accept(*this).value);
+  auto source = (node->stepExpression->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Ensure source is a sequence
@@ -2081,11 +2081,11 @@ InterpreterResult Interpreter::visit(SeqGeneratorExpr *node) const {
     // The collectionExtractor will be a ValueCollectionExtractorExpr that binds the element
     // We need to pass the element to the extractor so it can bind it
     IS.generator_current_element = elem;
-    node->collectionExtractor->accept(*this);
+    node->collectionExtractor->template accept<InterpreterResult>(*this);
     CHECK_EXCEPTION_RETURN();
 
     // Evaluate the reducer expression with the bound variable
-    auto reduced = (node->reducerExpr->accept(*this).value);
+    auto reduced = (node->reducerExpr->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     result_fields.push_back(reduced);
 
@@ -2107,7 +2107,7 @@ InterpreterResult Interpreter::visit(SetExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back((value->accept(*this).value));
+    fields.push_back((value->template accept<InterpreterResult>(*this).value));
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -2117,7 +2117,7 @@ InterpreterResult Interpreter::visit(SetExpr *node) const {
 InterpreterResult Interpreter::visit(SetGeneratorExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   // Evaluate the source collection
-  auto source = (node->stepExpression->accept(*this).value);
+  auto source = (node->stepExpression->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Ensure source is a collection (Seq, Set, or Dict)
@@ -2132,9 +2132,9 @@ InterpreterResult Interpreter::visit(SetGeneratorExpr *node) const {
     for (const auto& elem : source_seq->fields) {
       IS.push_frame();
       IS.generator_current_element = elem;
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
-      auto reduced = (node->reducerExpr->accept(*this).value);
+      auto reduced = (node->reducerExpr->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.push_back(reduced);
       IS.pop_frame();
@@ -2144,9 +2144,9 @@ InterpreterResult Interpreter::visit(SetGeneratorExpr *node) const {
     for (const auto& elem : source_set->fields) {
       IS.push_frame();
       IS.generator_current_element = elem;
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
-      auto reduced = (node->reducerExpr->accept(*this).value);
+      auto reduced = (node->reducerExpr->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.push_back(reduced);
       IS.pop_frame();
@@ -2158,9 +2158,9 @@ InterpreterResult Interpreter::visit(SetGeneratorExpr *node) const {
       // For dict, we need to handle key-value pairs differently
       // This would use KeyValueCollectionExtractorExpr
       IS.generator_current_element = value; // For now, just use value
-      node->collectionExtractor->accept(*this);
+      node->collectionExtractor->template accept<InterpreterResult>(*this);
       CHECK_EXCEPTION_RETURN();
-      auto reduced = (node->reducerExpr->accept(*this).value);
+      auto reduced = (node->reducerExpr->template accept<InterpreterResult>(*this).value);
       CHECK_EXCEPTION_RETURN();
       result_fields.push_back(reduced);
       IS.pop_frame();
@@ -2193,7 +2193,7 @@ InterpreterResult Interpreter::visit(TryCatchExpr *node) const {
   // Execute the try expression
   InterpreterResult result;
   try {
-    result = node->tryExpr->accept(*this);
+    result = node->tryExpr->template accept<InterpreterResult>(*this);
   } catch (...) {
     // If an exception was thrown during visit, just re-throw
     throw;
@@ -2226,12 +2226,12 @@ InterpreterResult Interpreter::visit(TryCatchExpr *node) const {
         if (holds_alternative<PatternWithoutGuards*>(catch_pattern->pattern)) {
           auto pattern_body = get<PatternWithoutGuards*>(catch_pattern->pattern);
           if (pattern_body) {
-            catch_result = pattern_body->accept(*this);
+            catch_result = pattern_body->template accept<InterpreterResult>(*this);
           }
         } else {
           auto patterns = get<vector<PatternWithGuards*>>(catch_pattern->pattern);
           if (!patterns.empty() && patterns[0]) {
-            catch_result = patterns[0]->accept(*this);
+            catch_result = patterns[0]->template accept<InterpreterResult>(*this);
           }
         }
 
@@ -2256,7 +2256,7 @@ InterpreterResult Interpreter::visit(TupleExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back((value->accept(*this).value));
+    fields.push_back((value->template accept<InterpreterResult>(*this).value));
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -2279,7 +2279,7 @@ InterpreterResult Interpreter::visit(UnitExpr *node) const {
 
 InterpreterResult Interpreter::visit(ValueAlias *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto result = node->expr->accept(*this);
+  auto result = node->expr->template accept<InterpreterResult>(*this);
   CHECK_EXCEPTION_RETURN();
   IS.frame->write(node->identifier->name->value, (result).value);
   return result;
@@ -2305,7 +2305,7 @@ InterpreterResult Interpreter::visit(ValuesSequenceExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back((value->accept(*this).value));
+    fields.push_back((value->template accept<InterpreterResult>(*this).value));
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -2317,7 +2317,7 @@ InterpreterResult Interpreter::visit(WithExpr *node) const {
 
   // WithExpr provides resource management: with resource_expr as name do body_expr end
   // First evaluate the context expression to get the resource
-  auto context_result = node->contextExpr->accept(*this).value;
+  auto context_result = node->contextExpr->template accept<InterpreterResult>(*this).value;
   CHECK_EXCEPTION_RETURN();
 
   // Create a new frame for the with expression
@@ -2328,7 +2328,7 @@ InterpreterResult Interpreter::visit(WithExpr *node) const {
   IS.frame->write(resource_name, context_result);
 
   // Execute the body expression
-  auto body_result = node->bodyExpr->accept(*this);
+  auto body_result = node->bodyExpr->template accept<InterpreterResult>(*this);
 
   // Pop the frame before returning
   IS.pop_frame();
@@ -2397,7 +2397,7 @@ InterpreterResult Interpreter::visit(IdentifierExpr *node) const {
 
 InterpreterResult Interpreter::visit(ScopedNode *node) const {
   IS.push_frame();
-  auto result = node->accept(*this);
+  auto result = node->template accept<InterpreterResult>(*this);
   IS.pop_frame();
   return result;
 }
@@ -2426,7 +2426,7 @@ InterpreterResult Interpreter::visit(MainNode *node) const {
   IS.push_frame();
   // Use accept() to ensure proper dynamic dispatch
   // BOOST_LOG_TRIVIAL(debug) << "MainNode: node type = " << (node->node ? node->node->get_type() : -1);
-  auto result = node->node ? node->node->accept(*this) : InterpreterResult{};
+  auto result = node->node ? node->node->template accept<InterpreterResult>(*this) : InterpreterResult{};
   // BOOST_LOG_TRIVIAL(debug) << "MainNode: accept() returned";
   // Preserve exception state when popping frame
   auto had_exception = IS.has_exception;
@@ -2600,7 +2600,7 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   IS.frame = make_shared<InterepterFrame>(nullptr);  // Module gets its own top-level frame
 
   // Visit the module to evaluate it
-  auto result = module_ast->accept(*this);
+  auto result = module_ast->template accept<InterpreterResult>(*this);
 
   // Restore the frame
   IS.frame = saved_frame;
@@ -2616,7 +2616,7 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   // Keep the AST alive as long as the module is alive
   module->ast_keeper = module_ast;
 
-  // Exports are already processed by ModuleExpr visitor during module->accept(*this)
+  // Exports are already processed by ModuleExpr visitor during module->template accept<InterpreterResult>(*this)
 
   return module;
 }

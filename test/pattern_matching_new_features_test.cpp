@@ -31,7 +31,7 @@ TEST_CASE("Parser can handle OR patterns") {
 
     // Just run the interpreter to test if it works
     auto interp_result = interp.visit(result.node.get());
-    REQUIRE(interp_result.value->type == runtime::String);
+    REQUIRE(interp_result.value->type == yona::interp::runtime::String);
     REQUIRE(interp_result.value->get<std::string>() == "small");
 }
 
@@ -97,7 +97,7 @@ TEST_CASE("Interpreter handles OR patterns correctly") {
     REQUIRE(parse_result.node != nullptr);
 
     auto result = interp.visit(parse_result.node.get());
-    REQUIRE(result.value->type == runtime::String);
+    REQUIRE(result.value->type == yona::interp::runtime::String);
     REQUIRE(result.value->get<std::string>() == "small");
 
     // Test with value that matches second pattern
@@ -113,7 +113,7 @@ TEST_CASE("Interpreter handles OR patterns correctly") {
     auto parse_result2 = parser.parse_input(input2);
     REQUIRE(parse_result2.success);
     auto result2 = interp.visit(parse_result2.node.get());
-    REQUIRE(result2.value->type == runtime::String);
+    REQUIRE(result2.value->type == yona::interp::runtime::String);
     REQUIRE(result2.value->get<std::string>() == "medium");
 }
 
@@ -246,7 +246,7 @@ TEST_CASE("Interpreter handles string literal patterns") {
     REQUIRE(parse_result.node != nullptr);
 
     auto result = interp.visit(parse_result.node.get());
-    REQUIRE(result.value->type == runtime::Bool);
+    REQUIRE(result.value->type == yona::interp::runtime::Bool);
     REQUIRE(result.value->get<bool>() == true);
 }
 
@@ -287,7 +287,7 @@ TEST_CASE("Interpreter handles all literal pattern types") {
     auto float_parse = parser.parse_input(float_stream);
     REQUIRE(float_parse.success);
     auto float_result = interp.visit(float_parse.node.get());
-    REQUIRE(float_result.value->type == runtime::String);
+    REQUIRE(float_result.value->type == yona::interp::runtime::String);
     REQUIRE(float_result.value->get<std::string>() == "pi");
 
     // Test character patterns
@@ -303,7 +303,7 @@ TEST_CASE("Interpreter handles all literal pattern types") {
     auto char_parse = parser.parse_input(char_stream);
     REQUIRE(char_parse.success);
     auto char_result = interp.visit(char_parse.node.get());
-    REQUIRE(char_result.value->type == runtime::Int);
+    REQUIRE(char_result.value->type == yona::interp::runtime::Int);
     REQUIRE(char_result.value->get<int>() == 65);
 
     // Test boolean patterns
@@ -318,7 +318,7 @@ TEST_CASE("Interpreter handles all literal pattern types") {
     auto bool_parse = parser.parse_input(bool_stream);
     REQUIRE(bool_parse.success);
     auto bool_result = interp.visit(bool_parse.node.get());
-    REQUIRE(bool_result.value->type == runtime::Int);
+    REQUIRE(bool_result.value->type == yona::interp::runtime::Int);
     REQUIRE(bool_result.value->get<int>() == 1);
 }
 

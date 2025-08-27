@@ -34,9 +34,9 @@ TEST_CASE("YonaTest - SimpleAddition") {
 
     if (parse_result.success) {
       Interpreter interpreter;
-      auto interpreter_result = node->accept(interpreter);
+      auto interpreter_result = node->template accept<InterpreterResult>(interpreter);
       auto result = interpreter_result.value;
-      CHECK(result->type == runtime::Int);
+      CHECK(result->type == yona::interp::runtime::Int);
 
       stringstream res_ss;
       res_ss << *result;
@@ -55,9 +55,9 @@ TEST_CASE("YonaTest - SimpleSubtraction") {
 
     if (parse_result.success) {
       Interpreter interpreter;
-      auto interpreter_result = node->accept(interpreter);
+      auto interpreter_result = node->template accept<InterpreterResult>(interpreter);
       auto result = interpreter_result.value;
-      CHECK(result->type == runtime::Int);
+      CHECK(result->type == yona::interp::runtime::Int);
 
       stringstream res_ss;
       res_ss << *result;

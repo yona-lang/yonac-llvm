@@ -262,7 +262,7 @@ public:
     Type visit(BuiltinTypeNode *node) const override { return Type(nullptr); }
     Type visit(UserDefinedTypeNode *node) const override { return Type(nullptr); }
     Type visit(TypeDeclaration *node) const override { return Type(nullptr); }
-    Type visit(TypeDefinition *node) const override { return Type(nullptr); }
+    Type visit(TypeDefinition *node) const override;
     Type visit(TypeNode *node) const override { return Type(nullptr); }
     Type visit(TypeInstance *node) const override { return Type(nullptr); }
     Type visit(ModuleAlias *node) const override { return Type(nullptr); }

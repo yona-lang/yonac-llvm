@@ -122,7 +122,7 @@ TEST_CASE("PatternMatchFailure") {
     // The result should be Unit with exception raised
     // We can't directly check IS since it's private
     // For now, just check that we got a Unit result
-    CHECK(result->type == runtime::Unit);
+    CHECK(result->type == yona::interp::runtime::Unit);
     // TODO: Add a way to check exception state from tests
 }
 

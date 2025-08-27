@@ -49,7 +49,7 @@ TEST_CASE("BasicCurrying") /* FIXTURE */ {
         add5(3)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 8);
 }
 
@@ -63,7 +63,7 @@ TEST_CASE("MultipleArgumentCurrying") /* FIXTURE */ {
         sum3_10_20(30)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 60);
 }
 
@@ -76,7 +76,7 @@ TEST_CASE("PartialApplicationMultipleArgs") /* FIXTURE */ {
         sum3_10_20(30)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 60);
 }
 
@@ -88,7 +88,7 @@ TEST_CASE("FullApplication") /* FIXTURE */ {
         sum3(10)(20)(30)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 60);
 }
 
@@ -103,7 +103,7 @@ TEST_CASE("OverApplication") /* FIXTURE */ {
     )");
 
     // add(5)(3) returns 8, then double(8) returns 16
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 16);
 }
 
@@ -141,7 +141,7 @@ TEST_CASE("NestedFunctionCurrying") /* FIXTURE */ {
         add10(5)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 15);
 }
 
@@ -192,7 +192,7 @@ TEST_CASE("ZeroArgumentFunction") /* FIXTURE */ {
         getConstant
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 42);
 }
 
@@ -204,7 +204,7 @@ TEST_CASE("SingleArgumentFunction") /* FIXTURE */ {
         double(21)
     )");
 
-    REQUIRE(result->type == runtime::Int);
+    REQUIRE(result->type == Int);
     CHECK(result->get<int>() == 42);
 }
 

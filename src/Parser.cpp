@@ -1955,6 +1955,8 @@ private:
                 current_--; // Put the token back
                 return left;
         }
+        // Unreachable - all switch cases return
+        return left;
     }
 
     // Parse a simple numeric expression for range bounds
