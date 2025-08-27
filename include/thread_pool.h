@@ -13,14 +13,16 @@
 
 namespace yona::runtime::async {
 
+using namespace std;
+
 class ThreadPool {
 private:
-    vector<thread> workers;
-    queue<function<void()>> tasks;
-    mutable mutex queue_mutex;
-    condition_variable cv;
-    atomic<bool> stop{false};
-    atomic<size_t> active_tasks{0};
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    mutable std::mutex queue_mutex;
+    std::condition_variable cv;
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> active_tasks{0};
 
     // Worker thread function
     void worker_thread();
@@ -31,19 +33,19 @@ public:
     ~ThreadPool();
 
     // Submit a task for execution
-    void submit(function<void()> task);
+    void submit(std::function<void()> task);
 
     // Submit an async task and get a future
     template<typename T>
-    future<T> submit_async(function<T()> task) {
-        auto promise = make_shared<std::promise<T>>();
+    std::future<T> submit_async(std::function<T()> task) {
+        auto promise = std::make_shared<std::promise<T>>();
         auto future = promise->get_future();
 
         submit([promise, task]() {
             try {
                 promise->set_value(task());
             } catch (...) {
-                promise->set_exception(current_exception());
+                promise->set_exception(std::current_exception());
             }
         });
 
@@ -55,7 +57,7 @@ public:
 
     // Get the number of pending tasks
     size_t pending_tasks() const {
-        lock_guard<mutex> lock(queue_mutex);
+        std::lock_guard<std::mutex> lock(queue_mutex);
         return tasks.size();
     }
 
@@ -76,7 +78,7 @@ public:
 template<typename T>
 class WorkStealingQueue {
 private:
-    deque<T> queue;
+    std::deque<T> queue;
     mutable std::mutex mtx;
 
 public:
@@ -116,16 +118,16 @@ public:
 class WorkStealingThreadPool {
 private:
     struct WorkerThread {
-        thread thread;
-        unique_ptr<WorkStealingQueue<function<void()>>> local_queue;
+        std::thread thread;
+        std::unique_ptr<WorkStealingQueue<std::function<void()>>> local_queue;
 
-        WorkerThread() : local_queue(make_unique<WorkStealingQueue<function<void()>>>()) {}
+        WorkerThread() : local_queue(std::make_unique<WorkStealingQueue<std::function<void()>>>()) {}
     };
 
-    vector<unique_ptr<WorkerThread>> workers;
-    WorkStealingQueue<function<void()>> global_queue;
-    atomic<bool> stop{false};
-    atomic<size_t> next_worker{0};
+    std::vector<std::unique_ptr<WorkerThread>> workers;
+    WorkStealingQueue<std::function<void()>> global_queue;
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> next_worker{0};
 
     void worker_thread(size_t worker_id);
 
@@ -133,7 +135,7 @@ public:
     explicit WorkStealingThreadPool(size_t num_threads = 0);
     ~WorkStealingThreadPool();
 
-    void submit(function<void()> task);
+    void submit(std::function<void()> task);
     void shutdown();
 };
 
