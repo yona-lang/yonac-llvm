@@ -88,6 +88,9 @@ private:
     // Helper to extract writes from an expression
     void extract_writes(AstNode* expr, set<string>& writes);
 
+    // Helper to extract writes from a pattern
+    void extract_writes_from_pattern(PatternNode* pattern, set<string>& writes);
+
     // Check if an expression has side effects
     bool has_side_effects(AstNode* expr);
 

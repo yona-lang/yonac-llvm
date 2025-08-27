@@ -43,13 +43,13 @@ DependencyAnalyzer::Graph DependencyAnalyzer::analyze_let(LetExpr* let_expr) {
             }
         } else if (auto lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
             // Lambdas don't execute immediately, so minimal dependencies
-            if (lambda_alias->alias && lambda_alias->alias->name) {
-                node->writes.insert(lambda_alias->alias->name->value);
+            if (lambda_alias->name && lambda_alias->name->name) {
+                node->writes.insert(lambda_alias->name->name->value);
             }
             node->can_parallelize = true;
         } else if (auto func_alias = dynamic_cast<FunctionAlias*>(alias)) {
-            if (func_alias->alias && func_alias->alias->name) {
-                node->writes.insert(func_alias->alias->name->value);
+            if (func_alias->name && func_alias->name->name) {
+                node->writes.insert(func_alias->name->name->value);
             }
             // Function definitions can be parallel
             node->can_parallelize = true;
@@ -58,7 +58,7 @@ DependencyAnalyzer::Graph DependencyAnalyzer::analyze_let(LetExpr* let_expr) {
                 extract_dependencies(pattern_alias->expr, node->reads, node->writes);
             }
             // Extract writes from pattern
-            extract_writes(pattern_alias->patterns[0], node->writes);
+            extract_writes_from_pattern(pattern_alias->pattern, node->writes);
         }
 
         // Check for side effects
@@ -257,33 +257,52 @@ void DependencyAnalyzer::extract_reads(AstNode* expr, set<string>& reads) {
 
 void DependencyAnalyzer::extract_writes(AstNode* expr, set<string>& writes) {
     if (!expr) return;
+    // This function now only handles regular AST nodes
+    // For patterns, use extract_writes_from_pattern
+}
+
+void DependencyAnalyzer::extract_writes_from_pattern(PatternNode* pattern, set<string>& writes) {
+    if (!pattern) return;
 
     // Pattern matching extracts variable bindings as writes
-    switch (expr->get_type()) {
-        case AST_IDENTIFIER_PATTERN: {
-            auto id = static_cast<IdentifierPattern*>(expr);
-            if (id->name != "_") {
-                writes.insert(id->name);
+    switch (pattern->get_type()) {
+        case AST_IDENTIFIER_EXPR: {
+            // In patterns, identifiers are bindings
+            if (auto id = dynamic_cast<IdentifierExpr*>(pattern)) {
+                if (id->name && id->name->value != "_") {
+                    writes.insert(id->name->value);
+                }
             }
             break;
         }
-        case AST_CONS_PATTERN: {
-            auto cons = static_cast<ConsPattern*>(expr);
-            extract_writes(cons->head, writes);
-            extract_writes(cons->tail, writes);
+        case AST_SEQ_PATTERN: {
+            auto seq = static_cast<SeqPattern*>(pattern);
+            for (auto* p : seq->patterns) {
+                extract_writes_from_pattern(p, writes);
+            }
+            break;
+        }
+        case AST_HEAD_TAILS_PATTERN: {
+            auto ht = static_cast<HeadTailsPattern*>(pattern);
+            for (auto* head : ht->heads) {
+                extract_writes_from_pattern(head, writes);
+            }
+            if (ht->tail) {
+                extract_writes_from_pattern(ht->tail, writes);
+            }
             break;
         }
         case AST_TUPLE_PATTERN: {
-            auto tuple = static_cast<TuplePattern*>(expr);
-            for (auto* elem : tuple->elements) {
-                extract_writes(elem, writes);
+            auto tuple = static_cast<TuplePattern*>(pattern);
+            for (auto* elem : tuple->items) {
+                extract_writes_from_pattern(elem, writes);
             }
             break;
         }
         case AST_RECORD_PATTERN: {
-            auto record = static_cast<RecordPattern*>(expr);
-            for (auto* item : record->items) {
-                extract_writes(item, writes);
+            auto record = static_cast<RecordPattern*>(pattern);
+            for (const auto& item : record->items) {
+                extract_writes_from_pattern(item.second, writes);
             }
             break;
         }
@@ -298,24 +317,26 @@ bool DependencyAnalyzer::has_side_effects(AstNode* expr) {
 
     // Check for IO operations, mutations, exceptions, etc.
     switch (expr->get_type()) {
-        case AST_CALL_EXPR: {
-            auto call = static_cast<CallExpr*>(expr);
+        case AST_APPLY_EXPR: {
+            auto apply = static_cast<ApplyExpr*>(expr);
             // Check if calling known side-effect functions
-            if (call->function && call->function->get_type() == AST_IDENTIFIER) {
-                auto id = static_cast<IdentifierExpr*>(call->function);
+            if (apply->call && apply->call->get_type() == AST_IDENTIFIER_EXPR) {
+                auto id = static_cast<IdentifierExpr*>(apply->call);
                 // List of known side-effect functions
                 static const set<string> side_effect_funcs = {
                     "print", "println", "read", "write", "open", "close",
                     "send", "receive", "throw", "raise", "mutate", "set"
                 };
-                if (side_effect_funcs.count(id->name) > 0) {
+                if (id->name && side_effect_funcs.count(id->name->value) > 0) {
                     return true;
                 }
             }
             // Recursively check arguments
-            if (has_side_effects(call->function)) return true;
-            for (auto* arg : call->arguments) {
-                if (has_side_effects(arg)) return true;
+            if (has_side_effects(apply->call)) return true;
+            for (auto& arg : apply->args) {
+                if (auto* expr_arg = get_if<ExprNode*>(&arg)) {
+                    if (has_side_effects(*expr_arg)) return true;
+                }
             }
             break;
         }
@@ -335,16 +356,16 @@ bool DependencyAnalyzer::contains_async_ops(AstNode* expr) {
 
     // Check for async operations
     switch (expr->get_type()) {
-        case AST_CALL_EXPR: {
-            auto call = static_cast<CallExpr*>(expr);
-            if (call->function && call->function->get_type() == AST_IDENTIFIER) {
-                auto id = static_cast<IdentifierExpr*>(call->function);
+        case AST_APPLY_EXPR: {
+            auto apply = static_cast<ApplyExpr*>(expr);
+            if (apply->call && apply->call->get_type() == AST_IDENTIFIER_EXPR) {
+                auto id = static_cast<IdentifierExpr*>(apply->call);
                 // List of async operations
                 static const set<string> async_ops = {
                     "async", "await", "spawn", "fork", "parallel",
                     "http_get", "http_post", "file_read", "file_write"
                 };
-                if (async_ops.count(id->name) > 0) {
+                if (id->name && async_ops.count(id->name->value) > 0) {
                     return true;
                 }
             }
