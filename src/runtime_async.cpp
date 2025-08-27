@@ -20,8 +20,8 @@ void Promise::fulfill(RuntimeObjectPtr val) {
 
         state = PromiseState::FULFILLED;
         value = val;
-        callbacks_to_run = move(callbacks);
-        pipeline_to_run = move(pipeline);
+        callbacks_to_run = std::move(callbacks);
+        pipeline_to_run = std::move(pipeline);
     }
 
     cv.notify_all();
@@ -60,8 +60,11 @@ void Promise::reject(RuntimeObjectPtr err) {
 
         state = PromiseState::REJECTED;
         error = err;
-        callbacks_to_run = move(callbacks);
-        pipeline.clear(); // Clear pipeline on rejection
+        callbacks_to_run = std::move(callbacks);
+        // Clear pipeline on rejection
+        while (!pipeline.empty()) {
+            pipeline.pop();
+        }
     }
 
     cv.notify_all();

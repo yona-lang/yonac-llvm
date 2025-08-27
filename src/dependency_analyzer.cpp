@@ -27,47 +27,38 @@ DependencyAnalyzer::Graph DependencyAnalyzer::analyze(AstNode* expr) {
 DependencyAnalyzer::Graph DependencyAnalyzer::analyze_let(LetExpr* let_expr) {
     Graph graph;
 
-    if (!let_expr || !let_expr->aliases) return graph;
+    if (!let_expr || let_expr->aliases.empty()) return graph;
 
     // Create nodes for each binding
-    for (auto* alias : let_expr->aliases->items) {
+    for (auto* alias : let_expr->aliases) {
         auto node = graph.add_node(alias);
 
         // Extract dependencies based on alias type
-        switch (alias->type) {
-            case AliasType::VALUE: {
-                auto value_alias = static_cast<ValueAlias*>(alias);
-                if (value_alias->body) {
-                    extract_dependencies(value_alias->body, node->reads, node->writes);
-                }
-                node->writes.insert(value_alias->alias);
-                break;
+        if (auto value_alias = dynamic_cast<ValueAlias*>(alias)) {
+            if (value_alias->expr) {
+                extract_dependencies(value_alias->expr, node->reads, node->writes);
             }
-            case AliasType::LAMBDA: {
-                auto lambda_alias = static_cast<LambdaAlias*>(alias);
-                // Lambdas don't execute immediately, so minimal dependencies
-                node->writes.insert(lambda_alias->name);
-                node->can_parallelize = true;
-                break;
+            if (value_alias->identifier && value_alias->identifier->name) {
+                node->writes.insert(value_alias->identifier->name->value);
             }
-            case AliasType::FUNCTION: {
-                auto func_alias = static_cast<FunctionAlias*>(alias);
-                node->writes.insert(func_alias->alias);
-                // Function definitions can be parallel
-                node->can_parallelize = true;
-                break;
+        } else if (auto lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
+            // Lambdas don't execute immediately, so minimal dependencies
+            if (lambda_alias->alias && lambda_alias->alias->name) {
+                node->writes.insert(lambda_alias->alias->name->value);
             }
-            case AliasType::PATTERN: {
-                auto pattern_alias = static_cast<PatternAlias*>(alias);
-                if (pattern_alias->body) {
-                    extract_dependencies(pattern_alias->body, node->reads, node->writes);
-                }
-                // Extract writes from pattern
-                extract_writes(pattern_alias->pattern, node->writes);
-                break;
+            node->can_parallelize = true;
+        } else if (auto func_alias = dynamic_cast<FunctionAlias*>(alias)) {
+            if (func_alias->alias && func_alias->alias->name) {
+                node->writes.insert(func_alias->alias->name->value);
             }
-            default:
-                break;
+            // Function definitions can be parallel
+            node->can_parallelize = true;
+        } else if (auto pattern_alias = dynamic_cast<PatternAlias*>(alias)) {
+            if (pattern_alias->expr) {
+                extract_dependencies(pattern_alias->expr, node->reads, node->writes);
+            }
+            // Extract writes from pattern
+            extract_writes(pattern_alias->patterns[0], node->writes);
         }
 
         // Check for side effects
@@ -80,9 +71,9 @@ DependencyAnalyzer::Graph DependencyAnalyzer::analyze_let(LetExpr* let_expr) {
     build_dependencies(graph);
 
     // Add body node if present
-    if (let_expr->body) {
-        auto body_node = graph.add_node(let_expr->body);
-        extract_dependencies(let_expr->body, body_node->reads, body_node->writes);
+    if (let_expr->expr) {
+        auto body_node = graph.add_node(let_expr->expr);
+        extract_dependencies(let_expr->expr, body_node->reads, body_node->writes);
 
         // Body depends on all bindings that it reads
         for (auto& node : graph.nodes) {
@@ -215,21 +206,25 @@ void DependencyAnalyzer::extract_reads(AstNode* expr, set<string>& reads) {
     if (!expr) return;
 
     switch (expr->get_type()) {
-        case AST_IDENTIFIER: {
+        case AST_IDENTIFIER_EXPR: {
             auto id = static_cast<IdentifierExpr*>(expr);
-            reads.insert(id->name);
-            break;
-        }
-        case AST_CALL_EXPR: {
-            auto call = static_cast<CallExpr*>(expr);
-            extract_reads(call->function, reads);
-            for (auto* arg : call->arguments) {
-                extract_reads(arg, reads);
+            if (id->name) {
+                reads.insert(id->name->value);
             }
             break;
         }
-        case AST_BINARY_EXPR: {
-            auto bin = static_cast<BinaryExpr*>(expr);
+        case AST_APPLY_EXPR: {
+            auto apply = static_cast<ApplyExpr*>(expr);
+            extract_reads(apply->call, reads);
+            for (auto& arg : apply->args) {
+                if (auto* expr_arg = get_if<ExprNode*>(&arg)) {
+                    extract_reads(*expr_arg, reads);
+                }
+            }
+            break;
+        }
+        case AST_BINARY_OP_EXPR: {
+            auto bin = static_cast<BinaryOpExpr*>(expr);
             extract_reads(bin->left, reads);
             extract_reads(bin->right, reads);
             break;
@@ -237,25 +232,21 @@ void DependencyAnalyzer::extract_reads(AstNode* expr, set<string>& reads) {
         case AST_IF_EXPR: {
             auto if_expr = static_cast<IfExpr*>(expr);
             extract_reads(if_expr->condition, reads);
-            extract_reads(if_expr->thenBranch, reads);
-            extract_reads(if_expr->elseBranch, reads);
+            extract_reads(if_expr->thenExpr, reads);
+            extract_reads(if_expr->elseExpr, reads);
             break;
         }
         case AST_LET_EXPR: {
             auto let = static_cast<LetExpr*>(expr);
             // Analyze bindings
-            if (let->aliases) {
-                for (auto* alias : let->aliases->items) {
-                    if (alias->type == AliasType::VALUE) {
-                        auto value = static_cast<ValueAlias*>(alias);
-                        extract_reads(value->body, reads);
-                    } else if (alias->type == AliasType::PATTERN) {
-                        auto pattern = static_cast<PatternAlias*>(alias);
-                        extract_reads(pattern->body, reads);
-                    }
+            for (auto* alias : let->aliases) {
+                if (auto value = dynamic_cast<ValueAlias*>(alias)) {
+                    extract_reads(value->expr, reads);
+                } else if (auto pattern = dynamic_cast<PatternAlias*>(alias)) {
+                    extract_reads(pattern->expr, reads);
                 }
             }
-            extract_reads(let->body, reads);
+            extract_reads(let->expr, reads);
             break;
         }
         // Add more cases as needed

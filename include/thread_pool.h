@@ -77,37 +77,37 @@ template<typename T>
 class WorkStealingQueue {
 private:
     deque<T> queue;
-    mutable mutex mutex;
+    mutable std::mutex mtx;
 
 public:
     void push(T item) {
-        lock_guard<mutex> lock(mutex);
-        queue.push_back(move(item));
+        std::lock_guard<std::mutex> lock(mtx);
+        queue.push_back(std::move(item));
     }
 
     bool try_pop(T& item) {
-        lock_guard<mutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(mtx);
         if (queue.empty()) return false;
-        item = move(queue.front());
+        item = std::move(queue.front());
         queue.pop_front();
         return true;
     }
 
     bool try_steal(T& item) {
-        lock_guard<mutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(mtx);
         if (queue.empty()) return false;
-        item = move(queue.back());
+        item = std::move(queue.back());
         queue.pop_back();
         return true;
     }
 
     bool empty() const {
-        lock_guard<mutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(mtx);
         return queue.empty();
     }
 
     size_t size() const {
-        lock_guard<mutex> lock(mutex);
+        std::lock_guard<std::mutex> lock(mtx);
         return queue.size();
     }
 };

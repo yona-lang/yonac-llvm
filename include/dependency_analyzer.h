@@ -60,7 +60,7 @@ public:
             auto node = make_unique<Node>();
             node->expr = expr;
             Node* ptr = node.get();
-            nodes.push_back(move(node));
+            nodes.push_back(std::move(node));
             node_map[expr] = ptr;
             return ptr;
         }
