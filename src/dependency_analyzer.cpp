@@ -43,13 +43,13 @@ DependencyAnalyzer::Graph DependencyAnalyzer::analyze_let(LetExpr* let_expr) {
             }
         } else if (auto lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
             // Lambdas don't execute immediately, so minimal dependencies
-            if (lambda_alias->name && lambda_alias->name->name) {
-                node->writes.insert(lambda_alias->name->name->value);
+            if (lambda_alias->name) {
+                node->writes.insert(lambda_alias->name->value);
             }
             node->can_parallelize = true;
         } else if (auto func_alias = dynamic_cast<FunctionAlias*>(alias)) {
-            if (func_alias->name && func_alias->name->name) {
-                node->writes.insert(func_alias->name->name->value);
+            if (func_alias->name) {
+                node->writes.insert(func_alias->name->value);
             }
             // Function definitions can be parallel
             node->can_parallelize = true;
@@ -294,7 +294,7 @@ void DependencyAnalyzer::extract_writes_from_pattern(PatternNode* pattern, set<s
         }
         case AST_TUPLE_PATTERN: {
             auto tuple = static_cast<TuplePattern*>(pattern);
-            for (auto* elem : tuple->items) {
+            for (auto* elem : tuple->patterns) {
                 extract_writes_from_pattern(elem, writes);
             }
             break;
@@ -321,7 +321,7 @@ bool DependencyAnalyzer::has_side_effects(AstNode* expr) {
             auto apply = static_cast<ApplyExpr*>(expr);
             // Check if calling known side-effect functions
             if (apply->call && apply->call->get_type() == AST_IDENTIFIER_EXPR) {
-                auto id = static_cast<IdentifierExpr*>(apply->call);
+                auto id = dynamic_cast<IdentifierExpr*>(apply->call);
                 // List of known side-effect functions
                 static const set<string> side_effect_funcs = {
                     "print", "println", "read", "write", "open", "close",
@@ -359,7 +359,7 @@ bool DependencyAnalyzer::contains_async_ops(AstNode* expr) {
         case AST_APPLY_EXPR: {
             auto apply = static_cast<ApplyExpr*>(expr);
             if (apply->call && apply->call->get_type() == AST_IDENTIFIER_EXPR) {
-                auto id = static_cast<IdentifierExpr*>(apply->call);
+                auto id = dynamic_cast<IdentifierExpr*>(apply->call);
                 // List of async operations
                 static const set<string> async_ops = {
                     "async", "await", "spawn", "fork", "parallel",
@@ -443,15 +443,12 @@ vector<DependencyAnalyzer::Node*> DependencyAnalyzer::topological_sort(const vec
 unordered_map<string, AsyncAnalyzer::FunctionInfo> AsyncAnalyzer::analyze_module(ModuleExpr* module) {
     unordered_map<string, FunctionInfo> result;
 
-    if (!module || !module->definitions) return result;
+    if (!module) return result;
 
     // First pass: collect all functions
-    for (auto* def : module->definitions->items) {
-        if (def->get_type() == AST_FUNCTION_EXPR) {
-            auto func = static_cast<FunctionExpr*>(def);
-            auto info = analyze_function(func);
-            result[func->name] = info;
-        }
+    for (auto* func : module->functions) {
+        auto info = analyze_function(func);
+        result[func->name] = info;
     }
 
     // Second pass: determine async candidacy
@@ -471,16 +468,18 @@ bool AsyncAnalyzer::should_make_async(FunctionExpr* func) {
 }
 
 bool AsyncAnalyzer::should_call_async(CallExpr* call) {
-    if (!call || !call->function) return false;
+    if (!call) return false;
 
     // Check if calling a known async function
-    if (call->function->get_type() == AST_IDENTIFIER) {
-        auto id = static_cast<IdentifierExpr*>(call->function);
-        static const set<string> async_funcs = {
-            "file_open", "file_read", "file_write",
-            "http_get", "http_post", "socket_connect"
-        };
-        return async_funcs.count(id->name) > 0;
+    if (call->get_type() == AST_NAME_CALL) {
+        auto name_call = static_cast<NameCall*>(call);
+        if (name_call->name) {
+            static const set<string> async_funcs = {
+                "file_open", "file_read", "file_write",
+                "http_get", "http_post", "socket_connect"
+            };
+            return async_funcs.count(name_call->name->value) > 0;
+        }
     }
 
     return false;
@@ -490,14 +489,23 @@ AsyncAnalyzer::FunctionInfo AsyncAnalyzer::analyze_function(FunctionExpr* func) 
     FunctionInfo info;
     info.name = func->name;
 
-    if (func->body) {
-        info.has_io = has_io_operations(func->body);
-        info.has_side_effects = has_io_operations(func->body);
-        info.can_be_async = true; // Most functions can be made async
+    if (!func->bodies.empty() && func->bodies[0]) {
+        ExprNode* body_expr = nullptr;
+        if (auto bwg = dynamic_cast<BodyWithGuards*>(func->bodies[0])) {
+            body_expr = bwg->expr;
+        } else if (auto bwog = dynamic_cast<BodyWithoutGuards*>(func->bodies[0])) {
+            body_expr = bwog->expr;
+        }
 
-        // Estimate if worth making async
-        size_t cost = estimate_cost(func->body);
-        info.should_be_async = cost > 100 || info.has_io;
+        if (body_expr) {
+            info.has_io = has_io_operations(body_expr);
+            info.has_side_effects = has_io_operations(body_expr);
+            info.can_be_async = true; // Most functions can be made async
+
+            // Estimate if worth making async
+            size_t cost = estimate_cost(body_expr);
+            info.should_be_async = cost > 100 || info.has_io;
+        }
     }
 
     return info;
@@ -506,18 +514,20 @@ AsyncAnalyzer::FunctionInfo AsyncAnalyzer::analyze_function(FunctionExpr* func) 
 bool AsyncAnalyzer::has_io_operations(AstNode* expr) {
     if (!expr) return false;
 
-    if (expr->get_type() == AST_CALL_EXPR) {
-        auto call = static_cast<CallExpr*>(expr);
-        if (call->function && call->function->get_type() == AST_IDENTIFIER) {
-            auto id = static_cast<IdentifierExpr*>(call->function);
-            static const set<string> io_ops = {
-                "file_open", "file_read", "file_write", "file_close",
-                "socket_connect", "socket_send", "socket_receive",
-                "http_get", "http_post", "http_put", "http_delete",
-                "print", "println", "read_line"
-            };
-            if (io_ops.count(id->name) > 0) {
-                return true;
+    if (expr->get_type() == AST_APPLY_EXPR) {
+        auto apply = static_cast<ApplyExpr*>(expr);
+        if (apply->call && apply->call->get_type() == AST_NAME_CALL) {
+            auto name_call = static_cast<NameCall*>(apply->call);
+            if (name_call->name) {
+                static const set<string> io_ops = {
+                    "file_open", "file_read", "file_write", "file_close",
+                    "socket_connect", "socket_send", "socket_receive",
+                    "http_get", "http_post", "http_put", "http_delete",
+                    "print", "println", "read_line"
+                };
+                if (io_ops.count(name_call->name->value) > 0) {
+                    return true;
+                }
             }
         }
     }
@@ -534,10 +544,11 @@ size_t AsyncAnalyzer::estimate_cost(AstNode* expr) {
     size_t cost = 1; // Base cost for any expression
 
     switch (expr->get_type()) {
-        case AST_CALL_EXPR:
+        case AST_APPLY_EXPR:
+        case AST_NAME_CALL:
+        case AST_ALIAS_CALL:
             cost += 10; // Function calls are expensive
             break;
-        case AST_LAMBDA_EXPR:
         case AST_FUNCTION_EXPR:
             cost += 5; // Creating functions has overhead
             break;
