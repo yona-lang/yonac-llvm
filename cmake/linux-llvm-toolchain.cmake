@@ -5,6 +5,10 @@
 set(CMAKE_C_COMPILER "/usr/bin/clang-20" CACHE FILEPATH "C compiler")
 set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20" CACHE FILEPATH "C++ compiler")
 
+# Ensure we use LLVM 20 headers and libraries
+set(LLVM_DIR "/usr/lib/llvm-20/lib/cmake/llvm" CACHE PATH "LLVM CMake directory")
+set(LLVM_INCLUDE_DIRS "/usr/lib/llvm-20/include" CACHE PATH "LLVM include directory")
+
 # Use LLVM's libc++ instead of GNU libstdc++
 set(CMAKE_CXX_FLAGS "-stdlib=libc++" CACHE STRING "")
 

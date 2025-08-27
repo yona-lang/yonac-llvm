@@ -70,9 +70,15 @@ FetchContent_MakeAvailable(cli11)
 find_package(LLVM CONFIG REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+message(STATUS "LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
 
-# Setup LLVM
-include_directories(${LLVM_INCLUDE_DIRS})
+# Verify LLVM version is at least 16
+if(${LLVM_VERSION_MAJOR} LESS 16)
+  message(FATAL_ERROR "LLVM version must be 16 or higher, found ${LLVM_VERSION_MAJOR}")
+endif()
+
+# Setup LLVM - use SYSTEM to suppress warnings from LLVM headers
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 

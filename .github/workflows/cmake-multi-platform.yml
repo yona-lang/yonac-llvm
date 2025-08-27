@@ -187,7 +187,11 @@ jobs:
         # Find the test executable
         if [[ "${{ runner.os }}" == "Windows" ]]; then
           TEST_EXE=$(find out/build -name "tests.exe" -type f | head -n 1)
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          # macOS doesn't support -executable, use -perm +111 instead
+          TEST_EXE=$(find out/build -name "tests" -type f -perm +111 | head -n 1)
         else
+          # Linux supports -executable
           TEST_EXE=$(find out/build -name "tests" -type f -executable | head -n 1)
         fi
 
