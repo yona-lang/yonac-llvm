@@ -2,7 +2,7 @@
 #include <sstream>
 #include <memory>
 #include <iostream>
-#include "parser.h"
+#include "Parser.h"
 #include "Interpreter.h"
 #include "runtime.h"
 #include "common.h"

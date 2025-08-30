@@ -39,6 +39,7 @@ build.ninja
 .idea/
 *.user
 *.suo
+.claude/
 
 # macOS
 .DS_Store

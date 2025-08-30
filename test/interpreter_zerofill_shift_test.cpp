@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 #include <memory>
 #include <sstream>
-#include "parser.h"
+#include "Parser.h"
 #include "Interpreter.h"
 #include "runtime.h"
 #include "common.h"
