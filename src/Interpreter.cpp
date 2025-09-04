@@ -2529,15 +2529,15 @@ InterpreterResult Interpreter::visit(CollectionExtractorExpr *node) const {
 
 // Module loading and resolution implementations
 string Interpreter::fqn_to_path(const shared_ptr<FqnValue>& fqn) const {
-  string path;
+  // Build the file path using forward slashes for cross-platform compatibility
+  // Note: Yona syntax uses backslash (\) for module paths, but file systems
+  // use forward slash (/) on Unix-like systems
+  filesystem::path module_path;
   for (size_t i = 0; i < fqn->parts.size(); ++i) {
-    if (i > 0) {
-      path += filesystem::path::preferred_separator;
-    }
-    path += fqn->parts[i];
+    module_path = module_path / fqn->parts[i];
   }
-  path += ".yona";
-  return path;
+  module_path = module_path.replace_extension(".yona");
+  return module_path.string();
 }
 
 string Interpreter::find_module_file(const string& relative_path) const {
