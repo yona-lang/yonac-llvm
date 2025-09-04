@@ -36,7 +36,7 @@ void ThreadPool::worker_thread() {
             }
 
             if (!tasks.empty()) {
-                task = move(tasks.front());
+                task = std::move(tasks.front());
                 tasks.pop();
                 active_tasks++;
             }
@@ -61,7 +61,7 @@ void ThreadPool::submit(function<void()> task) {
         if (stop.load()) {
             throw runtime_error("Cannot submit task to stopped thread pool");
         }
-        tasks.push(move(task));
+        tasks.push(std::move(task));
     }
     cv.notify_one();
 }
@@ -152,7 +152,7 @@ void WorkStealingThreadPool::submit(function<void()> task) {
 
     // Round-robin distribution to worker queues
     size_t worker_id = next_worker.fetch_add(1) % workers.size();
-    workers[worker_id]->local_queue->push(move(task));
+    workers[worker_id]->local_queue->push(std::move(task));
 }
 
 void WorkStealingThreadPool::shutdown() {

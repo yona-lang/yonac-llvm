@@ -198,6 +198,10 @@ std::ostream &operator<<(std::ostream &strm, const RuntimeObject &obj) {
     return printModule(strm, obj);
   case Function:
     return printFunction(strm, obj);
+  case Promise:
+    return strm << "<Promise>";
+  case Error:
+    return strm << "<Error>";
   }
   return strm;
 }
