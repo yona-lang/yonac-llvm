@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <cstdlib>
 #include <optional>
+#include <filesystem>
 
 #include "yona_export.h"
 #include "ast.h"
@@ -136,8 +137,8 @@ private:
   RuntimeObjectPtr make_exception(const RuntimeObjectPtr& symbol, const RuntimeObjectPtr& message) const;
 
   // Module loading and resolution
-  filesystem::path fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
-  string find_module_file(const filesystem::path& relative_path) const;
+  std::filesystem::path fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
+  string find_module_file(const std::filesystem::path& relative_path) const;
   shared_ptr<ModuleValue> load_module(const shared_ptr<FqnValue>& fqn) const;
   shared_ptr<ModuleValue> get_or_load_module(const shared_ptr<FqnValue>& fqn) const;
 
