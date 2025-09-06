@@ -136,8 +136,8 @@ private:
   RuntimeObjectPtr make_exception(const RuntimeObjectPtr& symbol, const RuntimeObjectPtr& message) const;
 
   // Module loading and resolution
-  string fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
-  string find_module_file(const string& relative_path) const;
+  filesystem::path fqn_to_path(const shared_ptr<FqnValue>& fqn) const;
+  string find_module_file(const filesystem::path& relative_path) const;
   shared_ptr<ModuleValue> load_module(const shared_ptr<FqnValue>& fqn) const;
   shared_ptr<ModuleValue> get_or_load_module(const shared_ptr<FqnValue>& fqn) const;
 

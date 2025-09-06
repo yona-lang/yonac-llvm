@@ -2528,22 +2528,21 @@ InterpreterResult Interpreter::visit(CollectionExtractorExpr *node) const {
 
 
 // Module loading and resolution implementations
-string Interpreter::fqn_to_path(const shared_ptr<FqnValue>& fqn) const {
-  // Build the file path using forward slashes for cross-platform compatibility
-  // Note: Yona syntax uses backslash (\) for module paths, but file systems
-  // use forward slash (/) on Unix-like systems
+filesystem::path Interpreter::fqn_to_path(const shared_ptr<FqnValue>& fqn) const {
+  // Build the file path using filesystem::path for cross-platform compatibility
+  // Note: Yona syntax uses backslash (\) for module paths, but filesystem::path
+  // handles the correct separator for each platform
   filesystem::path module_path;
-  for (size_t i = 0; i < fqn->parts.size(); ++i) {
-    module_path = module_path / fqn->parts[i];
+  for (const auto& part : fqn->parts) {
+    module_path = module_path / part;
   }
-  module_path = module_path.replace_extension(".yona");
-  return module_path.string();
+  return module_path.replace_extension(".yona");
 }
 
-string Interpreter::find_module_file(const string& relative_path) const {
+string Interpreter::find_module_file(const filesystem::path& relative_path) const {
   // First check if it's an absolute path
   if (filesystem::exists(relative_path)) {
-    return relative_path;
+    return relative_path.string();
   }
 
   // Search in module paths
@@ -2562,11 +2561,11 @@ shared_ptr<ModuleValue> Interpreter::load_module(const shared_ptr<FqnValue>& fqn
   auto module_path = find_module_file(relative_path);
 
   // Debug: Print module loading attempt
-  // cerr << "Loading module: " << relative_path << " from " << module_path << endl;
+  // cerr << "Loading module: " << relative_path.generic_string() << " from " << module_path << endl;
 
   if (module_path.empty()) {
     throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME,
-                     "Module not found: " + relative_path);
+                     "Module not found: " + relative_path.generic_string());
   }
 
   // Parse the module file
