@@ -1,25 +1,26 @@
-# Toolchain file for building with LLVM on Linux (Ubuntu/Debian)
-# This is used by GitHub Actions and developers who want to use LLVM instead of GCC
+# Toolchain file for building with LLVM/Clang on Linux
+# Uses the system default clang/LLVM and matches its C++ standard library
 
-# Set the compilers - using versioned binaries as installed by apt
-set(CMAKE_C_COMPILER "/usr/bin/clang-20" CACHE FILEPATH "C compiler")
-set(CMAKE_CXX_COMPILER "/usr/bin/clang++-20" CACHE FILEPATH "C++ compiler")
+# --- Compiler ---
+set(CMAKE_C_COMPILER "clang" CACHE FILEPATH "C compiler")
+set(CMAKE_CXX_COMPILER "clang++" CACHE FILEPATH "C++ compiler")
 
-# Ensure we use LLVM 20 headers and libraries
-set(LLVM_DIR "/usr/lib/llvm-20/lib/cmake/llvm" CACHE PATH "LLVM CMake directory")
-set(LLVM_INCLUDE_DIRS "/usr/lib/llvm-20/include" CACHE PATH "LLVM include directory")
+# --- LLVM discovery ---
+# Let CMake find LLVM via llvm-config (works on Fedora, Ubuntu, Arch, etc.)
+execute_process(
+  COMMAND llvm-config --cmakedir
+  OUTPUT_VARIABLE _LLVM_CMAKE_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+if(_LLVM_CMAKE_DIR)
+  set(LLVM_DIR "${_LLVM_CMAKE_DIR}" CACHE PATH "LLVM CMake directory")
+endif()
 
-# Use LLVM's libc++ instead of GNU libstdc++
-set(CMAKE_CXX_FLAGS "-stdlib=libc++" CACHE STRING "")
+# --- Linker ---
+set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=lld" CACHE STRING "")
+set(CMAKE_SHARED_LINKER_FLAGS "-fuse-ld=lld" CACHE STRING "")
+set(CMAKE_MODULE_LINKER_FLAGS "-fuse-ld=lld" CACHE STRING "")
 
-# Use lld as the linker for faster linking
-set(CMAKE_EXE_LINKER_FLAGS "-fuse-ld=lld -stdlib=libc++" CACHE STRING "")
-set(CMAKE_SHARED_LINKER_FLAGS "-fuse-ld=lld -stdlib=libc++" CACHE STRING "")
-set(CMAKE_MODULE_LINKER_FLAGS "-fuse-ld=lld -stdlib=libc++" CACHE STRING "")
-
-# Ensure we link against libc++abi as well
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++abi" CACHE STRING "" FORCE)
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -lc++abi" CACHE STRING "" FORCE)
-
-# Set RPATH to find libc++ at runtime if it's not in standard locations
+# Set RPATH to find libraries at runtime
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)

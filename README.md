@@ -26,7 +26,8 @@ A compiler and interpreter implementation for the Yona programming language, fea
 ### Red Hat / Fedora
 
 ```bash
-sudo dnf install llvm llvm-devel llvm-libs cmake ninja-build
+sudo dnf install llvm llvm-devel llvm-libs clang20 lld20 cmake ninja-build \
+  libcxx-devel libcxxabi-devel
 ```
 
 ### macOS

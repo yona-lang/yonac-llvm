@@ -4,109 +4,63 @@
 - **Interpreter**: ✅ Feature-complete
 - **TypeChecker**: ✅ Fully implemented
 - **Parser**: ✅ Working correctly
-- **Async Infrastructure**: ✅ Phase 1 Complete
-- **Test Coverage**: 48/48 tests passing (100%)
-
-## Current Phase: Async System Phase 2 - Interpreter Integration
-
-### Immediate Tasks
-1. Fix compilation errors in async infrastructure
-2. Implement async evaluation methods in Interpreter
-3. Create test suite for async operations
-4. Begin STM implementation
+- **Native Stdlib**: ✅ Math, IO, System modules
+- **Async Infrastructure**: ✅ Phase 1 complete (promises, thread pool, dependency analyzer)
+- **Test Coverage**: 210+ test cases passing (100%)
 
 ## Roadmap
 
-### Phase 2: Interpreter Async Integration (Current)
-**Timeline**: Month 2
+### Phase 1: Language Completeness (Current)
 
-- [ ] Implement `eval_async` method for async expression evaluation
-- [ ] Implement `await_if_promise` for automatic promise unwrapping
-- [ ] Implement `visit_parallel_let` for parallel let bindings
-- [ ] Implement `call_async` for async function calls
-- [ ] Update visitor methods to handle promises transparently
+Complete the async system and fill remaining language gaps.
 
-### Phase 3: STM Implementation
-**Timeline**: Month 3
+- **Async interpreter integration** — eval_async, await_if_promise, parallel let bindings, transparent promise unwrapping across all visitor methods
+- **Language features** — do-blocks, guards on pattern arms, `in` operator, import syntax
+- **Stdlib expansion** — HTTP client, timer, string utilities, collection operations (map, filter, fold)
+- **Test framework** — assert, named test cases, `.test.yona` runner, mock support
 
-- [ ] Implement TVar and Transaction types
-- [ ] Create STM runtime with versioned memory
-- [ ] Add `atomically` primitive
-- [ ] Implement retry and orElse combinators
-- [ ] Create STM standard library module
+### Phase 2: Embeddability
 
-### Phase 4: Async Standard Library
-**Timeline**: Month 4
+Make Yona usable as an embedded language in host applications via FFI.
 
-#### Core Modules
-- [ ] **Async** - async, await, parallel, timeout operations
-- [ ] **IO** - Async file operations
-- [ ] **HTTP** - Client and server with async handlers
-- [ ] **Socket** - TCP/UDP async operations
-- [ ] **Timer** - Delays and scheduled tasks
-- [ ] **Channel** - CSP-style communication
+- **C API** — stable embedding interface with opaque handles and error reporting
+- **Sandboxing** — module whitelist, filesystem/network restrictions, CPU/memory budgets
+- **Side effect hooks** — intercept and log native module calls
+- **Tooling** — AST pretty printer (source round-tripping), editor language definitions
 
-### Phase 5: LLVM Backend
-**Timeline**: Month 5
+### Phase 3: LLVM Backend
 
-- [ ] Basic LLVM IR generation from AST
-- [ ] Coroutine support for async functions
-- [ ] Runtime library for async support
-- [ ] Optimization passes
-- [ ] Executable generation
+Native code generation for production performance.
 
-### Phase 6: Auto-Parallelization
-**Timeline**: Month 6
+- Basic LLVM IR generation from AST
+- Coroutine support for async functions
+- Runtime library and optimization passes
+- Executable generation
 
-- [ ] Static analysis for parallel opportunities
-- [ ] Runtime scheduling optimizations
-- [ ] Work-stealing integration
-- [ ] Performance profiling and tuning
+### Phase 4: Advanced Concurrency
 
-## Architecture Overview
+- STM (TVar, transactions, atomically, retry/orElse)
+- CSP-style channels
+- Auto-parallelization via static dependency analysis
+- Performance optimizations (promise pooling, lock-free structures)
 
-### Completed Components
-- **Lexer & Parser**: Full Yona language support
-- **AST**: Comprehensive node hierarchy with visitor pattern
-- **Interpreter**: Tree-walking with pattern matching
-- **Type System**: Hindley-Milner with extensions
-- **Module System**: Import/export with FQN support
-- **Async Core**: Promises, thread pool, dependency analysis
+## Completed Components
 
-### In Development
-- **Async Integration**: Transparent promise handling in interpreter
-- **STM**: Software transactional memory for safe concurrency
-- **Standard Library**: Async-first module ecosystem
-
-### Future Work
-- **LLVM Backend**: Native code generation
-- **Optimizations**: Auto-parallelization, inlining, fusion
-- **Tooling**: REPL enhancements, debugger, profiler
+- **Lexer & Parser**: Recursive descent with Pratt parsing, full language support
+- **AST**: Visitor pattern with comprehensive node types
+- **Interpreter**: Tree-walking with frame-based execution, pattern matching, currying
+- **Type Checker**: Hindley-Milner with polymorphic inference
+- **Module System**: FQN-based with filesystem resolution and caching
+- **Native Modules**: Math, IO, System via NativeModuleRegistry
+- **Async Core**: Promise type, thread pool (standard + work-stealing), dependency analyzer
 
 ## Technical Decisions
 
-### Async System Design
-- **Transparent Promises**: No explicit async/await keywords
-- **Automatic Parallelization**: Dependency analysis for parallel execution
-- **STM over Locks**: Composable, deadlock-free concurrency
-- **Work-Stealing**: Efficient load balancing across threads
-
-### Implementation Strategy
-1. Core infrastructure first (✅ Complete)
-2. Interpreter integration for testing
-3. STM for safe concurrent state
-4. Standard library for real-world usage
-5. LLVM backend for production performance
-6. Optimizations based on profiling data
-
-## Success Metrics
-- All async operations transparent to user code
-- Parallel let bindings show measurable speedup
-- STM transactions compose without deadlocks
-- Standard library modules cover common use cases
-- LLVM backend generates efficient native code
+- **Transparent async**: No explicit async/await keywords — runtime handles parallelization
+- **Dependency analysis**: Static analysis determines parallelizable operations
+- **STM over locks**: Composable, deadlock-free concurrency (Phase 4)
+- **Embeddable by design**: C API + sandboxing enables use as an extension language in host applications
 
 ## References
-- [Yona Execution Model](https://yona-lang.org/about/#execution-model)
 - [Async Implementation Plan](./async-implementation-plan.md)
 - [TODO List](./todo-list.md)

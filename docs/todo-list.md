@@ -2,124 +2,103 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 48/48 tests passing (100%)
+- **Test Coverage**: 210+ test cases passing (100%)
 - **Interpreter**: Feature-complete ✅
 - **TypeChecker**: Fully implemented ✅
-- **Async Infrastructure**: Phase 1 Complete ✅
+- **Native Stdlib**: Math, IO, System modules ✅
+- **Async Infrastructure**: Phase 1 complete (core types, thread pool, dependency analyzer) ✅
 
-## Remaining Work
+## Phase 1: Language Completeness (High Priority)
 
-### High Priority - Async System (Phase 2)
+### 1.1 Async Interpreter Integration
 
-1. **Interpreter Async Integration** (src/Interpreter.cpp)
-   - [ ] Implement `eval_async` method for async expression evaluation
-   - [ ] Implement `await_if_promise` for automatic promise unwrapping
-   - [ ] Implement `visit_parallel_let` for parallel let bindings
-   - [ ] Implement `call_async` for async function calls
-   - [ ] Update all visitor methods to handle promises transparently
+- [ ] Fix compilation errors in async infrastructure
+- [ ] Implement `eval_async` method for async expression evaluation
+- [ ] Implement `await_if_promise` for automatic promise unwrapping
+- [ ] Implement `visit_parallel_let` for parallel let bindings
+- [ ] Implement `call_async` for async function calls
+- [ ] Update visitor methods to handle promises transparently
+- [ ] Unit tests for promise operations
+- [ ] Integration tests for parallel execution
 
-2. **STM Implementation** (Phase 3)
-   - [ ] Implement TVar and Transaction types
-   - [ ] Create STM runtime with versioned memory
-   - [ ] Add `atomically` primitive
-   - [ ] Implement retry and orElse combinators
-   - [ ] Create STM standard library module
+### 1.2 Language Features
 
-3. **Async Standard Library** (Phase 4)
-   - [ ] **Async Module** - Core async operations (async, await, parallel, timeout)
-   - [ ] **IO Module** - Async file operations (open, read, write, close)
-   - [ ] **HTTP Client** - Async HTTP operations (get, post, put, delete)
-   - [ ] **HTTP Server** - Async server with request handlers
-   - [ ] **Socket Module** - Async TCP/UDP operations
-   - [ ] **Timer Module** - Delays and scheduled tasks
-   - [ ] **Channel Module** - CSP-style channels for communication
+- [ ] `do...end` blocks (sequenced expressions with implicit last-value return)
+- [ ] `import X from Module` syntax (if not already supported)
+- [ ] `in` operator for collection membership (`p in [:high, :critical]`)
+- [ ] Guard expressions on pattern match arms (`| h < 4`)
 
-4. **Auto-Parallelization** (Phase 6)
-   - [ ] Static analysis for parallel opportunities
-   - [ ] Runtime scheduling optimizations
-   - [ ] Work-stealing integration with interpreter
-   - [ ] Performance profiling and tuning
+### 1.3 Standard Library Expansion
 
-### High Priority - LLVM Backend
+- [ ] **HTTP Client** — async HTTP operations (get, post, put, delete)
+- [ ] **Timer Module** — delays, timeouts, scheduled tasks
+- [ ] **String Module** — formatting, interpolation, manipulation utilities
+- [ ] **Seq/Set/Dict Modules** — map, filter, fold, zip, etc.
 
-1. **LLVM Code Generation** (src/Codegen.cpp) - Phase 5
-   - [ ] Basic LLVM IR generation from AST
-   - [ ] Coroutine support for async functions
-   - [ ] Runtime library for async support
-   - [ ] Optimization passes for async code
-   - [ ] Executable generation
+### 1.4 Test Framework
 
-### Medium Priority - Testing & Documentation
+- [ ] `assert` as a language built-in or stdlib function
+- [ ] `test "description" = do ... end` syntax for named test cases
+- [ ] `.test.yona` file runner (discover and execute test files)
+- [ ] Mock/stub support for native modules
+- [ ] CI integration (exit code, structured output)
 
-1. **Async Testing**
-   - [ ] Unit tests for Promise operations
-   - [ ] Integration tests for parallel execution
-   - [ ] STM transaction tests
-   - [ ] Performance benchmarks
-   - [ ] Stress tests for thread pool
+## Phase 2: Embeddability (Medium Priority)
 
-2. **Documentation**
-   - [ ] Async programming guide for Yona
-   - [ ] STM usage examples
-   - [ ] Performance tuning guide
-   - [ ] Migration guide for sync to async
+Make Yona usable as an embedded scripting/extension language in host applications.
 
-### Low Priority - Optimizations
+### 2.1 C API
 
-1. **Performance Enhancements**
-   - [ ] Promise object pooling
-   - [ ] Lock-free data structures
-   - [ ] Continuation-passing style optimizations
-   - [ ] Inline small async functions
-   - [ ] Merge sequential async operations
+- [ ] Stable C header with create/destroy/eval/call functions
+- [ ] Opaque handle types for interpreter state and runtime objects
+- [ ] Error reporting across FFI boundary
+- [ ] Shared library build target with C linkage
 
-## Completed Work Summary
+### 2.2 Sandboxing
 
-### Session 4 (Async Infrastructure)
-- ✅ Promise runtime type with thread safety
-- ✅ Thread pool (standard and work-stealing)
-- ✅ AsyncContext with global management
-- ✅ Dependency analyzer for parallelization
-- ✅ Type system updates for Promise/Error
+- [ ] Configurable module whitelist (restrict which modules user code can import)
+- [ ] Disable filesystem/network access in sandboxed mode
+- [ ] CPU execution budget (instruction/step counter with configurable limit)
+- [ ] Memory allocation budget
+- [ ] Hook system for intercepting and logging side effects
 
-### Previous Sessions
-- ✅ All critical bugs fixed
-- ✅ All interpreter visitors implemented
-- ✅ TypeChecker fully functional
-- ✅ Parser working correctly
-- ✅ Pattern matching complete
-- ✅ Module system working
-- ✅ Type system enhancements complete
-- ✅ 100% test pass rate
+### 2.3 Tooling
 
-## Implementation Timeline
+- [ ] AST-to-Yona pretty printer (round-trip: parse → AST → source)
+- [ ] Monaco/CodeMirror language definition (syntax highlighting, bracket matching)
+- [ ] REPL improvements
 
-### Month 1: ✅ Complete
-- Core async infrastructure
+## Phase 3: LLVM Backend (Medium Priority)
 
-### Month 2: In Progress
-- Interpreter integration
-- Automatic promise unwrapping
-- Parallel let bindings
+- [ ] Basic LLVM IR generation from AST
+- [ ] Runtime library (promise create/fulfill/await as C functions)
+- [ ] Coroutine support for async functions
+- [ ] Optimization passes
+- [ ] Executable generation
 
-### Month 3: Upcoming
-- STM implementation
-- Transaction support
+## Phase 4: Advanced Concurrency (Low Priority)
 
-### Month 4: Future
-- Standard library async modules
-- IO, HTTP, Socket operations
+- [ ] STM: TVar, Transaction types, `atomically` primitive, retry/orElse
+- [ ] Channel module (CSP-style)
+- [ ] Auto-parallelization: static analysis, runtime scheduling, work-stealing
+- [ ] Performance: promise pooling, lock-free structures, CPS optimizations
 
-### Month 5: Future
-- LLVM backend with coroutines
-- Runtime library
+## Completed Work
 
-### Month 6: Future
-- Auto-parallelization
-- Performance optimization
+- ✅ Lexer, Parser — full Yona language support
+- ✅ AST — comprehensive node hierarchy with visitor pattern
+- ✅ Interpreter — tree-walking, frame-based, pattern matching, currying
+- ✅ TypeChecker — Hindley-Milner with polymorphism
+- ✅ Module system — FQN-based, filesystem resolution, caching
+- ✅ Native modules — Math, IO, System via NativeModuleRegistry
+- ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
+- ✅ Record types, field access, generators, exceptions
+- ✅ 210+ test cases passing
 
 ## Next Steps
-1. Fix compilation errors in async infrastructure
-2. Implement async evaluation methods in Interpreter
-3. Create comprehensive test suite for async operations
-4. Begin STM implementation
+
+1. Fix async infrastructure compilation errors
+2. Implement async interpreter integration (eval_async, await_if_promise, parallel let)
+3. Add missing language features (do-blocks, guards, `in` operator)
+4. Expand stdlib with collection operations and HTTP client
+5. Build test framework for Yona programs

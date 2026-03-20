@@ -4,113 +4,75 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build Commands
 
-### Configure build (required before building)
+### Prerequisites
+
+- LLVM 16+ (Fedora: `sudo dnf install llvm llvm-devel llvm-libs cmake ninja-build`)
+- CMake 3.10+, Ninja
+- C++23 capable compiler
+
+### Configure and build (Linux)
 ```bash
-# For macOS
-cmake --preset x64-debug-macos    # Debug build
-cmake --preset x64-release-macos  # Release build
-
-# For Linux
-cmake --preset x64-debug-linux    # Debug build
-cmake --preset x64-release-linux  # Release build
-
-# For Windows
-cmake --preset x64-debug         # Debug build
-cmake --preset x64-release       # Release build
+cmake --preset x64-debug-linux
+cmake --build --preset build-debug-linux
 ```
-
-### Build the project
-```bash
-# Using CMake presets
-cmake --build --preset build-debug-macos    # macOS Debug
-cmake --build --preset build-release-macos  # macOS Release
-cmake --build --preset build-debug-linux    # Linux Debug
-cmake --build --preset build-release-linux  # Linux Release
-cmake --build --preset build-debug          # Windows Debug
-cmake --build --preset build-release        # Windows Release
-
-# Or directly from build directory
-cmake --build out/build/x64-debug-macos
-```
+Replace `linux` with `macos` or omit the suffix for Windows. Replace `debug` with `release` for release builds.
 
 ### Run tests
 ```bash
-# Using CTest presets
-ctest --preset unit-tests-macos    # macOS
-ctest --preset unit-tests-linux    # Linux
-ctest --preset unit-tests-windows  # Windows
+# Via CTest
+ctest --preset unit-tests-linux
 
-# Or directly
-./out/build/x64-debug-macos/tests
+# Directly (with required env var)
+YONA_PATH=test/code ./out/build/x64-debug-linux/tests
 
-# Run specific test
-./out/build/x64-debug-macos/tests --gtest_filter="TestName"
+# Run a specific test (doctest subcase filter)
+./out/build/x64-debug-linux/tests -tc="TestName"
 ```
 
 ### Format code
 ```bash
-./scripts/format.sh
+./scripts/format.sh  # runs clang-format on include/, src/, test/, cli/
 ```
 
 ## Architecture Overview
 
-This is a Yona language compiler/interpreter project using LLVM as the backend. The codebase follows a traditional compiler architecture:
+Yona language compiler/interpreter using LLVM as the backend. Traditional compiler pipeline: Lexer → Parser → AST → Interpreter (tree-walking) / Codegen (LLVM IR, WIP).
+
+### Key Design Patterns
+
+**Visitor pattern with generic return types**: `AstVisitor<ResultType>` is a templated base class. The Interpreter uses `AstVisitor<InterpreterResult>`, the TypeChecker uses its own result type, etc. AST nodes implement `accept()` that dispatches to the correct `visit()` overload.
+
+**Variant-based runtime values**: `RuntimeObject` wraps a `RuntimeObjectData` variant holding primitives, symbols, collections (seq, set, dict, tuple, record), FQNs, modules, functions, and applied values. All complex values use `shared_ptr`.
+
+**Frame-based scoping**: `Frame<T>` (in `common.h`) is a generic scope with parent-pointer chaining, used for lexical scoping. New frames are pushed for function calls, let expressions, and pattern matching. Pattern matching creates a temporary frame for bindings, then merges to parent on success.
 
 ### Core Components
 
-1. **Lexer** (`include/Lexer.h`, `src/Lexer.cpp`)
-   - Custom lexer implementation with proper tokenization
-   - Handles special tokens like underscore `_` for wildcards
-   - Location tracking for error reporting
+- **AST** (`include/ast.h`): Large node hierarchy rooted at `AstNode`. Major branches: `ExprNode` (expressions), `PatternNode` (pattern matching), `ScopedNode` (scope-creating). Each node tracks `SourceContext` for error reporting.
+- **Interpreter** (`src/Interpreter.cpp`): Tree-walking interpreter with `InterpreterState` holding the frame stack, module cache, exception state, and generator context.
+- **Type System** (`include/types.h`): Variant-based types including builtins, function types, product/sum types, record types, and named types. Supports Hindley-Milner inference via `TypeChecker`.
+- **Pattern Matching**: `CaseExpr` contains a target expression and vector of `CaseClause(pattern, body)`. Pattern types include value, tuple, seq, head-tail (`[h|t]`), dict, record, `as` binding (`@`), and or-patterns.
+- **Module System**: FQN-based with filesystem path resolution. `YONA_PATH` env var sets search paths. Modules are cached after first load. `ModuleValue` holds exports map, record type metadata, and keeps the AST alive.
+- **Native Modules** (`src/stdlib/`, `include/stdlib/`): C++ implementations registered via `NativeModuleRegistry` singleton. Available modules: `std\Math`, `std\IO`, `std\System`.
+- **Functions**: `FunctionValue` tracks FQN, arity, implementation lambda, partial args (for currying), and a native flag. Partial application is built-in.
 
-2. **Parser** (`include/Parser.h`, `src/Parser.cpp`)
-   - Recursive descent parser with Pratt parsing for expressions
-   - Context-aware parsing for pattern matching
-   - Produces AST nodes defined in `include/ast.h`
+### Build Targets
 
-3. **AST** (`include/ast.h`, `src/ast.cpp`)
-   - Comprehensive AST node hierarchy with visitor pattern support
-   - Base class `AstNode` with various expression and pattern node types
-   - Type system integrated via `include/types.h`
+- `yona_lib` (shared) / `yona_lib_static`: Core library (lexer, parser, AST, interpreter, codegen)
+- `yona`: REPL executable (links `yona_lib` + CLI11)
+- `yonac`: Compiler executable (links `yona_lib` + CLI11)
+- `tests`: Test executable (links `yona_lib_static` + doctest)
 
-4. **Interpreter** (`include/Interpreter.h`, `src/Interpreter.cpp`)
-   - Tree-walking interpreter implementing `AstVisitor`
-   - Runtime object system defined in `include/runtime.h`
-   - Frame-based execution with symbol management
-   - Pattern matching implementation with proper variable binding
+### Dependencies
 
-5. **Code Generation** (`include/Codegen.h`, `src/Codegen.cpp`)
-   - LLVM-based code generation (work in progress)
-   - Will generate LLVM IR from AST
-
-6. **Type System** (`include/types.h`)
-   - Supports various types including primitives, functions, modules, collections
-   - Type inference and checking capabilities
-
-### Key Dependencies
-
-- **LLVM**: For code generation backend
-- **Boost**: For program options and logging
-- **GTest**: For unit testing framework
-- **vcpkg**: For C++ dependency management
-
-### Build System
-
-- Uses CMake with presets for different platforms (Windows, Linux, macOS)
-- vcpkg integration for dependency management
-- Platform-specific compiler configurations (MSVC on Windows, Clang on Linux/macOS)
+- **LLVM 16+**: Code generation backend
+- **CLI11**: Command-line argument parsing (fetched via FetchContent)
+- **doctest**: Testing framework (fetched via FetchContent)
 
 ### Development Workflow
 
-1. AST modifications should update both header and visitor methods
-2. New language features typically require updates to: lexer → parser → AST → interpreter/codegen
-3. Tests use GTest framework and are located in `test/` directory
-4. Pattern matching requires careful handling of variable binding and frame management
-
-### Recent Changes
-
-- **Lexer**: Fixed tokenization of single underscore `_` to return UNDERSCORE token instead of identifier
-- **Parser**: Added context-aware parsing for pattern matching to handle expression boundaries correctly
-- **AST**: Restructured pattern matching with new `CaseClause` class that properly associates patterns with body expressions
-- **Interpreter**: Fixed pattern matching to return correct body values and properly handle list patterns `[h | t]`
-- **Syntax**: Case expressions don't use pipes (`|`) before patterns, following Yona language specification
+- New language features require changes across: Lexer → Parser → AST → Interpreter (and eventually Codegen)
+- AST modifications must update both the header (`ast.h`) and the visitor accept/visit methods
+- Pattern matching requires careful frame management — bindings go in a child frame, merged on success
+- Tests are in `test/` with test fixture Yona source files in `test/code/`
+- The `YONA_PATH` environment variable must point to `test/code/` when running tests (set automatically by CTest)
