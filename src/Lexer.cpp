@@ -71,7 +71,9 @@ bool Lexer::is_alnum(char32_t ch) noexcept {
 }
 
 bool Lexer::is_whitespace(char32_t ch) noexcept {
-    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+    // Newlines are NOT whitespace — they are significant tokens at bracket depth 0.
+    // The lexer handles newlines explicitly in scan_token().
+    return ch == ' ' || ch == '\t' || ch == '\r';
 }
 
 bool Lexer::is_identifier_start(char32_t ch) noexcept {
@@ -222,8 +224,16 @@ void Lexer::skip_whitespace_and_comments() {
 
         if (is_whitespace(ch)) {
             skip_char();
+        } else if (ch == '\n') {
+            // Inside brackets, newlines are whitespace
+            if (bracket_depth_ > 0) {
+                skip_char();
+            } else {
+                // At bracket depth 0, stop — let scan_token() handle the newline
+                break;
+            }
         } else if (ch == '#') {
-            // Single-line comment
+            // Single-line comment — skip to end of line, leave \n for newline handling
             skip_char();
             while (!is_at_end()) {
                 auto next = peek_char();
@@ -231,7 +241,7 @@ void Lexer::skip_whitespace_and_comments() {
                 skip_char();
             }
         } else if (ch == '/' && current_ + 1 < source_.length() && source_[current_ + 1] == '*') {
-            // Multi-line comment
+            // Multi-line comment — consumes newlines inside it
             skip_char(); // /
             skip_char(); // *
             int depth = 1;
@@ -669,9 +679,71 @@ std::expected<Token, LexError> Lexer::scan_operator(char32_t first_char) {
     }
 }
 
+// Check if a YNEWLINE should be suppressed after this token type.
+// Binary operators and continuation tokens naturally expect more input.
+static bool suppresses_following_newline(TokenType type) {
+    switch (type) {
+        // Binary operators
+        case TokenType::YPLUS: case TokenType::YMINUS: case TokenType::YSTAR:
+        case TokenType::YSLASH: case TokenType::YPERCENT: case TokenType::YPOWER:
+        case TokenType::YEQ: case TokenType::YNEQ:
+        case TokenType::YLT: case TokenType::YGT:
+        case TokenType::YLTE: case TokenType::YGTE:
+        case TokenType::YAND: case TokenType::YOR:
+        case TokenType::YBIT_AND: case TokenType::YPIPE:
+        case TokenType::YBIT_XOR: case TokenType::YBIT_NOT:
+        case TokenType::YLEFT_SHIFT: case TokenType::YRIGHT_SHIFT:
+        case TokenType::YZERO_FILL_RIGHT_SHIFT:
+        case TokenType::YPIPE_LEFT: case TokenType::YPIPE_RIGHT:
+        case TokenType::YJOIN: case TokenType::YCONS: case TokenType::YCONS_RIGHT:
+        // Continuation tokens
+        case TokenType::YARROW: case TokenType::YFAT_ARROW:
+        case TokenType::YASSIGN: case TokenType::YCOMMA:
+        case TokenType::YBACKSLASH:
+        // Start of input / already a newline
+        case TokenType::YEOF_TOKEN: case TokenType::YNEWLINE:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // Main token scanning
 std::expected<Token, LexError> Lexer::scan_token() {
     skip_whitespace_and_comments();
+
+    // Handle newlines at bracket depth 0
+    if (!is_at_end()) {
+        auto ch_peek = peek_char();
+        if (ch_peek && ch_peek.value() == '\n') {
+            // Consume all consecutive newlines and horizontal whitespace
+            while (!is_at_end()) {
+                auto c = peek_char();
+                if (!c) break;
+                if (c.value() == '\n' || c.value() == ' ' || c.value() == '\t' || c.value() == '\r') {
+                    skip_char();
+                } else if (c.value() == '#') {
+                    // Skip comment on blank line
+                    skip_char();
+                    while (!is_at_end()) {
+                        auto n = peek_char();
+                        if (!n || n.value() == '\n') break;
+                        skip_char();
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // Don't emit YNEWLINE if the previous token suppresses it
+            if (!suppresses_following_newline(last_emitted_)) {
+                mark_token_start();
+                return make_token(TokenType::YNEWLINE);
+            }
+            // Otherwise, continue to scan the next real token
+            skip_whitespace_and_comments();
+        }
+    }
 
     if (is_at_end()) {
         mark_token_start();  // Mark position for EOF
@@ -706,16 +778,28 @@ std::expected<Token, LexError> Lexer::scan_token() {
         return scan_number();
     }
 
+    // Helper to track state on token emission
+    auto emit = [this](Token tok) -> std::expected<Token, LexError> {
+        switch (tok.type) {
+            case TokenType::YLPAREN: case TokenType::YLBRACKET: case TokenType::YLBRACE:
+                bracket_depth_++; break;
+            case TokenType::YRPAREN: case TokenType::YRBRACKET: case TokenType::YRBRACE:
+                if (bracket_depth_ > 0) bracket_depth_--; break;
+            default: break;
+        }
+        return tok;
+    };
+
     // Single character tokens
     switch (ch) {
-        case '(': return make_token(TokenType::YLPAREN);
-        case ')': return make_token(TokenType::YRPAREN);
-        case '[': return make_token(TokenType::YLBRACKET);
-        case ']': return make_token(TokenType::YRBRACKET);
-        case '{': return make_token(TokenType::YLBRACE);
-        case '}': return make_token(TokenType::YRBRACE);
-        case ',': return make_token(TokenType::YCOMMA);
-        case ';': return make_token(TokenType::YSEMICOLON);
+        case '(': return emit(make_token(TokenType::YLPAREN));
+        case ')': return emit(make_token(TokenType::YRPAREN));
+        case '[': return emit(make_token(TokenType::YLBRACKET));
+        case ']': return emit(make_token(TokenType::YRBRACKET));
+        case '{': return emit(make_token(TokenType::YLBRACE));
+        case '}': return emit(make_token(TokenType::YRBRACE));
+        case ',': return emit(make_token(TokenType::YCOMMA));
+        case ';': return make_token(TokenType::YNEWLINE);
         case '.':
             if (match('.')) return make_token(TokenType::YDOTDOT);
             return make_token(TokenType::YDOT);
@@ -763,7 +847,11 @@ std::expected<Token, LexError> Lexer::scan_token() {
 
 // Public interface
 std::expected<Token, LexError> Lexer::next_token() {
-    return scan_token();
+    auto result = scan_token();
+    if (result) {
+        last_emitted_ = result.value().type;
+    }
+    return result;
 }
 
 std::expected<Token, LexError> Lexer::peek_token() {
@@ -771,6 +859,8 @@ std::expected<Token, LexError> Lexer::peek_token() {
     size_t saved_current = current_;
     size_t saved_line = line_;
     size_t saved_column = column_;
+    int saved_bracket_depth = bracket_depth_;
+    TokenType saved_last_emitted = last_emitted_;
 
     auto token = scan_token();
 
@@ -778,6 +868,8 @@ std::expected<Token, LexError> Lexer::peek_token() {
     current_ = saved_current;
     line_ = saved_line;
     column_ = saved_column;
+    bracket_depth_ = saved_bracket_depth;
+    last_emitted_ = saved_last_emitted;
 
     return token;
 }

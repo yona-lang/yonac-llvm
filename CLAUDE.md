@@ -40,6 +40,8 @@ Yona language compiler/interpreter using LLVM as the backend. Traditional compil
 
 ### Key Design Patterns
 
+**Newline-aware lexer**: Newlines are significant tokens (`YNEWLINE`) that delimit expressions in case arms, do-blocks, and module function bodies. Semicolons are equivalent to newlines. Inside brackets (`()`, `[]`, `{}`), newlines are suppressed (treated as whitespace). After binary operators and continuation tokens (`->`, `=`, `,`), the following newline is suppressed to allow natural line continuation. This enables juxtaposition-based function application (`f x y` instead of requiring `f(x, y)`) without ambiguity at expression boundaries.
+
 **Visitor pattern with generic return types**: `AstVisitor<ResultType>` is a templated base class. The Interpreter uses `AstVisitor<InterpreterResult>`, the TypeChecker uses its own result type, etc. AST nodes implement `accept()` that dispatches to the correct `visit()` overload.
 
 **Variant-based runtime values**: `RuntimeObject` wraps a `RuntimeObjectData` variant holding primitives, symbols, collections (seq, set, dict, tuple, record), FQNs, modules, functions, and applied values. All complex values use `shared_ptr`.

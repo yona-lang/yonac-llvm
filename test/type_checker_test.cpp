@@ -302,7 +302,7 @@ TEST_CASE("LetExpressionType") /* FIXTURE */ {
 
 TEST_CASE("DoExpressionType") /* FIXTURE */ {
     TypeCheckerTest fixture;
-    Type t = fixture.check_expr("do 1 2 3 end");
+    Type t = fixture.check_expr("do 1; 2; 3 end");
     CHECK(holds_alternative<BuiltinType>(t));
     CHECK(get<BuiltinType>(t) == compiler::types::SignedInt64); // Returns last expression
 }

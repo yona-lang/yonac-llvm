@@ -4,6 +4,52 @@
 
 Yona is a functional programming language with pattern matching, first-class functions, and a module system. This document provides a comprehensive syntax reference.
 
+## Newlines and Semicolons
+
+Yona uses **newlines as expression delimiters**, similar to Python. Semicolons (`;`) are equivalent to newlines, allowing multiple expressions on one line.
+
+```yona
+# Newlines delimit expressions in case arms, do blocks, and module functions
+case x of
+  :ok -> handle_ok x      # newline ends this arm
+  :error -> handle_error x # newline ends this arm
+  _ -> default_handler x
+end
+
+# Semicolons for one-liners
+case x of :ok -> 1; :error -> 2; _ -> 0 end
+
+# Do blocks use newlines between expressions
+do
+  print "hello"
+  print "world"
+end
+```
+
+**Inside brackets** (`()`, `[]`, `{}`), newlines are ignored — expressions can span multiple lines freely:
+
+```yona
+let result = (
+  some_function
+    argument1
+    argument2
+) in result
+
+let list = [
+  1, 2, 3,
+  4, 5, 6
+] in list
+```
+
+**After binary operators** (`+`, `-`, `*`, `->`, `=`, `,`, etc.), newlines are also suppressed, allowing natural line continuation:
+
+```yona
+let total = price +
+  tax +
+  shipping in
+  total
+```
+
 ## Basic Types
 
 ### Literals
@@ -72,16 +118,18 @@ false
 # Simple binding
 let x = 42 in x + 1
 
-# Multiple bindings
-let
-  x = 10,
-  y = 20
-in
-  x + y
+# Multiple bindings (comma-separated)
+let x = 10, y = 20 in x + y
+
+# Function-style binding (desugars to lambda)
+let add x y = x + y in add 3 4
 
 # Pattern matching in let
 let (a, b) = (1, 2) in a + b
 let [head | tail] = [1, 2, 3] in head
+
+# Discard binding
+let _ = println "side effect" in 42
 ```
 
 ## Functions
@@ -102,24 +150,47 @@ abs(x) | x < 0  -> -x
 
 # Anonymous functions (lambdas)
 \x -> x * 2
-\x, y -> x + y
+\(x, y) -> x + y
+
+# Zero-argument lambda (thunk)
+\-> some_expression
+```
+
+### Zero-Argument Functions
+
+Yona uses strict evaluation: zero-arity functions auto-evaluate when referenced by name. To pass a zero-arity function as a value (without calling it), wrap it in a thunk:
+
+```yona
+let get_time = \-> System.nanoTime in
+  get_time          # Calls the function, returns current time
+
+# To pass as a value without calling:
+let deferred = \-> get_time in
+  run_later deferred  # Passes the function, doesn't call it
 ```
 
 ### Function Application
 
 ```yona
-# Regular application
+# Parenthesized application
 add(1, 2)
 factorial(5)
 
-# Partial application
-let add5 = add(5) in
-  add5(10)  # Returns 15
+# Juxtaposition application (space-separated, like Haskell)
+add 1 2
+println "Hello, World!"
+map (\(x) -> x * 2) [1, 2, 3]
+
+# Partial application (automatic currying)
+let add5 = add 5 in
+  add5 10  # Returns 15
 
 # Pipe operators
 value |> function1 |> function2  # Left-to-right
 function2 <| function1 <| value  # Right-to-left
 ```
+
+Juxtaposition has higher precedence than all binary operators, so `f x + g y` is `(f x) + (g y)`.
 
 ## Pattern Matching
 

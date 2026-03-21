@@ -2,10 +2,12 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 210+ test cases passing (100%)
+- **Test Coverage**: 230 test cases passing (100%), 1080 assertions ✅
 - **Interpreter**: Feature-complete ✅
 - **TypeChecker**: Fully implemented ✅
-- **Native Stdlib**: Math, IO, System modules ✅
+- **Native Stdlib**: Math, IO, System, List, Option, Result, Tuple, Range modules ✅
+- **Newline-aware lexer**: Significant newlines, bracket suppression, semicolons ✅
+- **Juxtaposition**: Function application by adjacency (`f x y`) ✅
 - **Async Infrastructure**: Phase 1 complete (core types, thread pool, dependency analyzer) ✅
 
 ## Phase 1: Language Completeness (High Priority)
@@ -23,17 +25,17 @@
 
 ### 1.2 Language Features
 
-- [ ] `do...end` blocks (sequenced expressions with implicit last-value return)
-- [ ] `import X from Module` syntax (if not already supported)
-- [ ] `in` operator for collection membership (`p in [:high, :critical]`)
 - [ ] Guard expressions on pattern match arms (`| h < 4`)
+- [ ] Record instance creation syntax (`TypeName{field: value}`)
+- [ ] Record field update syntax (`expr{field: new_value}`)
+- [ ] String interpolation
 
 ### 1.3 Standard Library Expansion
 
 - [ ] **HTTP Client** — async HTTP operations (get, post, put, delete)
 - [ ] **Timer Module** — delays, timeouts, scheduled tasks
 - [ ] **String Module** — formatting, interpolation, manipulation utilities
-- [ ] **Seq/Set/Dict Modules** — map, filter, fold, zip, etc.
+- [ ] **Set/Dict Modules** — map, filter, fold operations on sets and dicts
 
 ### 1.4 Test Framework
 
@@ -85,20 +87,30 @@ Make Yona usable as an embedded scripting/extension language in host application
 
 ## Completed Work
 
-- ✅ Lexer, Parser — full Yona language support
+- ✅ Lexer, Parser — full Yona language support with newline-aware parsing
+- ✅ Newline-aware lexer — significant newlines as expression delimiters, suppressed inside brackets and after operators
+- ✅ Juxtaposition function application — `f x y` style calls with proper precedence
+- ✅ Bare lambda syntax — `\x -> body` alongside `\(x) -> body`
+- ✅ Function-style let bindings — `let f x y = body in ...`
+- ✅ Zero-arity function auto-evaluation — strict semantics, thunk escape via `\-> expr`
+- ✅ Tuple/list pattern destructuring in let — `let (a, b) = expr in ...`
+- ✅ Import alias binding — `import Std\IO as IO in IO.println "hello"`
+- ✅ Symbol value equality — runtime comparison by name, not pointer
+- ✅ String concatenation via `++` operator
+- ✅ OR pattern matching — `:ok | :success -> ...`
 - ✅ AST — comprehensive node hierarchy with visitor pattern
 - ✅ Interpreter — tree-walking, frame-based, pattern matching, currying
 - ✅ TypeChecker — Hindley-Milner with polymorphism
-- ✅ Module system — FQN-based, filesystem resolution, caching
-- ✅ Native modules — Math, IO, System via NativeModuleRegistry
+- ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
+- ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ Record types, field access, generators, exceptions
-- ✅ 210+ test cases passing
+- ✅ 230 test cases, 1080 assertions passing
 
 ## Next Steps
 
 1. Fix async infrastructure compilation errors
 2. Implement async interpreter integration (eval_async, await_if_promise, parallel let)
-3. Add missing language features (do-blocks, guards, `in` operator)
-4. Expand stdlib with collection operations and HTTP client
+3. Add guard expressions on pattern match arms
+4. Implement record instance creation and field update syntax
 5. Build test framework for Yona programs

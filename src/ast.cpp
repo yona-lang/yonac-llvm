@@ -768,7 +768,7 @@ ExprCall::~ExprCall() { delete expr; }
 void ExprCall::print(std::ostream &os) const { os << "(" << *expr << ")"; }
 
 ModuleImport::ModuleImport(SourceContext token, FqnExpr *fqn, NameExpr *name)
-    : ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name->with_parent<NameExpr>(this)) {}
+    : ImportClauseExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), name(name ? name->with_parent<NameExpr>(this) : nullptr) {}
 
 ModuleImport::~ModuleImport() {
   delete fqn;

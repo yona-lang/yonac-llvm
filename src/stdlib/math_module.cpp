@@ -17,7 +17,7 @@ namespace yona::stdlib {
 using namespace std;
 using namespace yona::interp::runtime;
 
-MathModule::MathModule() : NativeModule({"Std", "Math", "Native"}) {}
+MathModule::MathModule() : NativeModule({"Std", "Math"}) {}
 
 void MathModule::initialize() {
     // Trigonometric functions
@@ -45,6 +45,11 @@ void MathModule::initialize() {
     // Constants
     module->exports["pi"] = make_native_function("pi", 0, pi);
     module->exports["e"] = make_native_function("e", 0, e);
+
+    // Additional functions
+    module->exports["max"] = make_native_function("max", 2, max);
+    module->exports["min"] = make_native_function("min", 2, min);
+    module->exports["factorial"] = make_native_function("factorial", 1, factorial);
 }
 
 // No longer needed - using NativeArgs::get_numeric() instead
@@ -161,6 +166,51 @@ RuntimeObjectPtr MathModule::pi(const vector<RuntimeObjectPtr>& args) {
 RuntimeObjectPtr MathModule::e(const vector<RuntimeObjectPtr>& args) {
     NATIVE_FUNC_0("e");
     return make_float(M_E);
+}
+
+RuntimeObjectPtr MathModule::max(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("max", 2);
+
+    if (nargs.is_type(0, Int) && nargs.is_type(1, Int)) {
+        return make_int(std::max(ARG_INT(0), ARG_INT(1)));
+    } else if (nargs.is_type(0, Float) || nargs.is_type(1, Float)) {
+        double a = nargs.is_type(0, Int) ? static_cast<double>(ARG_INT(0)) : ARG_DOUBLE(0);
+        double b = nargs.is_type(1, Int) ? static_cast<double>(ARG_INT(1)) : ARG_DOUBLE(1);
+        return make_float(std::max(a, b));
+    }
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "max expects numeric arguments");
+}
+
+RuntimeObjectPtr MathModule::min(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("min", 2);
+
+    if (nargs.is_type(0, Int) && nargs.is_type(1, Int)) {
+        return make_int(std::min(ARG_INT(0), ARG_INT(1)));
+    } else if (nargs.is_type(0, Float) || nargs.is_type(1, Float)) {
+        double a = nargs.is_type(0, Int) ? static_cast<double>(ARG_INT(0)) : ARG_DOUBLE(0);
+        double b = nargs.is_type(1, Int) ? static_cast<double>(ARG_INT(1)) : ARG_DOUBLE(1);
+        return make_float(std::min(a, b));
+    }
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "min expects numeric arguments");
+}
+
+RuntimeObjectPtr MathModule::factorial(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("factorial", 1);
+
+    if (!nargs.is_type(0, Int)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "factorial expects integer argument");
+    }
+
+    int n = ARG_INT(0);
+    if (n < 0) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::RUNTIME, "factorial: argument must be non-negative");
+    }
+
+    int result = 1;
+    for (int i = 2; i <= n; i++) {
+        result *= i;
+    }
+    return make_int(result);
 }
 
 } // namespace yona::stdlib

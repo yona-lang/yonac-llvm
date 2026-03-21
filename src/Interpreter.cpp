@@ -1446,8 +1446,13 @@ InterpreterResult Interpreter::visit(JoinExpr *node) const {
   auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
+  // String concatenation
+  if (left->type == String && right->type == String) {
+    return InterpreterResult(make_shared<RuntimeObject>(String, left->get<string>() + right->get<string>()));
+  }
+
   if (left->type != Seq || right->type != Seq) {
-    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq for join operation");
+    throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Seq or String for join operation");
   }
 
   auto left_seq = left->get<shared_ptr<SeqValue>>();
@@ -1648,9 +1653,14 @@ InterpreterResult Interpreter::visit(ModuleImport *node) const {
   // Load or get the module
   auto module = get_or_load_module(fqn.value());
 
-  // Import all exported functions from the module
-  for (const auto& [name, func] : module->exports) {
-    IS.frame->write(name, make_shared<RuntimeObject>(Function, func));
+  if (node->name) {
+    // import Module as Alias — bind the module object to the alias name
+    IS.frame->write(node->name->value, make_shared<RuntimeObject>(Module, module));
+  } else {
+    // import Module — import all exported functions into current scope
+    for (const auto& [name, func] : module->exports) {
+      IS.frame->write(name, make_shared<RuntimeObject>(Function, func));
+    }
   }
 
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
@@ -2385,13 +2395,17 @@ InterpreterResult Interpreter::visit(TypeInstance *node) const {
 }
 InterpreterResult Interpreter::visit(IdentifierExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Looking up '" << node->name->value << "'";
   auto result = IS.frame->lookup(node->source_context, node->name->value);
+
+  // Auto-call 0-arity functions (strict evaluation).
+  // To pass a 0-arity function as a value, wrap it in a thunk: \-> func
   if (result->type == Function) {
-    // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found function for '" << node->name->value << "'";
-  } else {
-    // BOOST_LOG_TRIVIAL(debug) << "IdentifierExpr: Found non-function type=" << result->type << " for '" << node->name->value << "'";
+    auto func = result->get<shared_ptr<FunctionValue>>();
+    if (func->arity == 0 && func->partial_args.empty()) {
+      return InterpreterResult(func->code({}));
+    }
   }
+
   return InterpreterResult(result);
 }
 

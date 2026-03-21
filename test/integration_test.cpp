@@ -50,18 +50,19 @@ TEST_CASE("Native and Yona modules together") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
+  // Capture stdout (RAII)
+  struct CoutCapture {
+    stringstream captured;
+    streambuf* orig;
+    CoutCapture() : orig(cout.rdbuf(captured.rdbuf())) {}
+    ~CoutCapture() { cout.rdbuf(orig); }
+  } capture;
 
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == "[2, 3, 4, 5, 6]\n");
+  CHECK(capture.captured.str() == "[2, 3, 4, 5, 6]\n");
 }
 
 TEST_CASE("Nested imports") {

@@ -75,6 +75,7 @@ inline string RuntimeObjectTypes[] = {"Int",  "Float", "Byte", "Char",  "String"
 
 struct SymbolValue {
   string name;
+  friend bool operator==(const SymbolValue &lhs, const SymbolValue &rhs) { return lhs.name == rhs.name; }
 };
 
 struct DictValue {
@@ -197,7 +198,14 @@ struct RuntimeObject {
 
   template <typename T> const T &get() const { return std::get<T>(data); }
 
-  friend bool operator==(const RuntimeObject &lhs, const RuntimeObject &rhs) { return lhs.type == rhs.type && lhs.data == rhs.data; }
+  friend bool operator==(const RuntimeObject &lhs, const RuntimeObject &rhs) {
+    if (lhs.type != rhs.type) return false;
+    // For shared_ptr types, compare by value not pointer
+    if (lhs.type == Symbol) {
+      return *std::get<shared_ptr<SymbolValue>>(lhs.data) == *std::get<shared_ptr<SymbolValue>>(rhs.data);
+    }
+    return lhs.data == rhs.data;
+  }
   friend bool operator!=(const RuntimeObject &lhs, const RuntimeObject &rhs) { return !(lhs == rhs); }
 };
 

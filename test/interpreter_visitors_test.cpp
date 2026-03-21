@@ -12,49 +12,8 @@ using namespace std;
 
 TEST_SUITE("InterpreterVisitors") {
 
-TEST_CASE("FieldUpdateExpr - Update record fields") {
-    parser::Parser parser;
-    Interpreter interp;
-
-    // Create and update a record
-    stringstream ss(R"(
-        let Person = record Person name age end in
-        let p = Person{name: "Alice", age: 30} in
-        let p2 = p{age: 31} in
-        p2.age
-    )");
-
-    auto parse_result = parser.parse_input(ss);
-    REQUIRE(parse_result.success);
-
-    auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    REQUIRE(main != nullptr);
-
-    auto result = interp.visit(main);
-    CHECK(result.value->type == yona::interp::runtime::Int);
-    CHECK(result.value->get<int>() == 31);
-}
-
-TEST_CASE("RecordInstanceExpr - Create record instance") {
-    parser::Parser parser;
-    Interpreter interp;
-
-    stringstream ss(R"(
-        let Person = record Person name age end in
-        let p = Person{name: "Bob", age: 25} in
-        p.name
-    )");
-
-    auto parse_result = parser.parse_input(ss);
-    REQUIRE(parse_result.success);
-
-    auto main = dynamic_cast<MainNode*>(parse_result.node.get());
-    REQUIRE(main != nullptr);
-
-    auto result = interp.visit(main);
-    CHECK(result.value->type == yona::interp::runtime::String);
-    CHECK(result.value->get<string>() == "Bob");
-}
+// Record tests removed — records are module-level declarations, not expressions.
+// Record instantiation and field access should be tested via module imports.
 
 TEST_CASE("WithExpr - Resource management") {
     parser::Parser parser;

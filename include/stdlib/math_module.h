@@ -29,6 +29,9 @@ private:
     static RuntimeObjectPtr abs(const std::vector<RuntimeObjectPtr>& args);
     static RuntimeObjectPtr pi(const std::vector<RuntimeObjectPtr>& args);
     static RuntimeObjectPtr e(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr max(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr min(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr factorial(const std::vector<RuntimeObjectPtr>& args);
 };
 
 } // namespace yona::stdlib

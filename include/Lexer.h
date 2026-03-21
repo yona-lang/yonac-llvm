@@ -210,6 +210,8 @@ private:
     size_t token_start_ = 0;
     size_t token_start_line_ = 1;
     size_t token_start_column_ = 1;
+    int bracket_depth_ = 0;
+    TokenType last_emitted_ = TokenType::YEOF_TOKEN;
 
     // Keyword lookup table - use function to avoid DLL boundary issues
     [[nodiscard]] static const std::unordered_map<std::string_view, TokenType>& get_keywords() noexcept;

@@ -173,6 +173,10 @@ private:
         return match(first) || match(rest...);
     }
 
+    void skip_newlines() {
+        while (check(TokenType::YNEWLINE)) advance();
+    }
+
     bool expect(TokenType type, const string& message) {
         if (check(type)) {
             advance();
@@ -198,7 +202,7 @@ private:
         advance();
 
         while (!is_at_end()) {
-            if (previous().type == TokenType::YSEMICOLON) return;
+            if (previous().type == TokenType::YSEMICOLON || previous().type == TokenType::YNEWLINE) return;
 
             switch (peek().type) {
                 case TokenType::YMODULE:
@@ -257,12 +261,15 @@ private:
         }
 
         expect(TokenType::YAS, "Expected 'as' after module header");
+        skip_newlines();
 
         vector<FunctionDeclaration*> function_declarations;
         vector<FunctionExpr*> functions;
         vector<RecordNode*> records;
 
         while (!check(TokenType::YEND) && !is_at_end()) {
+            skip_newlines();
+            if (check(TokenType::YEND)) break;
             if (match(TokenType::YTYPE)) {
                 if (auto type_def = parse_type_definition()) {
                     // Convert TypeDefinition to RecordNode if it's a record type
@@ -408,6 +415,7 @@ private:
         }
 
         // Parse additional clauses (they should have the same patterns)
+        skip_newlines();
         while (check(TokenType::YIDENTIFIER) &&
                peek().lexeme == name &&
                !is_at_end()) {
@@ -1236,6 +1244,32 @@ private:
         return nullptr;
     }
 
+    // Check if a token could be a function argument in juxtaposition application.
+    // More restrictive than could_start_expr — excludes keywords and operators
+    // that signal expression boundaries, to prevent greedy consumption.
+    bool could_be_argument(TokenType type) const {
+        switch (type) {
+            case TokenType::YINTEGER:
+            case TokenType::YFLOAT:
+            case TokenType::YSTRING:
+            case TokenType::YCHARACTER:
+            case TokenType::YBYTE:
+            case TokenType::YTRUE:
+            case TokenType::YFALSE:
+            case TokenType::YUNIT:
+            case TokenType::YIDENTIFIER:
+            case TokenType::YSYMBOL:
+            case TokenType::YLPAREN:
+            case TokenType::YLBRACKET:
+            case TokenType::YLBRACE:
+            case TokenType::YBACKSLASH:
+            case TokenType::YUNDERSCORE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     // Check if a token type could start an expression
     bool could_start_expr(TokenType type) const {
         switch (type) {
@@ -1357,26 +1391,18 @@ private:
             }
             last_position = current_;
 
-            // Check for function application by juxtaposition
-            // DISABLED - we're using parentheses for function calls now
-            bool is_juxtaposition = false;
-            /*if (min_prec <= Precedence::CALL && could_start_expr(peek().type)) {
-                // Check if it's not an infix operator
+            // Check for function application by juxtaposition (e.g., f x)
+            // YNEWLINE naturally stops juxtaposition since it's not in could_be_argument()
+            if (min_prec <= Precedence::CALL && could_be_argument(peek().type)) {
                 auto prec = get_infix_precedence(peek().type);
                 if (prec == Precedence::LOWEST) {
-                    is_juxtaposition = true;
-                    // BOOST_LOG_TRIVIAL(debug) << "parse_expr: Detected juxtaposition application";
+                    left = parse_juxtaposition_apply(std::move(left));
+                    if (!left) return nullptr;
+                    continue;
                 }
-            }*/
+            }
 
-            if (is_juxtaposition) {
-                // Parse as function application
-                left = parse_juxtaposition_apply(std::move(left));
-                if (!left) {
-                    // BOOST_LOG_TRIVIAL(debug) << "parse_expr: parse_juxtaposition_apply returned null";
-                    return nullptr;
-                }
-            } else {
+            {
                 auto prec = get_infix_precedence(peek().type);
                 // BOOST_LOG_TRIVIAL(debug) << "parse_expr: Loop " << loop_count << ", token=" << peek().lexeme
                 //                          << ", prec=" << static_cast<int>(prec) << " vs min_prec=" << static_cast<int>(min_prec);
@@ -1396,38 +1422,12 @@ private:
 
     // Parse expression but stop at pattern boundaries (| at start of line or END)
     unique_ptr<ExprNode> parse_expr_until_pattern_end() {
-        // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Starting";
-
-        // We need to parse an expression but stop if we see:
-        // 1. END token (end of case)
-        // 2. PIPE token that could start a new pattern (tricky because | is also bitwise OR)
-
-        // For now, let's use a simple approach: parse a primary expression
-        // This avoids the ambiguity with | being both bitwise OR and pattern separator
-        auto expr = parse_prefix_expr();
-        if (!expr) return nullptr;
-
-        // Now continue parsing infix operations, but be careful with |
-        while (!is_at_end()) {
-            if (check(TokenType::YEND)) {
-                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found END, stopping";
-                break;
-            }
-
-            if (check(TokenType::YPIPE)) {
-                // This could be bitwise OR or start of new pattern
-                // For now, assume it's a new pattern and stop
-                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_pattern_end: Found PIPE, stopping";
-                break;
-            }
-
-            auto prec = get_infix_precedence(peek().type);
-            if (prec == Precedence::LOWEST) break;
-
-            expr = parse_infix_expr(std::move(expr), prec);
-            if (!expr) return nullptr;
-        }
-
+        // Parse the case arm body expression. YNEWLINE delimits case arms,
+        // so we just call parse_expr() and it naturally stops at YNEWLINE
+        // (since YNEWLINE is not in could_be_argument and has LOWEST infix precedence).
+        auto expr = parse_expr();
+        // Consume trailing newline between case arms
+        skip_newlines();
         return expr;
     }
 
@@ -1455,26 +1455,21 @@ private:
             }
             last_position = current_;
 
-            // Check for juxtaposition (function application)
-            // DISABLED FOR NOW - causing infinite loops
-            bool is_juxtaposition = false;
-            /*if (could_start_expr(peek().type)) {
+            // Check for function application by juxtaposition (e.g., f x)
+            if (could_be_argument(peek().type)) {
                 auto prec = get_infix_precedence(peek().type);
                 if (prec == Precedence::LOWEST) {
-                    is_juxtaposition = true;
-                    // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Detected juxtaposition";
+                    left = parse_juxtaposition_apply(std::move(left));
+                    if (!left) return nullptr;
+                    continue;
                 }
-            }*/
+            }
 
-            if (is_juxtaposition) {
-                left = parse_juxtaposition_apply(std::move(left));
-                if (!left) return nullptr;
-            } else {
+            {
                 auto prec = get_infix_precedence(peek().type);
                 // Break if not an infix operator (includes LOWEST precedence)
                 if (prec <= Precedence::LOWEST) break;
 
-                // BOOST_LOG_TRIVIAL(debug) << "parse_expr_until_in: Parsing infix, token=" << peek().lexeme;
                 left = parse_infix_expr(std::move(left), prec);
                 if (!left) return nullptr;
             }
@@ -2067,9 +2062,13 @@ private:
         advance(); // consume 'if'
 
         auto condition = parse_expr();
+        skip_newlines();
         expect(TokenType::YTHEN, "Expected 'then' after if condition");
+        skip_newlines();
         auto then_expr = parse_expr();
+        skip_newlines();
         expect(TokenType::YELSE, "Expected 'else' after then expression");
+        skip_newlines();
         auto else_expr = parse_expr();
 
         return make_unique<IfExpr>(loc,
@@ -2080,20 +2079,24 @@ private:
 
     unique_ptr<ExprNode> parse_let_expr() {
         SourceLocation loc = current_location();
-        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Starting";
         advance(); // consume 'let'
+        skip_newlines();
 
         vector<AliasExpr*> aliases;
 
         do {
             // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing alias";
             auto alias = parse_alias();
-            if (alias) aliases.push_back(alias.release());
-        } while (!check(TokenType::YIN) && !is_at_end());
+            if (alias) {
+                aliases.push_back(alias.release());
+            } else {
+                break;
+            }
+        } while (match(TokenType::YCOMMA) && !check(TokenType::YIN) && !is_at_end());
 
-        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Got " << aliases.size() << " aliases";
+        skip_newlines();
         expect(TokenType::YIN, "Expected 'in' after let bindings");
-        // BOOST_LOG_TRIVIAL(debug) << "parse_let_expr: Parsing body after 'in'";
+        skip_newlines();
         auto body = parse_expr();
 
         if (!body) {
@@ -2108,7 +2111,17 @@ private:
     unique_ptr<AliasExpr> parse_alias() {
         SourceLocation loc = current_location();
 
-        if (!check(TokenType::YIDENTIFIER)) {
+        // Pattern destructuring: let (a, b) = expr  or  let [h | t] = expr
+        if (check(TokenType::YLPAREN) || check(TokenType::YLBRACKET)) {
+            auto pattern = parse_pattern();
+            if (!pattern) return nullptr;
+            expect(TokenType::YASSIGN, "Expected '=' after pattern in let binding");
+            auto expr = parse_expr_until_in();
+            if (!expr) return nullptr;
+            return make_unique<PatternAlias>(loc, pattern.release(), expr.release());
+        }
+
+        if (!check(TokenType::YIDENTIFIER) && !check(TokenType::YUNDERSCORE)) {
             error(ParseError::Type::INVALID_SYNTAX, "Expected identifier in let binding");
             return nullptr;
         }
@@ -2125,6 +2138,12 @@ private:
             }
         }
 
+        // Check for function-style let binding: let name param1 param2 = body
+        vector<string> params;
+        while (check(TokenType::YIDENTIFIER) || check(TokenType::YUNDERSCORE)) {
+            params.push_back(string(advance().lexeme));
+        }
+
         expect(TokenType::YASSIGN, "Expected '=' in let binding");
 
         // Parse expression but stop at IN token (for let expressions)
@@ -2135,15 +2154,32 @@ private:
             return nullptr;
         }
 
+        if (!params.empty()) {
+            // Function-style binding: desugar `let f x y = body` into `let f = \(x, y) -> body`
+            vector<PatternNode*> patterns;
+            for (auto& p : params) {
+                if (p == "_") {
+                    patterns.push_back(new UnderscorePattern(loc));
+                } else {
+                    auto id_expr = new IdentifierExpr(loc, new NameExpr(loc, p));
+                    variant<LiteralExpr<nullptr_t>*, LiteralExpr<void*>*, SymbolExpr*, IdentifierExpr*> v = id_expr;
+                    patterns.push_back(new PatternValue(loc, v));
+                }
+            }
+            vector<FunctionBody*> bodies;
+            bodies.push_back(new BodyWithoutGuards(loc, expr.release()));
+            auto func_expr = new FunctionExpr(loc, name, patterns, bodies);
+            auto name_expr = new NameExpr(loc, name);
+            return make_unique<LambdaAlias>(loc, name_expr, func_expr);
+        }
+
         // Check if the expression is a FunctionExpr (lambda)
         if (auto func_expr = dynamic_cast<FunctionExpr*>(expr.get())) {
-            // BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating LambdaAlias for " << name;
             // Create LambdaAlias for lambda expressions
             auto name_expr = new NameExpr(loc, name);
             expr.release(); // Release ownership from unique_ptr
             return make_unique<LambdaAlias>(loc, name_expr, func_expr);
         } else {
-            // BOOST_LOG_TRIVIAL(debug) << "parse_alias: Creating ValueAlias for " << name;
             // ValueAlias expects IdentifierExpr*, not string
             auto id_expr = new IdentifierExpr(loc, new NameExpr(loc, name));
             return make_unique<ValueAlias>(loc, id_expr, expr.release());
@@ -2156,10 +2192,13 @@ private:
 
         auto expr = parse_expr();
         expect(TokenType::YOF, "Expected 'of' after case expression");
+        skip_newlines();
 
         vector<CaseClause*> clauses;
 
         while (!check(TokenType::YEND) && !is_at_end()) {
+            skip_newlines();
+            if (check(TokenType::YEND)) break;
             auto clause = parse_case_clause();
             if (clause) clauses.push_back(clause.release());
         }
@@ -2201,12 +2240,22 @@ private:
     unique_ptr<ExprNode> parse_do_expr() {
         SourceLocation loc = current_location();
         advance(); // consume 'do'
+        skip_newlines();
 
         vector<ExprNode*> expressions;
 
         while (!check(TokenType::YEND) && !is_at_end()) {
+            skip_newlines();
+            if (check(TokenType::YEND)) break;
+            size_t pos_before = current_;
             auto expr = parse_expr();
-            if (expr) expressions.push_back(expr.release());
+            if (expr) {
+                expressions.push_back(expr.release());
+            } else if (current_ == pos_before) {
+                advance();
+                break;
+            }
+            skip_newlines();
         }
 
         expect(TokenType::YEND, "Expected 'end' after do block");
@@ -2217,15 +2266,19 @@ private:
     unique_ptr<ExprNode> parse_try_expr() {
         SourceLocation loc = current_location();
         advance(); // consume 'try'
+        skip_newlines();
 
         auto expr = parse_expr();
+        skip_newlines();
 
         vector<CatchExpr*> catches;
 
         while (match(TokenType::YCATCH)) {
+            skip_newlines();
             auto error_pattern = parse_pattern();
             expect(TokenType::YARROW, "Expected '->' after catch pattern");
             auto handler = parse_expr();
+            skip_newlines();
 
             // Create CatchPatternExpr with pattern guards
             auto pwg = new PatternWithoutGuards(current_location(), handler.release());
@@ -2245,8 +2298,10 @@ private:
         SourceLocation loc = current_location();
         advance(); // consume 'raise'
 
-        auto error_type = parse_expr();
-        auto message = parse_expr();
+        // Parse exactly two arguments: error symbol and message
+        // Use prefix-only parsing to avoid juxtaposition merging them
+        auto error_type = parse_prefix_expr();
+        auto message = parse_prefix_expr();
 
         // RaiseExpr expects SymbolExpr* and StringExpr*
         SymbolExpr* symbol = nullptr;
@@ -2292,7 +2347,11 @@ private:
         }
 
         string name(advance().lexeme);
-        expect(TokenType::YDO, "Expected 'do' in with expression");
+
+        if (!check(TokenType::YDO)) {
+            error(ParseError::Type::MISSING_TOKEN, "Expected 'do' in with expression", TokenType::YDO);
+            return nullptr;
+        }
 
         auto body = parse_do_expr();
 
@@ -2325,28 +2384,28 @@ private:
 
         vector<PatternNode*> params;
 
-        // Expect opening parenthesis
-        if (!expect(TokenType::YLPAREN, "Expected '(' after '\\' in lambda expression")) {
-            return nullptr;
-        }
-
-        // Parse parameters (comma-separated)
-        int param_count = 0;
-        if (!check(TokenType::YRPAREN)) {
-            do {
-                // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Parsing parameter " << param_count++;
+        if (check(TokenType::YLPAREN)) {
+            // Parenthesized parameters: \(x, y) -> body
+            advance(); // consume '('
+            if (!check(TokenType::YRPAREN)) {
+                do {
+                    auto param = parse_pattern();
+                    if (param) params.push_back(param.release());
+                    else return nullptr;
+                } while (match(TokenType::YCOMMA));
+            }
+            if (!expect(TokenType::YRPAREN, "Expected ')' after lambda parameters")) {
+                return nullptr;
+            }
+        } else {
+            // Bare parameters: \x -> body  or  \x y -> body
+            while (!check(TokenType::YARROW) && !is_at_end()) {
                 auto param = parse_pattern();
                 if (param) params.push_back(param.release());
-                else {
-                    std::cerr << "parse_lambda_expr: Failed to parse parameter" << std::endl;
-                    return nullptr;
-                }
-            } while (match(TokenType::YCOMMA));
-        }
-
-        // Expect closing parenthesis
-        if (!expect(TokenType::YRPAREN, "Expected ')' after lambda parameters")) {
-            return nullptr;
+                else return nullptr;
+                // Allow comma-separated bare params too: \x, y -> body
+                match(TokenType::YCOMMA);
+            }
         }
 
         // BOOST_LOG_TRIVIAL(debug) << "parse_lambda_expr: Got " << params.size() << " parameters";
@@ -2535,8 +2594,6 @@ private:
     unique_ptr<ImportClauseExpr> parse_import_clause() {
         SourceLocation loc = current_location();
 
-        // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: current token = " << peek().lexeme;
-
         // Check if it's a module import or functions import
         if (check_fqn_start()) {
             // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: detected FQN start";
@@ -2556,7 +2613,6 @@ private:
         }
 
         // Must be functions import
-        // BOOST_LOG_TRIVIAL(debug) << "parse_import_clause: parsing as functions import";
         return parse_functions_import();
     }
 

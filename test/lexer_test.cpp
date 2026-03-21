@@ -147,7 +147,7 @@ TEST_CASE("Delimiters") {
         TokenType::YLBRACE,
         TokenType::YRBRACE,
         TokenType::YCOMMA,
-        TokenType::YSEMICOLON,
+        TokenType::YNEWLINE,  // semicolons emit as YNEWLINE
         TokenType::YCOLON,
         TokenType::YDOT,
         TokenType::YDOTDOT,
@@ -192,9 +192,12 @@ TEST_CASE("Comments") {
         /* Nested /* comments */ work */
         44
     )", {
-        TokenType::YINTEGER,
-        TokenType::YINTEGER,
-        TokenType::YINTEGER,
+        TokenType::YINTEGER,     // 42
+        TokenType::YNEWLINE,     // after 42's comment
+        TokenType::YINTEGER,     // 43
+        TokenType::YNEWLINE,     // after 43
+        TokenType::YINTEGER,     // 44
+        TokenType::YNEWLINE,     // after 44
         TokenType::YEOF_TOKEN
     });
 }

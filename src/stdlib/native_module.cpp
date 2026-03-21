@@ -2,6 +2,11 @@
 #include "stdlib/io_module.h"
 #include "stdlib/system_module.h"
 #include "stdlib/math_module.h"
+#include "stdlib/list_module.h"
+#include "stdlib/option_module.h"
+#include "stdlib/result_module.h"
+#include "stdlib/tuple_module.h"
+#include "stdlib/range_module.h"
 #include <sstream>
 
 namespace yona::stdlib {
@@ -54,6 +59,11 @@ void NativeModuleRegistry::register_all_modules() {
     register_module(std::make_unique<IOModule>());
     register_module(std::make_unique<SystemModule>());
     register_module(std::make_unique<MathModule>());
+    register_module(std::make_unique<ListModule>());
+    register_module(std::make_unique<OptionModule>());
+    register_module(std::make_unique<ResultModule>());
+    register_module(std::make_unique<TupleModule>());
+    register_module(std::make_unique<RangeModule>());
 }
 
 void NativeModuleRegistry::apply_to_interpreter(

@@ -13,6 +13,15 @@ using namespace yona::ast;
 using namespace yona::interp;
 using namespace yona::interp::runtime;
 
+// RAII guard to capture and restore cout
+struct CoutCapture {
+  stringstream captured;
+  streambuf* orig;
+  CoutCapture() : orig(cout.rdbuf(captured.rdbuf())) {}
+  ~CoutCapture() { cout.rdbuf(orig); }
+  string str() const { return captured.str(); }
+};
+
 TEST_SUITE("Native Modules") {
 
 TEST_CASE("Import native IO module") {
@@ -26,18 +35,12 @@ TEST_CASE("Import native IO module") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
-
+  CoutCapture capture;
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == "Hello from native module!\n");
+  CHECK(capture.str() == "Hello from native module!\n");
 }
 
 TEST_CASE("Import multiple native functions") {
@@ -52,18 +55,12 @@ TEST_CASE("Import multiple native functions") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
-
+  CoutCapture capture;
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == "Hello World!\n");
+  CHECK(capture.str() == "Hello World!\n");
 }
 
 TEST_CASE("Import entire native module") {
@@ -78,18 +75,12 @@ TEST_CASE("Import entire native module") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
-
+  CoutCapture capture;
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == "Test: 42\n");
+  CHECK(capture.str() == "Test: 42\n");
 }
 
 TEST_CASE("Import native module with alias") {
@@ -103,18 +94,12 @@ TEST_CASE("Import native module with alias") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
-
+  CoutCapture capture;
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == "Using module alias\n");
+  CHECK(capture.str() == "Using module alias\n");
 }
 
 TEST_CASE("Native function with different types") {
@@ -132,19 +117,13 @@ TEST_CASE("Native function with different types") {
   auto parse_result = parser.parse_input(stream);
   REQUIRE(parse_result.node != nullptr);
 
-  // Capture stdout
-  stringstream captured;
-  streambuf* orig = cout.rdbuf(captured.rdbuf());
-
+  CoutCapture capture;
   Interpreter interpreter;
   auto result = interpreter.visit(parse_result.node.get());
 
-  // Restore stdout
-  cout.rdbuf(orig);
-
   string expected = "42\n3.14\ntrue\nstring\n[1, 2, 3]\n";
   CHECK(result.value->type == yona::interp::runtime::Unit);
-  CHECK(captured.str() == expected);
+  CHECK(capture.str() == expected);
 }
 
 } // TEST_SUITE
