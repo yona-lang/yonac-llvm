@@ -95,6 +95,14 @@ private:
     llvm::Value* codegen_function(FunctionExpr* node);
     llvm::Value* codegen_apply(ApplyExpr* node);
     llvm::Value* codegen_lambda_alias(LambdaAlias* node);
+    llvm::Value* codegen_case(CaseExpr* node);
+    llvm::Value* codegen_do(DoExpr* node);
+    llvm::Value* codegen_unit(UnitExpr* node);
+    llvm::Value* codegen_negate(IntegerExpr* node);
+
+    // Pattern matching helpers
+    llvm::Value* codegen_pattern_match(PatternNode* pattern, llvm::Value* scrutinee,
+                                        llvm::BasicBlock* match_bb, llvm::BasicBlock* fail_bb);
 
     // Function name counter for unique anonymous function names
     int lambda_counter_ = 0;

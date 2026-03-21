@@ -226,6 +226,12 @@ Value* Codegen::codegen(AstNode* node) {
             return codegen_apply(static_cast<ApplyExpr*>(node));
         case AST_LAMBDA_ALIAS:
             return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
+        case AST_CASE_EXPR:
+            return codegen_case(static_cast<CaseExpr*>(node));
+        case AST_DO_EXPR:
+            return codegen_do(static_cast<DoExpr*>(node));
+        case AST_UNIT_EXPR:
+            return codegen_unit(static_cast<UnitExpr*>(node));
         default:
             std::cerr << "Codegen: unsupported AST node type " << node->get_type() << std::endl;
             return nullptr;
@@ -624,6 +630,102 @@ Value* Codegen::codegen_lambda_alias(LambdaAlias* node) {
     // Bind the function to the alias name
     named_values_[node->name->value] = fn_val;
     return fn_val;
+}
+
+// ===== Case Expression =====
+
+Value* Codegen::codegen_case(CaseExpr* node) {
+    // Evaluate the scrutinee
+    auto scrutinee = codegen(node->expr);
+    if (!scrutinee) return nullptr;
+
+    auto parent_fn = builder_->GetInsertBlock()->getParent();
+    auto merge_bb = llvm::BasicBlock::Create(*context_, "case.end");
+
+    // Collect results for the phi node
+    std::vector<std::pair<Value*, llvm::BasicBlock*>> results;
+
+    // For each clause, create test + body blocks
+    for (size_t i = 0; i < node->clauses.size(); i++) {
+        auto* clause = node->clauses[i];
+        auto* pattern = clause->pattern;
+
+        auto body_bb = llvm::BasicBlock::Create(*context_, "case.body." + std::to_string(i), parent_fn);
+        auto next_bb = (i + 1 < node->clauses.size())
+            ? llvm::BasicBlock::Create(*context_, "case.test." + std::to_string(i + 1), parent_fn)
+            : merge_bb;
+
+        // Generate pattern match
+        if (pattern->get_type() == AST_UNDERSCORE_PATTERN) {
+            // Wildcard — always matches
+            builder_->CreateBr(body_bb);
+        } else if (pattern->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(pattern);
+
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                // Variable pattern — always matches, bind the value
+                named_values_[(*id)->name->value] = scrutinee;
+                builder_->CreateBr(body_bb);
+            } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                // Integer/byte literal pattern
+                auto* ast_node = reinterpret_cast<AstNode*>(*lit);
+                if (ast_node->get_type() == AST_INTEGER_EXPR) {
+                    auto* int_lit = static_cast<IntegerExpr*>(ast_node);
+                    auto match_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), int_lit->value);
+                    auto cmp = builder_->CreateICmpEQ(scrutinee, match_val, "case.cmp");
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+                } else {
+                    builder_->CreateBr(body_bb); // fallback
+                }
+            } else {
+                // Other pattern types — treat as match-all for now
+                builder_->CreateBr(body_bb);
+            }
+        } else {
+            // Unsupported pattern type — treat as match-all
+            builder_->CreateBr(body_bb);
+        }
+
+        // Generate body
+        builder_->SetInsertPoint(body_bb);
+        auto body_val = codegen(clause->body);
+        if (!body_val) return nullptr;
+        builder_->CreateBr(merge_bb);
+        results.push_back({body_val, builder_->GetInsertBlock()});
+
+        // Continue to next test block (if not last)
+        if (i + 1 < node->clauses.size() && next_bb != merge_bb) {
+            builder_->SetInsertPoint(next_bb);
+        }
+    }
+
+    // Merge block with phi
+    parent_fn->insert(parent_fn->end(), merge_bb);
+    builder_->SetInsertPoint(merge_bb);
+
+    if (results.empty()) return nullptr;
+
+    auto phi = builder_->CreatePHI(results[0].first->getType(), results.size(), "case.result");
+    for (auto& [val, bb] : results) {
+        phi->addIncoming(val, bb);
+    }
+    return phi;
+}
+
+// ===== Do Expression =====
+
+Value* Codegen::codegen_do(DoExpr* node) {
+    Value* last = nullptr;
+    for (auto* step : node->steps) {
+        last = codegen(step);
+    }
+    return last ? last : llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+}
+
+// ===== Unit =====
+
+Value* Codegen::codegen_unit(UnitExpr*) {
+    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
 }
 
 // ===== Print Helper =====

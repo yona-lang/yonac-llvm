@@ -236,7 +236,7 @@ Note: arithmetic, comparison, boolean logic — all compile to native LLVM instr
 
 ## Implementation Phases
 
-### Phase 1: Pipeline + Arithmetic
+### Phase 1: Pipeline + Arithmetic ✅
 
 **Goal**: `let x = 1 + 2 * 3 in x` compiles to a native executable.
 
@@ -249,7 +249,7 @@ Note: arithmetic, comparison, boolean logic — all compile to native LLVM instr
 - Runtime library: string allocation, print, program entry point
 - Emit `main()` that calls the compiled expression and prints the result
 
-### Phase 2: Functions
+### Phase 2: Functions ✅
 
 - Lambda expressions → closure allocation
 - Free variable analysis (identify captured variables)
@@ -257,7 +257,7 @@ Note: arithmetic, comparison, boolean logic — all compile to native LLVM instr
 - Currying / partial application → runtime helper or codegen'd wrapper
 - Recursive functions → named function definitions
 
-### Phase 3: Collections + Pattern Matching
+### Phase 3: Pattern Matching + Do Blocks ✅ (partial)
 
 - Tuple construction → LLVM struct
 - Sequence construction → runtime array allocation

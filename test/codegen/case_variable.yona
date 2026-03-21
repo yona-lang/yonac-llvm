@@ -1,0 +1,1 @@
+case 42 of 0 -> 0; n -> n * 2 end
