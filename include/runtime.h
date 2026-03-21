@@ -144,6 +144,9 @@ struct FunctionValue {
 
   // Flag to indicate if this is a native (C++) function
   bool is_native = false;
+
+  // Flag to indicate this function returns a Promise (async)
+  bool is_async = false;
 };
 
 // Record type definition (metadata about a record type)

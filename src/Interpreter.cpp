@@ -51,9 +51,9 @@ using namespace yona::typechecker;
 #define COMPARISON_OP(T, op)                                                                                                                         \
   InterpreterResult Interpreter::visit(T *node) const {                                                                                                            \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
-    const auto left = (node->left->template accept<InterpreterResult>(*this).value);                                                                                \
+    const auto left = await_if_promise(node->left->template accept<InterpreterResult>(*this).value);                                                 \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
-    const auto right = (node->right->template accept<InterpreterResult>(*this).value);                                                                              \
+    const auto right = await_if_promise(node->right->template accept<InterpreterResult>(*this).value);                                               \
     CHECK_EXCEPTION_RETURN();                                                                                                                        \
                                                                                                                                                      \
     if (left->type == Int && right->type == Int) {                                                                                                  \
@@ -79,12 +79,15 @@ namespace yona::interp {
 using namespace std::placeholders;
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
-  const auto runtime_object = node->template accept<InterpreterResult>(*this).value;
+  auto runtime_object = node->template accept<InterpreterResult>(*this).value;
 
   // Check for exception after visit
   if (IS.has_exception) {
     return nullopt;
   }
+
+  // Auto-await promises (transparent async coercion)
+  runtime_object = await_if_promise(runtime_object);
 
   if (runtime_object->type == ROT) {
     return make_optional(runtime_object->get<VT>());
@@ -742,9 +745,9 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
 
   for (const auto arg : node->args) {
     if (holds_alternative<ValueExpr *>(arg)) {
-      new_args.push_back(get<ValueExpr *>(arg)->template accept<InterpreterResult>(*this).value);
+      new_args.push_back(await_if_promise(get<ValueExpr *>(arg)->template accept<InterpreterResult>(*this).value));
     } else {
-      new_args.push_back(get<ExprNode *>(arg)->template accept<InterpreterResult>(*this).value);
+      new_args.push_back(await_if_promise(get<ExprNode *>(arg)->template accept<InterpreterResult>(*this).value));
     }
     CHECK_EXCEPTION_RETURN();
   }
@@ -855,6 +858,15 @@ InterpreterResult Interpreter::visit(ApplyExpr *node) const {
       }
     }
 
+    // If the function is async, submit to thread pool and return a Promise
+    if (func_val->is_async && IS.async_ctx) {
+      auto code = func_val->code;
+      auto promise = IS.async_ctx->submit_async([code, all_args]() -> RuntimeObjectPtr {
+        return code(all_args);
+      });
+      return InterpreterResult(make_shared<RuntimeObject>(Promise, promise));
+    }
+
     return InterpreterResult(func_val->code(all_args));
   } else {
     // Too many arguments - apply function and then apply result to remaining args
@@ -925,8 +937,8 @@ InterpreterResult Interpreter::visit(ByteExpr *node) const {
 InterpreterResult Interpreter::visit(CaseExpr *node) const {
   CHECK_EXCEPTION_RETURN();
 
-  // Evaluate the expression to match against
-  auto match_value = (node->expr->template accept<InterpreterResult>(*this).value);
+  // Evaluate the expression to match against (auto-await if promise)
+  auto match_value = await_if_promise(node->expr->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // Try each clause in order
@@ -1356,7 +1368,7 @@ InterpreterResult Interpreter::visit(HeadTailsPattern *node) const {
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
 InterpreterResult Interpreter::visit(IfExpr *node) const {
-  auto condition = (node->condition->template accept<InterpreterResult>(*this).value);
+  auto condition = await_if_promise(node->condition->template accept<InterpreterResult>(*this).value);
 
   if (condition->type != Bool) {
     throw yona_error(node->source_context, yona_error::Type::TYPE, "Type mismatch: expected Bool for if condition");
@@ -1447,9 +1459,9 @@ InterpreterResult Interpreter::visit(IntegerExpr *node) const {
 }
 InterpreterResult Interpreter::visit(JoinExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  auto left = (node->left->template accept<InterpreterResult>(*this).value);
+  auto left = await_if_promise(node->left->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
-  auto right = (node->right->template accept<InterpreterResult>(*this).value);
+  auto right = await_if_promise(node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
   // String concatenation — auto-convert non-string operands when other side is a string

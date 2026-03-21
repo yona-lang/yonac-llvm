@@ -31,6 +31,16 @@ std::shared_ptr<FunctionValue> NativeModule::make_native_function(
     return func;
 }
 
+std::shared_ptr<FunctionValue> NativeModule::make_native_async_function(
+    const std::string& name,
+    size_t arity,
+    std::function<RuntimeObjectPtr(const std::vector<RuntimeObjectPtr>&)> impl
+) {
+    auto func = make_native_function(name, arity, impl);
+    func->is_async = true;
+    return func;
+}
+
 std::string NativeModule::get_cache_key() const {
     std::stringstream ss;
     for (size_t i = 0; i < module->fqn->parts.size(); ++i) {

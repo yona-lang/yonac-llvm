@@ -17,6 +17,9 @@ void IOModule::initialize() {
     // Register all IO functions
     module->exports["print"] = make_native_function("print", 1, print);
     module->exports["println"] = make_native_function("println", 1, println);
+    // File I/O functions — currently synchronous. When actual async I/O is
+    // implemented, these should use make_native_async_function to return Promises
+    // that are submitted to the thread pool.
     module->exports["readFile"] = make_native_function("readFile", 1, readFile);
     module->exports["writeFile"] = make_native_function("writeFile", 2, writeFile);
     module->exports["appendFile"] = make_native_function("appendFile", 2, appendFile);

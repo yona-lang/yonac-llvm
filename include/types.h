@@ -23,6 +23,7 @@ struct SumType;
 struct ProductType;
 struct UnionType;
 struct RecordType;
+struct PromiseType;
 
 enum BuiltinType {
   Bool,
@@ -54,7 +55,8 @@ static const std::string BuiltinTypeStrings[] = {"Bool",          "Byte",       
                                                  "Seq",           "Var",           "Unit"};
 
 using Type = variant<BuiltinType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
-                     shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, shared_ptr<RecordType>, nullptr_t>;
+                     shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, shared_ptr<RecordType>,
+                     shared_ptr<PromiseType>, nullptr_t>;
 
 struct SingleItemCollectionType final {
   enum CollectionKind { Set, Seq } kind;
@@ -88,6 +90,33 @@ struct RecordType final {
   string name;
   unordered_map<string, Type> field_types;
 };
+
+// Promise<T> — a computation that will produce a value of type T.
+// Transparent to the user: the type checker auto-inserts await coercions
+// when Promise<T> is used where T is expected.
+struct PromiseType final {
+  Type valueType;  // The type of the resolved value
+};
+
+// Check if a type is a Promise<T>
+inline bool is_promise(const Type &type) {
+  return holds_alternative<shared_ptr<PromiseType>>(type);
+}
+
+// Unwrap Promise<T> to T. Returns the type unchanged if not a promise.
+inline Type unwrap_promise(const Type &type) {
+  if (auto p = get_if<shared_ptr<PromiseType>>(&type)) {
+    return (*p)->valueType;
+  }
+  return type;
+}
+
+// Wrap T in Promise<T>
+inline Type make_promise_type(const Type &inner) {
+  auto pt = make_shared<PromiseType>();
+  pt->valueType = inner;
+  return Type(pt);
+}
 
 inline bool is_signed(const Type &type) {
   if (holds_alternative<BuiltinType>(type)) {

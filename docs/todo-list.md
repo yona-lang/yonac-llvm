@@ -2,14 +2,14 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 236 test cases passing (100%), 1098 assertions ✅
-- **Interpreter**: Feature-complete for synchronous execution ✅
-- **TypeChecker**: Fully implemented ✅
+- **Test Coverage**: 253 test cases passing (100%), 1146 assertions ✅
+- **Interpreter**: Feature-complete with transparent async ✅
+- **TypeChecker**: Fully implemented with Promise<T> coercion ✅
 - **Native Stdlib**: Math, IO, System, List, Option, Result, Tuple, Range modules ✅
 - **Newline-aware lexer**: Significant newlines, bracket suppression, semicolons ✅
 - **Juxtaposition**: Function application by adjacency (`f x y`) ✅
 - **String interpolation**: `"hello {name}"` with auto-conversion ✅
-- **Async Integration**: Parallel let bindings, promise type in runtime, await_if_promise ✅
+- **Async Integration**: Promise-aware type system, parallel let bindings, type-directed auto-await ✅
 
 ## Phase 1: Embeddability (High Priority)
 
@@ -73,7 +73,10 @@ Make Yona usable as an embedded scripting/extension language in host application
 - ✅ Symbol value equality — runtime comparison by name, not pointer
 - ✅ String concatenation via `++` operator with auto-conversion
 - ✅ OR pattern matching — `:ok | :success -> ...`
-- ✅ Async integration — parallel let bindings via DependencyAnalyzer, Promise in RuntimeObjectData, await_if_promise
+- ✅ Promise-aware type system — `PromiseType` in types.h, auto-coercion in unification (`Promise<T>` → `T`)
+- ✅ Type-directed auto-await — binary ops, comparisons, function args, if/case conditions auto-await promises
+- ✅ Async function support — `is_async` flag on FunctionValue, async functions submit to thread pool and return Promise
+- ✅ Parallel let bindings — DependencyAnalyzer identifies independent bindings, evaluates in thread pool
 - ✅ AST — comprehensive node hierarchy with visitor pattern
 - ✅ Interpreter — tree-walking, frame-based, pattern matching, currying, transparent async
 - ✅ TypeChecker — Hindley-Milner with polymorphism
@@ -81,7 +84,7 @@ Make Yona usable as an embedded scripting/extension language in host application
 - ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ Record types, field access, generators, exceptions
-- ✅ 239 test cases, 1107 assertions passing
+- ✅ 253 test cases, 1146 assertions passing
 
 ## Next Steps
 

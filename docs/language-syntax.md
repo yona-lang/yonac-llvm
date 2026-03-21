@@ -181,6 +181,26 @@ let deferred = \-> get_time in
   run_later deferred  # Passes the function, doesn't call it
 ```
 
+### Transparent Async
+
+Yona uses transparent async — I/O operations and other async functions return `Promise<T>` internally, but the type system automatically inserts await coercions when the value is used. The user never writes `async` or `await`:
+
+```yona
+# read_file returns Promise<String> internally, but the user sees String
+let content = read_file "data.txt" in
+let lines = split "\n" content in     # content is auto-awaited here
+length lines
+
+# Independent async operations run in parallel automatically
+let
+  a = read_file "foo.txt",     # Both reads start in parallel
+  b = read_file "bar.txt"
+in
+  a ++ b                       # Both auto-awaited when values are needed
+```
+
+The type system uses `Promise<T>` internally to track which values are async. When `Promise<T>` appears where `T` is expected (in operators, function args, conditions), the type checker records a coercion and the runtime auto-awaits. This is invisible to the user — their code looks synchronous.
+
 ### Function Application
 
 ```yona

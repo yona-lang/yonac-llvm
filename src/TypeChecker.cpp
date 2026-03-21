@@ -73,6 +73,10 @@ Type TypeSubstitution::apply(const Type& type) const {
         return Type(new_sum);
     }
 
+    if (auto promise_type = get_if<shared_ptr<PromiseType>>(&type)) {
+        return make_promise_type(apply((*promise_type)->valueType));
+    }
+
     // No substitution needed
     return type;
 }
@@ -187,6 +191,18 @@ UnificationResult TypeChecker::unify(const Type& t1, const Type& t2) const {
                 return UnificationResult::ok(sub);
             } catch (...) {}
         }
+    }
+
+    // Promise coercion: Promise<T> unifies with T by inserting an await.
+    // This is the core of transparent async — the type checker knows where
+    // awaits are needed, and the user never sees Promise types.
+    if (holds_alternative<shared_ptr<PromiseType>>(t1)) {
+        auto inner = get<shared_ptr<PromiseType>>(t1)->valueType;
+        return unify(inner, t2);
+    }
+    if (holds_alternative<shared_ptr<PromiseType>>(t2)) {
+        auto inner = get<shared_ptr<PromiseType>>(t2)->valueType;
+        return unify(t1, inner);
     }
 
     stringstream ss;

@@ -23,6 +23,13 @@ protected:
         std::function<RuntimeObjectPtr(const std::vector<RuntimeObjectPtr>&)> impl
     );
 
+    // Helper to create a native async function (returns Promise<T>)
+    std::shared_ptr<FunctionValue> make_native_async_function(
+        const std::string& name,
+        size_t arity,
+        std::function<RuntimeObjectPtr(const std::vector<RuntimeObjectPtr>&)> impl
+    );
+
 public:
     NativeModule(const std::vector<std::string>& fqn_parts);
     virtual ~NativeModule() = default;

@@ -44,7 +44,9 @@ Yona language compiler/interpreter using LLVM as the backend. Traditional compil
 
 **Visitor pattern with generic return types**: `AstVisitor<ResultType>` is a templated base class. The Interpreter uses `AstVisitor<InterpreterResult>`, the TypeChecker uses its own result type, etc. AST nodes implement `accept()` that dispatches to the correct `visit()` overload.
 
-**Variant-based runtime values**: `RuntimeObject` wraps a `RuntimeObjectData` variant holding primitives, symbols, collections (seq, set, dict, tuple, record), FQNs, modules, functions, and applied values. All complex values use `shared_ptr`.
+**Variant-based runtime values**: `RuntimeObject` wraps a `RuntimeObjectData` variant holding primitives, symbols, collections (seq, set, dict, tuple, record), FQNs, modules, functions, promises, and applied values. All complex values use `shared_ptr`.
+
+**Promise-aware type system**: `PromiseType` in `types.h` wraps an inner type. During unification, `Promise<T>` auto-coerces to `T` — the type checker knows where awaits are needed without user-visible `async`/`await` keywords. Native async functions are marked with `is_async` flag and return promises that are auto-awaited at binary operators, function arguments, conditions, and pattern match targets.
 
 **Frame-based scoping**: `Frame<T>` (in `common.h`) is a generic scope with parent-pointer chaining, used for lexical scoping. New frames are pushed for function calls, let expressions, and pattern matching. Pattern matching creates a temporary frame for bindings, then merges to parent on success.
 
