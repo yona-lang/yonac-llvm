@@ -232,6 +232,8 @@ Value* Codegen::codegen(AstNode* node) {
             return codegen_do(static_cast<DoExpr*>(node));
         case AST_UNIT_EXPR:
             return codegen_unit(static_cast<UnitExpr*>(node));
+        case AST_TUPLE_EXPR:
+            return codegen_tuple(static_cast<TupleExpr*>(node));
         default:
             std::cerr << "Codegen: unsupported AST node type " << node->get_type() << std::endl;
             return nullptr;
@@ -423,6 +425,26 @@ Value* Codegen::codegen_let(LetExpr* node) {
             }
         } else if (auto* lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
             codegen_lambda_alias(lambda_alias);
+        } else if (auto* pattern_alias = dynamic_cast<PatternAlias*>(alias)) {
+            // Pattern destructuring: let (a, b) = expr in ...
+            auto val = codegen(pattern_alias->expr);
+            if (val && val->getType()->isStructTy()) {
+                // Extract elements from tuple and bind to pattern variables
+                auto* pat = pattern_alias->pattern;
+                if (pat->get_type() == AST_TUPLE_PATTERN) {
+                    auto* tp = static_cast<TuplePattern*>(pat);
+                    for (size_t i = 0; i < tp->patterns.size(); i++) {
+                        auto elem = builder_->CreateExtractValue(val, {static_cast<unsigned>(i)});
+                        auto* sub_pat = tp->patterns[i];
+                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub_pat);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                named_values_[(*id)->name->value] = elem;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -842,6 +864,26 @@ Value* Codegen::codegen_do(DoExpr* node) {
     return last ? last : llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
 }
 
+// ===== Tuples =====
+
+Value* Codegen::codegen_tuple(TupleExpr* node) {
+    size_t n = node->values.size();
+
+    // Create struct type { i64, i64, ... }
+    std::vector<llvm::Type*> field_types(n, llvm::Type::getInt64Ty(*context_));
+    auto struct_type = llvm::StructType::get(*context_, field_types);
+
+    // Start with undef struct and insert each element
+    Value* tuple_val = UndefValue::get(struct_type);
+    for (size_t i = 0; i < n; i++) {
+        auto elem = codegen(node->values[i]);
+        if (!elem) return nullptr;
+        tuple_val = builder_->CreateInsertValue(tuple_val, elem, {static_cast<unsigned>(i)},
+                                                 "tuple.ins." + std::to_string(i));
+    }
+    return tuple_val;
+}
+
 // ===== Unit =====
 
 Value* Codegen::codegen_unit(UnitExpr*) {
@@ -853,6 +895,7 @@ Value* Codegen::codegen_unit(UnitExpr*) {
 void Codegen::codegen_print_value(Value* val) {
     if (!val) return;
 
+    // Print the value itself
     if (val->getType()->isIntegerTy(64)) {
         builder_->CreateCall(rt_print_int_, {val});
     } else if (val->getType()->isDoubleTy()) {
@@ -861,7 +904,31 @@ void Codegen::codegen_print_value(Value* val) {
         builder_->CreateCall(rt_print_bool_, {val});
     } else if (val->getType()->isPointerTy()) {
         builder_->CreateCall(rt_print_string_, {val});
+    } else if (val->getType()->isStructTy()) {
+        // Tuple: print as (a, b, c)
+        auto* struct_type = llvm::cast<llvm::StructType>(val->getType());
+        unsigned n = struct_type->getNumElements();
+        auto open = builder_->CreateGlobalStringPtr("(");
+        builder_->CreateCall(rt_print_string_, {open});
+        for (unsigned i = 0; i < n; i++) {
+            if (i > 0) {
+                auto comma = builder_->CreateGlobalStringPtr(", ");
+                builder_->CreateCall(rt_print_string_, {comma});
+            }
+            auto elem = builder_->CreateExtractValue(val, {i});
+            // Print element without newline (recursive but same function)
+            if (elem->getType()->isIntegerTy(64))
+                builder_->CreateCall(rt_print_int_, {elem});
+            else if (elem->getType()->isDoubleTy())
+                builder_->CreateCall(rt_print_float_, {elem});
+            else if (elem->getType()->isIntegerTy(1))
+                builder_->CreateCall(rt_print_bool_, {elem});
+        }
+        auto close = builder_->CreateGlobalStringPtr(")");
+        builder_->CreateCall(rt_print_string_, {close});
     }
+
+    // Always print newline at top level (called from codegen_main)
     builder_->CreateCall(rt_print_newline_, {});
 }
 

@@ -99,6 +99,7 @@ private:
     llvm::Value* codegen_do(DoExpr* node);
     llvm::Value* codegen_unit(UnitExpr* node);
     llvm::Value* codegen_negate(IntegerExpr* node);
+    llvm::Value* codegen_tuple(TupleExpr* node);
 
     // Pattern matching helpers
     llvm::Value* codegen_pattern_match(PatternNode* pattern, llvm::Value* scrutinee,
