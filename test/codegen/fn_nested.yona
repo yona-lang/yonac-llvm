@@ -1,0 +1,1 @@
+let f x = x + 1 in let g x = x * 2 in f(g(10))

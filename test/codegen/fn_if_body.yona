@@ -1,0 +1,1 @@
+let neg x = 0 - x in neg 5

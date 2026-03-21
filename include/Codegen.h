@@ -92,6 +92,12 @@ private:
     llvm::Value* codegen_if(IfExpr* node);
     llvm::Value* codegen_identifier(IdentifierExpr* node);
     llvm::Value* codegen_main_node(MainNode* node);
+    llvm::Value* codegen_function(FunctionExpr* node);
+    llvm::Value* codegen_apply(ApplyExpr* node);
+    llvm::Value* codegen_lambda_alias(LambdaAlias* node);
+
+    // Function name counter for unique anonymous function names
+    int lambda_counter_ = 0;
 
     // Helper: get LLVM type for a Yona type
     llvm::Type* get_llvm_type(const Type& yona_type);

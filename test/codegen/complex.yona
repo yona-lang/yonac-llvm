@@ -1,0 +1,1 @@
+let x = 3 in let y = 4 in if x * x + y * y == 25 then x + y else 0

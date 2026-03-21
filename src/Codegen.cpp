@@ -220,6 +220,12 @@ Value* Codegen::codegen(AstNode* node) {
             return codegen_if(static_cast<IfExpr*>(node));
         case AST_IDENTIFIER_EXPR:
             return codegen_identifier(static_cast<IdentifierExpr*>(node));
+        case AST_FUNCTION_EXPR:
+            return codegen_function(static_cast<FunctionExpr*>(node));
+        case AST_APPLY_EXPR:
+            return codegen_apply(static_cast<ApplyExpr*>(node));
+        case AST_LAMBDA_ALIAS:
+            return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
         default:
             std::cerr << "Codegen: unsupported AST node type " << node->get_type() << std::endl;
             return nullptr;
@@ -409,8 +415,9 @@ Value* Codegen::codegen_let(LetExpr* node) {
             if (val) {
                 named_values_[val_alias->identifier->name->value] = val;
             }
+        } else if (auto* lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
+            codegen_lambda_alias(lambda_alias);
         }
-        // TODO: LambdaAlias, PatternAlias
     }
 
     // Evaluate and return the body
@@ -471,6 +478,152 @@ Value* Codegen::codegen_identifier(IdentifierExpr* node) {
     }
     std::cerr << "Codegen: unknown variable '" << node->name->value << "'" << std::endl;
     return nullptr;
+}
+
+// ===== Functions =====
+
+Value* Codegen::codegen_function(FunctionExpr* node) {
+    // Determine arity from patterns
+    size_t arity = node->patterns.size();
+
+    // For now, all args are i64 (Int). Type-directed codegen comes later.
+    std::vector<llvm::Type*> arg_types(arity, llvm::Type::getInt64Ty(*context_));
+    auto ret_type = llvm::Type::getInt64Ty(*context_);
+
+    // Create unique name for the function
+    std::string fn_name = node->name.empty()
+        ? ("lambda_" + std::to_string(lambda_counter_++))
+        : node->name;
+
+    auto fn_type = llvm::FunctionType::get(ret_type, arg_types, false);
+    auto fn = llvm::Function::Create(fn_type, llvm::Function::InternalLinkage,
+                                      fn_name, module_.get());
+
+    // Save current insertion point
+    auto saved_block = builder_->GetInsertBlock();
+    auto saved_point = builder_->GetInsertPoint();
+    auto saved_values = named_values_;
+
+    // Create entry block for the function
+    auto entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+    builder_->SetInsertPoint(entry);
+
+    // Bind function parameters
+    named_values_.clear();
+    size_t i = 0;
+    for (auto& arg : fn->args()) {
+        // Extract parameter name from pattern
+        std::string param_name = "arg" + std::to_string(i);
+        if (i < node->patterns.size()) {
+            auto* pattern = node->patterns[i];
+            if (pattern->get_type() == AST_PATTERN_VALUE) {
+                auto* pv = static_cast<PatternValue*>(pattern);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                    param_name = (*id)->name->value;
+                }
+            }
+        }
+        arg.setName(param_name);
+        named_values_[param_name] = &arg;
+        i++;
+    }
+
+    // Compile function body (first body without guards for now)
+    Value* body_val = nullptr;
+    if (!node->bodies.empty()) {
+        auto* body = node->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            body_val = codegen(bwg->expr);
+        }
+    }
+
+    if (body_val) {
+        builder_->CreateRet(body_val);
+    } else {
+        builder_->CreateRet(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0));
+    }
+
+    // Restore insertion point and named values
+    named_values_ = saved_values;
+    if (saved_block) {
+        builder_->SetInsertPoint(saved_block, saved_point);
+    }
+
+    // Store the function in named_values so it can be called
+    // We return the function pointer as a value
+    return fn;
+}
+
+Value* Codegen::codegen_apply(ApplyExpr* node) {
+    // Flatten nested juxtaposition applies: add 3 4 → apply(apply(add, [3]), [4])
+    // Collect all args and find the root function name
+    std::vector<ApplyExpr*> apply_chain;
+    std::string fn_name;
+
+    // Walk the chain
+    ApplyExpr* current = node;
+    while (current) {
+        apply_chain.push_back(current);
+        if (auto* name_call = dynamic_cast<NameCall*>(current->call)) {
+            fn_name = name_call->name->value;
+            break;
+        } else if (auto* expr_call = dynamic_cast<ExprCall*>(current->call)) {
+            // The inner expression might be another ApplyExpr (juxtaposition chain)
+            if (auto* inner_apply = dynamic_cast<ApplyExpr*>(expr_call->expr)) {
+                current = inner_apply;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Collect all args in order (reverse the chain since we walked inside-out)
+    std::vector<Value*> all_args;
+    for (auto it = apply_chain.rbegin(); it != apply_chain.rend(); ++it) {
+        for (const auto& arg : (*it)->args) {
+            Value* val = nullptr;
+            if (std::holds_alternative<ExprNode*>(arg)) {
+                val = codegen(std::get<ExprNode*>(arg));
+            } else {
+                val = codegen(std::get<ValueExpr*>(arg));
+            }
+            if (!val) return nullptr;
+            all_args.push_back(val);
+        }
+    }
+
+    // Find the function
+    llvm::Function* callee = nullptr;
+    if (!fn_name.empty()) {
+        callee = module_->getFunction(fn_name);
+        if (!callee) {
+            auto it = named_values_.find(fn_name);
+            if (it != named_values_.end()) {
+                if (auto* fn = llvm::dyn_cast<llvm::Function>(it->second)) {
+                    callee = fn;
+                }
+            }
+        }
+    }
+
+    if (!callee) {
+        std::cerr << "Codegen: unknown function '" << fn_name << "' in apply" << std::endl;
+        return nullptr;
+    }
+
+    return builder_->CreateCall(callee, all_args, "calltmp");
+}
+
+Value* Codegen::codegen_lambda_alias(LambdaAlias* node) {
+    // Compile the lambda function
+    auto fn_val = codegen_function(node->lambda);
+    if (!fn_val) return nullptr;
+
+    // Bind the function to the alias name
+    named_values_[node->name->value] = fn_val;
+    return fn_val;
 }
 
 // ===== Print Helper =====
