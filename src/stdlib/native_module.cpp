@@ -12,6 +12,12 @@
 #include "stdlib/dict_module.h"
 #include "stdlib/timer_module.h"
 #include "stdlib/http_module.h"
+#include "stdlib/json_module.h"
+#include "stdlib/regexp_module.h"
+#include "stdlib/file_module.h"
+#include "stdlib/random_module.h"
+#include "stdlib/time_module.h"
+#include "stdlib/types_module.h"
 #include <sstream>
 
 namespace yona::stdlib {
@@ -84,6 +90,12 @@ void NativeModuleRegistry::register_all_modules() {
     register_module(std::make_unique<DictModule>());
     register_module(std::make_unique<TimerModule>());
     register_module(std::make_unique<HttpModule>());
+    register_module(std::make_unique<JsonModule>());
+    register_module(std::make_unique<RegexpModule>());
+    register_module(std::make_unique<FileModule>());
+    register_module(std::make_unique<RandomModule>());
+    register_module(std::make_unique<TimeModule>());
+    register_module(std::make_unique<TypesModule>());
 }
 
 void NativeModuleRegistry::apply_to_interpreter(

@@ -19,6 +19,11 @@ void DictModule::initialize() {
     module->exports["toList"] = make_native_function("toList", 1, toList);
     module->exports["fromList"] = make_native_function("fromList", 1, fromList);
     module->exports["merge"] = make_native_function("merge", 2, merge);
+    module->exports["fold"] = make_native_function("fold", 3, fold);
+    module->exports["map"] = make_native_function("map", 2, map);
+    module->exports["filter"] = make_native_function("filter", 2, filter);
+    module->exports["isEmpty"] = make_native_function("isEmpty", 1, isEmpty);
+    module->exports["lookup"] = make_native_function("lookup", 2, lookup);
 }
 
 static shared_ptr<DictValue> require_dict(const RuntimeObjectPtr& arg, const string& func) {
@@ -150,6 +155,78 @@ RuntimeObjectPtr DictModule::merge(const vector<RuntimeObjectPtr>& args) {
         if (!found) result->fields.emplace_back(k2, v2);
     }
     return make_shared<RuntimeObject>(yona::interp::runtime::Dict, result);
+}
+
+RuntimeObjectPtr DictModule::fold(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("fold", 3);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "fold: first argument must be a function");
+    }
+    auto dict = require_dict(args[2], "fold");
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto acc = args[1];
+    for (const auto& [k, v] : dict->fields) {
+        auto pair = make_shared<TupleValue>();
+        pair->fields.push_back(k);
+        pair->fields.push_back(v);
+        auto tuple_obj = make_shared<RuntimeObject>(Tuple, pair);
+        acc = func->code({acc, tuple_obj});
+    }
+    return acc;
+}
+
+RuntimeObjectPtr DictModule::map(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("map", 2);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "map: first argument must be a function");
+    }
+    auto dict = require_dict(args[1], "map");
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto result = make_shared<DictValue>();
+    for (const auto& [k, v] : dict->fields) {
+        auto mapped = func->code({k, v});
+        if (mapped->type != Tuple) {
+            throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "map: function must return a (key, value) tuple");
+        }
+        auto tuple = mapped->get<shared_ptr<TupleValue>>();
+        if (tuple->fields.size() != 2) {
+            throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "map: function must return a tuple with exactly 2 elements");
+        }
+        result->fields.emplace_back(tuple->fields[0], tuple->fields[1]);
+    }
+    return make_shared<RuntimeObject>(yona::interp::runtime::Dict, result);
+}
+
+RuntimeObjectPtr DictModule::filter(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("filter", 2);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "filter: first argument must be a function");
+    }
+    auto dict = require_dict(args[1], "filter");
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto result = make_shared<DictValue>();
+    for (const auto& [k, v] : dict->fields) {
+        auto pred = func->code({k, v});
+        if (pred->type == Bool && pred->get<bool>()) {
+            result->fields.emplace_back(k, v);
+        }
+    }
+    return make_shared<RuntimeObject>(yona::interp::runtime::Dict, result);
+}
+
+RuntimeObjectPtr DictModule::isEmpty(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("isEmpty", 1);
+    auto dict = require_dict(args[0], "isEmpty");
+    return make_bool(dict->fields.empty());
+}
+
+RuntimeObjectPtr DictModule::lookup(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("lookup", 2);
+    auto dict = require_dict(args[1], "lookup");
+    for (const auto& [k, v] : dict->fields) {
+        if (*k == *args[0]) return v;
+    }
+    return make_unit();
 }
 
 } // namespace yona::stdlib

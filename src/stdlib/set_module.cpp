@@ -19,6 +19,10 @@ void SetModule::initialize() {
     module->exports["union"] = make_native_function("union", 2, union_);
     module->exports["intersection"] = make_native_function("intersection", 2, intersection);
     module->exports["difference"] = make_native_function("difference", 2, difference);
+    module->exports["fold"] = make_native_function("fold", 3, fold);
+    module->exports["map"] = make_native_function("map", 2, map);
+    module->exports["filter"] = make_native_function("filter", 2, filter);
+    module->exports["isEmpty"] = make_native_function("isEmpty", 1, isEmpty);
 }
 
 static bool set_contains(const shared_ptr<SetValue>& set, const RuntimeObjectPtr& elem) {
@@ -146,6 +150,72 @@ RuntimeObjectPtr SetModule::difference(const vector<RuntimeObjectPtr>& args) {
         }
     }
     return make_shared<RuntimeObject>(yona::interp::runtime::Set, result);
+}
+
+RuntimeObjectPtr SetModule::fold(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("fold", 3);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "fold: first argument must be a function");
+    }
+    if (!nargs.is_type(2, yona::interp::runtime::Set)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "fold: third argument must be a set");
+    }
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto acc = args[1];
+    auto set = args[2]->get<shared_ptr<SetValue>>();
+    for (const auto& elem : set->fields) {
+        acc = func->code({acc, elem});
+    }
+    return acc;
+}
+
+RuntimeObjectPtr SetModule::map(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("map", 2);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "map: first argument must be a function");
+    }
+    if (!nargs.is_type(1, yona::interp::runtime::Set)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "map: second argument must be a set");
+    }
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto set = args[1]->get<shared_ptr<SetValue>>();
+    auto result = make_shared<SetValue>();
+    for (const auto& elem : set->fields) {
+        auto mapped = func->code({elem});
+        if (!set_contains(result, mapped)) {
+            result->fields.push_back(mapped);
+        }
+    }
+    return make_shared<RuntimeObject>(yona::interp::runtime::Set, result);
+}
+
+RuntimeObjectPtr SetModule::filter(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("filter", 2);
+    if (!nargs.is_type(0, Function)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "filter: first argument must be a function");
+    }
+    if (!nargs.is_type(1, yona::interp::runtime::Set)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "filter: second argument must be a set");
+    }
+    auto func = args[0]->get<shared_ptr<FunctionValue>>();
+    auto set = args[1]->get<shared_ptr<SetValue>>();
+    auto result = make_shared<SetValue>();
+    for (const auto& elem : set->fields) {
+        auto pred = func->code({elem});
+        if (pred->type == Bool && pred->get<bool>()) {
+            result->fields.push_back(elem);
+        }
+    }
+    return make_shared<RuntimeObject>(yona::interp::runtime::Set, result);
+}
+
+RuntimeObjectPtr SetModule::isEmpty(const vector<RuntimeObjectPtr>& args) {
+    NATIVE_ARGS_EXACT("isEmpty", 1);
+    if (!nargs.is_type(0, yona::interp::runtime::Set)) {
+        throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::Type::TYPE, "isEmpty: argument must be a set");
+    }
+    auto set = args[0]->get<shared_ptr<SetValue>>();
+    return make_bool(set->fields.empty());
 }
 
 } // namespace yona::stdlib

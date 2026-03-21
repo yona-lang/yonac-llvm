@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 276 test cases passing (100%), 1217 assertions ✅
+- **Test Coverage**: 319 test cases passing (100%), 1350 assertions ✅
 - **Interpreter**: Feature-complete with transparent async ✅
 - **TypeChecker**: Fully implemented with Promise<T> coercion ✅
 - **Native Stdlib**: Math, IO, System, List, Option, Result, Tuple, Range modules ✅
@@ -40,16 +40,10 @@ Make Yona usable as an embedded scripting/extension language in host application
 
 ### Missing modules (vs yona-lang.org stdlib)
 
-- [ ] **JSON** — parse/stringify (original: `JSON` module)
-- [ ] **Regexp** — regular expression matching (original: `Regexp` module)
-- [ ] **File** — directory listing, path manipulation, file handles (original: `File` module, separate from IO)
-- [ ] **Random** — random number generation (original: `Random` module)
-- [ ] **Time** — date/time formatting, parsing, arithmetic (original: `Time` module)
 - [ ] **Exception** — exception utilities, stack traces (original: `Exception` module)
 - [ ] **Transducers** — composable reducer transformers (original: `Transducers` module)
 - [ ] **context\Local** — custom context manager support (original: `context\Local`)
 - [ ] **Scheduler** — task scheduling (original: `Scheduler`)
-- [ ] **Types** — runtime type checking: `str`, `int`, `float`, `ord` (original: `Types` module)
 - [ ] **eval** — dynamic expression evaluation from string
 
 ### HTTP Client improvements
@@ -65,9 +59,9 @@ The original Yona HTTP client (`http\Client`) supports:
 
 ### Existing module gaps (vs yona-lang.org)
 
-- [ ] `Std\List` — missing: `foldl`/`foldr` (have `fold`), `split_at`, `lookup`, `take`, `drop`, `flatten`, `zip`, `encode`/`decode`
-- [ ] `Std\Set` — missing: `fold`, `reduce`, `to_seq` (have `toList`)
-- [ ] `Std\Dict` — missing: `fold`, `reduce`, `lookup` returning `()` on miss (have `get` returning Option), `entries`
+- [ ] `Std\List` — missing: `encode`/`decode` (UTF-8 byte conversion), `reduce` (transducer support)
+- [ ] `Std\Set` — missing: `reduce` (transducer support)
+- [ ] `Std\Dict` — missing: `reduce` (transducer support), `entries` (have `toList`)
 
 ### Not applicable (Java-specific in original)
 
@@ -114,10 +108,10 @@ The original Yona HTTP client (`http\Client`) supports:
 - ✅ Interpreter — tree-walking, frame-based, pattern matching, currying, transparent async
 - ✅ TypeChecker — Hindley-Milner with polymorphism
 - ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
-- ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http
+- ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ Record types, field access, generators, exceptions
-- ✅ 276 test cases, 1217 assertions passing
+- ✅ 319 test cases, 1350 assertions passing
 
 ## Next Steps
 

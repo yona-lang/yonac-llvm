@@ -20,6 +20,11 @@ private:
     static RuntimeObjectPtr toList(const std::vector<RuntimeObjectPtr>& args);
     static RuntimeObjectPtr fromList(const std::vector<RuntimeObjectPtr>& args);
     static RuntimeObjectPtr merge(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr fold(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr map(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr filter(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr isEmpty(const std::vector<RuntimeObjectPtr>& args);
+    static RuntimeObjectPtr lookup(const std::vector<RuntimeObjectPtr>& args);
 };
 
 } // namespace yona::stdlib
