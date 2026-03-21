@@ -1,5 +1,10 @@
 # Type System Analysis and Implementation Plan
 
+> **Note**: This document was written during initial development. The type system is now
+> **fully implemented** including HM inference, PromiseType with auto-coercion, and
+> integration with the interpreter. See [type-system-implementation.md](type-system-implementation.md)
+> and [type-system-api.md](type-system-api.md) for the current state.
+
 ## Current State Analysis
 
 ### 1. Type System Infrastructure (types.h)

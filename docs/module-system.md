@@ -173,6 +173,51 @@ from Math\Basic in
   plus(10, minus(20, 5))  # Returns 25
 ```
 
+## Native Modules
+
+Native modules are implemented in C++ and registered via `NativeModuleRegistry`. They provide the standard library.
+
+### Available Native Modules (19)
+
+| Module | Purpose |
+|--------|---------|
+| `Std\IO` | Console I/O, file read/write |
+| `Std\Math` | Trigonometry, arithmetic, constants |
+| `Std\System` | Environment variables, process control |
+| `Std\List` | map, filter, fold, take, drop, flatten, zip, etc. |
+| `Std\String` | String manipulation, split, join, trim, etc. |
+| `Std\Dict` | Dictionary operations, get, put, merge, etc. |
+| `Std\Set` | Set operations, union, intersection, etc. |
+| `Std\Option` | Option type (some/none), unwrapOr, map |
+| `Std\Result` | Result type (ok/err), unwrapOr, map, mapErr |
+| `Std\Tuple` | Tuple operations, fst, snd, swap, zip/unzip |
+| `Std\Range` | Range creation and operations |
+| `Std\Json` | JSON parse/stringify |
+| `Std\Regexp` | Regular expressions (match, replace, split) |
+| `Std\File` | Filesystem operations (exists, listDir, mkdir) |
+| `Std\Random` | Random number generation |
+| `Std\Time` | Timestamps, formatting, parsing |
+| `Std\Timer` | Sleep (async), measurement, millis/nanos |
+| `Std\Http` | HTTP GET/POST (async) |
+| `Std\Types` | Runtime type checking and conversion |
+
+### Host-Registered Modules (C API)
+
+Host applications can register custom native modules via the C API:
+
+```c
+yona_register_function(interp, "App\\Handlers", "notify", 2, my_notify_fn, context);
+```
+
+These modules are importable from Yona code like any other module:
+
+```yona
+import notify from App\Handlers in
+  notify "channel" "message"
+```
+
+See [C Embedding API](c-embedding-api.md) for details.
+
 ### Data Structure Module
 
 ```yona

@@ -1,22 +1,24 @@
 # Yona-LLVM Documentation
 
-## Project Management
-- [Project Roadmap](project-roadmap.md) - Development timeline and current phase
-- [TODO List](todo-list.md) - Detailed task tracking
-- [Development Log](development-log.md) - Progress history and lessons learned
+## Language
+- [Language Syntax Reference](language-syntax.md) — complete syntax guide with examples
 
-## Implementation Plans
-- [Async Implementation Plan](async-implementation-plan.md) - Comprehensive async system design
+## Architecture
+- [Interpreter Internals](interpreter-internals.md) — tree-walking interpreter design
+- [Type System Implementation](type-system-implementation.md) — Hindley-Milner with Promise\<T\>
+- [Type System API](type-system-api.md) — TypeChecker interface
+- [Module System](module-system.md) — FQN-based modules, native + file-based
+- [Async Implementation](async-implementation-plan.md) — promises, dependency analysis, auto-await
 
-## Technical Documentation
-- [Language Syntax](language-syntax.md) - Yona language specification
-- [Module System](module-system.md) - Import/export and FQN details
-- [Type System Analysis](type-system-analysis.md) - Type inference details
-- [Type System API](type-system-api.md) - TypeChecker interface
-- [Type System Implementation](type-system-implementation.md) - Implementation notes
-- [Interpreter Internals](interpreter-internals.md) - Execution model
-- [Currying and Integration](currying-and-integration.md) - Function application
+## Embedding
+- [C Embedding API](c-embedding-api.md) — embed Yona in host applications via FFI
+- [LLVM Backend Plan](llvm-backend-plan.md) — native code generation design
+
+## Planning
+- [TODO List](todo-list.md) — current task tracking
+- [Project Roadmap](project-roadmap.md) — high-level milestones
+- [Development Log](development-log.md) — progress history
 
 ## Quick Links
-- [Main README](../README.md) - Project overview
-- [Build Instructions](../CLAUDE.md) - Development setup
+- [Main README](../README.md) — project overview and examples
+- [Build Instructions](../CLAUDE.md) — development setup

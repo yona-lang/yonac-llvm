@@ -7,7 +7,8 @@
 - **Async**: ✅ Parallel let bindings, type-directed auto-await
 - **Stdlib**: ✅ 19 native modules, 150+ functions
 - **C API**: ✅ Stable embedding interface with native function registration
-- **Test Coverage**: 336 tests, 1407 assertions (100%)
+- **Sandboxing**: ✅ Module whitelist/blacklist, execution/memory limits
+- **Test Coverage**: 343 tests, 1425 assertions (100%)
 
 ## Completed Work
 
@@ -39,21 +40,22 @@ Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, 
 
 ### Infrastructure
 - C embedding API (`yona_api.h`) with native function registration
+- Sandboxing (module whitelist/blacklist, execution/memory limits)
 - Module system (FQN, filesystem resolution, native + file-based)
-- 336 test cases, 1407 assertions
+- 343 test cases, 1425 assertions
 
 ## Remaining Work
 
-### Phase 1: Sandboxing (High Priority)
-- Module whitelist (restrict imports in embedded contexts)
-- CPU/memory execution budgets
-- Filesystem/network access control
+### Phase 1: LLVM Backend (High Priority)
 
-### Phase 2: LLVM Backend (High Priority)
-- LLVM IR generation from AST
-- Coroutine support for true non-blocking async
-- Runtime library (GC, promise management)
-- Optimization passes, executable generation
+Yona is statically typed — the compiler generates native code with unboxed primitives.
+See [LLVM Backend Plan](llvm-backend-plan.md) for details.
+
+- Pipeline: parse → type check → codegen → LLVM IR → optimize → link
+- Unboxed primitives: `Int` → `i64`, `Float` → `double`
+- Closures: function pointer + typed environment
+- Pattern matching: decision tree codegen
+- Async: LLVM coroutines at PromiseType coercion points
 
 ### Phase 3: Remaining Stdlib
 - Exception utilities, Transducers, Scheduler, eval
@@ -73,4 +75,6 @@ Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, 
 ## References
 - [Language Syntax](./language-syntax.md)
 - [TODO List](./todo-list.md)
+- [LLVM Backend Plan](./llvm-backend-plan.md)
+- [C Embedding API](./c-embedding-api.md)
 - [Async Implementation](./async-implementation-plan.md)

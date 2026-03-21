@@ -220,9 +220,13 @@ yona_destroy(interp);
 ## Documentation
 
 - [Language Syntax Reference](docs/language-syntax.md)
+- [C Embedding API](docs/c-embedding-api.md)
+- [LLVM Backend Plan](docs/llvm-backend-plan.md)
+- [Module System](docs/module-system.md)
+- [Type System](docs/type-system-implementation.md)
+- [Async Implementation](docs/async-implementation-plan.md)
 - [TODO List](docs/todo-list.md)
 - [Project Roadmap](docs/project-roadmap.md)
-- [Async Implementation](docs/async-implementation-plan.md)
 
 ## Development
 

@@ -70,6 +70,31 @@ struct NamedType {
     string name;
     Type type;  // nullptr for unresolved
 };
+
+// Promise type: Promise<T> — transparent async
+// Auto-coerces to T during unification (the type checker inserts await)
+struct PromiseType {
+    Type valueType;  // The type of the resolved value
+};
+```
+
+### Promise Type Helpers
+
+```cpp
+bool is_promise(const Type& t);           // Check if type is Promise<T>
+Type unwrap_promise(const Type& t);        // Promise<T> → T (or T if not promise)
+Type make_promise_type(const Type& inner); // T → Promise<T>
+```
+
+### Unification with Promise Coercion
+
+During type unification, `Promise<T>` automatically coerces to `T`. The type checker records that an await is needed at that point. The user never sees `Promise` types — they are transparent.
+
+```
+Promise<Int> unifies with Int    → succeeds (await inserted)
+Promise<String> unifies with String → succeeds (await inserted)
+Int unifies with Int              → succeeds (no coercion)
+Int unifies with String           → fails
 ```
 
 ## Type Checking API

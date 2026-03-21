@@ -2,8 +2,9 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 336 test cases passing (100%), 1407 assertions ✅
+- **Test Coverage**: 343 test cases passing (100%), 1425 assertions ✅
 - **C Embedding API**: Stable C interface (`yona_api.h`) for FFI ✅
+- **Sandboxing**: Module whitelist/blacklist, execution limits, memory limits ✅
 - **Interpreter**: Feature-complete with transparent async ✅
 - **TypeChecker**: Fully implemented with Promise<T> coercion ✅
 - **Native Stdlib**: 19 modules, 150+ functions ✅
@@ -24,13 +25,12 @@ Make Yona usable as an embedded scripting/extension language in host application
 - [ ] Callback registration for host-provided native functions
 - [ ] Shared library build target with C linkage
 
-### 1.2 Sandboxing
+### 1.2 Sandboxing (mostly complete ✅)
 
-- [ ] Configurable module whitelist (restrict which modules user code can import)
-- [ ] Disable filesystem/network access in sandboxed mode
-- [ ] CPU execution budget (instruction/step counter with configurable limit)
-- [ ] Memory allocation budget
-- [ ] Hook system for intercepting and logging side effects
+- [x] Module whitelist/blacklist with wildcard patterns
+- [x] Execution step limits (resets per eval)
+- [x] Memory allocation tracking and limits
+- [ ] Side effect hook callback (intercept native calls for auditing)
 
 ### 1.3 Tooling
 
@@ -40,12 +40,41 @@ Make Yona usable as an embedded scripting/extension language in host application
 
 ## Phase 2: LLVM Backend (High Priority)
 
-- [ ] Basic LLVM IR generation from AST (expressions, let bindings, function calls)
-- [ ] Runtime library in C (promise create/fulfill/await, garbage collection hooks)
-- [ ] Coroutine support for async functions (LLVM coroutine intrinsics)
-- [ ] Non-blocking I/O runtime (event loop replacing thread pool for compiled mode)
-- [ ] Optimization passes (inlining, tail call, promise fusion)
-- [ ] Executable generation and linking
+Yona is statically typed (HM inference). The compiler generates native code with unboxed
+primitives (`Int` → `i64`, `Float` → `double`). See [LLVM Backend Plan](llvm-backend-plan.md).
+
+### Phase 2.1: Pipeline + Arithmetic
+- [ ] Wire `yonac` CLI: parse → type check → codegen → emit → link
+- [ ] Codegen for literals (Int, Float, Bool, String)
+- [ ] Codegen for arithmetic and comparison operators (native instructions)
+- [ ] Codegen for let bindings and if-then-else
+- [ ] Runtime library: string allocation, print, entry point
+
+### Phase 2.2: Functions
+- [ ] Lambda → closure allocation (function pointer + typed environment)
+- [ ] Free variable analysis for closure capture
+- [ ] Function application (direct call or closure call)
+- [ ] Partial application / currying
+
+### Phase 2.3: Collections + Pattern Matching
+- [ ] Tuple → LLVM struct, Seq/Dict/Set → runtime allocation
+- [ ] Case expression → decision tree codegen
+- [ ] Pattern types: literal, variable, tuple, seq, head-tail, or-pattern
+
+### Phase 2.4: Modules
+- [ ] Compile modules to object files, link-time import resolution
+- [ ] Native module FFI (call existing C++ stdlib)
+
+### Phase 2.5: Coroutines (Async)
+- [ ] LLVM coroutine intrinsics for async functions
+- [ ] Auto-await at PromiseType coercion points
+- [ ] Parallel let via coroutine spawning
+- [ ] Event loop scheduler
+
+### Phase 2.6: Optimization
+- [ ] Tail call optimization (`musttail`)
+- [ ] Function inlining, escape analysis
+- [ ] Type specialization (monomorphize polymorphic functions)
 
 ## Phase 3: Remaining Stdlib (Medium Priority)
 
@@ -114,12 +143,12 @@ Full implementation requires an HTTP library (libcurl or similar):
 - ✅ Native modules (19): Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ C embedding API — `yona_api.h` with eval, value creation/inspection, function calling, native registration, module access
+- ✅ Sandboxing — module whitelist/blacklist with wildcards, execution step limits, memory limits
 - ✅ Record types, field access, generators, exceptions
-- ✅ 336 test cases, 1407 assertions passing
+- ✅ 343 test cases, 1425 assertions passing
 
 ## Next Steps
 
-1. Add sandboxing (module whitelist, execution budgets) for secure embedding
-2. Begin LLVM IR generation for basic expressions and function calls
-3. Implement LLVM coroutine support for true non-blocking async
-4. Add proper HTTP client with TLS (libcurl or OpenSSL)
+1. Begin LLVM IR generation (Phase 2.1: pipeline + arithmetic)
+2. Implement closures and function application codegen
+3. Add proper HTTP client with TLS (libcurl or OpenSSL)
