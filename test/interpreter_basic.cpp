@@ -79,7 +79,7 @@ TEST_CASE("InOperatorSeq") {
     parser::Parser parser;
     Interpreter interp;
 
-    stringstream ss("2 in [1, 2, 3]");
+    stringstream ss("import contains from Std\\List in contains 2 [1, 2, 3]");
     auto parse_result = parser.parse_input(ss);
 
     REQUIRE(parse_result.node != nullptr);

@@ -1825,8 +1825,8 @@ private:
             BINARY_OP(TokenType::YPIPE_RIGHT, PipeRightExpr, "|>")
             BINARY_OP(TokenType::YJOIN, JoinExpr, "++")
 
-            // Membership
-            BINARY_OP(TokenType::YIN, InExpr, "in")
+            // 'in' is NOT handled as infix — it's a keyword for let/import continuation.
+            // Membership test uses Std\List.contains or Std\Set.contains instead.
 
 
             // Field access
@@ -1999,8 +1999,9 @@ private:
             case TokenType::YAND:
                 return Precedence::LOGICAL_AND;
 
-            case TokenType::YIN:
-                return Precedence::YIN;
+            // YIN removed from infix precedence — 'in' is only used as
+            // let/import continuation, not as a binary operator.
+            // Membership test uses the 'in' keyword in specific contexts.
 
             case TokenType::YPIPE:
                 return Precedence::BITWISE_OR;
