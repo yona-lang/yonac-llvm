@@ -38,9 +38,43 @@ Make Yona usable as an embedded scripting/extension language in host application
 
 ## Phase 3: Standard Library Expansion (Medium Priority)
 
-- [ ] **JSON Module** — parse/stringify JSON
-- [ ] **Regex Module** — pattern matching on strings
-- [ ] **File/Path Module** — directory listing, path manipulation
+### Missing modules (vs yona-lang.org stdlib)
+
+- [ ] **JSON** — parse/stringify (original: `JSON` module)
+- [ ] **Regexp** — regular expression matching (original: `Regexp` module)
+- [ ] **File** — directory listing, path manipulation, file handles (original: `File` module, separate from IO)
+- [ ] **Random** — random number generation (original: `Random` module)
+- [ ] **Time** — date/time formatting, parsing, arithmetic (original: `Time` module)
+- [ ] **Exception** — exception utilities, stack traces (original: `Exception` module)
+- [ ] **Transducers** — composable reducer transformers (original: `Transducers` module)
+- [ ] **context\Local** — custom context manager support (original: `context\Local`)
+- [ ] **Scheduler** — task scheduling (original: `Scheduler`)
+- [ ] **Types** — runtime type checking: `str`, `int`, `float`, `ord` (original: `Types` module)
+- [ ] **eval** — dynamic expression evaluation from string
+
+### HTTP Client improvements
+
+The current `Std\Http` module is a minimal POSIX socket implementation (HTTP only, no TLS).
+The original Yona HTTP client (`http\Client`) supports:
+
+- [ ] Session-based API with configuration (authenticator, redirects, body encoding)
+- [ ] Full HTTP methods: GET, POST, PUT, DELETE with headers
+- [ ] Response as `(status_code, headers_dict, body)` tuple
+- [ ] TLS/HTTPS support (requires OpenSSL or similar)
+- [ ] Binary vs text body encoding
+
+### Existing module gaps (vs yona-lang.org)
+
+- [ ] `Std\List` — missing: `foldl`/`foldr` (have `fold`), `split_at`, `lookup`, `take`, `drop`, `flatten`, `zip`, `encode`/`decode`
+- [ ] `Std\Set` — missing: `fold`, `reduce`, `to_seq` (have `toList`)
+- [ ] `Std\Dict` — missing: `fold`, `reduce`, `lookup` returning `()` on miss (have `get` returning Option), `entries`
+
+### Not applicable (Java-specific in original)
+
+- `java\Types`, `Java` — Java interop (original runs on GraalVM)
+- `http\Server` — Java HTTP server
+- `socket\tcp\*` — TCP socket modules (defer to LLVM backend with proper async runtime)
+- `terminal\Colors` — terminal color codes (low priority)
 
 ## Phase 4: LLVM Backend (Medium Priority)
 
