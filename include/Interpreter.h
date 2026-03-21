@@ -54,15 +54,12 @@ struct InterpreterState {
   // Record type information for pattern matching
   unordered_map<string, shared_ptr<RecordTypeInfo>> record_types;
 
-  // Async execution context (TODO: implement async support)
-  // shared_ptr<runtime::async::AsyncContext> async_ctx;
+  // Async execution context
+  shared_ptr<::yona::runtime::async::AsyncContext> async_ctx;
   bool is_async_context = false;
 
-  // Current promise if executing async
-  // shared_ptr<runtime::async::Promise> current_promise;
-
-  InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)) {
-                       // async_ctx(runtime::async::get_global_async_context()) {
+  InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)),
+                       async_ctx(::yona::runtime::async::get_global_async_context()) {
     // Initialize module paths from YONA_PATH environment variable
     const char* yona_path = std::getenv("YONA_PATH");
     if (yona_path) {
@@ -155,6 +152,11 @@ private:
   bool match_tails_head_pattern(TailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_head_tails_head_pattern(HeadTailsHeadPattern *pattern, const RuntimeObjectPtr& value) const;
   bool match_tail_pattern(TailPattern *pattern, const RuntimeObjectPtr& value) const;
+
+  // Async helpers
+  RuntimeObjectPtr await_if_promise(RuntimeObjectPtr obj) const;
+  InterpreterResult visit_parallel_let(LetExpr *node) const;
+  bool can_parallelize_let(LetExpr *node) const;
 
   // Helper to create runtime objects with type information
   RuntimeObjectPtr make_typed_object(RuntimeObjectType type, RuntimeObjectData data, AstNode* node = nullptr) const;

@@ -9,20 +9,9 @@
 - **Newline-aware lexer**: Significant newlines, bracket suppression, semicolons ✅
 - **Juxtaposition**: Function application by adjacency (`f x y`) ✅
 - **String interpolation**: `"hello {name}"` with auto-conversion ✅
-- **Async Infrastructure**: Phase 1 complete (core types, thread pool, dependency analyzer) ✅
+- **Async Integration**: Parallel let bindings, promise type in runtime, await_if_promise ✅
 
-## Phase 1: Async Interpreter Integration (High Priority)
-
-- [ ] Fix compilation errors in async infrastructure
-- [ ] Implement `eval_async` method for async expression evaluation
-- [ ] Implement `await_if_promise` for automatic promise unwrapping
-- [ ] Implement `visit_parallel_let` for parallel let bindings
-- [ ] Implement `call_async` for async function calls
-- [ ] Update visitor methods to handle promises transparently
-- [ ] Unit tests for promise operations
-- [ ] Integration tests for parallel execution
-
-## Phase 2: Embeddability (Medium Priority)
+## Phase 1: Embeddability (High Priority)
 
 Make Yona usable as an embedded scripting/extension language in host applications.
 
@@ -84,14 +73,15 @@ Make Yona usable as an embedded scripting/extension language in host application
 - ✅ Symbol value equality — runtime comparison by name, not pointer
 - ✅ String concatenation via `++` operator with auto-conversion
 - ✅ OR pattern matching — `:ok | :success -> ...`
+- ✅ Async integration — parallel let bindings via DependencyAnalyzer, Promise in RuntimeObjectData, await_if_promise
 - ✅ AST — comprehensive node hierarchy with visitor pattern
-- ✅ Interpreter — tree-walking, frame-based, pattern matching, currying
+- ✅ Interpreter — tree-walking, frame-based, pattern matching, currying, transparent async
 - ✅ TypeChecker — Hindley-Milner with polymorphism
 - ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
 - ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ Record types, field access, generators, exceptions
-- ✅ 236 test cases, 1098 assertions passing
+- ✅ 239 test cases, 1107 assertions passing
 
 ## Next Steps
 

@@ -473,3 +473,107 @@ TEST_CASE("Different values fail non-linear match") {
 }
 
 } // Non-linear patterns TEST_SUITE
+
+TEST_SUITE("Parallel let bindings") {
+
+TEST_CASE("Independent let bindings produce correct results") {
+  SyntaxTest t;
+
+  // Multiple independent bindings — may be parallelized
+  auto result = t.eval(R"(
+    let a = 10 * 2,
+        b = 20 + 5,
+        c = 30 - 3 in
+    a + b + c
+  )");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 72); // 20 + 25 + 27
+}
+
+TEST_CASE("Dependent let bindings remain sequential") {
+  SyntaxTest t;
+
+  // b depends on a, c depends on b — must be sequential
+  auto result = t.eval(R"(
+    let a = 10 in
+    let b = a + 5 in
+    let c = b * 2 in
+    c
+  )");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 30);
+}
+
+TEST_CASE("Mixed independent and dependent bindings") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    let x = 100,
+        y = 200 in
+    let sum = x + y in
+    sum
+  )");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 300);
+}
+
+} // Parallel let TEST_SUITE
+
+TEST_SUITE("Import alias") {
+
+TEST_CASE("Import module with alias and qualified access") {
+  SyntaxTest t;
+
+  // Import module as alias and use qualified function call
+  CHECK(t.parses("import Std\\Math as M in M.abs(-42)"));
+}
+
+} // Import alias TEST_SUITE
+
+TEST_SUITE("Pattern destructuring in let") {
+
+TEST_CASE("Tuple destructuring") {
+  SyntaxTest t;
+
+  auto result = t.eval("let (a, b) = (10, 20) in a + b");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 30);
+}
+
+TEST_CASE("Nested tuple destructuring") {
+  SyntaxTest t;
+
+  auto result = t.eval("let (a, (b, c)) = (1, (2, 3)) in a + b + c");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 6);
+}
+
+TEST_CASE("List head-tail destructuring") {
+  SyntaxTest t;
+
+  auto result = t.eval("let [h | t] = [10, 20, 30] in h");
+  CHECK(result->type == RT::Int);
+  CHECK(result->get<int>() == 10);
+}
+
+} // Pattern destructuring TEST_SUITE
+
+TEST_SUITE("String auto-conversion") {
+
+TEST_CASE("Int auto-converts in string concat") {
+  SyntaxTest t;
+
+  auto result = t.eval("\"count: \" ++ 42");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "count: 42");
+}
+
+TEST_CASE("Bool auto-converts in string concat") {
+  SyntaxTest t;
+
+  auto result = t.eval("\"flag: \" ++ true");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "flag: true");
+}
+
+} // String auto-conversion TEST_SUITE

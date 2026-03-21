@@ -1513,6 +1513,12 @@ InterpreterResult Interpreter::visit(LambdaAlias *node) const {
 
 InterpreterResult Interpreter::visit(LetExpr *node) const {
   CHECK_EXCEPTION_RETURN();
+
+  // Try parallel evaluation if there are multiple independent bindings
+  if (node->aliases.size() > 1 && can_parallelize_let(node)) {
+    return visit_parallel_let(node);
+  }
+
   for (const auto alias : node->aliases) {
     alias->template accept<InterpreterResult>(*this);
     CHECK_EXCEPTION_RETURN();
@@ -2870,6 +2876,97 @@ bool Interpreter::type_check(AstNode* node) {
 
   // Return whether type checking succeeded
   return !type_context.has_errors();
+}
+
+// --- Async support ---
+
+RuntimeObjectPtr Interpreter::await_if_promise(RuntimeObjectPtr obj) const {
+  if (!obj || obj->type != Promise) return obj;
+  auto promise = obj->get<shared_ptr<::yona::runtime::async::Promise>>();
+  return promise->await();
+}
+
+bool Interpreter::can_parallelize_let(LetExpr *node) const {
+  if (!IS.async_ctx || node->aliases.size() < 2) return false;
+
+  ::yona::compiler::async::DependencyAnalyzer analyzer;
+  auto graph = analyzer.analyze(node);
+  auto groups = analyzer.get_parallel_groups(graph);
+
+  // If there's only one group with all bindings, no parallelism gain
+  if (groups.size() <= 1 && !groups.empty() && groups[0].size() <= 1) return false;
+
+  // Check that at least one group has >1 nodes (actual parallelism)
+  for (const auto& group : groups) {
+    if (group.size() > 1) return true;
+  }
+  return false;
+}
+
+InterpreterResult Interpreter::visit_parallel_let(LetExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+
+  ::yona::compiler::async::DependencyAnalyzer analyzer;
+  auto graph = analyzer.analyze(node);
+  auto groups = analyzer.get_parallel_groups(graph);
+
+  // Process each group: nodes within a group run in parallel
+  for (const auto& group : groups) {
+    if (group.size() == 1) {
+      // Single node — evaluate sequentially
+      auto* alias = static_cast<AliasExpr*>(group[0]->expr);
+      alias->template accept<InterpreterResult>(*this);
+      CHECK_EXCEPTION_RETURN();
+    } else {
+      // Multiple independent nodes — evaluate RHS expressions in parallel,
+      // then bind results to names sequentially (frame writes are not thread-safe)
+      vector<function<RuntimeObjectPtr()>> tasks;
+      vector<AliasExpr*> aliases;
+
+      for (auto* dep_node : group) {
+        auto* alias = static_cast<AliasExpr*>(dep_node->expr);
+        aliases.push_back(alias);
+
+        // Only parallelize ValueAlias RHS evaluation
+        if (auto* val_alias = dynamic_cast<ValueAlias*>(alias)) {
+          auto* expr = val_alias->expr;
+          tasks.push_back([this, expr]() -> RuntimeObjectPtr {
+            return expr->template accept<InterpreterResult>(*this).value;
+          });
+        } else {
+          // Non-value aliases (lambda, pattern, etc.) — evaluate inline
+          tasks.push_back([this, alias]() -> RuntimeObjectPtr {
+            return alias->template accept<InterpreterResult>(*this).value;
+          });
+        }
+      }
+
+      // Submit all tasks in parallel
+      auto promises = IS.async_ctx->run_parallel(tasks);
+
+      // Collect results, then bind sequentially
+      vector<RuntimeObjectPtr> results;
+      for (size_t i = 0; i < promises.size(); i++) {
+        auto result = promises[i]->await();
+        if (!result) {
+          throw yona_error(aliases[i]->source_context, yona_error::Type::RUNTIME,
+                           "Parallel let binding evaluation failed");
+        }
+        results.push_back(result);
+      }
+
+      // Now bind all results to their names in the frame (sequential, thread-safe)
+      for (size_t i = 0; i < aliases.size(); i++) {
+        if (auto* val_alias = dynamic_cast<ValueAlias*>(aliases[i])) {
+          IS.frame->write(val_alias->identifier->name->value, results[i]);
+        }
+        // Lambda/pattern aliases already wrote to frame during evaluation
+      }
+      CHECK_EXCEPTION_RETURN();
+    }
+  }
+
+  return node->expr->template accept<InterpreterResult>(*this);
 }
 
 } // namespace yona::interp

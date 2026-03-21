@@ -21,6 +21,9 @@
 #pragma warning(disable: 4251)
 #endif
 
+// Forward declaration for Promise (used in RuntimeObjectData variant)
+namespace yona::runtime::async { struct Promise; }
+
 namespace yona::interp::runtime {
 using namespace std;
 
@@ -64,7 +67,7 @@ using RuntimeObjectData =
             shared_ptr<SymbolValue> /*Symbol*/, shared_ptr<TupleValue> /*Tuple*/, shared_ptr<RecordValue> /*Record*/,
             shared_ptr<DictValue> /*Dict*/, shared_ptr<SeqValue> /*Seq*/, shared_ptr<SetValue> /*Set*/,
             shared_ptr<FqnValue> /*FQN*/, shared_ptr<ModuleValue> /*Module*/, shared_ptr<FunctionValue> /*Function*/,
-            shared_ptr<ApplyValue> /*Apply*/>;
+            shared_ptr<ApplyValue> /*Apply*/, shared_ptr<::yona::runtime::async::Promise> /*Promise*/>;
 
 using RuntimeObjectPtr = shared_ptr<RuntimeObject>;
 
