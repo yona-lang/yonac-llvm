@@ -4,6 +4,7 @@
 
 #include "Codegen.h"
 
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Type.h>
@@ -868,6 +869,77 @@ Value* Codegen::codegen_case(CaseExpr* node) {
                 // Other pattern types — treat as match-all for now
                 builder_->CreateBr(body_bb);
             }
+        } else if (pattern->get_type() == AST_HEAD_TAILS_PATTERN) {
+            // [h | t] pattern — check length > 0, bind head and tail
+            auto* htp = static_cast<HeadTailsPattern*>(pattern);
+
+            auto len = builder_->CreateCall(rt_seq_length_, {scrutinee}, "seq.len");
+            auto min_len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_),
+                                                   htp->heads.size());
+            auto has_enough = builder_->CreateICmpSGE(len, min_len, "case.haslen");
+            builder_->CreateCondBr(has_enough, body_bb, next_bb);
+
+            // Bind head elements and tail in body_bb
+            builder_->SetInsertPoint(body_bb);
+            for (size_t hi = 0; hi < htp->heads.size(); hi++) {
+                auto* head_pat = htp->heads[hi];
+                auto idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), hi);
+                auto head_val = builder_->CreateCall(rt_seq_get_, {scrutinee, idx}, "head");
+
+                if (head_pat->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(head_pat);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                        named_values_[(*id)->name->value] = head_val;
+                    }
+                }
+            }
+            if (htp->tail) {
+                auto tail_val = builder_->CreateCall(rt_seq_tail_, {scrutinee}, "tail");
+                seq_values_.insert(tail_val);
+                if (htp->tail->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(htp->tail);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                        named_values_[(*id)->name->value] = tail_val;
+                    }
+                }
+            }
+            // Body will be generated here — skip SetInsertPoint below
+            {
+                auto body_val = codegen(clause->body);
+                if (!body_val) return nullptr;
+                builder_->CreateBr(merge_bb);
+                results.push_back({body_val, builder_->GetInsertBlock()});
+                if (i + 1 < node->clauses.size() && next_bb != merge_bb)
+                    builder_->SetInsertPoint(next_bb);
+                continue; // skip the normal body generation below
+            }
+        } else if (pattern->get_type() == AST_SEQ_PATTERN) {
+            // [] pattern — check length == 0
+            auto* sp = static_cast<SeqPattern*>(pattern);
+            if (sp->patterns.empty()) {
+                // Empty sequence pattern: match if length == 0
+                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee}, "seq.len");
+                auto is_empty = builder_->CreateICmpEQ(len,
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0), "case.empty");
+                builder_->CreateCondBr(is_empty, body_bb, next_bb);
+            } else {
+                builder_->CreateBr(body_bb); // Non-empty seq pattern: match-all for now
+            }
+        } else if (pattern->get_type() == AST_TUPLE_PATTERN) {
+            // Tuple pattern: destructure and bind
+            auto* tp = static_cast<TuplePattern*>(pattern);
+            // Always matches — bind elements
+            for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+                auto elem = builder_->CreateExtractValue(scrutinee, {static_cast<unsigned>(ti)});
+                auto* sub_pat = tp->patterns[ti];
+                if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(sub_pat);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                        named_values_[(*id)->name->value] = elem;
+                    }
+                }
+            }
+            builder_->CreateBr(body_bb);
         } else {
             // Unsupported pattern type — treat as match-all
             builder_->CreateBr(body_bb);
@@ -886,15 +958,37 @@ Value* Codegen::codegen_case(CaseExpr* node) {
         }
     }
 
+    // If the last clause was conditional (not wildcard/variable), add a default path
+    // that returns 0 to handle the "no match" case
+    if (!results.empty()) {
+        // Check if there's a path to merge_bb that isn't covered
+        // Add a default value for any uncovered predecessors
+    }
+
     // Merge block with phi
     parent_fn->insert(parent_fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);
 
     if (results.empty()) return nullptr;
 
-    auto phi = builder_->CreatePHI(results[0].first->getType(), results.size(), "case.result");
+    // Count actual predecessors of merge_bb
+    unsigned pred_count = 0;
+    for (auto it = llvm::pred_begin(merge_bb); it != llvm::pred_end(merge_bb); ++it)
+        pred_count++;
+
+    auto phi = builder_->CreatePHI(results[0].first->getType(), pred_count, "case.result");
     for (auto& [val, bb] : results) {
         phi->addIncoming(val, bb);
+    }
+    // Add default value for any predecessor not covered by results
+    for (auto it = llvm::pred_begin(merge_bb); it != llvm::pred_end(merge_bb); ++it) {
+        bool found = false;
+        for (auto& [val, bb] : results) {
+            if (bb == *it) { found = true; break; }
+        }
+        if (!found) {
+            phi->addIncoming(llvm::ConstantInt::get(results[0].first->getType(), 0), *it);
+        }
     }
     return phi;
 }
