@@ -58,6 +58,62 @@ struct InterpreterState {
   shared_ptr<::yona::runtime::async::AsyncContext> async_ctx;
   bool is_async_context = false;
 
+  // Sandbox configuration
+  struct SandboxConfig {
+    enum Mode { NONE, WHITELIST, BLACKLIST } mode = NONE;
+    unordered_set<string> allowed_modules;  // for whitelist mode
+    unordered_set<string> denied_modules;   // for blacklist mode
+    size_t execution_limit = 0;             // 0 = unlimited
+    size_t memory_limit = 0;                // 0 = unlimited (bytes)
+  } sandbox;
+
+  size_t step_count = 0;      // current execution steps
+  size_t memory_used = 0;     // approximate memory usage (bytes)
+
+  void check_execution_limit(SourceContext ctx) {
+    if (sandbox.execution_limit > 0 && ++step_count > sandbox.execution_limit) {
+      throw yona_error(ctx, yona_error::RUNTIME, "Execution step limit exceeded");
+    }
+  }
+
+  void track_memory(size_t bytes, SourceContext ctx) {
+    if (sandbox.memory_limit > 0) {
+      memory_used += bytes;
+      if (memory_used > sandbox.memory_limit) {
+        throw yona_error(ctx, yona_error::RUNTIME, "Memory limit exceeded");
+      }
+    }
+  }
+
+  bool is_module_allowed(const string& cache_key) const {
+    switch (sandbox.mode) {
+      case SandboxConfig::NONE: return true;
+      case SandboxConfig::WHITELIST: {
+        // Check exact match or wildcard (Std/* matches Std/Math)
+        if (sandbox.allowed_modules.count(cache_key)) return true;
+        // Check prefix wildcards
+        for (const auto& pattern : sandbox.allowed_modules) {
+          if (pattern.back() == '*') {
+            string prefix = pattern.substr(0, pattern.size() - 1);
+            if (cache_key.starts_with(prefix)) return true;
+          }
+        }
+        return false;
+      }
+      case SandboxConfig::BLACKLIST: {
+        if (sandbox.denied_modules.count(cache_key)) return false;
+        for (const auto& pattern : sandbox.denied_modules) {
+          if (pattern.back() == '*') {
+            string prefix = pattern.substr(0, pattern.size() - 1);
+            if (cache_key.starts_with(prefix)) return false;
+          }
+        }
+        return true;
+      }
+    }
+    return true;
+  }
+
   InterpreterState() : frame(make_shared<InterepterFrame>(nullptr)),
                        async_ctx(::yona::runtime::async::get_global_async_context()) {
     // Initialize module paths from YONA_PATH environment variable
@@ -167,6 +223,10 @@ private:
 
 public:
   Interpreter();
+
+  // Access interpreter state (for C API sandbox configuration)
+  InterpreterState& get_state() { return IS; }
+  const InterpreterState& get_state() const { return IS; }
 
   // Enable/disable type checking
   void enable_type_checking(bool enable = true);

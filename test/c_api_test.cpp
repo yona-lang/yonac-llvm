@@ -275,4 +275,123 @@ TEST_CASE("Null safety") {
     yona_value_free(nullptr); // should not crash
 }
 
-} // TEST_SUITE
+} // C API TEST_SUITE
+
+TEST_SUITE("Sandbox") {
+
+TEST_CASE("Whitelist mode blocks unlisted modules") {
+    yona_interp_t interp = yona_create();
+    yona_sandbox_set_mode(interp, YONA_SANDBOX_WHITELIST);
+    yona_sandbox_allow_module(interp, "Std\\Math");
+
+    // Allowed module works
+    yona_value_t r1 = nullptr;
+    yona_status_t s1 = yona_eval(interp, "import abs from Std\\Math in abs(-5)", &r1);
+    CHECK(s1 == YONA_OK);
+    CHECK(yona_as_int(r1) == 5);
+    yona_value_free(r1);
+
+    // Denied module fails
+    yona_value_t r2 = nullptr;
+    yona_status_t s2 = yona_eval(interp, "import readFile from Std\\IO in readFile \"x\"", &r2);
+    CHECK(s2 == YONA_ERROR);
+    const char* err = yona_error_message(interp);
+    CHECK(strstr(err, "sandbox") != nullptr);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("Whitelist wildcard allows module group") {
+    yona_interp_t interp = yona_create();
+    yona_sandbox_set_mode(interp, YONA_SANDBOX_WHITELIST);
+    yona_sandbox_allow_module(interp, "Std\\*");
+
+    // All Std modules should work
+    yona_value_t r = nullptr;
+    CHECK(yona_eval(interp, "import abs from Std\\Math in abs(-1)", &r) == YONA_OK);
+    yona_value_free(r);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("Blacklist mode blocks listed modules") {
+    yona_interp_t interp = yona_create();
+    yona_sandbox_set_mode(interp, YONA_SANDBOX_BLACKLIST);
+    yona_sandbox_deny_module(interp, "Std\\System");
+
+    // Non-denied module works
+    yona_value_t r1 = nullptr;
+    CHECK(yona_eval(interp, "import abs from Std\\Math in abs(-3)", &r1) == YONA_OK);
+    CHECK(yona_as_int(r1) == 3);
+    yona_value_free(r1);
+
+    // Denied module fails
+    yona_value_t r2 = nullptr;
+    CHECK(yona_eval(interp, "import exit from Std\\System in exit 0", &r2) == YONA_ERROR);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("Execution limit prevents infinite computation") {
+    yona_interp_t interp = yona_create();
+    yona_set_execution_limit(interp, 100);
+
+    // Simple expression within limit
+    yona_value_t r1 = nullptr;
+    CHECK(yona_eval(interp, "1 + 2 + 3", &r1) == YONA_OK);
+    CHECK(yona_as_int(r1) == 6);
+    yona_value_free(r1);
+
+    // Recursive function exceeds limit
+    yona_value_t r2 = nullptr;
+    yona_status_t s = yona_eval(interp,
+        "let f x = f (x + 1) in f 0", &r2);
+    CHECK(s == YONA_ERROR);
+    CHECK(strstr(yona_error_message(interp), "limit") != nullptr);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("Execution limit resets between evals") {
+    yona_interp_t interp = yona_create();
+    yona_set_execution_limit(interp, 50);
+
+    // First eval succeeds
+    yona_value_t r1 = nullptr;
+    CHECK(yona_eval(interp, "1 + 2", &r1) == YONA_OK);
+    yona_value_free(r1);
+
+    // Second eval also succeeds (counter reset)
+    yona_value_t r2 = nullptr;
+    CHECK(yona_eval(interp, "3 + 4", &r2) == YONA_OK);
+    CHECK(yona_as_int(r2) == 7);
+    yona_value_free(r2);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("Memory limit prevents large allocations") {
+    yona_interp_t interp = yona_create();
+    yona_set_memory_limit(interp, 256);  // Very small limit
+
+    // Small collection within limit
+    yona_value_t r1 = nullptr;
+    CHECK(yona_eval(interp, "[1, 2, 3]", &r1) == YONA_OK);
+    yona_value_free(r1);
+
+    yona_destroy(interp);
+}
+
+TEST_CASE("No sandbox by default") {
+    yona_interp_t interp = yona_create();
+
+    // All modules accessible
+    yona_value_t r = nullptr;
+    CHECK(yona_eval(interp, "import abs from Std\\Math in abs(-42)", &r) == YONA_OK);
+    CHECK(yona_as_int(r) == 42);
+    yona_value_free(r);
+
+    yona_destroy(interp);
+}
+
+} // Sandbox TEST_SUITE

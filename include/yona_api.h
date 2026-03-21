@@ -174,6 +174,29 @@ YONA_CAPI yona_status_t yona_register_function(yona_interp_t interp,
 /* Add a directory to the module search path. */
 YONA_CAPI yona_status_t yona_add_module_path(yona_interp_t interp, const char* path);
 
+/* ===== Sandboxing ===== */
+
+typedef enum {
+    YONA_SANDBOX_NONE = 0,      /* No restrictions (default) */
+    YONA_SANDBOX_WHITELIST,     /* Only allowed modules can be imported */
+    YONA_SANDBOX_BLACKLIST      /* All modules except denied ones */
+} yona_sandbox_mode_t;
+
+/* Set the sandbox mode. */
+YONA_CAPI yona_status_t yona_sandbox_set_mode(yona_interp_t interp, yona_sandbox_mode_t mode);
+
+/* Allow a module (whitelist mode). Supports wildcards: "Std\\*" */
+YONA_CAPI yona_status_t yona_sandbox_allow_module(yona_interp_t interp, const char* pattern);
+
+/* Deny a module (blacklist mode). Supports wildcards: "Std\\IO" */
+YONA_CAPI yona_status_t yona_sandbox_deny_module(yona_interp_t interp, const char* pattern);
+
+/* Set maximum execution steps (0 = unlimited). Resets on each yona_eval. */
+YONA_CAPI yona_status_t yona_set_execution_limit(yona_interp_t interp, size_t max_steps);
+
+/* Set maximum memory usage in bytes (0 = unlimited). */
+YONA_CAPI yona_status_t yona_set_memory_limit(yona_interp_t interp, size_t max_bytes);
+
 /* ===== Error handling ===== */
 
 /* Get the error message from the last failed operation. */

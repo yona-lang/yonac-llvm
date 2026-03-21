@@ -104,6 +104,8 @@ void yona_destroy(yona_interp_t interp) {
 yona_status_t yona_eval(yona_interp_t interp, const char* code, yona_value_t* out) {
     if (!interp || !code) return YONA_INVALID_ARG;
     interp->clear_error();
+    // Reset step counter for each eval (fresh execution budget)
+    interp->interp->get_state().step_count = 0;
 
     try {
         parser::Parser parser;
@@ -402,6 +404,60 @@ yona_status_t yona_register_function(yona_interp_t interp,
     string cache_key = fqn_to_cache_key(string(module_fqn));
     interp->host_modules[cache_key][string(name)] = {fn, userdata, arity};
     // Access via a simple eval that binds it
+    return YONA_OK;
+}
+
+// ===== Sandboxing =====
+
+static string normalize_module_pattern(const char* pattern) {
+    // Convert backslash-separated FQN to slash-separated cache key, preserve trailing *
+    string result;
+    string p(pattern);
+    size_t pos;
+    string remaining = p;
+    while ((pos = remaining.find('\\')) != string::npos) {
+        if (!result.empty()) result += "/";
+        result += remaining.substr(0, pos);
+        remaining = remaining.substr(pos + 1);
+    }
+    if (!result.empty()) result += "/";
+    result += remaining;
+    return result;
+}
+
+yona_status_t yona_sandbox_set_mode(yona_interp_t interp, yona_sandbox_mode_t mode) {
+    if (!interp) return YONA_INVALID_ARG;
+    auto& sandbox = interp->interp->get_state().sandbox;
+    switch (mode) {
+        case YONA_SANDBOX_NONE: sandbox.mode = InterpreterState::SandboxConfig::NONE; break;
+        case YONA_SANDBOX_WHITELIST: sandbox.mode = InterpreterState::SandboxConfig::WHITELIST; break;
+        case YONA_SANDBOX_BLACKLIST: sandbox.mode = InterpreterState::SandboxConfig::BLACKLIST; break;
+        default: return YONA_INVALID_ARG;
+    }
+    return YONA_OK;
+}
+
+yona_status_t yona_sandbox_allow_module(yona_interp_t interp, const char* pattern) {
+    if (!interp || !pattern) return YONA_INVALID_ARG;
+    interp->interp->get_state().sandbox.allowed_modules.insert(normalize_module_pattern(pattern));
+    return YONA_OK;
+}
+
+yona_status_t yona_sandbox_deny_module(yona_interp_t interp, const char* pattern) {
+    if (!interp || !pattern) return YONA_INVALID_ARG;
+    interp->interp->get_state().sandbox.denied_modules.insert(normalize_module_pattern(pattern));
+    return YONA_OK;
+}
+
+yona_status_t yona_set_execution_limit(yona_interp_t interp, size_t max_steps) {
+    if (!interp) return YONA_INVALID_ARG;
+    interp->interp->get_state().sandbox.execution_limit = max_steps;
+    return YONA_OK;
+}
+
+yona_status_t yona_set_memory_limit(yona_interp_t interp, size_t max_bytes) {
+    if (!interp) return YONA_INVALID_ARG;
+    interp->interp->get_state().sandbox.memory_limit = max_bytes;
     return YONA_OK;
 }
 

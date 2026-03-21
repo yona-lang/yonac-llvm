@@ -79,6 +79,8 @@ namespace yona::interp {
 using namespace std::placeholders;
 
 template <RuntimeObjectType ROT, typename VT> optional<VT> Interpreter::get_value(AstNode *node) const {
+  IS.check_execution_limit(node->source_context);
+
   auto runtime_object = node->template accept<InterpreterResult>(*this).value;
 
   // Check for exception after visit
@@ -717,7 +719,7 @@ InterpreterResult Interpreter::visit(AliasCall *node) const {
 }
 InterpreterResult Interpreter::visit(ApplyExpr *node) const {
   CHECK_EXCEPTION_RETURN();
-  // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: Starting function application";
+  IS.check_execution_limit(node->source_context);
 
   // First visit the call expression to get the function
   // BOOST_LOG_TRIVIAL(debug) << "ApplyExpr: About to visit call expression of type: " << node->call->get_type();
@@ -1045,6 +1047,7 @@ InterpreterResult Interpreter::visit(DictExpr *node) const {
     fields.emplace_back(key, value);
   }
 
+  IS.track_memory(fields.size() * 2 * sizeof(RuntimeObjectPtr), node->source_context);
   return InterpreterResult(make_shared<RuntimeObject>(Dict, make_shared<DictValue>(fields)));
 }
 
@@ -2300,6 +2303,7 @@ InterpreterResult Interpreter::visit(TupleExpr *node) const {
     CHECK_EXCEPTION_RETURN();
   }
 
+  IS.track_memory(fields.size() * sizeof(RuntimeObjectPtr), node->source_context);
   return InterpreterResult(make_typed_object(Tuple, make_shared<TupleValue>(fields), node));
 }
 
@@ -2349,6 +2353,7 @@ InterpreterResult Interpreter::visit(ValuesSequenceExpr *node) const {
     CHECK_EXCEPTION_RETURN();
   }
 
+  IS.track_memory(fields.size() * sizeof(RuntimeObjectPtr), node->source_context);
   return InterpreterResult(make_shared<RuntimeObject>(Seq, make_shared<SeqValue>(fields)));
 }
 
@@ -2670,6 +2675,12 @@ shared_ptr<ModuleValue> Interpreter::get_or_load_module(const shared_ptr<FqnValu
   for (size_t i = 0; i < fqn->parts.size(); ++i) {
     if (i > 0) cache_key += "/";
     cache_key += fqn->parts[i];
+  }
+
+  // Sandbox: check module access
+  if (!IS.is_module_allowed(cache_key)) {
+    throw yona_error(EMPTY_SOURCE_LOCATION, yona_error::RUNTIME,
+                     "Module access denied by sandbox: " + cache_key);
   }
 
   // Check cache first
