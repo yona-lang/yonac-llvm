@@ -1,0 +1,1 @@
+let last xs = case xs of [h | t] -> case t of [] -> h; _ -> last t end end in last [10, 20, 30]

@@ -1,5 +1,10 @@
 //
-// LLVM Code Generation for Yona
+// LLVM Code Generation for Yona — Type-directed codegen
+//
+// Every expression produces a TypedValue (LLVM Value + CType tag).
+// Types propagate structurally: codegen_integer returns {i64, INT},
+// codegen_add checks operand CTypes to choose iadd vs fadd, etc.
+// Functions are deferred until call sites where arg types are known.
 //
 
 #include "Codegen.h"
@@ -24,8 +29,71 @@
 namespace yona::compiler::codegen {
 
 using namespace llvm;
-// Alias to avoid collision with llvm::Type
-using YonaType = types::Type;
+using LType = llvm::Type; // avoid collision with yona::compiler::types::Type
+
+// ===== Free variable analysis =====
+
+void Codegen::collect_free_vars(AstNode* node, const std::unordered_set<std::string>& bound,
+                                 std::unordered_set<std::string>& free_vars) {
+    if (!node) return;
+    switch (node->get_type()) {
+        case AST_IDENTIFIER_EXPR: {
+            auto* id = static_cast<IdentifierExpr*>(node);
+            if (!bound.count(id->name->value)) free_vars.insert(id->name->value);
+            break;
+        }
+        case AST_ADD_EXPR: case AST_SUBTRACT_EXPR: case AST_MULTIPLY_EXPR:
+        case AST_DIVIDE_EXPR: case AST_MODULO_EXPR:
+        case AST_EQ_EXPR: case AST_NEQ_EXPR:
+        case AST_LT_EXPR: case AST_GT_EXPR: case AST_LTE_EXPR: case AST_GTE_EXPR:
+        case AST_LOGICAL_AND_EXPR: case AST_LOGICAL_OR_EXPR: {
+            auto* bin = static_cast<AddExpr*>(node);
+            collect_free_vars(bin->left, bound, free_vars);
+            collect_free_vars(bin->right, bound, free_vars);
+            break;
+        }
+        case AST_IF_EXPR: {
+            auto* e = static_cast<IfExpr*>(node);
+            collect_free_vars(e->condition, bound, free_vars);
+            collect_free_vars(e->thenExpr, bound, free_vars);
+            collect_free_vars(e->elseExpr, bound, free_vars);
+            break;
+        }
+        case AST_LET_EXPR: {
+            auto* e = static_cast<LetExpr*>(node);
+            auto nb = bound;
+            for (auto* a : e->aliases) {
+                if (auto* va = dynamic_cast<ValueAlias*>(a)) {
+                    collect_free_vars(va->expr, bound, free_vars);
+                    nb.insert(va->identifier->name->value);
+                } else if (auto* la = dynamic_cast<LambdaAlias*>(a))
+                    nb.insert(la->name->value);
+            }
+            collect_free_vars(e->expr, nb, free_vars);
+            break;
+        }
+        case AST_CASE_EXPR: {
+            auto* e = static_cast<CaseExpr*>(node);
+            collect_free_vars(e->expr, bound, free_vars);
+            for (auto* c : e->clauses) collect_free_vars(c->body, bound, free_vars);
+            break;
+        }
+        case AST_APPLY_EXPR: {
+            auto* e = static_cast<ApplyExpr*>(node);
+            if (auto* nc = dynamic_cast<NameCall*>(e->call))
+                if (!bound.count(nc->name->value)) free_vars.insert(nc->name->value);
+            for (auto& a : e->args) {
+                if (std::holds_alternative<ExprNode*>(a))
+                    collect_free_vars(std::get<ExprNode*>(a), bound, free_vars);
+                else collect_free_vars(std::get<ValueExpr*>(a), bound, free_vars);
+            }
+            break;
+        }
+        default: break;
+    }
+}
+
+// ===== Constructor / Init =====
 
 Codegen::Codegen(const std::string& module_name) {
     context_ = std::make_unique<LLVMContext>();
@@ -34,143 +102,88 @@ Codegen::Codegen(const std::string& module_name) {
     init_target();
     declare_runtime();
 }
-
 Codegen::~Codegen() = default;
 
 void Codegen::init_target() {
     InitializeNativeTarget();
     InitializeNativeTargetAsmPrinter();
     InitializeNativeTargetAsmParser();
-
-    auto target_triple = sys::getDefaultTargetTriple();
-    module_->setTargetTriple(Triple(target_triple));
-
-    std::string error;
-    auto target = TargetRegistry::lookupTarget(target_triple, error);
-    if (!target) {
-        std::cerr << "Target lookup failed: " << error << std::endl;
-        return;
-    }
-
-    auto cpu = "generic";
-    auto features = "";
+    auto triple = sys::getDefaultTargetTriple();
+    module_->setTargetTriple(Triple(triple));
+    std::string err;
+    auto target = TargetRegistry::lookupTarget(triple, err);
+    if (!target) { std::cerr << "Target error: " << err << "\n"; return; }
     TargetOptions opt;
-    target_machine_ = target->createTargetMachine(
-        target_triple, cpu, features, opt, Reloc::PIC_);
+    target_machine_ = target->createTargetMachine(triple, "generic", "", opt, Reloc::PIC_);
     module_->setDataLayout(target_machine_->createDataLayout());
 }
 
+LType* Codegen::llvm_type(CType ct) {
+    switch (ct) {
+        case CType::INT:    return LType::getInt64Ty(*context_);
+        case CType::FLOAT:  return LType::getDoubleTy(*context_);
+        case CType::BOOL:   return LType::getInt1Ty(*context_);
+        case CType::STRING: return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::SEQ:    return PointerType::get(LType::getInt64Ty(*context_), 0);
+        case CType::TUPLE:  return LType::getInt64Ty(*context_); // overridden per-tuple
+        case CType::UNIT:   return LType::getInt64Ty(*context_);
+        case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
+    }
+    return LType::getInt64Ty(*context_);
+}
+
 void Codegen::declare_runtime() {
-    auto i64_ty = llvm::Type::getInt64Ty(*context_);
-    auto double_ty = llvm::Type::getDoubleTy(*context_);
-    auto void_ty = llvm::Type::getVoidTy(*context_);
-    auto i1_ty = llvm::Type::getInt1Ty(*context_);
-    auto i8ptr_ty = llvm::PointerType::get(llvm::Type::getInt8Ty(*context_), 0);
+    auto i64 = LType::getInt64Ty(*context_);
+    auto f64 = LType::getDoubleTy(*context_);
+    auto vd = LType::getVoidTy(*context_);
+    auto i1 = LType::getInt1Ty(*context_);
+    auto ptr = PointerType::get(LType::getInt8Ty(*context_), 0);
+    auto i64p = PointerType::get(i64, 0);
 
-    // void yona_rt_print_int(i64)
-    rt_print_int_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {i64_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_int", module_.get());
+    auto decl = [&](const char* name, LType* ret, std::vector<LType*> args) {
+        return Function::Create(llvm::FunctionType::get(ret, args, false),
+                                Function::ExternalLinkage, name, module_.get());
+    };
 
-    // void yona_rt_print_float(double)
-    rt_print_float_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {double_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_float", module_.get());
-
-    // void yona_rt_print_string(i8*)
-    rt_print_string_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {i8ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_string", module_.get());
-
-    // void yona_rt_print_bool(i1)
-    rt_print_bool_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {i1_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_bool", module_.get());
-
-    // void yona_rt_print_newline()
-    rt_print_newline_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_newline", module_.get());
-
-    // i8* yona_rt_string_concat(i8*, i8*)
-    rt_string_concat_ = llvm::Function::Create(
-        llvm::FunctionType::get(i8ptr_ty, {i8ptr_ty, i8ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_string_concat", module_.get());
-
-    // Sequence runtime functions (i64* = pointer to [length, elem0, elem1, ...])
-    auto i64ptr_ty = llvm::PointerType::get(i64_ty, 0);
-
-    rt_seq_alloc_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64ptr_ty, {i64_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_alloc", module_.get());
-
-    rt_seq_set_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {i64ptr_ty, i64_ty, i64_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_set", module_.get());
-
-    rt_seq_get_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64_ty, {i64ptr_ty, i64_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_get", module_.get());
-
-    rt_seq_length_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64_ty, {i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_length", module_.get());
-
-    rt_seq_cons_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64ptr_ty, {i64_ty, i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_cons", module_.get());
-
-    rt_seq_join_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64ptr_ty, {i64ptr_ty, i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_join", module_.get());
-
-    rt_seq_head_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64_ty, {i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_head", module_.get());
-
-    rt_seq_tail_ = llvm::Function::Create(
-        llvm::FunctionType::get(i64ptr_ty, {i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_seq_tail", module_.get());
-
-    rt_print_seq_ = llvm::Function::Create(
-        llvm::FunctionType::get(void_ty, {i64ptr_ty}, false),
-        llvm::Function::ExternalLinkage, "yona_rt_print_seq", module_.get());
+    rt_print_int_     = decl("yona_rt_print_int", vd, {i64});
+    rt_print_float_   = decl("yona_rt_print_float", vd, {f64});
+    rt_print_string_  = decl("yona_rt_print_string", vd, {ptr});
+    rt_print_bool_    = decl("yona_rt_print_bool", vd, {i1});
+    rt_print_newline_ = decl("yona_rt_print_newline", vd, {});
+    rt_print_seq_     = decl("yona_rt_print_seq", vd, {i64p});
+    rt_string_concat_ = decl("yona_rt_string_concat", ptr, {ptr, ptr});
+    rt_seq_alloc_     = decl("yona_rt_seq_alloc", i64p, {i64});
+    rt_seq_set_       = decl("yona_rt_seq_set", vd, {i64p, i64, i64});
+    rt_seq_get_       = decl("yona_rt_seq_get", i64, {i64p, i64});
+    rt_seq_length_    = decl("yona_rt_seq_length", i64, {i64p});
+    rt_seq_cons_      = decl("yona_rt_seq_cons", i64p, {i64, i64p});
+    rt_seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
+    rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
+    rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
 }
 
 // ===== Public API =====
 
 Module* Codegen::compile(AstNode* node) {
-    auto main_fn = codegen_main(node);
-    if (!main_fn) return nullptr;
-
-    // Verify the module
-    std::string verify_err;
-    raw_string_ostream verify_os(verify_err);
-    if (verifyModule(*module_, &verify_os)) {
-        std::cerr << "Module verification failed:\n" << verify_err << std::endl;
+    auto fn = codegen_main(node);
+    if (!fn) return nullptr;
+    std::string err;
+    raw_string_ostream os(err);
+    if (verifyModule(*module_, &os)) {
+        std::cerr << "Module verification failed:\n" << err << "\n";
         return nullptr;
     }
-
     return module_.get();
 }
 
-bool Codegen::emit_object_file(const std::string& output_path) {
+bool Codegen::emit_object_file(const std::string& path) {
     if (!target_machine_) return false;
-
     std::error_code ec;
-    raw_fd_ostream dest(output_path, ec, sys::fs::OF_None);
-    if (ec) {
-        std::cerr << "Could not open file: " << ec.message() << std::endl;
-        return false;
-    }
-
+    raw_fd_ostream dest(path, ec, sys::fs::OF_None);
+    if (ec) return false;
     legacy::PassManager pass;
-    if (target_machine_->addPassesToEmitFile(pass, dest, nullptr,
-                                             CodeGenFileType::ObjectFile)) {
-        std::cerr << "Target machine can't emit object file" << std::endl;
+    if (target_machine_->addPassesToEmitFile(pass, dest, nullptr, CodeGenFileType::ObjectFile))
         return false;
-    }
-
     pass.run(*module_);
     dest.flush();
     return true;
@@ -183,958 +196,695 @@ std::string Codegen::emit_ir() {
     return ir;
 }
 
-// ===== Codegen Entry Point =====
+// ===== Entry Point =====
 
 Function* Codegen::codegen_main(AstNode* node) {
-    // Create main() function
-    auto i32_ty = llvm::Type::getInt32Ty(*context_);
-    auto main_type = llvm::FunctionType::get(i32_ty, {}, false);
-    auto main_fn = llvm::Function::Create(main_type, llvm::Function::ExternalLinkage,
-                                     "main", module_.get());
+    auto i32 = LType::getInt32Ty(*context_);
+    auto fn = Function::Create(llvm::FunctionType::get(i32, {}, false),
+                                Function::ExternalLinkage, "main", module_.get());
+    auto bb = BasicBlock::Create(*context_, "entry", fn);
+    builder_->SetInsertPoint(bb);
 
-    auto entry_bb = llvm::BasicBlock::Create(*context_, "entry", main_fn);
-    builder_->SetInsertPoint(entry_bb);
-
-    // Generate code for the expression
     auto result = codegen(node);
-
-    if (result) {
-        // Print the result
-        codegen_print_value(result);
-    }
-
-    // Return 0
-    builder_->CreateRet(llvm::ConstantInt::get(i32_ty, 0));
-    return main_fn;
+    if (result) codegen_print(result);
+    builder_->CreateRet(ConstantInt::get(i32, 0));
+    return fn;
 }
 
-// ===== Expression Codegen =====
+// ===== Print (type-directed) =====
 
-Value* Codegen::codegen(AstNode* node) {
-    if (!node) return nullptr;
+// Print a value without trailing newline
+void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
+                          Function* print_int, Function* print_float,
+                          Function* print_string, Function* print_bool,
+                          Function* print_seq, LLVMContext& ctx) {
+    if (!tv.val) return;
+    switch (tv.type) {
+        case CType::INT:    builder->CreateCall(print_int, {tv.val}); break;
+        case CType::FLOAT:  builder->CreateCall(print_float, {tv.val}); break;
+        case CType::BOOL:   builder->CreateCall(print_bool, {tv.val}); break;
+        case CType::STRING: builder->CreateCall(print_string, {tv.val}); break;
+        case CType::SEQ:    builder->CreateCall(print_seq, {tv.val}); break;
+        case CType::TUPLE: {
+            builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("(")});
+            if (tv.val->getType()->isStructTy()) {
+                auto* st = cast<StructType>(tv.val->getType());
+                for (unsigned i = 0; i < st->getNumElements(); i++) {
+                    if (i > 0)
+                        builder->CreateCall(print_string, {builder->CreateGlobalStringPtr(", ")});
+                    auto elem = builder->CreateExtractValue(tv.val, {i});
+                    CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
+                    codegen_print_value(builder, {elem, et}, print_int, print_float,
+                                        print_string, print_bool, print_seq, ctx);
+                }
+            }
+            builder->CreateCall(print_string, {builder->CreateGlobalStringPtr(")")});
+            break;
+        }
+        case CType::UNIT:     builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("()")}); break;
+        case CType::FUNCTION: builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("<function>")}); break;
+    }
+}
 
+void Codegen::codegen_print(const TypedValue& tv) {
+    codegen_print_value(builder_.get(), tv, rt_print_int_, rt_print_float_,
+                         rt_print_string_, rt_print_bool_, rt_print_seq_, *context_);
+    builder_->CreateCall(rt_print_newline_, {});
+}
+
+// ===== Core Dispatch =====
+
+TypedValue Codegen::codegen(AstNode* node) {
+    if (!node) return {};
     switch (node->get_type()) {
-        case AST_MAIN:
-            return codegen_main_node(static_cast<MainNode*>(node));
-        case AST_INTEGER_EXPR:
-            return codegen_integer(static_cast<IntegerExpr*>(node));
-        case AST_FLOAT_EXPR:
-            return codegen_float(static_cast<FloatExpr*>(node));
-        case AST_TRUE_LITERAL_EXPR:
-            return codegen_bool(static_cast<TrueLiteralExpr*>(node));
-        case AST_FALSE_LITERAL_EXPR:
-            return codegen_bool_false(static_cast<FalseLiteralExpr*>(node));
-        case AST_STRING_EXPR:
-            return codegen_string(static_cast<StringExpr*>(node));
-        case AST_ADD_EXPR:
-            return codegen_add(static_cast<AddExpr*>(node));
-        case AST_SUBTRACT_EXPR:
-            return codegen_subtract(static_cast<SubtractExpr*>(node));
-        case AST_MULTIPLY_EXPR:
-            return codegen_multiply(static_cast<MultiplyExpr*>(node));
-        case AST_DIVIDE_EXPR:
-            return codegen_divide(static_cast<DivideExpr*>(node));
-        case AST_MODULO_EXPR:
-            return codegen_modulo(static_cast<ModuloExpr*>(node));
-        case AST_EQ_EXPR:
-            return codegen_eq(static_cast<EqExpr*>(node));
-        case AST_NEQ_EXPR:
-            return codegen_neq(static_cast<NeqExpr*>(node));
-        case AST_LT_EXPR:
-            return codegen_lt(static_cast<LtExpr*>(node));
-        case AST_GT_EXPR:
-            return codegen_gt(static_cast<GtExpr*>(node));
-        case AST_LTE_EXPR:
-            return codegen_lte(static_cast<LteExpr*>(node));
-        case AST_GTE_EXPR:
-            return codegen_gte(static_cast<GteExpr*>(node));
-        case AST_LOGICAL_AND_EXPR:
-            return codegen_and(static_cast<LogicalAndExpr*>(node));
-        case AST_LOGICAL_OR_EXPR:
-            return codegen_or(static_cast<LogicalOrExpr*>(node));
-        case AST_LOGICAL_NOT_OP_EXPR:
-            return codegen_not(static_cast<LogicalNotOpExpr*>(node));
-        case AST_LET_EXPR:
-            return codegen_let(static_cast<LetExpr*>(node));
-        case AST_IF_EXPR:
-            return codegen_if(static_cast<IfExpr*>(node));
-        case AST_IDENTIFIER_EXPR:
-            return codegen_identifier(static_cast<IdentifierExpr*>(node));
-        case AST_FUNCTION_EXPR:
-            return codegen_function(static_cast<FunctionExpr*>(node));
-        case AST_APPLY_EXPR:
-            return codegen_apply(static_cast<ApplyExpr*>(node));
-        case AST_LAMBDA_ALIAS:
-            return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
-        case AST_CASE_EXPR:
-            return codegen_case(static_cast<CaseExpr*>(node));
-        case AST_DO_EXPR:
-            return codegen_do(static_cast<DoExpr*>(node));
-        case AST_UNIT_EXPR:
-            return codegen_unit(static_cast<UnitExpr*>(node));
-        case AST_TUPLE_EXPR:
-            return codegen_tuple(static_cast<TupleExpr*>(node));
-        case AST_VALUES_SEQUENCE_EXPR:
-            return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
-        case AST_CONS_LEFT_EXPR:
-            return codegen_cons(static_cast<ConsLeftExpr*>(node));
-        case AST_JOIN_EXPR:
-            return codegen_join(static_cast<JoinExpr*>(node));
+        case AST_MAIN:            return codegen_main_node(static_cast<MainNode*>(node));
+        case AST_INTEGER_EXPR:    return codegen_integer(static_cast<IntegerExpr*>(node));
+        case AST_FLOAT_EXPR:      return codegen_float(static_cast<FloatExpr*>(node));
+        case AST_TRUE_LITERAL_EXPR:  return codegen_bool_true(static_cast<TrueLiteralExpr*>(node));
+        case AST_FALSE_LITERAL_EXPR: return codegen_bool_false(static_cast<FalseLiteralExpr*>(node));
+        case AST_STRING_EXPR:     return codegen_string(static_cast<StringExpr*>(node));
+        case AST_UNIT_EXPR:       return codegen_unit(static_cast<UnitExpr*>(node));
+        case AST_ADD_EXPR:        return codegen_binary(static_cast<AddExpr*>(node)->left, static_cast<AddExpr*>(node)->right, "+");
+        case AST_SUBTRACT_EXPR:   return codegen_binary(static_cast<SubtractExpr*>(node)->left, static_cast<SubtractExpr*>(node)->right, "-");
+        case AST_MULTIPLY_EXPR:   return codegen_binary(static_cast<MultiplyExpr*>(node)->left, static_cast<MultiplyExpr*>(node)->right, "*");
+        case AST_DIVIDE_EXPR:     return codegen_binary(static_cast<DivideExpr*>(node)->left, static_cast<DivideExpr*>(node)->right, "/");
+        case AST_MODULO_EXPR:     return codegen_binary(static_cast<ModuloExpr*>(node)->left, static_cast<ModuloExpr*>(node)->right, "%");
+        case AST_EQ_EXPR:         return codegen_comparison(static_cast<EqExpr*>(node)->left, static_cast<EqExpr*>(node)->right, "==");
+        case AST_NEQ_EXPR:        return codegen_comparison(static_cast<NeqExpr*>(node)->left, static_cast<NeqExpr*>(node)->right, "!=");
+        case AST_LT_EXPR:         return codegen_comparison(static_cast<LtExpr*>(node)->left, static_cast<LtExpr*>(node)->right, "<");
+        case AST_GT_EXPR:         return codegen_comparison(static_cast<GtExpr*>(node)->left, static_cast<GtExpr*>(node)->right, ">");
+        case AST_LTE_EXPR:        return codegen_comparison(static_cast<LteExpr*>(node)->left, static_cast<LteExpr*>(node)->right, "<=");
+        case AST_GTE_EXPR:        return codegen_comparison(static_cast<GteExpr*>(node)->left, static_cast<GteExpr*>(node)->right, ">=");
+        case AST_LOGICAL_AND_EXPR: { auto l = codegen(static_cast<LogicalAndExpr*>(node)->left); auto r = codegen(static_cast<LogicalAndExpr*>(node)->right); return {builder_->CreateAnd(l.val, r.val), CType::BOOL}; }
+        case AST_LOGICAL_OR_EXPR:  { auto l = codegen(static_cast<LogicalOrExpr*>(node)->left); auto r = codegen(static_cast<LogicalOrExpr*>(node)->right); return {builder_->CreateOr(l.val, r.val), CType::BOOL}; }
+        case AST_LOGICAL_NOT_OP_EXPR: { auto v = codegen(static_cast<LogicalNotOpExpr*>(node)->expr); return {builder_->CreateNot(v.val), CType::BOOL}; }
+        case AST_LET_EXPR:        return codegen_let(static_cast<LetExpr*>(node));
+        case AST_IF_EXPR:         return codegen_if(static_cast<IfExpr*>(node));
+        case AST_CASE_EXPR:       return codegen_case(static_cast<CaseExpr*>(node));
+        case AST_DO_EXPR:         return codegen_do(static_cast<DoExpr*>(node));
+        case AST_IDENTIFIER_EXPR: return codegen_identifier(static_cast<IdentifierExpr*>(node));
+        case AST_FUNCTION_EXPR:   return codegen_function_def(static_cast<FunctionExpr*>(node), "");
+        case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));
+        case AST_LAMBDA_ALIAS:    return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
+        case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
+        case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
+        case AST_CONS_LEFT_EXPR:  return codegen_cons(static_cast<ConsLeftExpr*>(node));
+        case AST_JOIN_EXPR:       return codegen_join(static_cast<JoinExpr*>(node));
         default:
-            std::cerr << "Codegen: unsupported AST node type " << node->get_type() << std::endl;
-            return nullptr;
+            std::cerr << "Codegen: unsupported node type " << node->get_type() << "\n";
+            return {};
     }
 }
 
-Value* Codegen::codegen_main_node(MainNode* node) {
-    return codegen(node->node);
-}
+TypedValue Codegen::codegen_main_node(MainNode* node) { return codegen(node->node); }
 
 // ===== Literals =====
 
-Value* Codegen::codegen_integer(IntegerExpr* node) {
-    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), node->value);
+TypedValue Codegen::codegen_integer(IntegerExpr* node) {
+    return {ConstantInt::get(LType::getInt64Ty(*context_), node->value), CType::INT};
+}
+TypedValue Codegen::codegen_float(FloatExpr* node) {
+    return {ConstantFP::get(LType::getDoubleTy(*context_), node->value), CType::FLOAT};
+}
+TypedValue Codegen::codegen_bool_true(TrueLiteralExpr*) {
+    return {ConstantInt::getTrue(*context_), CType::BOOL};
+}
+TypedValue Codegen::codegen_bool_false(FalseLiteralExpr*) {
+    return {ConstantInt::getFalse(*context_), CType::BOOL};
+}
+TypedValue Codegen::codegen_string(StringExpr* node) {
+    return {builder_->CreateGlobalStringPtr(node->value), CType::STRING};
+}
+TypedValue Codegen::codegen_unit(UnitExpr*) {
+    return {ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::UNIT};
 }
 
-Value* Codegen::codegen_float(FloatExpr* node) {
-    return llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), node->value);
-}
+// ===== Arithmetic (type-directed) =====
 
-Value* Codegen::codegen_bool(TrueLiteralExpr*) {
-    return llvm::ConstantInt::getTrue(*context_);
-}
+TypedValue Codegen::codegen_binary(AstNode* left_node, AstNode* right_node, const std::string& op) {
+    auto left = codegen(left_node);
+    auto right = codegen(right_node);
+    if (!left || !right) return {};
 
-Value* Codegen::codegen_bool_false(FalseLiteralExpr*) {
-    return llvm::ConstantInt::getFalse(*context_);
-}
-
-Value* Codegen::codegen_string(StringExpr* node) {
-    return builder_->CreateGlobalStringPtr(node->value, "str");
-}
-
-// ===== Arithmetic =====
-
-Value* Codegen::codegen_add(AddExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64) && right->getType()->isIntegerTy(64))
-        return builder_->CreateAdd(left, right, "addtmp");
-    if (left->getType()->isDoubleTy() && right->getType()->isDoubleTy())
-        return builder_->CreateFAdd(left, right, "addtmp");
-    // Mixed: promote int to float
-    if (left->getType()->isIntegerTy(64) && right->getType()->isDoubleTy()) {
-        left = builder_->CreateSIToFP(left, llvm::Type::getDoubleTy(*context_));
-        return builder_->CreateFAdd(left, right, "addtmp");
-    }
-    if (left->getType()->isDoubleTy() && right->getType()->isIntegerTy(64)) {
-        right = builder_->CreateSIToFP(right, llvm::Type::getDoubleTy(*context_));
-        return builder_->CreateFAdd(left, right, "addtmp");
-    }
     // String concatenation
-    if (left->getType()->isPointerTy() && right->getType()->isPointerTy())
-        return builder_->CreateCall(rt_string_concat_, {left, right}, "concat");
-    return nullptr;
+    if (left.type == CType::STRING && right.type == CType::STRING && op == "+") {
+        return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
+    }
+
+    // Promote int to float if mixed
+    if (left.type == CType::INT && right.type == CType::FLOAT) {
+        left.val = builder_->CreateSIToFP(left.val, LType::getDoubleTy(*context_));
+        left.type = CType::FLOAT;
+    }
+    if (left.type == CType::FLOAT && right.type == CType::INT) {
+        right.val = builder_->CreateSIToFP(right.val, LType::getDoubleTy(*context_));
+        right.type = CType::FLOAT;
+    }
+
+    bool is_float = (left.type == CType::FLOAT);
+    Value* result = nullptr;
+
+    if (op == "+") result = is_float ? builder_->CreateFAdd(left.val, right.val) : builder_->CreateAdd(left.val, right.val);
+    else if (op == "-") result = is_float ? builder_->CreateFSub(left.val, right.val) : builder_->CreateSub(left.val, right.val);
+    else if (op == "*") result = is_float ? builder_->CreateFMul(left.val, right.val) : builder_->CreateMul(left.val, right.val);
+    else if (op == "/") result = is_float ? builder_->CreateFDiv(left.val, right.val) : builder_->CreateSDiv(left.val, right.val);
+    else if (op == "%") result = builder_->CreateSRem(left.val, right.val);
+
+    return {result, is_float ? CType::FLOAT : CType::INT};
 }
 
-Value* Codegen::codegen_subtract(SubtractExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
+TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, const std::string& op) {
+    auto left = codegen(left_node);
+    auto right = codegen(right_node);
+    if (!left || !right) return {};
 
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateSub(left, right, "subtmp");
-    return builder_->CreateFSub(left, right, "subtmp");
-}
+    bool is_float = (left.type == CType::FLOAT || right.type == CType::FLOAT);
+    if (is_float) {
+        if (left.type == CType::INT) left.val = builder_->CreateSIToFP(left.val, LType::getDoubleTy(*context_));
+        if (right.type == CType::INT) right.val = builder_->CreateSIToFP(right.val, LType::getDoubleTy(*context_));
+    }
 
-Value* Codegen::codegen_multiply(MultiplyExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateMul(left, right, "multmp");
-    return builder_->CreateFMul(left, right, "multmp");
-}
-
-Value* Codegen::codegen_divide(DivideExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateSDiv(left, right, "divtmp");
-    return builder_->CreateFDiv(left, right, "divtmp");
-}
-
-Value* Codegen::codegen_modulo(ModuloExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-    return builder_->CreateSRem(left, right, "modtmp");
-}
-
-// ===== Comparison =====
-
-Value* Codegen::codegen_eq(EqExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpEQ(left, right, "eqtmp");
-    return builder_->CreateFCmpOEQ(left, right, "eqtmp");
-}
-
-Value* Codegen::codegen_neq(NeqExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpNE(left, right, "neqtmp");
-    return builder_->CreateFCmpONE(left, right, "neqtmp");
-}
-
-Value* Codegen::codegen_lt(LtExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpSLT(left, right, "lttmp");
-    return builder_->CreateFCmpOLT(left, right, "lttmp");
-}
-
-Value* Codegen::codegen_gt(GtExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpSGT(left, right, "gttmp");
-    return builder_->CreateFCmpOGT(left, right, "gttmp");
-}
-
-Value* Codegen::codegen_lte(LteExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpSLE(left, right, "letmp");
-    return builder_->CreateFCmpOLE(left, right, "letmp");
-}
-
-Value* Codegen::codegen_gte(GteExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-
-    if (left->getType()->isIntegerTy(64))
-        return builder_->CreateICmpSGE(left, right, "getmp");
-    return builder_->CreateFCmpOGE(left, right, "getmp");
-}
-
-// ===== Logical =====
-
-Value* Codegen::codegen_and(LogicalAndExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-    return builder_->CreateAnd(left, right, "andtmp");
-}
-
-Value* Codegen::codegen_or(LogicalOrExpr* node) {
-    auto left = codegen(node->left);
-    auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
-    return builder_->CreateOr(left, right, "ortmp");
-}
-
-Value* Codegen::codegen_not(LogicalNotOpExpr* node) {
-    auto val = codegen(node->expr);
-    if (!val) return nullptr;
-    return builder_->CreateNot(val, "nottmp");
+    Value* result = nullptr;
+    if (is_float) {
+        if (op == "==") result = builder_->CreateFCmpOEQ(left.val, right.val);
+        else if (op == "!=") result = builder_->CreateFCmpONE(left.val, right.val);
+        else if (op == "<") result = builder_->CreateFCmpOLT(left.val, right.val);
+        else if (op == ">") result = builder_->CreateFCmpOGT(left.val, right.val);
+        else if (op == "<=") result = builder_->CreateFCmpOLE(left.val, right.val);
+        else if (op == ">=") result = builder_->CreateFCmpOGE(left.val, right.val);
+    } else {
+        if (op == "==") result = builder_->CreateICmpEQ(left.val, right.val);
+        else if (op == "!=") result = builder_->CreateICmpNE(left.val, right.val);
+        else if (op == "<") result = builder_->CreateICmpSLT(left.val, right.val);
+        else if (op == ">") result = builder_->CreateICmpSGT(left.val, right.val);
+        else if (op == "<=") result = builder_->CreateICmpSLE(left.val, right.val);
+        else if (op == ">=") result = builder_->CreateICmpSGE(left.val, right.val);
+    }
+    return {result, CType::BOOL};
 }
 
 // ===== Let Bindings =====
 
-Value* Codegen::codegen_let(LetExpr* node) {
-    // Process each alias binding
+TypedValue Codegen::codegen_let(LetExpr* node) {
     for (auto* alias : node->aliases) {
-        if (auto* val_alias = dynamic_cast<ValueAlias*>(alias)) {
-            auto val = codegen(val_alias->expr);
-            if (val) {
-                named_values_[val_alias->identifier->name->value] = val;
-            }
-        } else if (auto* lambda_alias = dynamic_cast<LambdaAlias*>(alias)) {
-            codegen_lambda_alias(lambda_alias);
-        } else if (auto* pattern_alias = dynamic_cast<PatternAlias*>(alias)) {
-            // Pattern destructuring: let (a, b) = expr in ...
-            auto val = codegen(pattern_alias->expr);
-            if (val && val->getType()->isStructTy()) {
-                // Extract elements from tuple and bind to pattern variables
-                auto* pat = pattern_alias->pattern;
-                if (pat->get_type() == AST_TUPLE_PATTERN) {
-                    auto* tp = static_cast<TuplePattern*>(pat);
+        if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+            auto tv = codegen(va->expr);
+            if (tv) named_values_[va->identifier->name->value] = tv;
+        } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+            codegen_lambda_alias(la);
+        } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
+            auto tv = codegen(pa->expr);
+            if (tv && tv.type == CType::TUPLE && tv.val->getType()->isStructTy()) {
+                auto* tp = dynamic_cast<TuplePattern*>(pa->pattern);
+                if (tp) {
                     for (size_t i = 0; i < tp->patterns.size(); i++) {
-                        auto elem = builder_->CreateExtractValue(val, {static_cast<unsigned>(i)});
-                        auto* sub_pat = tp->patterns[i];
-                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
-                            auto* pv = static_cast<PatternValue*>(sub_pat);
-                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                                named_values_[(*id)->name->value] = elem;
-                            }
+                        auto elem = builder_->CreateExtractValue(tv.val, {(unsigned)i});
+                        CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
+                        auto* sub = tp->patterns[i];
+                        if (sub->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                named_values_[(*id)->name->value] = {elem, et};
                         }
                     }
                 }
             }
         }
     }
-
-    // Evaluate and return the body
     return codegen(node->expr);
 }
 
 // ===== If Expression =====
 
-Value* Codegen::codegen_if(IfExpr* node) {
+TypedValue Codegen::codegen_if(IfExpr* node) {
     auto cond = codegen(node->condition);
-    if (!cond) return nullptr;
+    if (!cond) return {};
+    if (cond.type == CType::INT)
+        cond.val = builder_->CreateICmpNE(cond.val, ConstantInt::get(LType::getInt64Ty(*context_), 0));
 
-    // Convert condition to i1 if it's an i64
-    if (cond->getType()->isIntegerTy(64)) {
-        cond = builder_->CreateICmpNE(cond, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0), "ifcond");
-    }
+    auto fn = builder_->GetInsertBlock()->getParent();
+    auto then_bb = BasicBlock::Create(*context_, "then", fn);
+    auto else_bb = BasicBlock::Create(*context_, "else");
+    auto merge_bb = BasicBlock::Create(*context_, "ifcont");
+    builder_->CreateCondBr(cond.val, then_bb, else_bb);
 
-    auto parent_fn = builder_->GetInsertBlock()->getParent();
-
-    auto then_bb = llvm::BasicBlock::Create(*context_, "then", parent_fn);
-    auto else_bb = llvm::BasicBlock::Create(*context_, "else");
-    auto merge_bb = llvm::BasicBlock::Create(*context_, "ifcont");
-
-    builder_->CreateCondBr(cond, then_bb, else_bb);
-
-    // Then block
     builder_->SetInsertPoint(then_bb);
-    auto then_val = codegen(node->thenExpr);
-    if (!then_val) return nullptr;
+    auto then_tv = codegen(node->thenExpr);
+    if (!then_tv) return {};
     builder_->CreateBr(merge_bb);
-    then_bb = builder_->GetInsertBlock();
+    auto then_end = builder_->GetInsertBlock();
 
-    // Else block
-    parent_fn->insert(parent_fn->end(), else_bb);
+    fn->insert(fn->end(), else_bb);
     builder_->SetInsertPoint(else_bb);
-    auto else_val = codegen(node->elseExpr);
-    if (!else_val) return nullptr;
+    auto else_tv = codegen(node->elseExpr);
+    if (!else_tv) return {};
     builder_->CreateBr(merge_bb);
-    else_bb = builder_->GetInsertBlock();
+    auto else_end = builder_->GetInsertBlock();
 
-    // Merge block
-    parent_fn->insert(parent_fn->end(), merge_bb);
+    fn->insert(fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);
-
-    // PHI node to select the result
-    auto phi = builder_->CreatePHI(then_val->getType(), 2, "iftmp");
-    phi->addIncoming(then_val, then_bb);
-    phi->addIncoming(else_val, else_bb);
-    return phi;
+    auto phi = builder_->CreatePHI(then_tv.val->getType(), 2);
+    phi->addIncoming(then_tv.val, then_end);
+    phi->addIncoming(else_tv.val, else_end);
+    return {phi, then_tv.type, then_tv.subtypes};
 }
 
 // ===== Identifier =====
 
-Value* Codegen::codegen_identifier(IdentifierExpr* node) {
+TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     auto it = named_values_.find(node->name->value);
-    if (it != named_values_.end()) {
-        return it->second;
-    }
-    std::cerr << "Codegen: unknown variable '" << node->name->value << "'" << std::endl;
-    return nullptr;
+    if (it != named_values_.end()) return it->second;
+    // Check if it's a compiled function
+    auto fit = compiled_functions_.find(node->name->value);
+    if (fit != compiled_functions_.end()) return {fit->second.fn, CType::FUNCTION};
+    std::cerr << "Codegen: unknown variable '" << node->name->value << "'\n";
+    return {};
 }
 
-// ===== Functions =====
+// ===== Functions (deferred compilation) =====
 
-// Collect free variables in an expression (variables used but not defined locally)
-static void collect_free_vars(AstNode* node, const std::unordered_set<std::string>& bound,
-                               std::unordered_set<std::string>& free_vars) {
-    if (!node) return;
-    switch (node->get_type()) {
-        case AST_IDENTIFIER_EXPR: {
-            auto* id = static_cast<IdentifierExpr*>(node);
-            if (bound.find(id->name->value) == bound.end()) {
-                free_vars.insert(id->name->value);
-            }
-            break;
-        }
-        case AST_ADD_EXPR: case AST_SUBTRACT_EXPR: case AST_MULTIPLY_EXPR:
-        case AST_DIVIDE_EXPR: case AST_MODULO_EXPR:
-        case AST_EQ_EXPR: case AST_NEQ_EXPR:
-        case AST_LT_EXPR: case AST_GT_EXPR: case AST_LTE_EXPR: case AST_GTE_EXPR:
-        case AST_LOGICAL_AND_EXPR: case AST_LOGICAL_OR_EXPR: {
-            // Binary expressions have left and right children
-            // Use a simple cast — all binary exprs have left/right as first two members
-            auto* bin = static_cast<AddExpr*>(node); // all have same layout
-            collect_free_vars(bin->left, bound, free_vars);
-            collect_free_vars(bin->right, bound, free_vars);
-            break;
-        }
-        case AST_IF_EXPR: {
-            auto* if_expr = static_cast<IfExpr*>(node);
-            collect_free_vars(if_expr->condition, bound, free_vars);
-            collect_free_vars(if_expr->thenExpr, bound, free_vars);
-            collect_free_vars(if_expr->elseExpr, bound, free_vars);
-            break;
-        }
-        case AST_LET_EXPR: {
-            auto* let = static_cast<LetExpr*>(node);
-            auto new_bound = bound;
-            for (auto* alias : let->aliases) {
-                if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
-                    collect_free_vars(va->expr, bound, free_vars);
-                    new_bound.insert(va->identifier->name->value);
-                } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
-                    new_bound.insert(la->name->value);
-                }
-            }
-            collect_free_vars(let->expr, new_bound, free_vars);
-            break;
-        }
-        case AST_CASE_EXPR: {
-            auto* case_expr = static_cast<CaseExpr*>(node);
-            collect_free_vars(case_expr->expr, bound, free_vars);
-            for (auto* clause : case_expr->clauses) {
-                collect_free_vars(clause->body, bound, free_vars);
-            }
-            break;
-        }
-        case AST_APPLY_EXPR: {
-            auto* apply = static_cast<ApplyExpr*>(node);
-            if (auto* nc = dynamic_cast<NameCall*>(apply->call)) {
-                if (bound.find(nc->name->value) == bound.end()) {
-                    free_vars.insert(nc->name->value);
-                }
-            }
-            for (auto& arg : apply->args) {
-                if (std::holds_alternative<ExprNode*>(arg))
-                    collect_free_vars(std::get<ExprNode*>(arg), bound, free_vars);
-                else
-                    collect_free_vars(std::get<ValueExpr*>(arg), bound, free_vars);
-            }
-            break;
-        }
-        default:
-            break; // Literals, etc. have no free vars
-    }
-}
-
-Value* Codegen::codegen_function(FunctionExpr* node) {
-    // Determine arity from patterns
-    size_t arity = node->patterns.size();
+TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& name) {
+    std::string fn_name = name.empty() ? (node->name.empty() ? "lambda_" + std::to_string(lambda_counter_++) : node->name) : name;
 
     // Extract parameter names
-    std::vector<std::string> param_names;
-    std::unordered_set<std::string> bound_vars;
-    for (size_t i = 0; i < arity; i++) {
-        std::string param_name = "arg" + std::to_string(i);
-        if (i < node->patterns.size()) {
-            auto* pattern = node->patterns[i];
-            if (pattern->get_type() == AST_PATTERN_VALUE) {
-                auto* pv = static_cast<PatternValue*>(pattern);
-                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                    param_name = (*id)->name->value;
-                }
-            }
+    DeferredFunction def;
+    def.ast = node;
+    for (size_t i = 0; i < node->patterns.size(); i++) {
+        std::string pname = "arg" + std::to_string(i);
+        if (i < node->patterns.size() && node->patterns[i]->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(node->patterns[i]);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                pname = (*id)->name->value;
         }
-        param_names.push_back(param_name);
-        bound_vars.insert(param_name);
+        def.param_names.push_back(pname);
     }
 
-    // Find free variables (closure capture via lambda lifting)
-    std::unordered_set<std::string> free_var_set;
+    // Find free variables
+    std::unordered_set<std::string> bound(def.param_names.begin(), def.param_names.end());
+    std::unordered_set<std::string> fv_set;
     if (!node->bodies.empty()) {
         auto* body = node->bodies[0];
-        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
-            collect_free_vars(bwg->expr, bound_vars, free_var_set);
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+            collect_free_vars(bwg->expr, bound, fv_set);
+    }
+    for (auto& v : fv_set) {
+        auto it = named_values_.find(v);
+        if (it != named_values_.end() && it->second.type != CType::FUNCTION)
+            def.free_vars.push_back(v);
+    }
+
+    deferred_functions_[fn_name] = def;
+    return {nullptr, CType::FUNCTION}; // no value yet, compiled at call site
+}
+
+TypedValue Codegen::codegen_lambda_alias(LambdaAlias* node) {
+    auto fn_name = node->name->value;
+    codegen_function_def(node->lambda, fn_name);
+    named_values_[fn_name] = {nullptr, CType::FUNCTION};
+    return {nullptr, CType::FUNCTION};
+}
+
+Codegen::CompiledFunction Codegen::compile_function(
+    const std::string& name, const DeferredFunction& def, const std::vector<TypedValue>& args) {
+
+    // Build parameter types from actual argument types
+    std::vector<LType*> param_types;
+    std::vector<CType> param_ctypes;
+    for (size_t i = 0; i < def.param_names.size(); i++) {
+        CType ct = (i < args.size()) ? args[i].type : CType::INT;
+        param_types.push_back(llvm_type(ct));
+        param_ctypes.push_back(ct);
+    }
+
+    // Add free variable types
+    std::vector<TypedValue> capture_values;
+    for (auto& fv : def.free_vars) {
+        auto it = named_values_.find(fv);
+        if (it != named_values_.end()) {
+            param_types.push_back(llvm_type(it->second.type));
+            param_ctypes.push_back(it->second.type);
+            capture_values.push_back(it->second);
         }
     }
 
-    // Filter free vars to only those that exist in the current scope
-    std::vector<std::string> free_vars;
-    std::vector<Value*> free_var_values;
-    for (auto& var : free_var_set) {
-        auto it = named_values_.find(var);
-        if (it != named_values_.end() && !llvm::isa<llvm::Function>(it->second)) {
-            free_vars.push_back(var);
-            free_var_values.push_back(it->second);
-        }
-    }
+    // Create function with i64 return (may be recreated if body returns different type)
+    auto ret_type = LType::getInt64Ty(*context_);
+    auto fn_type = llvm::FunctionType::get(ret_type, param_types, false);
+    auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 
-    // Build function type: params + captured free vars
-    std::vector<llvm::Type*> arg_types;
-    for (size_t i = 0; i < arity; i++)
-        arg_types.push_back(llvm::Type::getInt64Ty(*context_));
-    for (size_t i = 0; i < free_vars.size(); i++)
-        arg_types.push_back(llvm::Type::getInt64Ty(*context_));
+    // Register immediately so recursive calls find this function
+    CompiledFunction cf_preliminary;
+    cf_preliminary.fn = fn;
+    cf_preliminary.return_type = CType::INT; // default, updated after body
+    cf_preliminary.param_types = param_ctypes;
+    cf_preliminary.capture_names = def.free_vars;
+    compiled_functions_[name] = cf_preliminary;
+    named_values_[name] = {fn, CType::FUNCTION};
 
-    auto ret_type = llvm::Type::getInt64Ty(*context_);
-
-    std::string fn_name = node->name.empty()
-        ? ("lambda_" + std::to_string(lambda_counter_++))
-        : node->name;
-
-    auto fn_type = llvm::FunctionType::get(ret_type, arg_types, false);
-    auto fn = llvm::Function::Create(fn_type, llvm::Function::InternalLinkage,
-                                      fn_name, module_.get());
-
-    // Save current state
+    // Save state
     auto saved_block = builder_->GetInsertBlock();
     auto saved_point = builder_->GetInsertPoint();
     auto saved_values = named_values_;
 
-    auto entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+    auto entry = BasicBlock::Create(*context_, "entry", fn);
     builder_->SetInsertPoint(entry);
 
-    // Bind parameters and captured variables
+    // Bind parameters
     named_values_.clear();
+    // Keep function references from outer scope
+    for (auto& [k, v] : saved_values) {
+        if (v.type == CType::FUNCTION) named_values_[k] = v;
+    }
+    // Also keep deferred function knowledge
+    named_values_[name] = {fn, CType::FUNCTION};
+
     size_t i = 0;
     for (auto& arg : fn->args()) {
-        std::string name;
-        if (i < param_names.size()) {
-            name = param_names[i];
+        std::string pname;
+        CType ct;
+        if (i < def.param_names.size()) {
+            pname = def.param_names[i];
+            ct = (i < args.size()) ? args[i].type : CType::INT;
         } else {
-            name = free_vars[i - param_names.size()];
+            pname = def.free_vars[i - def.param_names.size()];
+            size_t ci = i - def.param_names.size();
+            ct = (ci < capture_values.size()) ? capture_values[ci].type : CType::INT;
         }
-        arg.setName(name);
-        named_values_[name] = &arg;
+        arg.setName(pname);
+        named_values_[pname] = {&arg, ct};
         i++;
     }
 
-    // Compile function body
-    Value* body_val = nullptr;
-    if (!node->bodies.empty()) {
-        auto* body = node->bodies[0];
-        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
-            body_val = codegen(bwg->expr);
-        }
+    // Compile body
+    TypedValue body_tv;
+    if (!def.ast->bodies.empty()) {
+        auto* body = def.ast->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+            body_tv = codegen(bwg->expr);
     }
 
-    if (body_val) {
-        builder_->CreateRet(body_val);
-    } else {
-        builder_->CreateRet(llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0));
-    }
+    CType ret_ctype = body_tv ? body_tv.type : CType::INT;
 
-    // Restore insertion point and named values
-    named_values_ = saved_values;
-    if (saved_block) {
-        builder_->SetInsertPoint(saved_block, saved_point);
-    }
+    if (body_tv && body_tv.val) {
+        // If body type doesn't match return type, we need to recreate the function
+        if (body_tv.val->getType() != ret_type) {
+            // Remove the function and recreate with correct return type
+            fn->eraseFromParent();
+            auto new_fn_type = llvm::FunctionType::get(body_tv.val->getType(), param_types, false);
+            fn = Function::Create(new_fn_type, Function::InternalLinkage, name, module_.get());
 
-    // Store closure capture info for call sites
-    if (!free_var_values.empty()) {
-        closure_captures_[fn_name] = free_var_values;
-    }
-
-    return fn;
-}
-
-Value* Codegen::codegen_apply(ApplyExpr* node) {
-    // Flatten nested juxtaposition applies: add 3 4 → apply(apply(add, [3]), [4])
-    // Collect all args and find the root function name
-    std::vector<ApplyExpr*> apply_chain;
-    std::string fn_name;
-
-    // Walk the chain
-    ApplyExpr* current = node;
-    while (current) {
-        apply_chain.push_back(current);
-        if (auto* name_call = dynamic_cast<NameCall*>(current->call)) {
-            fn_name = name_call->name->value;
-            break;
-        } else if (auto* expr_call = dynamic_cast<ExprCall*>(current->call)) {
-            // The inner expression might be another ApplyExpr (juxtaposition chain)
-            if (auto* inner_apply = dynamic_cast<ApplyExpr*>(expr_call->expr)) {
-                current = inner_apply;
-            } else {
-                break;
+            // Recompile
+            named_values_.clear();
+            for (auto& [k, v] : saved_values) {
+                if (v.type == CType::FUNCTION) named_values_[k] = v;
             }
-        } else {
-            break;
-        }
-    }
+            named_values_[name] = {fn, CType::FUNCTION};
 
-    // Collect all args in order (reverse the chain since we walked inside-out)
-    std::vector<Value*> all_args;
-    for (auto it = apply_chain.rbegin(); it != apply_chain.rend(); ++it) {
-        for (const auto& arg : (*it)->args) {
-            Value* val = nullptr;
-            if (std::holds_alternative<ExprNode*>(arg)) {
-                val = codegen(std::get<ExprNode*>(arg));
-            } else {
-                val = codegen(std::get<ValueExpr*>(arg));
-            }
-            if (!val) return nullptr;
-            all_args.push_back(val);
-        }
-    }
+            auto new_entry = BasicBlock::Create(*context_, "entry", fn);
+            builder_->SetInsertPoint(new_entry);
 
-    // Find the function
-    llvm::Function* callee = nullptr;
-    if (!fn_name.empty()) {
-        callee = module_->getFunction(fn_name);
-        if (!callee) {
-            auto it = named_values_.find(fn_name);
-            if (it != named_values_.end()) {
-                if (auto* fn = llvm::dyn_cast<llvm::Function>(it->second)) {
-                    callee = fn;
+            i = 0;
+            for (auto& arg : fn->args()) {
+                std::string pname;
+                CType ct;
+                if (i < def.param_names.size()) {
+                    pname = def.param_names[i];
+                    ct = (i < args.size()) ? args[i].type : CType::INT;
+                } else {
+                    pname = def.free_vars[i - def.param_names.size()];
+                    size_t ci = i - def.param_names.size();
+                    ct = (ci < capture_values.size()) ? capture_values[ci].type : CType::INT;
                 }
+                arg.setName(pname);
+                named_values_[pname] = {&arg, ct};
+                i++;
             }
+
+            body_tv = {};
+            if (!def.ast->bodies.empty()) {
+                auto* body = def.ast->bodies[0];
+                if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+                    body_tv = codegen(bwg->expr);
+            }
+            ret_ctype = body_tv ? body_tv.type : CType::INT;
         }
+        builder_->CreateRet(body_tv.val);
+    } else {
+        builder_->CreateRet(ConstantInt::get(ret_type, 0));
     }
 
-    if (!callee) {
-        std::cerr << "Codegen: unknown function '" << fn_name << "' in apply" << std::endl;
-        return nullptr;
-    }
+    // Restore
+    named_values_ = saved_values;
+    if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
 
-    // Append closure-captured values if this function has captures
-    auto cap_it = closure_captures_.find(fn_name);
-    if (cap_it != closure_captures_.end()) {
-        for (auto* cap_val : cap_it->second) {
-            all_args.push_back(cap_val);
-        }
-    }
+    CompiledFunction cf;
+    cf.fn = fn;
+    cf.return_type = ret_ctype;
+    cf.param_types = param_ctypes;
+    cf.capture_names = def.free_vars;
+    compiled_functions_[name] = cf;
+    named_values_[name] = {fn, CType::FUNCTION};
 
-    return builder_->CreateCall(callee, all_args, "calltmp");
+    return cf;
 }
 
-Value* Codegen::codegen_lambda_alias(LambdaAlias* node) {
-    // Compile the lambda function
-    auto fn_val = codegen_function(node->lambda);
-    if (!fn_val) return nullptr;
+TypedValue Codegen::codegen_apply(ApplyExpr* node) {
+    // Flatten juxtaposition chain: f x y → collect all args and root name
+    std::vector<ApplyExpr*> chain;
+    std::string fn_name;
+    ApplyExpr* cur = node;
+    while (cur) {
+        chain.push_back(cur);
+        if (auto* nc = dynamic_cast<NameCall*>(cur->call)) {
+            fn_name = nc->name->value;
+            break;
+        } else if (auto* ec = dynamic_cast<ExprCall*>(cur->call)) {
+            if (auto* inner = dynamic_cast<ApplyExpr*>(ec->expr)) cur = inner;
+            else break;
+        } else break;
+    }
 
-    // Bind the function to the alias name
-    named_values_[node->name->value] = fn_val;
-    return fn_val;
+    // Evaluate all arguments in order
+    std::vector<TypedValue> all_args;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        for (auto& a : (*it)->args) {
+            TypedValue tv;
+            if (std::holds_alternative<ExprNode*>(a)) tv = codegen(std::get<ExprNode*>(a));
+            else tv = codegen(std::get<ValueExpr*>(a));
+            if (!tv) return {};
+            all_args.push_back(tv);
+        }
+    }
+
+    // Find or compile the function
+    auto cf_it = compiled_functions_.find(fn_name);
+    if (cf_it == compiled_functions_.end()) {
+        // Check deferred
+        auto def_it = deferred_functions_.find(fn_name);
+        if (def_it != deferred_functions_.end()) {
+            compile_function(fn_name, def_it->second, all_args);
+            cf_it = compiled_functions_.find(fn_name);
+        }
+    }
+
+    if (cf_it == compiled_functions_.end()) {
+        // Try as an LLVM function in the module
+        auto* fn = module_->getFunction(fn_name);
+        if (!fn) {
+            std::cerr << "Codegen: unknown function '" << fn_name << "'\n";
+            return {};
+        }
+        std::vector<Value*> vals;
+        for (auto& a : all_args) vals.push_back(a.val);
+        return {builder_->CreateCall(fn, vals), CType::INT};
+    }
+
+    auto& cf = cf_it->second;
+    std::vector<Value*> call_args;
+    for (auto& a : all_args) call_args.push_back(a.val);
+
+    // Append capture values
+    for (auto& cap_name : cf.capture_names) {
+        auto it = named_values_.find(cap_name);
+        if (it != named_values_.end()) call_args.push_back(it->second.val);
+    }
+
+    return {builder_->CreateCall(cf.fn, call_args, "calltmp"), cf.return_type};
 }
 
 // ===== Case Expression =====
 
-Value* Codegen::codegen_case(CaseExpr* node) {
-    // Evaluate the scrutinee
+TypedValue Codegen::codegen_case(CaseExpr* node) {
     auto scrutinee = codegen(node->expr);
-    if (!scrutinee) return nullptr;
+    if (!scrutinee) return {};
 
-    auto parent_fn = builder_->GetInsertBlock()->getParent();
-    auto merge_bb = llvm::BasicBlock::Create(*context_, "case.end");
+    auto fn = builder_->GetInsertBlock()->getParent();
+    auto merge_bb = BasicBlock::Create(*context_, "case.end");
+    std::vector<std::pair<TypedValue, BasicBlock*>> results;
 
-    // Collect results for the phi node
-    std::vector<std::pair<Value*, llvm::BasicBlock*>> results;
-
-    // For each clause, create test + body blocks
     for (size_t i = 0; i < node->clauses.size(); i++) {
         auto* clause = node->clauses[i];
-        auto* pattern = clause->pattern;
-
-        auto body_bb = llvm::BasicBlock::Create(*context_, "case.body." + std::to_string(i), parent_fn);
+        auto* pat = clause->pattern;
+        auto body_bb = BasicBlock::Create(*context_, "case.body." + std::to_string(i), fn);
         auto next_bb = (i + 1 < node->clauses.size())
-            ? llvm::BasicBlock::Create(*context_, "case.test." + std::to_string(i + 1), parent_fn)
+            ? BasicBlock::Create(*context_, "case.next." + std::to_string(i+1), fn)
             : merge_bb;
 
-        // Generate pattern match
-        if (pattern->get_type() == AST_UNDERSCORE_PATTERN) {
-            // Wildcard — always matches
-            builder_->CreateBr(body_bb);
-        } else if (pattern->get_type() == AST_PATTERN_VALUE) {
-            auto* pv = static_cast<PatternValue*>(pattern);
+        bool body_inline = false;
 
+        if (pat->get_type() == AST_UNDERSCORE_PATTERN) {
+            builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(pat);
             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                // Variable pattern — always matches, bind the value
                 named_values_[(*id)->name->value] = scrutinee;
                 builder_->CreateBr(body_bb);
             } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
-                // Integer/byte literal pattern
-                auto* ast_node = reinterpret_cast<AstNode*>(*lit);
-                if (ast_node->get_type() == AST_INTEGER_EXPR) {
-                    auto* int_lit = static_cast<IntegerExpr*>(ast_node);
-                    auto match_val = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), int_lit->value);
-                    auto cmp = builder_->CreateICmpEQ(scrutinee, match_val, "case.cmp");
+                auto* an = reinterpret_cast<AstNode*>(*lit);
+                if (an->get_type() == AST_INTEGER_EXPR) {
+                    auto* ie = static_cast<IntegerExpr*>(an);
+                    auto mv = ConstantInt::get(LType::getInt64Ty(*context_), ie->value);
+                    auto cmp = builder_->CreateICmpEQ(scrutinee.val, mv);
                     builder_->CreateCondBr(cmp, body_bb, next_bb);
-                } else {
-                    builder_->CreateBr(body_bb); // fallback
-                }
-            } else {
-                // Other pattern types — treat as match-all for now
-                builder_->CreateBr(body_bb);
-            }
-        } else if (pattern->get_type() == AST_HEAD_TAILS_PATTERN) {
-            // [h | t] pattern — check length > 0, bind head and tail
-            auto* htp = static_cast<HeadTailsPattern*>(pattern);
+                } else builder_->CreateBr(body_bb);
+            } else builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
+            auto* htp = static_cast<HeadTailsPattern*>(pat);
+            auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+            auto min_len = ConstantInt::get(LType::getInt64Ty(*context_), htp->heads.size());
+            builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
 
-            auto len = builder_->CreateCall(rt_seq_length_, {scrutinee}, "seq.len");
-            auto min_len = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_),
-                                                   htp->heads.size());
-            auto has_enough = builder_->CreateICmpSGE(len, min_len, "case.haslen");
-            builder_->CreateCondBr(has_enough, body_bb, next_bb);
-
-            // Bind head elements and tail in body_bb
             builder_->SetInsertPoint(body_bb);
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
-                auto* head_pat = htp->heads[hi];
-                auto idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), hi);
-                auto head_val = builder_->CreateCall(rt_seq_get_, {scrutinee, idx}, "head");
-
-                if (head_pat->get_type() == AST_PATTERN_VALUE) {
-                    auto* pv = static_cast<PatternValue*>(head_pat);
-                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                        named_values_[(*id)->name->value] = head_val;
-                    }
+                auto idx = ConstantInt::get(LType::getInt64Ty(*context_), hi);
+                auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
+                auto* hp = htp->heads[hi];
+                if (hp->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(hp);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        named_values_[(*id)->name->value] = {hv, CType::INT};
                 }
             }
-            if (htp->tail) {
-                auto tail_val = builder_->CreateCall(rt_seq_tail_, {scrutinee}, "tail");
-                seq_values_.insert(tail_val);
-                if (htp->tail->get_type() == AST_PATTERN_VALUE) {
-                    auto* pv = static_cast<PatternValue*>(htp->tail);
-                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                        named_values_[(*id)->name->value] = tail_val;
-                    }
-                }
+            if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
+                auto tv = builder_->CreateCall(rt_seq_tail_, {scrutinee.val});
+                auto* pv = static_cast<PatternValue*>(htp->tail);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    named_values_[(*id)->name->value] = {tv, CType::SEQ};
             }
-            // Body will be generated here — skip SetInsertPoint below
-            {
-                auto body_val = codegen(clause->body);
-                if (!body_val) return nullptr;
-                builder_->CreateBr(merge_bb);
-                results.push_back({body_val, builder_->GetInsertBlock()});
-                if (i + 1 < node->clauses.size() && next_bb != merge_bb)
-                    builder_->SetInsertPoint(next_bb);
-                continue; // skip the normal body generation below
-            }
-        } else if (pattern->get_type() == AST_SEQ_PATTERN) {
-            // [] pattern — check length == 0
-            auto* sp = static_cast<SeqPattern*>(pattern);
+            body_inline = true;
+        } else if (pat->get_type() == AST_SEQ_PATTERN) {
+            auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
-                // Empty sequence pattern: match if length == 0
-                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee}, "seq.len");
-                auto is_empty = builder_->CreateICmpEQ(len,
-                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0), "case.empty");
-                builder_->CreateCondBr(is_empty, body_bb, next_bb);
-            } else {
-                builder_->CreateBr(body_bb); // Non-empty seq pattern: match-all for now
-            }
-        } else if (pattern->get_type() == AST_TUPLE_PATTERN) {
-            // Tuple pattern: destructure and bind
-            auto* tp = static_cast<TuplePattern*>(pattern);
-            // Always matches — bind elements
+                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+                auto cmp = builder_->CreateICmpEQ(len, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
+            } else builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_TUPLE_PATTERN) {
+            auto* tp = static_cast<TuplePattern*>(pat);
             for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
-                auto elem = builder_->CreateExtractValue(scrutinee, {static_cast<unsigned>(ti)});
-                auto* sub_pat = tp->patterns[ti];
-                if (sub_pat->get_type() == AST_PATTERN_VALUE) {
-                    auto* pv = static_cast<PatternValue*>(sub_pat);
-                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                        named_values_[(*id)->name->value] = elem;
-                    }
+                auto elem = builder_->CreateExtractValue(scrutinee.val, {(unsigned)ti});
+                CType et = (ti < scrutinee.subtypes.size()) ? scrutinee.subtypes[ti] : CType::INT;
+                auto* sub = tp->patterns[ti];
+                if (sub->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(sub);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        named_values_[(*id)->name->value] = {elem, et};
                 }
             }
             builder_->CreateBr(body_bb);
         } else {
-            // Unsupported pattern type — treat as match-all
             builder_->CreateBr(body_bb);
         }
 
-        // Generate body
-        builder_->SetInsertPoint(body_bb);
-        auto body_val = codegen(clause->body);
-        if (!body_val) return nullptr;
+        if (!body_inline) builder_->SetInsertPoint(body_bb);
+        auto body_tv = codegen(clause->body);
+        if (!body_tv) return {};
         builder_->CreateBr(merge_bb);
-        results.push_back({body_val, builder_->GetInsertBlock()});
+        results.push_back({body_tv, builder_->GetInsertBlock()});
 
-        // Continue to next test block (if not last)
-        if (i + 1 < node->clauses.size() && next_bb != merge_bb) {
+        if (i + 1 < node->clauses.size() && next_bb != merge_bb)
             builder_->SetInsertPoint(next_bb);
-        }
     }
 
-    // If the last clause was conditional (not wildcard/variable), add a default path
-    // that returns 0 to handle the "no match" case
-    if (!results.empty()) {
-        // Check if there's a path to merge_bb that isn't covered
-        // Add a default value for any uncovered predecessors
-    }
-
-    // Merge block with phi
-    parent_fn->insert(parent_fn->end(), merge_bb);
+    fn->insert(fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);
+    if (results.empty()) return {};
 
-    if (results.empty()) return nullptr;
-
-    // Count actual predecessors of merge_bb
     unsigned pred_count = 0;
-    for (auto it = llvm::pred_begin(merge_bb); it != llvm::pred_end(merge_bb); ++it)
-        pred_count++;
+    for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) pred_count++;
 
-    auto phi = builder_->CreatePHI(results[0].first->getType(), pred_count, "case.result");
-    for (auto& [val, bb] : results) {
-        phi->addIncoming(val, bb);
-    }
-    // Add default value for any predecessor not covered by results
-    for (auto it = llvm::pred_begin(merge_bb); it != llvm::pred_end(merge_bb); ++it) {
+    auto phi = builder_->CreatePHI(results[0].first.val->getType(), pred_count);
+    for (auto& [tv, bb] : results) phi->addIncoming(tv.val, bb);
+    for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) {
         bool found = false;
-        for (auto& [val, bb] : results) {
-            if (bb == *it) { found = true; break; }
-        }
-        if (!found) {
-            phi->addIncoming(llvm::ConstantInt::get(results[0].first->getType(), 0), *it);
-        }
+        for (auto& [tv, bb] : results) if (bb == *it) { found = true; break; }
+        if (!found) phi->addIncoming(ConstantInt::get(results[0].first.val->getType(), 0), *it);
     }
-    return phi;
+    return {phi, results[0].first.type, results[0].first.subtypes};
 }
 
 // ===== Do Expression =====
 
-Value* Codegen::codegen_do(DoExpr* node) {
-    Value* last = nullptr;
-    for (auto* step : node->steps) {
-        last = codegen(step);
-    }
-    return last ? last : llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+TypedValue Codegen::codegen_do(DoExpr* node) {
+    TypedValue last;
+    for (auto* step : node->steps) last = codegen(step);
+    return last ? last : TypedValue{ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::INT};
 }
 
-// ===== Tuples =====
+// ===== Collections =====
 
-Value* Codegen::codegen_tuple(TupleExpr* node) {
-    size_t n = node->values.size();
+TypedValue Codegen::codegen_tuple(TupleExpr* node) {
+    std::vector<Value*> elems;
+    std::vector<CType> subtypes;
+    std::vector<LType*> llvm_types;
 
-    // Create struct type { i64, i64, ... }
-    std::vector<llvm::Type*> field_types(n, llvm::Type::getInt64Ty(*context_));
-    auto struct_type = llvm::StructType::get(*context_, field_types);
-
-    // Start with undef struct and insert each element
-    Value* tuple_val = UndefValue::get(struct_type);
-    for (size_t i = 0; i < n; i++) {
-        auto elem = codegen(node->values[i]);
-        if (!elem) return nullptr;
-        tuple_val = builder_->CreateInsertValue(tuple_val, elem, {static_cast<unsigned>(i)},
-                                                 "tuple.ins." + std::to_string(i));
+    for (auto* v : node->values) {
+        auto tv = codegen(v);
+        if (!tv) return {};
+        elems.push_back(tv.val);
+        subtypes.push_back(tv.type);
+        llvm_types.push_back(tv.val->getType());
     }
-    return tuple_val;
+
+    auto struct_type = StructType::get(*context_, llvm_types);
+    Value* tuple = UndefValue::get(struct_type);
+    for (size_t i = 0; i < elems.size(); i++)
+        tuple = builder_->CreateInsertValue(tuple, elems[i], {(unsigned)i});
+
+    return {tuple, CType::TUPLE, subtypes};
 }
 
-// ===== Sequences =====
-
-Value* Codegen::codegen_seq(ValuesSequenceExpr* node) {
+TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
     size_t n = node->values.size();
-
-    auto count = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), n);
+    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
     auto seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
 
     for (size_t i = 0; i < n; i++) {
-        auto elem = codegen(node->values[i]);
-        if (!elem) return nullptr;
-        auto idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), i);
-        builder_->CreateCall(rt_seq_set_, {seq, idx, elem});
+        auto tv = codegen(node->values[i]);
+        if (!tv) return {};
+        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
+        builder_->CreateCall(rt_seq_set_, {seq, idx, tv.val});
     }
-
-    seq_values_.insert(seq);
-    return seq;
+    return {seq, CType::SEQ};
 }
 
-Value* Codegen::codegen_cons(ConsLeftExpr* node) {
+TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     auto elem = codegen(node->left);
     auto seq = codegen(node->right);
-    if (!elem || !seq) return nullptr;
-    auto result = builder_->CreateCall(rt_seq_cons_, {elem, seq}, "cons");
-    seq_values_.insert(result);
-    return result;
+    if (!elem || !seq) return {};
+    return {builder_->CreateCall(rt_seq_cons_, {elem.val, seq.val}, "cons"), CType::SEQ};
 }
 
-Value* Codegen::codegen_join(JoinExpr* node) {
+TypedValue Codegen::codegen_join(JoinExpr* node) {
     auto left = codegen(node->left);
     auto right = codegen(node->right);
-    if (!left || !right) return nullptr;
+    if (!left || !right) return {};
 
-    // If both are pointers (sequences or strings), dispatch
-    if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
-        // Could be string concat or seq join — check at codegen time
-        // For now, try seq join (strings handled elsewhere)
-        return builder_->CreateCall(rt_seq_join_, {left, right}, "join");
-    }
-    // String concat fallback
-    if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
-        return builder_->CreateCall(rt_string_concat_, {left, right}, "concat");
-    }
-    return nullptr;
-}
-
-// ===== Unit =====
-
-Value* Codegen::codegen_unit(UnitExpr*) {
-    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
-}
-
-// ===== Print Helper =====
-
-void Codegen::codegen_print_value(Value* val) {
-    if (!val) return;
-
-    // Print the value itself
-    if (val->getType()->isIntegerTy(64)) {
-        builder_->CreateCall(rt_print_int_, {val});
-    } else if (val->getType()->isDoubleTy()) {
-        builder_->CreateCall(rt_print_float_, {val});
-    } else if (val->getType()->isIntegerTy(1)) {
-        builder_->CreateCall(rt_print_bool_, {val});
-    } else if (val->getType()->isPointerTy()) {
-        if (seq_values_.count(val)) {
-            builder_->CreateCall(rt_print_seq_, {val});
-        } else {
-            builder_->CreateCall(rt_print_string_, {val});
-        }
-    } else if (val->getType()->isStructTy()) {
-        // Tuple: print as (a, b, c)
-        auto* struct_type = llvm::cast<llvm::StructType>(val->getType());
-        unsigned n = struct_type->getNumElements();
-        auto open = builder_->CreateGlobalStringPtr("(");
-        builder_->CreateCall(rt_print_string_, {open});
-        for (unsigned i = 0; i < n; i++) {
-            if (i > 0) {
-                auto comma = builder_->CreateGlobalStringPtr(", ");
-                builder_->CreateCall(rt_print_string_, {comma});
-            }
-            auto elem = builder_->CreateExtractValue(val, {i});
-            // Print element without newline (recursive but same function)
-            if (elem->getType()->isIntegerTy(64))
-                builder_->CreateCall(rt_print_int_, {elem});
-            else if (elem->getType()->isDoubleTy())
-                builder_->CreateCall(rt_print_float_, {elem});
-            else if (elem->getType()->isIntegerTy(1))
-                builder_->CreateCall(rt_print_bool_, {elem});
-        }
-        auto close = builder_->CreateGlobalStringPtr(")");
-        builder_->CreateCall(rt_print_string_, {close});
-    }
-
-    // Always print newline at top level (called from codegen_main)
-    builder_->CreateCall(rt_print_newline_, {});
-}
-
-// ===== Type Mapping =====
-
-llvm::Type* Codegen::get_llvm_type(const types::Type& yona_type) {
-    if (std::holds_alternative<types::BuiltinType>(yona_type)) {
-        switch (std::get<types::BuiltinType>(yona_type)) {
-            case types::SignedInt64: return llvm::Type::getInt64Ty(*context_);
-            case types::Float64: return llvm::Type::getDoubleTy(*context_);
-            case types::Bool: return llvm::Type::getInt1Ty(*context_);
-            case types::Unit: return llvm::Type::getVoidTy(*context_);
-            case types::String: return llvm::PointerType::get(llvm::Type::getInt8Ty(*context_), 0);
-            default: return llvm::Type::getInt64Ty(*context_);
-        }
-    }
-    return llvm::Type::getInt64Ty(*context_); // fallback
+    if (left.type == CType::SEQ && right.type == CType::SEQ)
+        return {builder_->CreateCall(rt_seq_join_, {left.val, right.val}), CType::SEQ};
+    if (left.type == CType::STRING || right.type == CType::STRING)
+        return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
+    return {};
 }
 
 } // namespace yona::compiler::codegen
