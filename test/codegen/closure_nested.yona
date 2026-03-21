@@ -1,0 +1,1 @@
+let x = 1 in let f a = a + x in let g b = f b + x in g 10

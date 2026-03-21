@@ -107,6 +107,9 @@ private:
     // Function name counter for unique anonymous function names
     int lambda_counter_ = 0;
 
+    // Closure capture info: function name → captured variable values
+    std::unordered_map<std::string, std::vector<llvm::Value*>> closure_captures_;
+
     // Helper: get LLVM type for a Yona type
     llvm::Type* get_llvm_type(const Type& yona_type);
 

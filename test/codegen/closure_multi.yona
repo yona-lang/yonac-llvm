@@ -1,0 +1,1 @@
+let a = 100 in let b = 200 in let sum x = x + a + b in sum 5

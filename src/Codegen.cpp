@@ -488,37 +488,87 @@ Value* Codegen::codegen_identifier(IdentifierExpr* node) {
 
 // ===== Functions =====
 
+// Collect free variables in an expression (variables used but not defined locally)
+static void collect_free_vars(AstNode* node, const std::unordered_set<std::string>& bound,
+                               std::unordered_set<std::string>& free_vars) {
+    if (!node) return;
+    switch (node->get_type()) {
+        case AST_IDENTIFIER_EXPR: {
+            auto* id = static_cast<IdentifierExpr*>(node);
+            if (bound.find(id->name->value) == bound.end()) {
+                free_vars.insert(id->name->value);
+            }
+            break;
+        }
+        case AST_ADD_EXPR: case AST_SUBTRACT_EXPR: case AST_MULTIPLY_EXPR:
+        case AST_DIVIDE_EXPR: case AST_MODULO_EXPR:
+        case AST_EQ_EXPR: case AST_NEQ_EXPR:
+        case AST_LT_EXPR: case AST_GT_EXPR: case AST_LTE_EXPR: case AST_GTE_EXPR:
+        case AST_LOGICAL_AND_EXPR: case AST_LOGICAL_OR_EXPR: {
+            // Binary expressions have left and right children
+            // Use a simple cast — all binary exprs have left/right as first two members
+            auto* bin = static_cast<AddExpr*>(node); // all have same layout
+            collect_free_vars(bin->left, bound, free_vars);
+            collect_free_vars(bin->right, bound, free_vars);
+            break;
+        }
+        case AST_IF_EXPR: {
+            auto* if_expr = static_cast<IfExpr*>(node);
+            collect_free_vars(if_expr->condition, bound, free_vars);
+            collect_free_vars(if_expr->thenExpr, bound, free_vars);
+            collect_free_vars(if_expr->elseExpr, bound, free_vars);
+            break;
+        }
+        case AST_LET_EXPR: {
+            auto* let = static_cast<LetExpr*>(node);
+            auto new_bound = bound;
+            for (auto* alias : let->aliases) {
+                if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+                    collect_free_vars(va->expr, bound, free_vars);
+                    new_bound.insert(va->identifier->name->value);
+                } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+                    new_bound.insert(la->name->value);
+                }
+            }
+            collect_free_vars(let->expr, new_bound, free_vars);
+            break;
+        }
+        case AST_CASE_EXPR: {
+            auto* case_expr = static_cast<CaseExpr*>(node);
+            collect_free_vars(case_expr->expr, bound, free_vars);
+            for (auto* clause : case_expr->clauses) {
+                collect_free_vars(clause->body, bound, free_vars);
+            }
+            break;
+        }
+        case AST_APPLY_EXPR: {
+            auto* apply = static_cast<ApplyExpr*>(node);
+            if (auto* nc = dynamic_cast<NameCall*>(apply->call)) {
+                if (bound.find(nc->name->value) == bound.end()) {
+                    free_vars.insert(nc->name->value);
+                }
+            }
+            for (auto& arg : apply->args) {
+                if (std::holds_alternative<ExprNode*>(arg))
+                    collect_free_vars(std::get<ExprNode*>(arg), bound, free_vars);
+                else
+                    collect_free_vars(std::get<ValueExpr*>(arg), bound, free_vars);
+            }
+            break;
+        }
+        default:
+            break; // Literals, etc. have no free vars
+    }
+}
+
 Value* Codegen::codegen_function(FunctionExpr* node) {
     // Determine arity from patterns
     size_t arity = node->patterns.size();
 
-    // For now, all args are i64 (Int). Type-directed codegen comes later.
-    std::vector<llvm::Type*> arg_types(arity, llvm::Type::getInt64Ty(*context_));
-    auto ret_type = llvm::Type::getInt64Ty(*context_);
-
-    // Create unique name for the function
-    std::string fn_name = node->name.empty()
-        ? ("lambda_" + std::to_string(lambda_counter_++))
-        : node->name;
-
-    auto fn_type = llvm::FunctionType::get(ret_type, arg_types, false);
-    auto fn = llvm::Function::Create(fn_type, llvm::Function::InternalLinkage,
-                                      fn_name, module_.get());
-
-    // Save current insertion point
-    auto saved_block = builder_->GetInsertBlock();
-    auto saved_point = builder_->GetInsertPoint();
-    auto saved_values = named_values_;
-
-    // Create entry block for the function
-    auto entry = llvm::BasicBlock::Create(*context_, "entry", fn);
-    builder_->SetInsertPoint(entry);
-
-    // Bind function parameters
-    named_values_.clear();
-    size_t i = 0;
-    for (auto& arg : fn->args()) {
-        // Extract parameter name from pattern
+    // Extract parameter names
+    std::vector<std::string> param_names;
+    std::unordered_set<std::string> bound_vars;
+    for (size_t i = 0; i < arity; i++) {
         std::string param_name = "arg" + std::to_string(i);
         if (i < node->patterns.size()) {
             auto* pattern = node->patterns[i];
@@ -529,12 +579,71 @@ Value* Codegen::codegen_function(FunctionExpr* node) {
                 }
             }
         }
-        arg.setName(param_name);
-        named_values_[param_name] = &arg;
+        param_names.push_back(param_name);
+        bound_vars.insert(param_name);
+    }
+
+    // Find free variables (closure capture via lambda lifting)
+    std::unordered_set<std::string> free_var_set;
+    if (!node->bodies.empty()) {
+        auto* body = node->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            collect_free_vars(bwg->expr, bound_vars, free_var_set);
+        }
+    }
+
+    // Filter free vars to only those that exist in the current scope
+    std::vector<std::string> free_vars;
+    std::vector<Value*> free_var_values;
+    for (auto& var : free_var_set) {
+        auto it = named_values_.find(var);
+        if (it != named_values_.end() && !llvm::isa<llvm::Function>(it->second)) {
+            free_vars.push_back(var);
+            free_var_values.push_back(it->second);
+        }
+    }
+
+    // Build function type: params + captured free vars
+    std::vector<llvm::Type*> arg_types;
+    for (size_t i = 0; i < arity; i++)
+        arg_types.push_back(llvm::Type::getInt64Ty(*context_));
+    for (size_t i = 0; i < free_vars.size(); i++)
+        arg_types.push_back(llvm::Type::getInt64Ty(*context_));
+
+    auto ret_type = llvm::Type::getInt64Ty(*context_);
+
+    std::string fn_name = node->name.empty()
+        ? ("lambda_" + std::to_string(lambda_counter_++))
+        : node->name;
+
+    auto fn_type = llvm::FunctionType::get(ret_type, arg_types, false);
+    auto fn = llvm::Function::Create(fn_type, llvm::Function::InternalLinkage,
+                                      fn_name, module_.get());
+
+    // Save current state
+    auto saved_block = builder_->GetInsertBlock();
+    auto saved_point = builder_->GetInsertPoint();
+    auto saved_values = named_values_;
+
+    auto entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+    builder_->SetInsertPoint(entry);
+
+    // Bind parameters and captured variables
+    named_values_.clear();
+    size_t i = 0;
+    for (auto& arg : fn->args()) {
+        std::string name;
+        if (i < param_names.size()) {
+            name = param_names[i];
+        } else {
+            name = free_vars[i - param_names.size()];
+        }
+        arg.setName(name);
+        named_values_[name] = &arg;
         i++;
     }
 
-    // Compile function body (first body without guards for now)
+    // Compile function body
     Value* body_val = nullptr;
     if (!node->bodies.empty()) {
         auto* body = node->bodies[0];
@@ -555,8 +664,11 @@ Value* Codegen::codegen_function(FunctionExpr* node) {
         builder_->SetInsertPoint(saved_block, saved_point);
     }
 
-    // Store the function in named_values so it can be called
-    // We return the function pointer as a value
+    // Store closure capture info for call sites
+    if (!free_var_values.empty()) {
+        closure_captures_[fn_name] = free_var_values;
+    }
+
     return fn;
 }
 
@@ -617,6 +729,14 @@ Value* Codegen::codegen_apply(ApplyExpr* node) {
     if (!callee) {
         std::cerr << "Codegen: unknown function '" << fn_name << "' in apply" << std::endl;
         return nullptr;
+    }
+
+    // Append closure-captured values if this function has captures
+    auto cap_it = closure_captures_.find(fn_name);
+    if (cap_it != closure_captures_.end()) {
+        for (auto* cap_val : cap_it->second) {
+            all_args.push_back(cap_val);
+        }
     }
 
     return builder_->CreateCall(callee, all_args, "calltmp");
