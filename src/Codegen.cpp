@@ -95,6 +95,45 @@ void Codegen::declare_runtime() {
     rt_string_concat_ = llvm::Function::Create(
         llvm::FunctionType::get(i8ptr_ty, {i8ptr_ty, i8ptr_ty}, false),
         llvm::Function::ExternalLinkage, "yona_rt_string_concat", module_.get());
+
+    // Sequence runtime functions (i64* = pointer to [length, elem0, elem1, ...])
+    auto i64ptr_ty = llvm::PointerType::get(i64_ty, 0);
+
+    rt_seq_alloc_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64ptr_ty, {i64_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_alloc", module_.get());
+
+    rt_seq_set_ = llvm::Function::Create(
+        llvm::FunctionType::get(void_ty, {i64ptr_ty, i64_ty, i64_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_set", module_.get());
+
+    rt_seq_get_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64_ty, {i64ptr_ty, i64_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_get", module_.get());
+
+    rt_seq_length_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64_ty, {i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_length", module_.get());
+
+    rt_seq_cons_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64ptr_ty, {i64_ty, i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_cons", module_.get());
+
+    rt_seq_join_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64ptr_ty, {i64ptr_ty, i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_join", module_.get());
+
+    rt_seq_head_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64_ty, {i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_head", module_.get());
+
+    rt_seq_tail_ = llvm::Function::Create(
+        llvm::FunctionType::get(i64ptr_ty, {i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_seq_tail", module_.get());
+
+    rt_print_seq_ = llvm::Function::Create(
+        llvm::FunctionType::get(void_ty, {i64ptr_ty}, false),
+        llvm::Function::ExternalLinkage, "yona_rt_print_seq", module_.get());
 }
 
 // ===== Public API =====
@@ -234,6 +273,12 @@ Value* Codegen::codegen(AstNode* node) {
             return codegen_unit(static_cast<UnitExpr*>(node));
         case AST_TUPLE_EXPR:
             return codegen_tuple(static_cast<TupleExpr*>(node));
+        case AST_VALUES_SEQUENCE_EXPR:
+            return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
+        case AST_CONS_LEFT_EXPR:
+            return codegen_cons(static_cast<ConsLeftExpr*>(node));
+        case AST_JOIN_EXPR:
+            return codegen_join(static_cast<JoinExpr*>(node));
         default:
             std::cerr << "Codegen: unsupported AST node type " << node->get_type() << std::endl;
             return nullptr;
@@ -884,6 +929,52 @@ Value* Codegen::codegen_tuple(TupleExpr* node) {
     return tuple_val;
 }
 
+// ===== Sequences =====
+
+Value* Codegen::codegen_seq(ValuesSequenceExpr* node) {
+    size_t n = node->values.size();
+
+    auto count = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), n);
+    auto seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
+
+    for (size_t i = 0; i < n; i++) {
+        auto elem = codegen(node->values[i]);
+        if (!elem) return nullptr;
+        auto idx = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), i);
+        builder_->CreateCall(rt_seq_set_, {seq, idx, elem});
+    }
+
+    seq_values_.insert(seq);
+    return seq;
+}
+
+Value* Codegen::codegen_cons(ConsLeftExpr* node) {
+    auto elem = codegen(node->left);
+    auto seq = codegen(node->right);
+    if (!elem || !seq) return nullptr;
+    auto result = builder_->CreateCall(rt_seq_cons_, {elem, seq}, "cons");
+    seq_values_.insert(result);
+    return result;
+}
+
+Value* Codegen::codegen_join(JoinExpr* node) {
+    auto left = codegen(node->left);
+    auto right = codegen(node->right);
+    if (!left || !right) return nullptr;
+
+    // If both are pointers (sequences or strings), dispatch
+    if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
+        // Could be string concat or seq join — check at codegen time
+        // For now, try seq join (strings handled elsewhere)
+        return builder_->CreateCall(rt_seq_join_, {left, right}, "join");
+    }
+    // String concat fallback
+    if (left->getType()->isPointerTy() || right->getType()->isPointerTy()) {
+        return builder_->CreateCall(rt_string_concat_, {left, right}, "concat");
+    }
+    return nullptr;
+}
+
 // ===== Unit =====
 
 Value* Codegen::codegen_unit(UnitExpr*) {
@@ -903,7 +994,11 @@ void Codegen::codegen_print_value(Value* val) {
     } else if (val->getType()->isIntegerTy(1)) {
         builder_->CreateCall(rt_print_bool_, {val});
     } else if (val->getType()->isPointerTy()) {
-        builder_->CreateCall(rt_print_string_, {val});
+        if (seq_values_.count(val)) {
+            builder_->CreateCall(rt_print_seq_, {val});
+        } else {
+            builder_->CreateCall(rt_print_string_, {val});
+        }
     } else if (val->getType()->isStructTy()) {
         // Tuple: print as (a, b, c)
         auto* struct_type = llvm::cast<llvm::StructType>(val->getType());

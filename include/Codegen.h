@@ -56,6 +56,15 @@ private:
     llvm::Function* rt_print_newline_ = nullptr;
     llvm::Function* rt_string_concat_ = nullptr;
     llvm::Function* rt_string_alloc_ = nullptr;
+    llvm::Function* rt_seq_alloc_ = nullptr;
+    llvm::Function* rt_seq_set_ = nullptr;
+    llvm::Function* rt_seq_get_ = nullptr;
+    llvm::Function* rt_seq_length_ = nullptr;
+    llvm::Function* rt_seq_cons_ = nullptr;
+    llvm::Function* rt_seq_join_ = nullptr;
+    llvm::Function* rt_seq_head_ = nullptr;
+    llvm::Function* rt_seq_tail_ = nullptr;
+    llvm::Function* rt_print_seq_ = nullptr;
 
     // Initialize target machine
     void init_target();
@@ -100,6 +109,9 @@ private:
     llvm::Value* codegen_unit(UnitExpr* node);
     llvm::Value* codegen_negate(IntegerExpr* node);
     llvm::Value* codegen_tuple(TupleExpr* node);
+    llvm::Value* codegen_seq(ValuesSequenceExpr* node);
+    llvm::Value* codegen_cons(ConsLeftExpr* node);
+    llvm::Value* codegen_join(JoinExpr* node);
 
     // Pattern matching helpers
     llvm::Value* codegen_pattern_match(PatternNode* pattern, llvm::Value* scrutinee,
@@ -110,6 +122,9 @@ private:
 
     // Closure capture info: function name → captured variable values
     std::unordered_map<std::string, std::vector<llvm::Value*>> closure_captures_;
+
+    // Track which values are sequences (vs strings) — both are ptr in opaque pointer mode
+    std::unordered_set<llvm::Value*> seq_values_;
 
     // Helper: get LLVM type for a Yona type
     llvm::Type* get_llvm_type(const Type& yona_type);
