@@ -57,8 +57,9 @@ Yona language compiler/interpreter using LLVM as the backend. Traditional compil
 - **Type System** (`include/types.h`): Variant-based types including builtins, function types, product/sum types, record types, and named types. Supports Hindley-Milner inference via `TypeChecker`.
 - **Pattern Matching**: `CaseExpr` contains a target expression and vector of `CaseClause(pattern, body)`. Pattern types include value, tuple, seq, head-tail (`[h|t]`), dict, record, `as` binding (`@`), and or-patterns.
 - **Module System**: FQN-based with filesystem path resolution. `YONA_PATH` env var sets search paths. Modules are cached after first load. `ModuleValue` holds exports map, record type metadata, and keeps the AST alive.
-- **Native Modules** (`src/stdlib/`, `include/stdlib/`): C++ implementations registered via `NativeModuleRegistry` singleton. Available modules: `std\Math`, `std\IO`, `std\System`.
-- **Functions**: `FunctionValue` tracks FQN, arity, implementation lambda, partial args (for currying), and a native flag. Partial application is built-in.
+- **Native Modules** (`src/stdlib/`, `include/stdlib/`): C++ implementations registered via `NativeModuleRegistry` singleton. 19 modules: Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types.
+- **Functions**: `FunctionValue` tracks FQN, arity, implementation lambda, partial args (for currying), `is_native` and `is_async` flags. Partial application is built-in. Zero-arity functions auto-evaluate (strict semantics); use `\-> expr` for thunks.
+- **C Embedding API** (`include/yona_api.h`, `src/yona_api.cpp`): Stable C interface with `extern "C"` linkage. Opaque handles (`yona_interp_t`, `yona_value_t`), eval/call/inspect functions, native function registration with userdata for host-provided callbacks.
 
 ### Build Targets
 

@@ -2,7 +2,8 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 319 test cases passing (100%), 1350 assertions ✅
+- **Test Coverage**: 336 test cases passing (100%), 1407 assertions ✅
+- **C Embedding API**: Stable C interface (`yona_api.h`) for FFI ✅
 - **Interpreter**: Feature-complete with transparent async ✅
 - **TypeChecker**: Fully implemented with Promise<T> coercion ✅
 - **Native Stdlib**: 19 modules, 150+ functions ✅
@@ -112,13 +113,13 @@ Full implementation requires an HTTP library (libcurl or similar):
 - ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
 - ✅ Native modules (19): Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
+- ✅ C embedding API — `yona_api.h` with eval, value creation/inspection, function calling, native registration, module access
 - ✅ Record types, field access, generators, exceptions
-- ✅ 319 test cases, 1350 assertions passing
+- ✅ 336 test cases, 1407 assertions passing
 
 ## Next Steps
 
-1. Design and implement C embedding API (`yona.h`) for FFI integration
-2. Add sandboxing (module whitelist, execution budgets) for secure embedding
-3. Begin LLVM IR generation for basic expressions and function calls
-4. Implement LLVM coroutine support for true non-blocking async
-5. Add proper HTTP client with TLS (libcurl or OpenSSL)
+1. Add sandboxing (module whitelist, execution budgets) for secure embedding
+2. Begin LLVM IR generation for basic expressions and function calls
+3. Implement LLVM coroutine support for true non-blocking async
+4. Add proper HTTP client with TLS (libcurl or OpenSSL)

@@ -1,66 +1,76 @@
 # Yona-LLVM Project Roadmap
 
 ## Project Status
-- **Interpreter**: ✅ Feature-complete
-- **TypeChecker**: ✅ Fully implemented
-- **Parser**: ✅ Working correctly
-- **Native Stdlib**: ✅ Math, IO, System modules
-- **Async Infrastructure**: ✅ Phase 1 complete (promises, thread pool, dependency analyzer)
-- **Test Coverage**: 210+ test cases passing (100%)
+- **Interpreter**: ✅ Feature-complete with transparent async
+- **TypeChecker**: ✅ Hindley-Milner with Promise<T> coercion
+- **Parser**: ✅ Newline-aware with juxtaposition
+- **Async**: ✅ Parallel let bindings, type-directed auto-await
+- **Stdlib**: ✅ 19 native modules, 150+ functions
+- **C API**: ✅ Stable embedding interface with native function registration
+- **Test Coverage**: 336 tests, 1407 assertions (100%)
 
-## Roadmap
+## Completed Work
 
-### Phase 1: Language Completeness (Current)
+### Language
+- Newline-aware lexer (significant newlines, bracket suppression, semicolons)
+- Juxtaposition function application (`f x y`)
+- Bare lambda syntax (`\x -> body`), thunks (`\-> expr`)
+- Function-style let bindings (`let f x y = body in ...`)
+- String interpolation (`"hello {name}"`)
+- Non-linear patterns, OR patterns, tuple/list destructuring in let
+- Zero-arity function auto-evaluation (strict semantics)
+- Symbol value equality, string concatenation with auto-conversion
+- Import alias binding (`import M as X`)
 
-Complete the async system and fill remaining language gaps.
+### Type System
+- Hindley-Milner with polymorphism
+- `PromiseType` — `Promise<T>` auto-coerces to `T` in unification
+- Type-directed auto-await at operators, function args, conditions, collections
 
-- **Async interpreter integration** — eval_async, await_if_promise, parallel let bindings, transparent promise unwrapping across all visitor methods
-- **Language features** — do-blocks, guards on pattern arms, `in` operator, import syntax
-- **Stdlib expansion** — HTTP client, timer, string utilities, collection operations (map, filter, fold)
-- **Test framework** — assert, named test cases, `.test.yona` runner, mock support
+### Runtime
+- Tree-walking interpreter with frame-based scoping
+- Parallel let bindings via DependencyAnalyzer + thread pool
+- Async function support (`is_async` flag, thread pool execution)
+- Promise in RuntimeObjectData variant
+- Auto-await in binary ops, comparisons, if/case, tuple/list/dict construction
 
-### Phase 2: Embeddability
+### Standard Library (19 modules)
+Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 
-Make Yona usable as an embedded language in host applications via FFI.
+### Infrastructure
+- C embedding API (`yona_api.h`) with native function registration
+- Module system (FQN, filesystem resolution, native + file-based)
+- 336 test cases, 1407 assertions
 
-- **C API** — stable embedding interface with opaque handles and error reporting
-- **Sandboxing** — module whitelist, filesystem/network restrictions, CPU/memory budgets
-- **Side effect hooks** — intercept and log native module calls
-- **Tooling** — AST pretty printer (source round-tripping), editor language definitions
+## Remaining Work
 
-### Phase 3: LLVM Backend
+### Phase 1: Sandboxing (High Priority)
+- Module whitelist (restrict imports in embedded contexts)
+- CPU/memory execution budgets
+- Filesystem/network access control
 
-Native code generation for production performance.
+### Phase 2: LLVM Backend (High Priority)
+- LLVM IR generation from AST
+- Coroutine support for true non-blocking async
+- Runtime library (GC, promise management)
+- Optimization passes, executable generation
 
-- Basic LLVM IR generation from AST
-- Coroutine support for async functions
-- Runtime library and optimization passes
-- Executable generation
+### Phase 3: Remaining Stdlib
+- Exception utilities, Transducers, Scheduler, eval
+- HTTP client with TLS (libcurl/OpenSSL)
 
 ### Phase 4: Advanced Concurrency
-
-- STM (TVar, transactions, atomically, retry/orElse)
+- STM (TVar, transactions, atomically)
 - CSP-style channels
-- Auto-parallelization via static dependency analysis
-- Performance optimizations (promise pooling, lock-free structures)
-
-## Completed Components
-
-- **Lexer & Parser**: Recursive descent with Pratt parsing, full language support
-- **AST**: Visitor pattern with comprehensive node types
-- **Interpreter**: Tree-walking with frame-based execution, pattern matching, currying
-- **Type Checker**: Hindley-Milner with polymorphic inference
-- **Module System**: FQN-based with filesystem resolution and caching
-- **Native Modules**: Math, IO, System via NativeModuleRegistry
-- **Async Core**: Promise type, thread pool (standard + work-stealing), dependency analyzer
+- Auto-parallelization optimizations
 
 ## Technical Decisions
-
-- **Transparent async**: No explicit async/await keywords — runtime handles parallelization
-- **Dependency analysis**: Static analysis determines parallelizable operations
-- **STM over locks**: Composable, deadlock-free concurrency (Phase 4)
-- **Embeddable by design**: C API + sandboxing enables use as an extension language in host applications
+- **Transparent async**: Promise<T> in the type system, not exposed to users
+- **Newline-aware parsing**: Python-style, replaces the `suppress_juxtaposition_` hack
+- **Thread pool for interpreter**: Correct but not optimal; LLVM backend will use coroutines
+- **C API over C++**: Stable ABI, works from any FFI (Ruby, Python, Go, etc.)
 
 ## References
-- [Async Implementation Plan](./async-implementation-plan.md)
+- [Language Syntax](./language-syntax.md)
 - [TODO List](./todo-list.md)
+- [Async Implementation](./async-implementation-plan.md)
