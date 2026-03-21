@@ -1038,9 +1038,9 @@ InterpreterResult Interpreter::visit(DictExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto [fst, snd] : node->values) {
-    auto key = (fst->template accept<InterpreterResult>(*this).value);
+    auto key = await_if_promise(fst->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
-    auto value = (snd->template accept<InterpreterResult>(*this).value);
+    auto value = await_if_promise(snd->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     fields.emplace_back(key, value);
   }
@@ -2296,7 +2296,7 @@ InterpreterResult Interpreter::visit(TupleExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back((value->template accept<InterpreterResult>(*this).value));
+    fields.push_back(await_if_promise(value->template accept<InterpreterResult>(*this).value));
     CHECK_EXCEPTION_RETURN();
   }
 
@@ -2345,7 +2345,7 @@ InterpreterResult Interpreter::visit(ValuesSequenceExpr *node) const {
 
   fields.reserve(node->values.size());
   for (const auto value : node->values) {
-    fields.push_back((value->template accept<InterpreterResult>(*this).value));
+    fields.push_back(await_if_promise(value->template accept<InterpreterResult>(*this).value));
     CHECK_EXCEPTION_RETURN();
   }
 

@@ -17,9 +17,11 @@ void IOModule::initialize() {
     // Register all IO functions
     module->exports["print"] = make_native_function("print", 1, print);
     module->exports["println"] = make_native_function("println", 1, println);
-    // File I/O functions — currently synchronous. When actual async I/O is
-    // implemented, these should use make_native_async_function to return Promises
-    // that are submitted to the thread pool.
+    // File I/O — synchronous in interpreted mode. The LLVM backend will
+    // implement these as true async operations with coroutine support.
+    // In the interpreter, side effects must be ordered, which requires
+    // synchronous execution (async would break sequencing guarantees
+    // for code like: let _ = writeFile ... in readFile ...).
     module->exports["readFile"] = make_native_function("readFile", 1, readFile);
     module->exports["writeFile"] = make_native_function("writeFile", 2, writeFile);
     module->exports["appendFile"] = make_native_function("appendFile", 2, appendFile);

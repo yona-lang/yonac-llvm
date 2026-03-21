@@ -7,6 +7,11 @@
 #include "stdlib/result_module.h"
 #include "stdlib/tuple_module.h"
 #include "stdlib/range_module.h"
+#include "stdlib/string_module.h"
+#include "stdlib/set_module.h"
+#include "stdlib/dict_module.h"
+#include "stdlib/timer_module.h"
+#include "stdlib/http_module.h"
 #include <sstream>
 
 namespace yona::stdlib {
@@ -74,6 +79,11 @@ void NativeModuleRegistry::register_all_modules() {
     register_module(std::make_unique<ResultModule>());
     register_module(std::make_unique<TupleModule>());
     register_module(std::make_unique<RangeModule>());
+    register_module(std::make_unique<StringModule>());
+    register_module(std::make_unique<SetModule>());
+    register_module(std::make_unique<DictModule>());
+    register_module(std::make_unique<TimerModule>());
+    register_module(std::make_unique<HttpModule>());
 }
 
 void NativeModuleRegistry::apply_to_interpreter(

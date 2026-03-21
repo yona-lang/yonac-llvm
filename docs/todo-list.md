@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 253 test cases passing (100%), 1146 assertions ✅
+- **Test Coverage**: 276 test cases passing (100%), 1217 assertions ✅
 - **Interpreter**: Feature-complete with transparent async ✅
 - **TypeChecker**: Fully implemented with Promise<T> coercion ✅
 - **Native Stdlib**: Math, IO, System, List, Option, Result, Tuple, Range modules ✅
@@ -38,10 +38,9 @@ Make Yona usable as an embedded scripting/extension language in host application
 
 ## Phase 3: Standard Library Expansion (Medium Priority)
 
-- [ ] **HTTP Client** — async HTTP operations (get, post, put, delete)
-- [ ] **Timer Module** — delays, timeouts, scheduled tasks
-- [ ] **String Module** — formatting, manipulation utilities
-- [ ] **Set/Dict Modules** — map, filter, fold operations on sets and dicts
+- [ ] **JSON Module** — parse/stringify JSON
+- [ ] **Regex Module** — pattern matching on strings
+- [ ] **File/Path Module** — directory listing, path manipulation
 
 ## Phase 4: LLVM Backend (Medium Priority)
 
@@ -81,10 +80,10 @@ Make Yona usable as an embedded scripting/extension language in host application
 - ✅ Interpreter — tree-walking, frame-based, pattern matching, currying, transparent async
 - ✅ TypeChecker — Hindley-Milner with polymorphism
 - ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
-- ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range
+- ✅ Native modules — Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
 - ✅ Record types, field access, generators, exceptions
-- ✅ 253 test cases, 1146 assertions passing
+- ✅ 276 test cases, 1217 assertions passing
 
 ## Next Steps
 
