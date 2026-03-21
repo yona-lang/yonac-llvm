@@ -156,6 +156,18 @@ abs(x) | x < 0  -> -x
 \-> some_expression
 ```
 
+### String Interpolation
+
+Strings can contain interpolated expressions using `{...}`:
+
+```yona
+let name = "World" in "Hello {name}!"     # "Hello World!"
+let x = 6 in "result is {(x * 7)}"        # "result is 42"
+"{a} + {b} = {(a + b)}"                   # "1 + 2 = 3"
+```
+
+Simple variable references use `{name}`. For expressions with operators, wrap in parentheses: `{(expr)}`. Non-string values are auto-converted.
+
 ### Zero-Argument Functions
 
 Yona uses strict evaluation: zero-arity functions auto-evaluate when referenced by name. To pass a zero-arity function as a value (without calling it), wrap it in a thunk:

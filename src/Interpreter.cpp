@@ -254,7 +254,13 @@ bool Interpreter::match_pattern_value(PatternValue *pattern, const RuntimeObject
       auto symbol_result = arg->template accept<InterpreterResult>(*this).value;
       return *symbol_result == *value;
     } else if constexpr (is_same_v<T, IdentifierExpr*>) {
-      // Identifier - bind the value
+      // Identifier — bind the value, or for non-linear patterns,
+      // check that a previously bound variable matches the same value.
+      // Only check current frame locals to avoid matching parent scope variables.
+      auto it = IS.frame->locals_.find(arg->name->value);
+      if (it != IS.frame->locals_.end()) {
+        return *it->second == *value;
+      }
       IS.frame->write(arg->name->value, value);
       return true;
     }
@@ -1446,9 +1452,15 @@ InterpreterResult Interpreter::visit(JoinExpr *node) const {
   auto right = (node->right->template accept<InterpreterResult>(*this).value);
   CHECK_EXCEPTION_RETURN();
 
-  // String concatenation
-  if (left->type == String && right->type == String) {
-    return InterpreterResult(make_shared<RuntimeObject>(String, left->get<string>() + right->get<string>()));
+  // String concatenation — auto-convert non-string operands when other side is a string
+  if (left->type == String || right->type == String) {
+    auto to_string = [](const RuntimeObjectPtr& obj) -> string {
+      if (obj->type == String) return obj->get<string>();
+      ostringstream oss;
+      oss << *obj;
+      return oss.str();
+    };
+    return InterpreterResult(make_shared<RuntimeObject>(String, to_string(left) + to_string(right)));
   }
 
   if (left->type != Seq || right->type != Seq) {
@@ -2401,7 +2413,7 @@ InterpreterResult Interpreter::visit(IdentifierExpr *node) const {
   // To pass a 0-arity function as a value, wrap it in a thunk: \-> func
   if (result->type == Function) {
     auto func = result->get<shared_ptr<FunctionValue>>();
-    if (func->arity == 0 && func->partial_args.empty()) {
+    if (func->arity == 0 && func->partial_args.empty() && func->code) {
       return InterpreterResult(func->code({}));
     }
   }

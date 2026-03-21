@@ -471,6 +471,10 @@ std::expected<char32_t, LexError> Lexer::parse_unicode_escape(int digits) {
 // Scan string
 std::expected<Token, LexError> Lexer::scan_string() {
     skip_char(); // Skip opening quote
+    return scan_string_body();
+}
+
+std::expected<Token, LexError> Lexer::scan_string_body() {
     std::string value;
 
     while (!is_at_end()) {
@@ -481,7 +485,14 @@ std::expected<Token, LexError> Lexer::scan_string() {
 
         if (ch == '"') {
             skip_char();
-            return make_token(TokenType::YSTRING, std::move(value));
+            // If this string had no interpolation, return plain YSTRING
+            // If it's a segment after interpolation, return YSTRING_PART
+            return make_token(in_string_interp_ > 0 ? TokenType::YSTRING_PART : TokenType::YSTRING, std::move(value));
+        } else if (ch == '{') {
+            skip_char(); // consume '{'
+            in_string_interp_++;
+            // Emit the string part before the interpolation
+            return make_token(TokenType::YSTRING_PART, std::move(value));
         } else if (ch == '\\') {
             skip_char();
             auto escaped = parse_escape_sequence();
@@ -700,6 +711,9 @@ static bool suppresses_following_newline(TokenType type) {
         case TokenType::YARROW: case TokenType::YFAT_ARROW:
         case TokenType::YASSIGN: case TokenType::YCOMMA:
         case TokenType::YBACKSLASH:
+        // Keywords that expect a following expression
+        case TokenType::YIN: case TokenType::YTHEN: case TokenType::YELSE:
+        case TokenType::YOF: case TokenType::YDO:
         // Start of input / already a newline
         case TokenType::YEOF_TOKEN: case TokenType::YNEWLINE:
             return true;
@@ -797,7 +811,14 @@ std::expected<Token, LexError> Lexer::scan_token() {
         case '[': return emit(make_token(TokenType::YLBRACKET));
         case ']': return emit(make_token(TokenType::YRBRACKET));
         case '{': return emit(make_token(TokenType::YLBRACE));
-        case '}': return emit(make_token(TokenType::YRBRACE));
+        case '}':
+            if (in_string_interp_ > 0) {
+                // Closing interpolation — resume string scanning
+                in_string_interp_--;
+                mark_token_start();
+                return scan_string_body();
+            }
+            return emit(make_token(TokenType::YRBRACE));
         case ',': return emit(make_token(TokenType::YCOMMA));
         case ';': return make_token(TokenType::YNEWLINE);
         case '.':
@@ -861,6 +882,7 @@ std::expected<Token, LexError> Lexer::peek_token() {
     size_t saved_column = column_;
     int saved_bracket_depth = bracket_depth_;
     TokenType saved_last_emitted = last_emitted_;
+    int saved_string_interp = in_string_interp_;
 
     auto token = scan_token();
 
@@ -870,6 +892,7 @@ std::expected<Token, LexError> Lexer::peek_token() {
     column_ = saved_column;
     bracket_depth_ = saved_bracket_depth;
     last_emitted_ = saved_last_emitted;
+    in_string_interp_ = saved_string_interp;
 
     return token;
 }
@@ -984,6 +1007,8 @@ std::string_view token_type_to_string(TokenType type) noexcept {
         case TokenType::YAPPEND: return "APPEND";
         case TokenType::YEOF_TOKEN: return "EOF";
         case TokenType::YNEWLINE: return "NEWLINE";
+        case TokenType::YSTRING_PART: return "STRING_PART";
+        case TokenType::YINTERP_END: return "INTERP_END";
         case TokenType::YERROR: return "ERROR";
         default: return "UNKNOWN";
     }

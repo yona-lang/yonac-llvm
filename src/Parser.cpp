@@ -1533,6 +1533,10 @@ private:
                 return make_unique<StringExpr>(loc, value);
             }
 
+            case TokenType::YSTRING_PART: {
+                return parse_string_interpolation();
+            }
+
             case TokenType::YCHARACTER: {
                 auto token = advance();
                 auto value = get<char32_t>(token.value);
@@ -2375,6 +2379,57 @@ private:
         // But for the test to work, we need to return something
         // Return a unit expression as a placeholder
         return make_unique<UnitExpr>(loc);
+    }
+
+    // Desugar "hello {expr} world" into ("hello " ++ toString(expr) ++ " world")
+    unique_ptr<ExprNode> parse_string_interpolation() {
+        SourceLocation loc = current_location();
+        unique_ptr<ExprNode> result = nullptr;
+
+        auto join = [&](unique_ptr<ExprNode> right) {
+            if (!result) {
+                result = std::move(right);
+            } else {
+                result = make_unique<JoinExpr>(loc, result.release(), right.release());
+            }
+        };
+
+        while (true) {
+            if (check(TokenType::YSTRING_PART)) {
+                auto token = advance();
+                auto value = get<string>(token.value);
+                if (!value.empty()) {
+                    join(make_unique<StringExpr>(loc, value));
+                }
+
+                // After a string part, expect either an expression (interpolation)
+                // or end of string (the next YSTRING_PART with closing quote was the last)
+                if (is_at_end()) break;
+
+                // The next tokens are the interpolated expression, terminated by
+                // the next YSTRING_PART (which the lexer emits after closing })
+                if (!check(TokenType::YSTRING_PART) && !check(TokenType::YSTRING)) {
+                    // Use parse_prefix_expr for simple vars/parens.
+                    // For complex expressions, use parentheses: {(x + y)}
+                    auto expr = parse_prefix_expr();
+                    if (expr) {
+                        join(std::move(expr));
+                    }
+                }
+            } else if (check(TokenType::YSTRING)) {
+                // Final string segment (no more interpolations)
+                auto token = advance();
+                auto value = get<string>(token.value);
+                if (!value.empty()) {
+                    join(make_unique<StringExpr>(loc, value));
+                }
+                break;
+            } else {
+                break;
+            }
+        }
+
+        return result ? std::move(result) : make_unique<StringExpr>(loc, "");
     }
 
     unique_ptr<ExprNode> parse_lambda_expr(bool stop_at_in = false) {

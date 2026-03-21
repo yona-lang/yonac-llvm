@@ -396,3 +396,80 @@ TEST_CASE("Non-zero arity function is not auto-called") {
 }
 
 } // Zero-arity TEST_SUITE
+
+TEST_SUITE("String interpolation") {
+
+TEST_CASE("Simple variable interpolation") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    let name = "World" in
+    "Hello {name}!"
+  )");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "Hello World!");
+}
+
+TEST_CASE("Expression interpolation") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    let x = 6 in
+    let y = 7 in
+    "result is {(x * y)}"
+  )");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "result is 42");
+}
+
+TEST_CASE("Multiple interpolations") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    let a = 1 in
+    let b = 2 in
+    "{a} + {b} = {(a + b)}"
+  )");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "1 + 2 = 3");
+}
+
+TEST_CASE("No interpolation is plain string") {
+  SyntaxTest t;
+
+  auto result = t.eval("\"hello world\"");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "hello world");
+}
+
+} // String interpolation TEST_SUITE
+
+TEST_SUITE("Non-linear patterns") {
+
+TEST_CASE("Same variable must match same value") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    case (1, 1) of
+      (x, x) -> "same"
+      (x, y) -> "different"
+    end
+  )");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "same");
+}
+
+TEST_CASE("Different values fail non-linear match") {
+  SyntaxTest t;
+
+  auto result = t.eval(R"(
+    case (1, 2) of
+      (x, x) -> "same"
+      (x, y) -> "different"
+    end
+  )");
+  CHECK(result->type == RT::String);
+  CHECK(result->get<string>() == "different");
+}
+
+} // Non-linear patterns TEST_SUITE

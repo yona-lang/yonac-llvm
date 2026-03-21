@@ -129,6 +129,8 @@ enum class TokenType {
     // Special
     YEOF_TOKEN,
     YNEWLINE,
+    YSTRING_PART,    // String segment before/between/after interpolation
+    YINTERP_END,     // } closing interpolation in string
 
     // Error
     YERROR
@@ -212,6 +214,7 @@ private:
     size_t token_start_column_ = 1;
     int bracket_depth_ = 0;
     TokenType last_emitted_ = TokenType::YEOF_TOKEN;
+    int in_string_interp_ = 0;  // > 0 when inside {expr} in a string
 
     // Keyword lookup table - use function to avoid DLL boundary issues
     [[nodiscard]] static const std::unordered_map<std::string_view, TokenType>& get_keywords() noexcept;
@@ -241,6 +244,7 @@ private:
     [[nodiscard]] std::expected<Token, LexError> scan_identifier();
     [[nodiscard]] std::expected<Token, LexError> scan_number();
     [[nodiscard]] std::expected<Token, LexError> scan_string();
+    [[nodiscard]] std::expected<Token, LexError> scan_string_body();
     [[nodiscard]] std::expected<Token, LexError> scan_character();
     [[nodiscard]] std::expected<Token, LexError> scan_symbol();
     [[nodiscard]] std::expected<Token, LexError> scan_operator(char32_t first_char);
