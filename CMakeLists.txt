@@ -115,7 +115,7 @@ file(GLOB all_yonac_SRCS
 )
 
 # Find the libraries that correspond to the LLVM components that we wish to use
-llvm_map_components_to_libnames(llvm_libs Support Core IRReader)
+llvm_map_components_to_libnames(llvm_libs Support Core IRReader Passes Target native nativecodegen)
 
 # Add source to this project's executable.
 add_library(yona_lib SHARED ${all_lib_SRCS})

@@ -1,14 +1,103 @@
 //
-// Created by Adam Kovari on 14.12.2024.
+// LLVM Code Generation for Yona
+//
+// Generates LLVM IR from a type-checked AST. Since Yona uses Hindley-Milner
+// type inference, all types are known at compile time and primitives are unboxed.
 //
 
 #pragma once
 
-#include <llvm/ADT/APFloat.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Value.h>
+#include <llvm/Target/TargetMachine.h>
+
+#include <string>
+#include <unordered_map>
+#include <memory>
+
+#include "ast.h"
+#include "types.h"
 
 namespace yona::compiler::codegen {
-class Codegen {};
+
+using namespace yona::ast;
+using namespace yona::compiler::types;
+
+class Codegen {
+public:
+    Codegen(const std::string& module_name = "yona_module");
+    ~Codegen();
+
+    // Compile an AST node to LLVM IR. Returns the module.
+    llvm::Module* compile(AstNode* node);
+
+    // Emit object file to path. Returns true on success.
+    bool emit_object_file(const std::string& output_path);
+
+    // Emit LLVM IR as text (for debugging)
+    std::string emit_ir();
+
+private:
+    std::unique_ptr<llvm::LLVMContext> context_;
+    std::unique_ptr<llvm::Module> module_;
+    std::unique_ptr<llvm::IRBuilder<>> builder_;
+    llvm::TargetMachine* target_machine_ = nullptr;
+
+    // Named values in current scope (variable name → LLVM value)
+    std::unordered_map<std::string, llvm::Value*> named_values_;
+
+    // Runtime function declarations
+    llvm::Function* rt_print_int_ = nullptr;
+    llvm::Function* rt_print_float_ = nullptr;
+    llvm::Function* rt_print_string_ = nullptr;
+    llvm::Function* rt_print_bool_ = nullptr;
+    llvm::Function* rt_print_newline_ = nullptr;
+    llvm::Function* rt_string_concat_ = nullptr;
+    llvm::Function* rt_string_alloc_ = nullptr;
+
+    // Initialize target machine
+    void init_target();
+
+    // Declare runtime functions
+    void declare_runtime();
+
+    // Generate code for a top-level expression (wraps in main())
+    llvm::Function* codegen_main(AstNode* node);
+
+    // Expression codegen — returns the LLVM value
+    llvm::Value* codegen(AstNode* node);
+    llvm::Value* codegen_integer(IntegerExpr* node);
+    llvm::Value* codegen_float(FloatExpr* node);
+    llvm::Value* codegen_bool(TrueLiteralExpr* node);
+    llvm::Value* codegen_bool_false(FalseLiteralExpr* node);
+    llvm::Value* codegen_string(StringExpr* node);
+    llvm::Value* codegen_add(AddExpr* node);
+    llvm::Value* codegen_subtract(SubtractExpr* node);
+    llvm::Value* codegen_multiply(MultiplyExpr* node);
+    llvm::Value* codegen_divide(DivideExpr* node);
+    llvm::Value* codegen_modulo(ModuloExpr* node);
+    llvm::Value* codegen_eq(EqExpr* node);
+    llvm::Value* codegen_neq(NeqExpr* node);
+    llvm::Value* codegen_lt(LtExpr* node);
+    llvm::Value* codegen_gt(GtExpr* node);
+    llvm::Value* codegen_lte(LteExpr* node);
+    llvm::Value* codegen_gte(GteExpr* node);
+    llvm::Value* codegen_and(LogicalAndExpr* node);
+    llvm::Value* codegen_or(LogicalOrExpr* node);
+    llvm::Value* codegen_not(LogicalNotOpExpr* node);
+    llvm::Value* codegen_negate(SubtractExpr* node);
+    llvm::Value* codegen_let(LetExpr* node);
+    llvm::Value* codegen_if(IfExpr* node);
+    llvm::Value* codegen_identifier(IdentifierExpr* node);
+    llvm::Value* codegen_main_node(MainNode* node);
+
+    // Helper: get LLVM type for a Yona type
+    llvm::Type* get_llvm_type(const Type& yona_type);
+
+    // Helper: print a value (for top-level expression result)
+    void codegen_print_value(llvm::Value* val);
+};
+
 } // namespace yona::compiler::codegen
