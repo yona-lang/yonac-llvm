@@ -70,7 +70,8 @@ Cross-language linking with C, Rust, Go, Zig — anything that speaks the system
 - [x] Native stdlib in compiled runtime: Math (abs, max, min, factorial, sqrt, sin, cos), String (length, toUpperCase, toLowerCase), List (length, head, tail, reverse), Types (toInt, toFloat)
 - [ ] Remaining native stdlib functions (map, filter, fold — need closure calling convention in C)
 - [x] `extern` keyword for calling C functions: `extern sqrt : Float -> Float in sqrt 2.0`
-- [ ] Multi-module linking: compile multiple `.yona` files, link together
+- [x] Multi-module linking: compile multiple `.yona` files, link together
+- [ ] Module type metadata: infer import function types from module source (currently defaults to i64 params)
 
 ### Remaining — Other Codegen
 
