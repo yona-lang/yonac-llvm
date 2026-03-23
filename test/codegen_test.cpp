@@ -59,7 +59,7 @@ static string compile_and_run(const string& code) {
     }
 
     string exe_path = "/tmp/yona_codegen_test";
-    string link_cmd = "cc " + obj_path + " " + rt_path + " -lm -o " + exe_path + " 2>/dev/null";
+    string link_cmd = "cc " + obj_path + " " + rt_path + " -lm -lpthread -o " + exe_path + " 2>/dev/null";
     if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
 
     array<char, 256> buffer;
@@ -231,7 +231,7 @@ end
     }
 
     // Compile and run
-    int cc = system("cc /tmp/cross_lang_caller.c /tmp/cross_lang_test.o -lm -o /tmp/cross_lang_run 2>/dev/null");
+    int cc = system("cc /tmp/cross_lang_caller.c /tmp/cross_lang_test.o -lm -lpthread -o /tmp/cross_lang_run 2>/dev/null");
     REQUIRE(cc == 0);
 
     array<char, 64> buf;
@@ -279,7 +279,7 @@ end
     string rt_obj = "/tmp/compiled_runtime_test.o";
 
     // Link and run
-    string link = "cc " + expr_obj + " " + mod_obj + " " + rt_obj + " -lm -o /tmp/calc_link_test 2>/dev/null";
+    string link = "cc " + expr_obj + " " + mod_obj + " " + rt_obj + " -lm -lpthread -o /tmp/calc_link_test 2>/dev/null";
     REQUIRE(system(link.c_str()) == 0);
 
     array<char, 64> buf;

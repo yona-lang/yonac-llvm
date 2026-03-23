@@ -512,6 +512,25 @@ extern puts : String -> Int in
 
 The type annotation uses Yona types: `Int` → `i64`, `Float` → `double`, `String` → `char*`, `Bool` → `i1`. Multiple parameters use curried syntax: `Float -> Float -> Float` means two `Float` args returning `Float`.
 
+### Async Extern (Non-Blocking I/O)
+
+The `async` modifier makes extern calls non-blocking — they submit to a thread pool and return a promise immediately. Auto-await happens lazily at use sites.
+
+```yona
+# Async function: returns promise immediately, runs in thread pool
+extern async readFile : String -> String in
+extern async httpGet : String -> String in
+
+# Parallel let: both calls run concurrently!
+let
+  a = readFile "foo.txt",     # submits to pool → returns instantly
+  b = httpGet "example.com"   # submits to pool → returns instantly
+in
+  a ++ b                       # auto-await both here (both already running)
+```
+
+Parallel let is automatic: async calls return immediately, so multiple let bindings submit all tasks before any are awaited. Total time ≈ max(task times), not sum.
+
 ## Special Forms
 
 ### With Expressions (Context Management)

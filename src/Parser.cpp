@@ -2600,6 +2600,14 @@ private:
         advance(); // consume 'extern'
         skip_newlines();
 
+        // Check for 'async' modifier
+        bool is_async = false;
+        if (check(TokenType::YIDENTIFIER) && peek().lexeme == "async") {
+            is_async = true;
+            advance(); // consume 'async'
+            skip_newlines();
+        }
+
         // Parse function name
         if (!check(TokenType::YIDENTIFIER)) {
             error(ParseError::Type::INVALID_SYNTAX, "Expected function name after 'extern'");
@@ -2629,7 +2637,7 @@ private:
             return nullptr;
         }
 
-        return make_unique<ExternDeclExpr>(loc, name, *type_ann, body.release());
+        return make_unique<ExternDeclExpr>(loc, name, *type_ann, body.release(), is_async);
     }
 
     unique_ptr<ExprNode> parse_import_expr() {

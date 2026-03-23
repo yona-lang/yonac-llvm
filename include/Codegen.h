@@ -33,7 +33,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -131,6 +131,8 @@ private:
     llvm::Function* rt_seq_tail_ = nullptr;
     llvm::Function* rt_symbol_eq_ = nullptr;
     llvm::Function* rt_print_symbol_ = nullptr;
+    llvm::Function* rt_async_call_ = nullptr;
+    llvm::Function* rt_async_await_ = nullptr;
 
     void init_target();
     void declare_runtime();
@@ -188,6 +190,9 @@ private:
     TypedValue codegen_seq(ValuesSequenceExpr* node);
     TypedValue codegen_cons(ConsLeftExpr* node);
     TypedValue codegen_join(JoinExpr* node);
+
+    // Auto-await: if a TypedValue is PROMISE, insert yona_rt_async_await
+    TypedValue auto_await(TypedValue tv);
 
     // Free variable analysis
     static void collect_free_vars(AstNode* node,

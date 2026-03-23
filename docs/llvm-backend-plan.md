@@ -303,13 +303,29 @@ printf("10! = %ld\n", yona_Math_Extra__factorial(10));
 
 **Linking:** `cc main.c my_module.o compiled_runtime.o -lyona_lib -o program`
 
-### Phase 5: Coroutines (Async)
+### Phase 5: Async ✅
 
-- LLVM coroutine intrinsics (`@llvm.coro.id`, `@llvm.coro.begin`, etc.)
-- Async function → coroutine frame
-- Auto-await → coroutine resume
-- Parallel let → spawn multiple coroutines, await all
-- Event loop scheduler (replaces thread pool)
+Thread-pool-based async with automatic parallel let:
+
+- `extern async` syntax — marks non-blocking functions
+- `CType::PROMISE` in TypedValue — tracks async values through expressions
+- Auto-await at all expression evaluation points (binary ops, comparisons,
+  function args, if condition, case scrutinee, print)
+- Thread pool runtime in C (fixed 8 workers, work queue, mutex/condvar)
+- **Parallel let is automatic**: async calls return PROMISE immediately,
+  multiple let bindings submit all tasks before any are awaited
+
+```llvm
+; Parallel let: both async calls return immediately
+%p1 = call ptr @yona_rt_async_call(ptr @readFile, i64 %arg1)
+%p2 = call ptr @yona_rt_async_call(ptr @readFile, i64 %arg2)
+; Both running concurrently! Auto-await at use site:
+%v1 = call i64 @yona_rt_async_await(ptr %p1)
+%v2 = call i64 @yona_rt_async_await(ptr %p2)
+```
+
+Future optimization: replace thread pool with LLVM coroutine intrinsics
+for zero-overhead suspend/resume (eliminates thread context switches).
 
 ### Phase 6: Optimization
 

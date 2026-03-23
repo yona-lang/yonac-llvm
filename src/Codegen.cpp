@@ -129,6 +129,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::UNIT:   return LType::getInt64Ty(*context_);
         case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::SYMBOL: return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
     }
     return LType::getInt64Ty(*context_);
 }
@@ -163,6 +164,13 @@ void Codegen::declare_runtime() {
     rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
     rt_symbol_eq_     = decl("yona_rt_symbol_eq", LType::getInt32Ty(*context_), {ptr, ptr});
     rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr});
+
+    // Async runtime: promise = async_call(fn_ptr, arg), result = async_await(promise)
+    // fn_ptr type: i64 (*)(i64) — function pointer taking and returning i64
+    auto fn_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {i64}, false), 0);
+    auto promise_ptr = ptr; // opaque pointer to yona_promise_t
+    rt_async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
+    rt_async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
 }
 
 // ===== Public API =====
@@ -338,7 +346,8 @@ void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
 }
 
 void Codegen::codegen_print(const TypedValue& tv) {
-    codegen_print_value(builder_.get(), tv, rt_print_int_, rt_print_float_,
+    auto resolved = auto_await(tv);
+    codegen_print_value(builder_.get(), resolved, rt_print_int_, rt_print_float_,
                          rt_print_string_, rt_print_bool_, rt_print_seq_, rt_print_symbol_, *context_);
     builder_->CreateCall(rt_print_newline_, {});
 }
@@ -419,8 +428,8 @@ TypedValue Codegen::codegen_symbol(SymbolExpr* node) {
 // ===== Arithmetic (type-directed) =====
 
 TypedValue Codegen::codegen_binary(AstNode* left_node, AstNode* right_node, const std::string& op) {
-    auto left = codegen(left_node);
-    auto right = codegen(right_node);
+    auto left = auto_await(codegen(left_node));
+    auto right = auto_await(codegen(right_node));
     if (!left || !right) return {};
 
     // String concatenation
@@ -451,8 +460,8 @@ TypedValue Codegen::codegen_binary(AstNode* left_node, AstNode* right_node, cons
 }
 
 TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, const std::string& op) {
-    auto left = codegen(left_node);
-    auto right = codegen(right_node);
+    auto left = auto_await(codegen(left_node));
+    auto right = auto_await(codegen(right_node));
     if (!left || !right) return {};
 
     bool is_float = (left.type == CType::FLOAT || right.type == CType::FLOAT);
@@ -514,7 +523,7 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
 // ===== If Expression =====
 
 TypedValue Codegen::codegen_if(IfExpr* node) {
-    auto cond = codegen(node->condition);
+    auto cond = auto_await(codegen(node->condition));
     if (!cond) return {};
     if (cond.type == CType::INT)
         cond.val = builder_->CreateICmpNE(cond.val, ConstantInt::get(LType::getInt64Ty(*context_), 0));
@@ -805,6 +814,8 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             else tv = codegen(std::get<ValueExpr*>(a));
             // FUNCTION args may have nullptr val (deferred compilation) — that's OK
             if (tv.type != CType::FUNCTION && !tv) return {};
+            // Auto-await PROMISE args (functions expect concrete values)
+            if (tv.type == CType::PROMISE) tv = auto_await(tv);
             all_args.push_back(tv);
             arg_lambda_names.push_back(last_lambda_name_);
         }
@@ -898,13 +909,27 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         if (it != named_values_.end()) call_args.push_back(it->second.val);
     }
 
+    // Async function: wrap in yona_rt_async_call → returns PROMISE
+    if (cf.return_type == CType::PROMISE) {
+        // Get the inner return type from the function's subtypes
+        CType inner_ret = CType::INT;
+        auto nv_it = named_values_.find(fn_name);
+        if (nv_it != named_values_.end() && !nv_it->second.subtypes.empty())
+            inner_ret = nv_it->second.subtypes[0];
+
+        // For async call, we pass the function pointer and first arg to the runtime
+        // The runtime spawns a thread pool task
+        auto promise = builder_->CreateCall(rt_async_call_, {cf.fn, call_args[0]}, "async_call");
+        return {promise, CType::PROMISE, {inner_ret}};
+    }
+
     return {builder_->CreateCall(cf.fn, call_args, "calltmp"), cf.return_type};
 }
 
 // ===== Case Expression =====
 
 TypedValue Codegen::codegen_case(CaseExpr* node) {
-    auto scrutinee = codegen(node->expr);
+    auto scrutinee = auto_await(codegen(node->expr));
     if (!scrutinee) return {};
 
     auto fn = builder_->GetInsertBlock()->getParent();
@@ -1143,13 +1168,20 @@ static CType yona_type_to_ctype(const types::Type& t) {
     return CType::INT;
 }
 
+// Auto-await: if a TypedValue is PROMISE, insert yona_rt_async_await to get the actual value
+TypedValue Codegen::auto_await(TypedValue tv) {
+    if (!tv || tv.type != CType::PROMISE) return tv;
+    auto awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
+    // The awaited value's type is stored in subtypes[0]
+    CType inner = (!tv.subtypes.empty()) ? tv.subtypes[0] : CType::INT;
+    return {awaited, inner};
+}
+
 TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
     // Extract parameter types and return type from the declared type
-    // Type is a FunctionType: arg -> ret  or  arg1 -> arg2 -> ret (curried)
     std::vector<LType*> param_types;
     std::vector<CType> param_ctypes;
     CType ret_ctype = CType::INT;
-    LType* ret_llvm = LType::getInt64Ty(*context_);
 
     auto current_type = node->declared_type;
 
@@ -1162,7 +1194,7 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
         current_type = ft->returnType;
     }
     ret_ctype = yona_type_to_ctype(current_type);
-    ret_llvm = llvm_type(ret_ctype);
+    auto ret_llvm = llvm_type(ret_ctype);
 
     // Declare the extern function
     auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
@@ -1172,13 +1204,14 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
                                node->name, module_.get());
     }
 
-    // Register as a compiled function so codegen_apply can find it
+    // Register as a compiled function
     CompiledFunction cf;
     cf.fn = fn;
-    cf.return_type = ret_ctype;
+    cf.return_type = node->is_async ? CType::PROMISE : ret_ctype;
     cf.param_types = param_ctypes;
     compiled_functions_[node->name] = cf;
-    named_values_[node->name] = {fn, CType::FUNCTION};
+    named_values_[node->name] = {fn, CType::FUNCTION,
+                                  node->is_async ? std::vector<CType>{ret_ctype} : std::vector<CType>{}};
 
     // Compile the body
     return codegen(node->body);

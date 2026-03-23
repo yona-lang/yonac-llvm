@@ -1,0 +1,2 @@
+extern async yona_test_slow_identity : Int -> Int in
+let a = yona_test_slow_identity 50, b = yona_test_slow_identity 50 in a + b

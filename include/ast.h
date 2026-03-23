@@ -1268,7 +1268,7 @@ public:
   ~ImportExpr() override;
 };
 
-// extern name : Type -> Type in body
+// extern [async] name : Type -> Type in body
 class YONA_API ExternDeclExpr final : public ExprNode {
 private:
   void print(std::ostream &os) const override;
@@ -1277,9 +1277,11 @@ public:
   string name;              // C function name
   compiler::types::Type declared_type;  // type annotation
   ExprNode *body;           // expression using the extern
+  bool is_async;            // true for "extern async" — calls via thread pool
 
   explicit ExternDeclExpr(SourceContext token, string name,
-                           compiler::types::Type type, ExprNode *body);
+                           compiler::types::Type type, ExprNode *body,
+                           bool is_async = false);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
