@@ -70,6 +70,9 @@ public:
     bool emit_object_file(const std::string& output_path);
     std::string emit_ir();
 
+    // Run LLVM optimization passes
+    void optimize();
+
     // Mangle a module function name for export
     static std::string mangle_name(const std::string& module_fqn, const std::string& func_name);
 

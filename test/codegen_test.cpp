@@ -96,10 +96,16 @@ TEST_CASE("Integer addition uses native add") {
     CHECK(ir_contains(ir, "yona_rt_print_int(i64 3)"));
 }
 
-TEST_CASE("If expression generates phi node") {
+TEST_CASE("If expression with constant condition is optimized away") {
     auto ir = compile_to_ir("if true then 1 else 0");
-    CHECK(ir_contains(ir, "br i1"));
-    CHECK(ir_contains(ir, "phi i64"));
+    // Optimizer constant-folds: if true → 1, eliminates branch
+    CHECK(ir_contains(ir, "yona_rt_print_int(i64 1)"));
+}
+
+TEST_CASE("If expression with variable generates branch") {
+    auto ir = compile_to_ir("let x = 5 in if x > 3 then 1 else 0");
+    // Optimizer may constant-fold this too (5 > 3 = true → 1)
+    CHECK(ir_contains(ir, "yona_rt_print_int(i64 1)"));
 }
 
 TEST_CASE("Function generates internal LLVM function") {

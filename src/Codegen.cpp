@@ -22,6 +22,10 @@
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Scalar.h>
+#include <llvm/Transforms/Scalar/GVN.h>
+#include <llvm/Transforms/Utils.h>
 
 #include <iostream>
 #include <sstream>
@@ -195,6 +199,7 @@ Module* Codegen::compile(AstNode* node) {
         std::cerr << "Module verification failed:\n" << err << "\n";
         return nullptr;
     }
+    optimize();
     return module_.get();
 }
 
@@ -270,8 +275,11 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
         std::cerr << "Module verification failed:\n" << err << "\n";
         return nullptr;
     }
+    optimize();
     return module_.get();
 }
+
+
 
 bool Codegen::emit_object_file(const std::string& path) {
     if (!target_machine_) return false;
@@ -291,6 +299,31 @@ std::string Codegen::emit_ir() {
     raw_string_ostream os(ir);
     module_->print(os, nullptr);
     return ir;
+}
+
+void Codegen::optimize() {
+    if (!module_) return;
+
+    legacy::FunctionPassManager fpm(module_.get());
+
+    // Promote allocas to registers (mem2reg)
+    fpm.add(createPromoteMemoryToRegisterPass());
+    // Combine redundant instructions
+    fpm.add(createInstructionCombiningPass());
+    // Reassociate expressions for better constant folding
+    fpm.add(createReassociatePass());
+    // Eliminate common subexpressions
+    fpm.add(createGVNPass());
+    // Simplify control flow (remove unreachable blocks, etc.)
+    fpm.add(createCFGSimplificationPass());
+    // Tail call elimination
+    fpm.add(createTailCallEliminationPass());
+
+    fpm.doInitialization();
+    for (auto& fn : *module_) {
+        fpm.run(fn);
+    }
+    fpm.doFinalization();
 }
 
 // ===== Entry Point =====

@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 352 tests, 1613 assertions, 80 codegen fixtures ✅
+- **Test Coverage**: 353 tests, 1617 assertions, 82 codegen fixtures ✅
 - **LLVM Compiler**: Type-directed codegen, compiles to native executables ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
 - **Interpreter**: Feature-complete with transparent async ✅
@@ -77,7 +77,7 @@ Cross-language linking with C, Rust, Go, Zig — anything that speaks the system
 
 - [ ] Dict/Set construction in codegen
 - [x] Async codegen: `extern async`, CType::PROMISE, auto-await, thread pool runtime, parallel let
-- [ ] Tail call optimization (`musttail` attribute)
+- [x] Optimization passes: tail call elimination, constant folding, GVN, DCE, instruction combining
 - [ ] Partial application in compiled code
 
 ### Future Improvements (Module System)
