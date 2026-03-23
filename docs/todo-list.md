@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 348 tests, 1573 assertions, 71 codegen fixtures ✅
+- **Test Coverage**: 351 tests, 1586 assertions, 71 codegen fixtures ✅
 - **LLVM Compiler**: Type-directed codegen, compiles to native executables ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
 - **Interpreter**: Feature-complete with transparent async ✅
@@ -62,7 +62,9 @@ Type-directed codegen with unboxed primitives. See [LLVM Backend Plan](llvm-back
 Compile `.yona` modules to object files with C-ABI-compatible exports.
 Cross-language linking with C, Rust, Go, Zig — anything that speaks the system linker.
 
-- [ ] Module → object file: compile module functions with mangled names (`yona_Pkg_Mod__func`)
+- [x] Module → object file: compile module functions with mangled names (`yona_Pkg_Mod__func`)
+- [x] CLI module detection: auto-detect `module` keyword, compile to `.o` instead of executable
+- [x] Cross-language linking: C code can call compiled Yona module functions directly
 - [ ] Import resolution: re-parse source module header to get export list and types
 - [ ] Monomorphization: specialize polymorphic functions at import site (like Rust generics)
 - [ ] Native stdlib shims: auto-generate wrappers that box/unbox between i64/ptr and RuntimeObject
@@ -160,7 +162,8 @@ Full implementation requires an HTTP library (libcurl or similar):
 - ✅ LLVM codegen: literals, arithmetic, comparison, let, if, functions, closures, recursion, case expressions, tuples, sequences, symbols, or-patterns, higher-order functions, string interpolation
 - ✅ Compiled runtime library — print, string concat, seq operations, symbol equality
 - ✅ Record types, field access, generators, exceptions
-- ✅ 348 test cases, 1573 assertions, 71 codegen fixtures
+- ✅ Module compilation with cross-language linking (C calls Yona, mangled C-ABI symbols)
+- ✅ 351 test cases, 1586 assertions, 71 codegen fixtures
 
 ## Next Steps
 

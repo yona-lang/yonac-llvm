@@ -61,9 +61,17 @@ public:
     Codegen(const std::string& module_name = "yona_module");
     ~Codegen();
 
+    // Compile a single expression (wraps in main())
     llvm::Module* compile(AstNode* node);
+
+    // Compile a module (exports functions with external linkage)
+    llvm::Module* compile_module(ModuleExpr* module);
+
     bool emit_object_file(const std::string& output_path);
     std::string emit_ir();
+
+    // Mangle a module function name for export
+    static std::string mangle_name(const std::string& module_fqn, const std::string& func_name);
 
 private:
     std::unique_ptr<llvm::LLVMContext> context_;

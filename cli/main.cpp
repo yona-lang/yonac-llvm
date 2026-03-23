@@ -1,13 +1,17 @@
 // yonac — Yona compiler
 //
-// Compiles Yona source code to native executables via LLVM.
+// Compiles Yona source code to native executables or object files via LLVM.
 //
 // Usage:
-//   yonac input.yona                  # compile to a.out
+//   yonac input.yona                  # compile expression to executable
 //   yonac input.yona -o output        # compile to output
 //   yonac -e "1 + 2"                  # compile expression
 //   yonac --emit-ir -e "1 + 2"        # print LLVM IR
 //   yonac --emit-obj -e "1 + 2"       # emit object file
+//   yonac module.yona --emit-obj      # compile module to object file
+//
+// Module files (starting with 'module' keyword) compile to object files
+// with externally-visible functions. Expression files compile to executables.
 
 #include <iostream>
 #include <fstream>
@@ -15,6 +19,7 @@
 #include <string>
 #include <cstdlib>
 #include <filesystem>
+#include <algorithm>
 
 #include <CLI/CLI.hpp>
 #include "Parser.h"
@@ -24,12 +29,22 @@ using namespace std;
 using namespace yona;
 using namespace yona::compiler::codegen;
 
+// Check if source code is a module (starts with 'module' keyword)
+static bool is_module_source(const string& source) {
+    // Skip whitespace and find the first token
+    auto it = source.begin();
+    while (it != source.end() && (*it == ' ' || *it == '\t' || *it == '\n' || *it == '\r'))
+        ++it;
+    string prefix(it, min(it + 6, source.end()));
+    return prefix == "module";
+}
+
 int main(int argc, char* argv[]) {
     CLI::App app{"yonac — Yona compiler"};
 
     string input_file;
     string expression;
-    string output_file = "a.out";
+    string output_file;
     bool emit_ir = false;
     bool emit_obj = false;
 
@@ -59,19 +74,50 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Parse
-    parser::Parser parser;
-    istringstream stream(source);
-    auto parse_result = parser.parse_input(stream);
-    if (!parse_result.node) {
-        cerr << "Parse error" << endl;
-        return 1;
+    bool is_module = is_module_source(source);
+
+    // Set default output
+    if (output_file.empty()) {
+        if (is_module || emit_obj) {
+            // Module or --emit-obj: default to .o
+            if (!input_file.empty())
+                output_file = filesystem::path(input_file).stem().string() + ".o";
+            else
+                output_file = "a.o";
+        } else {
+            output_file = "a.out";
+        }
     }
 
     // Codegen
-    Codegen codegen("yona_program");
-    auto module = codegen.compile(parse_result.node.get());
-    if (!module) {
+    string module_name = is_module ? "yona_module" : "yona_program";
+    Codegen codegen(module_name);
+    llvm::Module* llvm_mod = nullptr;
+
+    if (is_module) {
+        // Parse as module
+        parser::Parser parser;
+        auto result = parser.parse_module(source, input_file.empty() ? "<expression>" : input_file);
+        if (!result.has_value()) {
+            cerr << "Parse error";
+            for (auto& e : result.error()) cerr << ": " << e.message;
+            cerr << endl;
+            return 1;
+        }
+        llvm_mod = codegen.compile_module(result.value().get());
+    } else {
+        // Parse as expression
+        parser::Parser parser;
+        istringstream stream(source);
+        auto parse_result = parser.parse_input(stream);
+        if (!parse_result.node) {
+            cerr << "Parse error" << endl;
+            return 1;
+        }
+        llvm_mod = codegen.compile(parse_result.node.get());
+    }
+
+    if (!llvm_mod) {
         cerr << "Codegen error" << endl;
         return 1;
     }
@@ -83,42 +129,35 @@ int main(int argc, char* argv[]) {
     }
 
     // Emit object file
-    string obj_file = emit_obj ? output_file : (output_file + ".o");
+    string obj_file = (is_module || emit_obj) ? output_file : (output_file + ".o");
     if (!codegen.emit_object_file(obj_file)) {
         cerr << "Error: failed to emit object file" << endl;
         return 1;
     }
 
-    if (emit_obj) {
+    // For modules, we're done (modules produce .o files, not executables)
+    if (is_module || emit_obj) {
         return 0;
     }
 
-    // Link with runtime library
-    // Find the runtime library relative to the executable
+    // Link expression into executable
     auto exe_dir = filesystem::path(argv[0]).parent_path();
     string rt_obj = (exe_dir / "compiled_runtime.o").string();
 
-    // If runtime object doesn't exist next to executable, try building it
     if (!filesystem::exists(rt_obj)) {
-        // Try relative paths
         for (auto& dir : {".", "..", "../.."}) {
             auto candidate = filesystem::path(dir) / "src" / "compiled_runtime.c";
             if (filesystem::exists(candidate)) {
-                string compile_cmd = "cc -c " + candidate.string() + " -o " + rt_obj;
-                system(compile_cmd.c_str());
+                string cmd = "cc -c " + candidate.string() + " -o " + rt_obj;
+                system(cmd.c_str());
                 break;
             }
         }
     }
 
-    // Link
     string link_cmd = "cc " + obj_file + " " + rt_obj + " -o " + output_file;
     int link_result = system(link_cmd.c_str());
-
-    // Clean up temp object file
-    if (!emit_obj) {
-        filesystem::remove(obj_file);
-    }
+    filesystem::remove(obj_file);
 
     if (link_result != 0) {
         cerr << "Error: linking failed" << endl;

@@ -167,9 +167,95 @@ void Codegen::declare_runtime() {
 
 // ===== Public API =====
 
+std::string Codegen::mangle_name(const std::string& module_fqn, const std::string& func_name) {
+    // Replace backslash with underscore: Test\Test → Test_Test
+    std::string mangled = "yona_";
+    for (char c : module_fqn) {
+        mangled += (c == '\\' || c == '/') ? '_' : c;
+    }
+    mangled += "__";
+    mangled += func_name;
+    return mangled;
+}
+
 Module* Codegen::compile(AstNode* node) {
     auto fn = codegen_main(node);
     if (!fn) return nullptr;
+    std::string err;
+    raw_string_ostream os(err);
+    if (verifyModule(*module_, &os)) {
+        std::cerr << "Module verification failed:\n" << err << "\n";
+        return nullptr;
+    }
+    return module_.get();
+}
+
+Module* Codegen::compile_module(ModuleExpr* mod) {
+    // Build the module FQN string
+    std::string fqn;
+    if (mod->fqn->packageName.has_value()) {
+        auto* pkg = mod->fqn->packageName.value();
+        for (size_t i = 0; i < pkg->parts.size(); i++) {
+            if (i > 0) fqn += "\\";
+            fqn += pkg->parts[i]->value;
+        }
+        fqn += "\\";
+    }
+    fqn += mod->fqn->moduleName->value;
+
+    // Build export set for visibility control
+    std::unordered_set<std::string> export_set(mod->exports.begin(), mod->exports.end());
+
+    // First pass: register all functions as deferred
+    for (auto* func : mod->functions) {
+        std::string fn_name = func->name;
+        codegen_function_def(func, fn_name);
+    }
+
+    // Second pass: compile each function
+    // For exported functions, compile with dummy args to determine types,
+    // then create external linkage functions
+    for (auto* func : mod->functions) {
+        std::string fn_name = func->name;
+        bool is_exported = export_set.count(fn_name) > 0;
+
+        auto def_it = deferred_functions_.find(fn_name);
+        if (def_it == deferred_functions_.end()) continue;
+
+        // Build default args (all i64 for now — refined at call site for polymorphic)
+        std::vector<TypedValue> dummy_args;
+        for (size_t i = 0; i < func->patterns.size(); i++) {
+            dummy_args.push_back({ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::INT});
+        }
+
+        auto cf = compile_function(fn_name, def_it->second, dummy_args);
+
+        if (is_exported) {
+            // Create an external wrapper with mangled name
+            std::string mangled = mangle_name(fqn, fn_name);
+
+            // Check if the function already has the right linkage
+            if (cf.fn->getName() != mangled) {
+                // Create a wrapper function with external linkage and mangled name
+                auto* wrapper = Function::Create(
+                    cf.fn->getFunctionType(),
+                    Function::ExternalLinkage,
+                    mangled, module_.get());
+
+                auto* bb = BasicBlock::Create(*context_, "entry", wrapper);
+                builder_->SetInsertPoint(bb);
+
+                std::vector<Value*> args;
+                for (auto& arg : wrapper->args()) args.push_back(&arg);
+                auto* result = builder_->CreateCall(cf.fn, args);
+                builder_->CreateRet(result);
+            } else {
+                cf.fn->setLinkage(Function::ExternalLinkage);
+            }
+        }
+    }
+
+    // Verify
     std::string err;
     raw_string_ostream os(err);
     if (verifyModule(*module_, &os)) {

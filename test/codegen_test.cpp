@@ -166,6 +166,86 @@ TEST_CASE("Fixture-based codegen tests") {
 
 } // Codegen E2E
 
+// ===== Module Compilation Tests =====
+
+TEST_SUITE("Codegen Modules") {
+
+TEST_CASE("Module compiles to object with mangled exports") {
+    // Parse module
+    parser::Parser parser;
+    string source = R"(
+module Test\Arith exports add, mul as
+add x y = x + y
+mul x y = x * y
+end
+)";
+    auto result = parser.parse_module(source, "test_arith.yona");
+    REQUIRE(result.has_value());
+
+    // Compile module
+    Codegen codegen("test_arith");
+    auto mod = codegen.compile_module(result.value().get());
+    REQUIRE(mod != nullptr);
+
+    // Check that mangled exports exist in the IR
+    string ir = codegen.emit_ir();
+    CHECK(ir.find("yona_Test_Arith__add") != string::npos);
+    CHECK(ir.find("yona_Test_Arith__mul") != string::npos);
+}
+
+TEST_CASE("Module name mangling") {
+    CHECK(Codegen::mangle_name("Test\\Arith", "add") == "yona_Test_Arith__add");
+    CHECK(Codegen::mangle_name("Std\\Math", "abs") == "yona_Std_Math__abs");
+    CHECK(Codegen::mangle_name("My\\Deep\\Module", "func") == "yona_My_Deep_Module__func");
+}
+
+TEST_CASE("Module cross-language linking") {
+    // Compile a module
+    parser::Parser parser;
+    string source = R"(
+module Test\CrossLang exports double, negate as
+double x = x * 2
+negate x = 0 - x
+end
+)";
+    auto result = parser.parse_module(source, "cross.yona");
+    REQUIRE(result.has_value());
+
+    Codegen codegen("cross_lang");
+    auto mod = codegen.compile_module(result.value().get());
+    REQUIRE(mod != nullptr);
+
+    // Emit object file
+    string obj_path = "/tmp/cross_lang_test.o";
+    REQUIRE(codegen.emit_object_file(obj_path));
+
+    // Write a C program that calls the Yona functions
+    {
+        ofstream f("/tmp/cross_lang_caller.c");
+        f << "#include <stdio.h>\n#include <stdint.h>\n"
+          << "extern int64_t yona_Test_CrossLang__double(int64_t);\n"
+          << "extern int64_t yona_Test_CrossLang__negate(int64_t);\n"
+          << "int main() { printf(\"%ld %ld\", "
+          << "yona_Test_CrossLang__double(21), "
+          << "yona_Test_CrossLang__negate(5)); return 0; }\n";
+    }
+
+    // Compile and run
+    int cc = system("cc /tmp/cross_lang_caller.c /tmp/cross_lang_test.o -o /tmp/cross_lang_run 2>/dev/null");
+    REQUIRE(cc == 0);
+
+    array<char, 64> buf;
+    string output;
+    FILE* pipe = popen("/tmp/cross_lang_run", "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buf.data(), buf.size(), pipe)) output += buf.data();
+    pclose(pipe);
+
+    CHECK(output == "42 -5");
+}
+
+} // Codegen Modules
+
 // IR fixture tests removed — IR text comparison is fragile due to
 // whitespace/formatting differences between runs. The E2E fixture tests
 // (compile → run → check output) are more reliable and valuable.
