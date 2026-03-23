@@ -1,0 +1,1 @@
+let apply f x = f x in let add x y = x + y in apply (add 5) 10

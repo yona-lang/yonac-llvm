@@ -78,7 +78,7 @@ Cross-language linking with C, Rust, Go, Zig — anything that speaks the system
 - [ ] Dict/Set construction in codegen
 - [x] Async codegen: `extern async`, CType::PROMISE, auto-await, thread pool runtime, parallel let
 - [x] Optimization passes: tail call elimination, constant folding, GVN, DCE, instruction combining
-- [ ] Partial application in compiled code (runtime closure allocation with captured args)
+- [x] Partial application: compile-time wrapper generation (zero runtime overhead)
 
 ### Future Improvements (Module System)
 

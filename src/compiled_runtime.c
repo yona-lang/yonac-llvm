@@ -296,3 +296,39 @@ int64_t yona_test_slow_identity(int64_t ms) {
     usleep((useconds_t)(ms * 1000));
     return ms;
 }
+
+/* ===== Partial Application (Closures) ===== */
+/* A closure captures a function pointer and one partial argument.
+ * When called with the remaining argument, it invokes the original
+ * function with both args.
+ *
+ * For functions with arity > 2, closures chain:
+ * add 1 → closure(add, 1) → call with 2 → closure(add_1, 2) → call with 3 → add(1,2,3)
+ */
+
+typedef struct {
+    int64_t (*fn2)(int64_t, int64_t);  /* original 2-arg function */
+    int64_t captured;                   /* first captured argument */
+} yona_closure2_t;
+
+typedef struct {
+    int64_t (*fn3)(int64_t, int64_t, int64_t);
+    int64_t captured1;
+    int64_t captured2;
+} yona_closure3_t;
+
+/* Apply a 2-arg closure: closure was created from fn(captured, ?), now called with arg */
+int64_t yona_rt_closure2_apply(int64_t closure_ptr, int64_t arg) {
+    yona_closure2_t* c = (yona_closure2_t*)(void*)closure_ptr;
+    int64_t result = c->fn2(c->captured, arg);
+    free(c);
+    return result;
+}
+
+/* Create a closure from a 2-arg function with 1 captured arg */
+int64_t yona_rt_closure2_create(int64_t (*fn)(int64_t, int64_t), int64_t captured) {
+    yona_closure2_t* c = (yona_closure2_t*)malloc(sizeof(yona_closure2_t));
+    c->fn2 = fn;
+    c->captured = captured;
+    return (int64_t)(void*)c;
+}

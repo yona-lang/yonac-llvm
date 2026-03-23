@@ -136,6 +136,8 @@ private:
     llvm::Function* rt_print_symbol_ = nullptr;
     llvm::Function* rt_async_call_ = nullptr;
     llvm::Function* rt_async_await_ = nullptr;
+    llvm::Function* rt_closure2_create_ = nullptr;
+    llvm::Function* rt_closure2_apply_ = nullptr;
 
     void init_target();
     void declare_runtime();

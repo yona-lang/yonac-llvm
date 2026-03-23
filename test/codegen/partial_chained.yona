@@ -1,0 +1,1 @@
+let f x y z = x + y + z in let g = f 10 in let h = g 20 in h 12

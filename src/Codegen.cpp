@@ -871,7 +871,18 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     }
 
     // Find or compile the function
+    // First try direct lookup, then resolve through named_values_ indirection
     auto cf_it = compiled_functions_.find(fn_name);
+    if (cf_it == compiled_functions_.end()) {
+        // Check if fn_name is an alias for a compiled function (e.g., let g = partial_fn)
+        auto nv_it = named_values_.find(fn_name);
+        if (nv_it != named_values_.end() && nv_it->second.type == CType::FUNCTION && nv_it->second.val) {
+            if (auto* llvm_fn = dyn_cast<Function>(nv_it->second.val)) {
+                // Find by LLVM function name
+                cf_it = compiled_functions_.find(llvm_fn->getName().str());
+            }
+        }
+    }
     if (cf_it == compiled_functions_.end()) {
         // Check deferred
         auto def_it = deferred_functions_.find(fn_name);
@@ -933,6 +944,121 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     }
 
     auto& cf = cf_it->second;
+
+    // Check for partial application: fewer args than arity
+    size_t func_arity = cf.param_types.size() - cf.capture_names.size();
+    if (all_args.size() < func_arity) {
+        // Partial application: generate a wrapper function that captures the
+        // provided args and takes the remaining ones as parameters.
+        // add 5 where add(x,y) → generate partial_N(y) { return add(5, y); }
+
+        size_t n_provided = all_args.size();
+        size_t n_remaining = func_arity - n_provided;
+
+        // Build the wrapper's parameter types (remaining params)
+        std::vector<LType*> wrapper_params;
+        for (size_t i = n_provided; i < func_arity; i++)
+            wrapper_params.push_back(llvm_type(cf.param_types[i]));
+        // Add captured params from original function
+        for (size_t i = 0; i < cf.capture_names.size(); i++)
+            wrapper_params.push_back(llvm_type(cf.param_types[func_arity + i]));
+        // Add the partially applied args as captured params
+        for (auto& a : all_args)
+            wrapper_params.push_back(a.val->getType());
+
+        auto ret_llvm = cf.fn->getReturnType();
+        auto wrapper_type = llvm::FunctionType::get(ret_llvm, wrapper_params, false);
+        std::string wrapper_name = fn_name + "_partial" + std::to_string(n_provided) + "of" + std::to_string(func_arity);
+        auto* wrapper = Function::Create(wrapper_type, Function::InternalLinkage,
+                                          wrapper_name, module_.get());
+
+        // Save state
+        auto saved_block = builder_->GetInsertBlock();
+        auto saved_point = builder_->GetInsertPoint();
+
+        auto* entry = BasicBlock::Create(*context_, "entry", wrapper);
+        builder_->SetInsertPoint(entry);
+
+        // Build call args: captured partial args + remaining params
+        std::vector<Value*> inner_call_args;
+        // First: the remaining params (from wrapper's parameters)
+        size_t pi = 0;
+        for (size_t i = 0; i < n_remaining; i++) {
+            // These are the wrapper's first params — but we need to put
+            // the partial args FIRST in the call, so collect remaining params
+        }
+        // Actually: original function expects (provided_args..., remaining_args..., captures...)
+        // The wrapper's params are (remaining_args..., captures..., provided_args_captured...)
+
+        // Reorder: provided args (from captured) + remaining args (from params) + captures
+        auto arg_it = wrapper->arg_begin();
+
+        // Skip to captured partial args (at the end of wrapper params)
+        // Wrapper params layout: [remaining_args..., orig_captures..., partial_captured...]
+        // For calling original: [partial_captured..., remaining_args..., orig_captures...]
+
+        // Collect all wrapper args
+        std::vector<Value*> wrapper_args_vec;
+        for (auto& arg : wrapper->args()) wrapper_args_vec.push_back(&arg);
+
+        // partial_captured are the last n_provided args of wrapper
+        // remaining are the first n_remaining
+        // orig_captures are in between
+
+        size_t n_orig_captures = cf.capture_names.size();
+
+        // The wrapper takes only the remaining args as parameters.
+        // The partially applied args are embedded as constants in the wrapper body.
+        wrapper_params.clear();
+        for (size_t i = n_provided; i < func_arity; i++)
+            wrapper_params.push_back(llvm_type(cf.param_types[i]));
+
+        // Rebuild wrapper with only remaining params
+        wrapper->eraseFromParent();
+        wrapper_type = llvm::FunctionType::get(ret_llvm, wrapper_params, false);
+        wrapper = Function::Create(wrapper_type, Function::InternalLinkage,
+                                    wrapper_name, module_.get());
+
+        entry = BasicBlock::Create(*context_, "entry", wrapper);
+        builder_->SetInsertPoint(entry);
+
+        // Build call to original function:
+        // args = [captured_partial_args..., remaining_params..., orig_captures...]
+        inner_call_args.clear();
+
+        // First: the partially applied args (constants from the call site)
+        for (auto& a : all_args)
+            inner_call_args.push_back(a.val);
+
+        // Then: the remaining params (wrapper's parameters)
+        for (auto& arg : wrapper->args())
+            inner_call_args.push_back(&arg);
+
+        // Then: original function's captures (from enclosing scope)
+        for (auto& cap_name : cf.capture_names) {
+            auto cap_it = named_values_.find(cap_name);
+            if (cap_it != named_values_.end())
+                inner_call_args.push_back(cap_it->second.val);
+        }
+
+        auto* result = builder_->CreateCall(cf.fn, inner_call_args, "partial_call");
+        builder_->CreateRet(result);
+
+        // Restore
+        builder_->SetInsertPoint(saved_block, saved_point);
+
+        // Register wrapper — no captures needed (args are embedded as constants)
+        CompiledFunction partial_cf;
+        partial_cf.fn = wrapper;
+        partial_cf.return_type = cf.return_type;
+        for (size_t i = n_provided; i < func_arity; i++)
+            partial_cf.param_types.push_back(cf.param_types[i]);
+
+        compiled_functions_[wrapper_name] = partial_cf;
+        named_values_[wrapper_name] = {wrapper, CType::FUNCTION};
+        return {wrapper, CType::FUNCTION};
+    }
+
     std::vector<Value*> call_args;
     for (auto& a : all_args) call_args.push_back(a.val);
 
@@ -944,14 +1070,10 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
 
     // Async function: wrap in yona_rt_async_call → returns PROMISE
     if (cf.return_type == CType::PROMISE) {
-        // Get the inner return type from the function's subtypes
         CType inner_ret = CType::INT;
         auto nv_it = named_values_.find(fn_name);
         if (nv_it != named_values_.end() && !nv_it->second.subtypes.empty())
             inner_ret = nv_it->second.subtypes[0];
-
-        // For async call, we pass the function pointer and first arg to the runtime
-        // The runtime spawns a thread pool task
         auto promise = builder_->CreateCall(rt_async_call_, {cf.fn, call_args[0]}, "async_call");
         return {promise, CType::PROMISE, {inner_ret}};
     }
