@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 351 tests, 1586 assertions, 71 codegen fixtures ✅
+- **Test Coverage**: 352 tests, 1595 assertions, 71 codegen fixtures ✅
 - **LLVM Compiler**: Type-directed codegen, compiles to native executables ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
 - **Interpreter**: Feature-complete with transparent async ✅
@@ -65,7 +65,7 @@ Cross-language linking with C, Rust, Go, Zig — anything that speaks the system
 - [x] Module → object file: compile module functions with mangled names (`yona_Pkg_Mod__func`)
 - [x] CLI module detection: auto-detect `module` keyword, compile to `.o` instead of executable
 - [x] Cross-language linking: C code can call compiled Yona module functions directly
-- [ ] Import resolution: re-parse source module header to get export list and types
+- [x] Import resolution: generate extern declarations for mangled module symbols at call site
 - [ ] Monomorphization: specialize polymorphic functions at import site (like Rust generics)
 - [ ] Native stdlib shims: auto-generate wrappers that box/unbox between i64/ptr and RuntimeObject
 - [ ] Link compiled code with `libyona_lib` for native module access

@@ -378,6 +378,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_FUNCTION_EXPR:   return codegen_function_def(static_cast<FunctionExpr*>(node), "");
         case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));
         case AST_LAMBDA_ALIAS:    return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
+        case AST_IMPORT_EXPR:     return codegen_import(static_cast<ImportExpr*>(node));
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
         case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
         case AST_CONS_LEFT_EXPR:  return codegen_cons(static_cast<ConsLeftExpr*>(node));
@@ -854,6 +855,27 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             return {result, ret_ctype};
         }
 
+        // Check if it's an imported extern function
+        auto ext_it = extern_functions_.find(fn_name);
+        if (ext_it != extern_functions_.end()) {
+            std::string mangled = ext_it->second;
+            // Declare the extern function with the correct signature based on args
+            std::vector<LType*> arg_types;
+            for (auto& a : all_args) arg_types.push_back(a.val->getType());
+            auto ret_llvm = LType::getInt64Ty(*context_); // default i64 return
+            auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
+
+            auto* ext_fn = module_->getFunction(mangled);
+            if (!ext_fn) {
+                ext_fn = Function::Create(fn_type, Function::ExternalLinkage,
+                                           mangled, module_.get());
+            }
+
+            std::vector<Value*> vals;
+            for (auto& a : all_args) vals.push_back(a.val);
+            return {builder_->CreateCall(ext_fn, vals, "extern_call"), CType::INT};
+        }
+
         // Try as an LLVM function in the module
         auto* fn = module_->getFunction(fn_name);
         if (!fn) {
@@ -1097,6 +1119,68 @@ TypedValue Codegen::codegen_join(JoinExpr* node) {
     if (left.type == CType::STRING || right.type == CType::STRING)
         return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
     return {};
+}
+
+// ===== Imports =====
+
+TypedValue Codegen::codegen_import(ImportExpr* node) {
+    // Process each import clause: generate extern declarations for module functions
+    for (auto* clause : node->clauses) {
+        if (clause->get_type() == AST_FUNCTIONS_IMPORT) {
+            auto* fi = static_cast<FunctionsImport*>(clause);
+
+            // Build module FQN string
+            std::string mod_fqn;
+            if (fi->fromFqn->packageName.has_value()) {
+                auto* pkg = fi->fromFqn->packageName.value();
+                for (size_t i = 0; i < pkg->parts.size(); i++) {
+                    if (i > 0) mod_fqn += "\\";
+                    mod_fqn += pkg->parts[i]->value;
+                }
+                mod_fqn += "\\";
+            }
+            mod_fqn += fi->fromFqn->moduleName->value;
+
+            // For each imported function, declare an extern with the mangled name
+            for (auto* alias : fi->aliases) {
+                std::string func_name = alias->name->value;
+                std::string import_name = alias->alias ? alias->alias->value : func_name;
+                std::string mangled = mangle_name(mod_fqn, func_name);
+
+                // Check if already declared
+                auto* existing = module_->getFunction(mangled);
+                if (!existing) {
+                    // We don't know the exact signature yet — default to i64(i64, i64)
+                    // for 2-arg functions. For proper signature resolution, we'd need to
+                    // parse the module's source or read a .yonai metadata file.
+                    // For now, create a variadic-like i64 signature and let the linker resolve.
+
+                    // Try common arities: check if it's used and infer from call site
+                    // For now, declare with no args — the call site will cast as needed
+                    // Actually, we can't know arity without metadata. Use a generic approach:
+                    // declare as taking variable i64 args via a wrapper that takes ptr.
+
+                    // Simplest: don't declare yet. When codegen_apply encounters this name,
+                    // it will find it in named_values_ as a FUNCTION and handle it.
+                }
+
+                // Register the mangled name so codegen_apply can find it
+                // Store a marker that this is an external module function
+                if (!existing) {
+                    // Placeholder — actual function created at call site with known arity
+                    named_values_[import_name] = {nullptr, CType::FUNCTION, {/* subtypes: mangled name hack */}};
+                }
+
+                // Store the mangled name mapping for the apply codegen
+                // We need a way to map import_name → mangled name
+                // Use a simple side table
+                extern_functions_[import_name] = mangled;
+            }
+        }
+    }
+
+    // Compile the body expression
+    return codegen(node->expr);
 }
 
 } // namespace yona::compiler::codegen

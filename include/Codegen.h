@@ -95,7 +95,10 @@ private:
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
     int lambda_counter_ = 0;
-    std::string last_lambda_name_; // tracks name of most recently deferred lambda
+    std::string last_lambda_name_;
+
+    // External module function mapping: local name → mangled symbol name
+    std::unordered_map<std::string, std::string> extern_functions_;
 
     // Runtime function declarations
     llvm::Function* rt_print_int_ = nullptr;
@@ -162,6 +165,9 @@ private:
     CompiledFunction compile_function(const std::string& name,
                                        const DeferredFunction& def,
                                        const std::vector<TypedValue>& args);
+
+    // Imports
+    TypedValue codegen_import(ImportExpr* node);
 
     // Collections
     TypedValue codegen_tuple(TupleExpr* node);

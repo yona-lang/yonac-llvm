@@ -244,6 +244,55 @@ end
     CHECK(output == "42 -5");
 }
 
+TEST_CASE("Multi-module Yona linking") {
+    // Compile a module
+    parser::Parser p1;
+    string mod_source = R"(
+module Test\Calc exports square, cube as
+square x = x * x
+cube x = x * x * x
+end
+)";
+    auto mod_result = p1.parse_module(mod_source, "calc.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("calc_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    string mod_obj = "/tmp/calc_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+
+    // Compile expression that imports from the module
+    parser::Parser p2;
+    string expr_source = "import square, cube from Test\\Calc in square 3 + cube 2";
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("expr_test");
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    string expr_obj = "/tmp/calc_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+
+    // Compile runtime
+    string rt_obj = "/tmp/compiled_runtime_test.o";
+
+    // Link and run
+    string link = "cc " + expr_obj + " " + mod_obj + " " + rt_obj + " -o /tmp/calc_link_test 2>/dev/null";
+    REQUIRE(system(link.c_str()) == 0);
+
+    array<char, 64> buf;
+    string output;
+    FILE* pipe = popen("/tmp/calc_link_test", "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buf.data(), buf.size(), pipe)) output += buf.data();
+    pclose(pipe);
+    if (!output.empty() && output.back() == '\n') output.pop_back();
+
+    CHECK(output == "17"); // square(3)=9 + cube(2)=8 = 17
+}
+
 } // Codegen Modules
 
 // IR fixture tests removed — IR text comparison is fragile due to
