@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
+#include <ctype.h>
 
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
@@ -101,6 +103,57 @@ int yona_rt_symbol_eq(const char* a, const char* b) {
 void yona_rt_print_symbol(const char* name) {
     printf(":%s", name);
 }
+
+/* Forward declarations for runtime functions used by shims */
+int64_t* yona_rt_seq_alloc(int64_t count);
+int64_t* yona_rt_seq_tail(int64_t* seq);
+
+/* ===== Native stdlib shims ===== */
+/* Pure C implementations of common stdlib functions for compiled code. */
+/* These use the same mangled names as compiled Yona modules. */
+
+/* Std\Math */
+int64_t yona_Std_Math__abs(int64_t x) { return x < 0 ? -x : x; }
+int64_t yona_Std_Math__max(int64_t a, int64_t b) { return a > b ? a : b; }
+int64_t yona_Std_Math__min(int64_t a, int64_t b) { return a < b ? a : b; }
+int64_t yona_Std_Math__factorial(int64_t n) {
+    int64_t r = 1;
+    for (int64_t i = 2; i <= n; i++) r *= i;
+    return r;
+}
+double yona_Std_Math__sqrt(double x) { return sqrt(x); }
+double yona_Std_Math__sin(double x) { return sin(x); }
+double yona_Std_Math__cos(double x) { return cos(x); }
+
+/* Std\String */
+int64_t yona_Std_String__length(const char* s) { return (int64_t)strlen(s); }
+const char* yona_Std_String__toUpperCase(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)malloc(len + 1);
+    for (size_t i = 0; i <= len; i++) r[i] = (char)toupper((unsigned char)s[i]);
+    return r;
+}
+const char* yona_Std_String__toLowerCase(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)malloc(len + 1);
+    for (size_t i = 0; i <= len; i++) r[i] = (char)tolower((unsigned char)s[i]);
+    return r;
+}
+
+/* Std\List */
+int64_t yona_Std_List__length(int64_t* seq) { return seq[0]; }
+int64_t yona_Std_List__head(int64_t* seq) { return seq[1]; }
+int64_t* yona_Std_List__tail(int64_t* seq) { return yona_rt_seq_tail(seq); }
+int64_t* yona_Std_List__reverse(int64_t* seq) {
+    int64_t len = seq[0];
+    int64_t* r = yona_rt_seq_alloc(len);
+    for (int64_t i = 0; i < len; i++) r[i + 1] = seq[len - i];
+    return r;
+}
+
+/* Std\Types */
+int64_t yona_Std_Types__toInt(const char* s) { return (int64_t)atoll(s); }
+double yona_Std_Types__toFloat(const char* s) { return atof(s); }
 
 // Head: first element
 int64_t yona_rt_seq_head(int64_t* seq) {

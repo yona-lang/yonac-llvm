@@ -155,7 +155,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    string link_cmd = "cc " + obj_file + " " + rt_obj + " -o " + output_file;
+    string link_cmd = "cc " + obj_file + " " + rt_obj + " -lm -o " + output_file;
     int link_result = system(link_cmd.c_str());
     filesystem::remove(obj_file);
 
