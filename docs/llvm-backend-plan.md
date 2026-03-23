@@ -257,13 +257,16 @@ Note: arithmetic, comparison, boolean logic — all compile to native LLVM instr
 - Currying / partial application → runtime helper or codegen'd wrapper
 - Recursive functions → named function definitions
 
-### Phase 3: Pattern Matching + Do Blocks ✅ (partial)
+### Phase 3: Pattern Matching + Do Blocks ✅
 
-- Tuple construction → LLVM struct
-- Sequence construction → runtime array allocation
+- Tuple construction → LLVM struct ✅
+- Sequence construction → runtime array allocation ✅
 - Dict/set → runtime hash map
-- Case expression → decision tree compilation
-- Pattern types: literal, variable, wildcard, tuple, sequence, head-tail, or-pattern
+- Case expression → decision tree compilation ✅
+- Pattern types: literal ✅, variable ✅, wildcard ✅, tuple ✅, sequence ✅, head-tail ✅, or-pattern ✅, symbol ✅
+- Symbol values → interned string pointers ✅
+- Higher-order functions → function pointer passing + indirect call ✅
+- String interpolation → JoinExpr chain (via parser desugaring) ✅
 
 ### Phase 4: Module System
 

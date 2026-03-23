@@ -1,0 +1,1 @@
+let apply f x = f x in let double y = y * 2 in apply double 5

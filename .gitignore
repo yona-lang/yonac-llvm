@@ -61,3 +61,4 @@ debug_*
 # Test outputs
 *.yona
 !test/code/*.yona
+a.out

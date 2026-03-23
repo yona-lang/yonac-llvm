@@ -33,7 +33,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -87,6 +87,7 @@ private:
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
     int lambda_counter_ = 0;
+    std::string last_lambda_name_; // tracks name of most recently deferred lambda
 
     // Runtime function declarations
     llvm::Function* rt_print_int_ = nullptr;
@@ -104,6 +105,8 @@ private:
     llvm::Function* rt_seq_join_ = nullptr;
     llvm::Function* rt_seq_head_ = nullptr;
     llvm::Function* rt_seq_tail_ = nullptr;
+    llvm::Function* rt_symbol_eq_ = nullptr;
+    llvm::Function* rt_print_symbol_ = nullptr;
 
     void init_target();
     void declare_runtime();
@@ -124,6 +127,7 @@ private:
     TypedValue codegen_bool_false(FalseLiteralExpr* node);
     TypedValue codegen_string(StringExpr* node);
     TypedValue codegen_unit(UnitExpr* node);
+    TypedValue codegen_symbol(SymbolExpr* node);
 
     // Arithmetic (type-directed: int vs float dispatch)
     TypedValue codegen_binary(AstNode* left_node, AstNode* right_node,

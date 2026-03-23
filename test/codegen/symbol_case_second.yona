@@ -1,0 +1,1 @@
+case :error of :ok -> "matched ok"; :error -> "matched error"; _ -> "no match" end

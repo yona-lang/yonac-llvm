@@ -128,6 +128,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::TUPLE:  return LType::getInt64Ty(*context_); // overridden per-tuple
         case CType::UNIT:   return LType::getInt64Ty(*context_);
         case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::SYMBOL: return PointerType::get(LType::getInt8Ty(*context_), 0);
     }
     return LType::getInt64Ty(*context_);
 }
@@ -160,6 +161,8 @@ void Codegen::declare_runtime() {
     rt_seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
     rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
     rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
+    rt_symbol_eq_     = decl("yona_rt_symbol_eq", LType::getInt32Ty(*context_), {ptr, ptr});
+    rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr});
 }
 
 // ===== Public API =====
@@ -217,7 +220,8 @@ Function* Codegen::codegen_main(AstNode* node) {
 void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
                           Function* print_int, Function* print_float,
                           Function* print_string, Function* print_bool,
-                          Function* print_seq, LLVMContext& ctx) {
+                          Function* print_seq, Function* print_symbol,
+                          LLVMContext& ctx) {
     if (!tv.val) return;
     switch (tv.type) {
         case CType::INT:    builder->CreateCall(print_int, {tv.val}); break;
@@ -235,7 +239,7 @@ void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
                     auto elem = builder->CreateExtractValue(tv.val, {i});
                     CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
                     codegen_print_value(builder, {elem, et}, print_int, print_float,
-                                        print_string, print_bool, print_seq, ctx);
+                                        print_string, print_bool, print_seq, print_symbol, ctx);
                 }
             }
             builder->CreateCall(print_string, {builder->CreateGlobalStringPtr(")")});
@@ -243,12 +247,13 @@ void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
         }
         case CType::UNIT:     builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("()")}); break;
         case CType::FUNCTION: builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("<function>")}); break;
+        case CType::SYMBOL:   builder->CreateCall(print_symbol, {tv.val}); break;
     }
 }
 
 void Codegen::codegen_print(const TypedValue& tv) {
     codegen_print_value(builder_.get(), tv, rt_print_int_, rt_print_float_,
-                         rt_print_string_, rt_print_bool_, rt_print_seq_, *context_);
+                         rt_print_string_, rt_print_bool_, rt_print_seq_, rt_print_symbol_, *context_);
     builder_->CreateCall(rt_print_newline_, {});
 }
 
@@ -264,6 +269,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_FALSE_LITERAL_EXPR: return codegen_bool_false(static_cast<FalseLiteralExpr*>(node));
         case AST_STRING_EXPR:     return codegen_string(static_cast<StringExpr*>(node));
         case AST_UNIT_EXPR:       return codegen_unit(static_cast<UnitExpr*>(node));
+        case AST_SYMBOL_EXPR:    return codegen_symbol(static_cast<SymbolExpr*>(node));
         case AST_ADD_EXPR:        return codegen_binary(static_cast<AddExpr*>(node)->left, static_cast<AddExpr*>(node)->right, "+");
         case AST_SUBTRACT_EXPR:   return codegen_binary(static_cast<SubtractExpr*>(node)->left, static_cast<SubtractExpr*>(node)->right, "-");
         case AST_MULTIPLY_EXPR:   return codegen_binary(static_cast<MultiplyExpr*>(node)->left, static_cast<MultiplyExpr*>(node)->right, "*");
@@ -317,6 +323,9 @@ TypedValue Codegen::codegen_string(StringExpr* node) {
 }
 TypedValue Codegen::codegen_unit(UnitExpr*) {
     return {ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::UNIT};
+}
+TypedValue Codegen::codegen_symbol(SymbolExpr* node) {
+    return {builder_->CreateGlobalStringPtr(node->value), CType::SYMBOL};
 }
 
 // ===== Arithmetic (type-directed) =====
@@ -453,10 +462,22 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
 
 TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     auto it = named_values_.find(node->name->value);
-    if (it != named_values_.end()) return it->second;
+    if (it != named_values_.end()) {
+        // If it's a FUNCTION with nullptr val, set last_lambda_name_ for higher-order support
+        if (it->second.type == CType::FUNCTION && !it->second.val) {
+            last_lambda_name_ = node->name->value;
+        }
+        return it->second;
+    }
     // Check if it's a compiled function
     auto fit = compiled_functions_.find(node->name->value);
-    if (fit != compiled_functions_.end()) return {fit->second.fn, CType::FUNCTION};
+    if (fit != compiled_functions_.end()) return {fit->second.fn, CType::FUNCTION, {fit->second.return_type}};
+    // Check if it's a deferred function (not yet compiled — referenced as value)
+    auto def_it = deferred_functions_.find(node->name->value);
+    if (def_it != deferred_functions_.end()) {
+        last_lambda_name_ = node->name->value;
+        return {nullptr, CType::FUNCTION};
+    }
     std::cerr << "Codegen: unknown variable '" << node->name->value << "'\n";
     return {};
 }
@@ -494,6 +515,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
     }
 
     deferred_functions_[fn_name] = def;
+    last_lambda_name_ = fn_name;
     return {nullptr, CType::FUNCTION}; // no value yet, compiled at call site
 }
 
@@ -501,6 +523,7 @@ TypedValue Codegen::codegen_lambda_alias(LambdaAlias* node) {
     auto fn_name = node->name->value;
     codegen_function_def(node->lambda, fn_name);
     named_values_[fn_name] = {nullptr, CType::FUNCTION};
+    last_lambda_name_ = fn_name;
     return {nullptr, CType::FUNCTION};
 }
 
@@ -562,16 +585,26 @@ Codegen::CompiledFunction Codegen::compile_function(
     for (auto& arg : fn->args()) {
         std::string pname;
         CType ct;
+        std::vector<CType> st;
         if (i < def.param_names.size()) {
             pname = def.param_names[i];
             ct = (i < args.size()) ? args[i].type : CType::INT;
+            if (i < args.size()) st = args[i].subtypes;
+            // For FUNCTION args, look up return type from compiled function
+            if (ct == CType::FUNCTION && st.empty() && i < args.size() && args[i].val) {
+                if (auto* fn_val = dyn_cast<Function>(args[i].val)) {
+                    auto cf_it = compiled_functions_.find(fn_val->getName().str());
+                    if (cf_it != compiled_functions_.end())
+                        st = {cf_it->second.return_type};
+                }
+            }
         } else {
             pname = def.free_vars[i - def.param_names.size()];
             size_t ci = i - def.param_names.size();
             ct = (ci < capture_values.size()) ? capture_values[ci].type : CType::INT;
         }
         arg.setName(pname);
-        named_values_[pname] = {&arg, ct};
+        named_values_[pname] = {&arg, ct, st};
         i++;
     }
 
@@ -607,16 +640,25 @@ Codegen::CompiledFunction Codegen::compile_function(
             for (auto& arg : fn->args()) {
                 std::string pname;
                 CType ct;
+                std::vector<CType> st;
                 if (i < def.param_names.size()) {
                     pname = def.param_names[i];
                     ct = (i < args.size()) ? args[i].type : CType::INT;
+                    if (i < args.size()) st = args[i].subtypes;
+                    if (ct == CType::FUNCTION && st.empty() && i < args.size() && args[i].val) {
+                        if (auto* fn_val = dyn_cast<Function>(args[i].val)) {
+                            auto cf_it2 = compiled_functions_.find(fn_val->getName().str());
+                            if (cf_it2 != compiled_functions_.end())
+                                st = {cf_it2->second.return_type};
+                        }
+                    }
                 } else {
                     pname = def.free_vars[i - def.param_names.size()];
                     size_t ci = i - def.param_names.size();
                     ct = (ci < capture_values.size()) ? capture_values[ci].type : CType::INT;
                 }
                 arg.setName(pname);
-                named_values_[pname] = {&arg, ct};
+                named_values_[pname] = {&arg, ct, st};
                 i++;
             }
 
@@ -664,15 +706,35 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         } else break;
     }
 
-    // Evaluate all arguments in order
+    // Evaluate all arguments in order, tracking lambda names for FUNCTION args
     std::vector<TypedValue> all_args;
+    std::vector<std::string> arg_lambda_names; // deferred lambda name per arg (empty if not a lambda)
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
         for (auto& a : (*it)->args) {
+            last_lambda_name_.clear();
             TypedValue tv;
             if (std::holds_alternative<ExprNode*>(a)) tv = codegen(std::get<ExprNode*>(a));
             else tv = codegen(std::get<ValueExpr*>(a));
-            if (!tv) return {};
+            // FUNCTION args may have nullptr val (deferred compilation) — that's OK
+            if (tv.type != CType::FUNCTION && !tv) return {};
             all_args.push_back(tv);
+            arg_lambda_names.push_back(last_lambda_name_);
+        }
+    }
+
+    // Pre-compile any FUNCTION args that have nullptr val (lambdas passed as values)
+    for (size_t ai = 0; ai < all_args.size(); ai++) {
+        if (all_args[ai].type == CType::FUNCTION && !all_args[ai].val && !arg_lambda_names[ai].empty()) {
+            auto& lname = arg_lambda_names[ai];
+            auto def_it = deferred_functions_.find(lname);
+            if (def_it != deferred_functions_.end()) {
+                // Compile with INT args as default type hint
+                std::vector<TypedValue> hint_args;
+                for (size_t pi = 0; pi < def_it->second.param_names.size(); pi++)
+                    hint_args.push_back({ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::INT});
+                auto cf = compile_function(lname, def_it->second, hint_args);
+                all_args[ai] = {cf.fn, CType::FUNCTION, {cf.return_type}};
+            }
         }
     }
 
@@ -688,6 +750,24 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     }
 
     if (cf_it == compiled_functions_.end()) {
+        // Check if fn_name is a FUNCTION-typed variable (higher-order: indirect call)
+        auto var_it = named_values_.find(fn_name);
+        if (var_it != named_values_.end() && var_it->second.type == CType::FUNCTION && var_it->second.val) {
+            // Build function type from actual argument types
+            std::vector<LType*> arg_types;
+            for (auto& a : all_args) arg_types.push_back(a.val->getType());
+            // Return type from subtypes[0] if available, else match first arg type
+            CType ret_ctype = (!var_it->second.subtypes.empty()) ? var_it->second.subtypes[0]
+                : (all_args.empty() ? CType::INT : all_args[0].type);
+            auto ret_llvm = llvm_type(ret_ctype);
+            auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
+            auto fn_ptr = var_it->second.val;
+            std::vector<Value*> vals;
+            for (auto& a : all_args) vals.push_back(a.val);
+            auto result = builder_->CreateCall(fn_type, fn_ptr, vals, "indirect_call");
+            return {result, ret_ctype};
+        }
+
         // Try as an LLVM function in the module
         auto* fn = module_->getFunction(fn_name);
         if (!fn) {
@@ -739,6 +819,11 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                 named_values_[(*id)->name->value] = scrutinee;
                 builder_->CreateBr(body_bb);
+            } else if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
+                auto sym_str = builder_->CreateGlobalStringPtr((*sym)->value);
+                auto cmp = builder_->CreateCall(rt_symbol_eq_, {scrutinee.val, sym_str});
+                auto cmp_bool = builder_->CreateICmpNE(cmp, ConstantInt::get(LType::getInt32Ty(*context_), 0));
+                builder_->CreateCondBr(cmp_bool, body_bb, next_bb);
             } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
                 auto* an = reinterpret_cast<AstNode*>(*lit);
                 if (an->get_type() == AST_INTEGER_EXPR) {
@@ -792,6 +877,47 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 }
             }
             builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_OR_PATTERN) {
+            auto* op = static_cast<OrPattern*>(pat);
+            // For each alternative in the or-pattern, test and branch to body_bb on match
+            for (size_t oi = 0; oi < op->patterns.size(); oi++) {
+                auto* alt = op->patterns[oi].get();
+                auto alt_next = (oi + 1 < op->patterns.size())
+                    ? BasicBlock::Create(*context_, "case.or." + std::to_string(i) + "." + std::to_string(oi+1), fn)
+                    : next_bb;
+
+                if (alt->get_type() == AST_UNDERSCORE_PATTERN) {
+                    builder_->CreateBr(body_bb);
+                } else if (alt->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(alt);
+                    if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
+                        auto sym_str = builder_->CreateGlobalStringPtr((*sym)->value);
+                        auto cmp = builder_->CreateCall(rt_symbol_eq_, {scrutinee.val, sym_str});
+                        auto cmp_bool = builder_->CreateICmpNE(cmp, ConstantInt::get(LType::getInt32Ty(*context_), 0));
+                        builder_->CreateCondBr(cmp_bool, body_bb, alt_next);
+                    } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                        auto* an = reinterpret_cast<AstNode*>(*lit);
+                        if (an->get_type() == AST_INTEGER_EXPR) {
+                            auto* ie = static_cast<IntegerExpr*>(an);
+                            auto mv = ConstantInt::get(LType::getInt64Ty(*context_), ie->value);
+                            auto cmp = builder_->CreateICmpEQ(scrutinee.val, mv);
+                            builder_->CreateCondBr(cmp, body_bb, alt_next);
+                        } else {
+                            builder_->CreateBr(body_bb);
+                        }
+                    } else if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                        named_values_[(*id)->name->value] = scrutinee;
+                        builder_->CreateBr(body_bb);
+                    } else {
+                        builder_->CreateBr(body_bb);
+                    }
+                } else {
+                    builder_->CreateBr(body_bb);
+                }
+
+                if (oi + 1 < op->patterns.size())
+                    builder_->SetInsertPoint(alt_next);
+            }
         } else {
             builder_->CreateBr(body_bb);
         }

@@ -92,6 +92,16 @@ int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
     return result;
 }
 
+/* ===== Symbol runtime ===== */
+
+int yona_rt_symbol_eq(const char* a, const char* b) {
+    return strcmp(a, b) == 0;
+}
+
+void yona_rt_print_symbol(const char* name) {
+    printf(":%s", name);
+}
+
 // Head: first element
 int64_t yona_rt_seq_head(int64_t* seq) {
     return seq[1];
