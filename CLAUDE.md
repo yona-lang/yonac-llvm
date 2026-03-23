@@ -50,9 +50,12 @@ Yona language compiler/interpreter using LLVM as the backend. Traditional compil
 
 **Frame-based scoping**: `Frame<T>` (in `common.h`) is a generic scope with parent-pointer chaining, used for lexical scoping. New frames are pushed for function calls, let expressions, and pattern matching. Pattern matching creates a temporary frame for bindings, then merges to parent on success.
 
+**LLVM Codegen** (`src/Codegen.cpp`): Type-directed code generation using `TypedValue = {Value*, CType}`. Every codegen method returns both an LLVM value and its type tag. Functions are compiled with deferred compilation — stored as AST at definition, compiled at call site where argument types are known. Closures use lambda lifting (free variables become extra parameters). The `yonac` CLI compiles Yona source to native executables via LLVM.
+
 ### Core Components
 
 - **AST** (`include/ast.h`): Large node hierarchy rooted at `AstNode`. Major branches: `ExprNode` (expressions), `PatternNode` (pattern matching), `ScopedNode` (scope-creating). Each node tracks `SourceContext` for error reporting.
+- **Codegen** (`src/Codegen.cpp`): LLVM IR generation with `TypedValue` system. Supports literals, arithmetic, functions, closures, recursion, case expressions, tuples, sequences, symbols, or-patterns, higher-order functions. Compiled runtime in `src/compiled_runtime.c`.
 - **Interpreter** (`src/Interpreter.cpp`): Tree-walking interpreter with `InterpreterState` holding the frame stack, module cache, exception state, and generator context.
 - **Type System** (`include/types.h`): Variant-based types including builtins, function types, product/sum types, record types, and named types. Supports Hindley-Milner inference via `TypeChecker`.
 - **Pattern Matching**: `CaseExpr` contains a target expression and vector of `CaseClause(pattern, body)`. Pattern types include value, tuple, seq, head-tail (`[h|t]`), dict, record, `as` binding (`@`), and or-patterns.

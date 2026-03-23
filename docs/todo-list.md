@@ -2,15 +2,12 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 343 test cases passing (100%), 1425 assertions ✅
-- **C Embedding API**: Stable C interface (`yona_api.h`) for FFI ✅
-- **Sandboxing**: Module whitelist/blacklist, execution limits, memory limits ✅
+- **Test Coverage**: 348 tests, 1573 assertions, 71 codegen fixtures ✅
+- **LLVM Compiler**: Type-directed codegen, compiles to native executables ✅
+- **C Embedding API**: Stable C interface with sandboxing ✅
 - **Interpreter**: Feature-complete with transparent async ✅
-- **TypeChecker**: Fully implemented with Promise<T> coercion ✅
+- **TypeChecker**: Hindley-Milner with Promise<T> coercion ✅
 - **Native Stdlib**: 19 modules, 150+ functions ✅
-- **Newline-aware lexer**: Significant newlines, bracket suppression, semicolons ✅
-- **Juxtaposition**: Function application by adjacency (`f x y`) ✅
-- **String interpolation**: `"hello {name}"` with auto-conversion ✅
 - **Async Integration**: Promise-aware type system, parallel let bindings, type-directed auto-await ✅
 
 ## Phase 1: Embeddability (High Priority)
@@ -38,43 +35,34 @@ Make Yona usable as an embedded scripting/extension language in host application
 - [ ] Monaco/CodeMirror language definition (syntax highlighting, bracket matching)
 - [ ] REPL improvements (history, completion, multi-line input)
 
-## Phase 2: LLVM Backend (High Priority)
+## Phase 2: LLVM Backend (mostly complete ✅)
 
-Yona is statically typed (HM inference). The compiler generates native code with unboxed
-primitives (`Int` → `i64`, `Float` → `double`). See [LLVM Backend Plan](llvm-backend-plan.md).
+Type-directed codegen with unboxed primitives. See [LLVM Backend Plan](llvm-backend-plan.md).
 
-### Phase 2.1: Pipeline + Arithmetic
-- [ ] Wire `yonac` CLI: parse → type check → codegen → emit → link
-- [ ] Codegen for literals (Int, Float, Bool, String)
-- [ ] Codegen for arithmetic and comparison operators (native instructions)
-- [ ] Codegen for let bindings and if-then-else
-- [ ] Runtime library: string allocation, print, entry point
+### Completed ✅
+- [x] Pipeline: `yonac` CLI with parse → codegen → emit → link
+- [x] Literals: Int (i64), Float (double), Bool (i1), String (ptr), Symbol (ptr), Unit
+- [x] Arithmetic, comparison, logical operators (native instructions, type-directed)
+- [x] Let bindings (value, lambda, pattern destructuring)
+- [x] If-then-else (branch + phi)
+- [x] Functions (deferred compilation at call site with known arg types)
+- [x] Closures (lambda lifting, free variable capture)
+- [x] Recursion (forward declaration before body compilation)
+- [x] Higher-order functions (function pointer passing, indirect calls)
+- [x] Case expressions (decision tree: integer, symbol, variable, wildcard, head-tail, empty seq, tuple, or-patterns)
+- [x] Do blocks
+- [x] Tuples (LLVM structs, destructuring via extractvalue)
+- [x] Sequences (runtime heap arrays, cons, join)
+- [x] String interpolation (via JoinExpr desugaring)
+- [x] Runtime library (compiled_runtime.c): print, string concat, seq operations, symbol equality
+- [x] 71 E2E codegen test fixtures
 
-### Phase 2.2: Functions
-- [ ] Lambda → closure allocation (function pointer + typed environment)
-- [ ] Free variable analysis for closure capture
-- [ ] Function application (direct call or closure call)
-- [ ] Partial application / currying
-
-### Phase 2.3: Collections + Pattern Matching
-- [ ] Tuple → LLVM struct, Seq/Dict/Set → runtime allocation
-- [ ] Case expression → decision tree codegen
-- [ ] Pattern types: literal, variable, tuple, seq, head-tail, or-pattern
-
-### Phase 2.4: Modules
-- [ ] Compile modules to object files, link-time import resolution
-- [ ] Native module FFI (call existing C++ stdlib)
-
-### Phase 2.5: Coroutines (Async)
+### Remaining
+- [ ] Module compilation (compile modules to object files, link with native stdlib)
+- [ ] Dict/Set construction in codegen
 - [ ] LLVM coroutine intrinsics for async functions
-- [ ] Auto-await at PromiseType coercion points
-- [ ] Parallel let via coroutine spawning
-- [ ] Event loop scheduler
-
-### Phase 2.6: Optimization
-- [ ] Tail call optimization (`musttail`)
-- [ ] Function inlining, escape analysis
-- [ ] Type specialization (monomorphize polymorphic functions)
+- [ ] Tail call optimization
+- [ ] Partial application in compiled code
 
 ## Phase 3: Remaining Stdlib (Medium Priority)
 
@@ -142,13 +130,16 @@ Full implementation requires an HTTP library (libcurl or similar):
 - ✅ Module system — FQN-based, filesystem resolution, caching, native + file-based
 - ✅ Native modules (19): Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 - ✅ Async infrastructure — Promise type, thread pool (standard + work-stealing), AsyncContext, dependency analyzer
-- ✅ C embedding API — `yona_api.h` with eval, value creation/inspection, function calling, native registration, module access
-- ✅ Sandboxing — module whitelist/blacklist with wildcards, execution step limits, memory limits
+- ✅ C embedding API — `yona_api.h` with eval, value creation/inspection, native registration, sandboxing
+- ✅ Sandboxing — module whitelist/blacklist, execution step limits, memory limits
+- ✅ LLVM compiler — type-directed codegen with TypedValue, deferred function compilation, lambda lifting, 71 E2E fixtures
+- ✅ LLVM codegen: literals, arithmetic, comparison, let, if, functions, closures, recursion, case expressions, tuples, sequences, symbols, or-patterns, higher-order functions, string interpolation
+- ✅ Compiled runtime library — print, string concat, seq operations, symbol equality
 - ✅ Record types, field access, generators, exceptions
-- ✅ 343 test cases, 1425 assertions passing
+- ✅ 348 test cases, 1573 assertions, 71 codegen fixtures
 
 ## Next Steps
 
-1. Begin LLVM IR generation (Phase 2.1: pipeline + arithmetic)
-2. Implement closures and function application codegen
-3. Add proper HTTP client with TLS (libcurl or OpenSSL)
+1. Module compilation (compile Yona modules to object files, link with native stdlib)
+2. LLVM coroutine intrinsics for transparent async in compiled code
+3. Proper HTTP client with TLS

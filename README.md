@@ -5,13 +5,14 @@ A compiler and interpreter for the [Yona programming language](https://yona-lang
 ## Project Status
 
 - ✅ **Interpreter**: Feature-complete with transparent async
+- ✅ **LLVM Compiler**: Compiles to native executables with unboxed primitives
 - ✅ **Type System**: Hindley-Milner with Promise\<T\> coercion
 - ✅ **Parser**: Newline-aware with juxtaposition function application
 - ✅ **Async**: Promise-aware type system, parallel let bindings, type-directed auto-await
 - ✅ **Standard Library**: 19 native modules, 150+ functions
-- ✅ **C Embedding API**: Stable C interface for FFI integration
-- ✅ **Test Coverage**: 336 tests, 1407 assertions, 100% passing
-- 📋 **Planned**: Sandboxing, LLVM backend
+- ✅ **C Embedding API**: Stable C interface with sandboxing
+- ✅ **Test Coverage**: 348 tests, 1573 assertions, 71 codegen fixtures, 100% passing
+- 📋 **Planned**: Module compilation, LLVM coroutines for async
 
 ## Features
 
@@ -213,9 +214,10 @@ yona_destroy(interp);
 - **Lexer & Parser**: Recursive descent with Pratt parsing, newline-aware tokenization
 - **AST**: Visitor pattern with comprehensive node types
 - **Interpreter**: Tree-walking with frame-based execution, transparent async
+- **LLVM Compiler**: Type-directed codegen with unboxed primitives, deferred function compilation, lambda lifting for closures
 - **Type Checker**: Hindley-Milner with Promise\<T\> coercion
 - **Async Runtime**: Thread pool, dependency analyzer, auto-parallelization
-- **C API**: Stable `extern "C"` interface with opaque handles
+- **C API**: Stable `extern "C"` interface with opaque handles and sandboxing
 
 ## Documentation
 

@@ -2,13 +2,12 @@
 
 ## Project Status
 - **Interpreter**: ✅ Feature-complete with transparent async
+- **LLVM Compiler**: ✅ Type-directed codegen, compiles to native executables
 - **TypeChecker**: ✅ Hindley-Milner with Promise<T> coercion
 - **Parser**: ✅ Newline-aware with juxtaposition
-- **Async**: ✅ Parallel let bindings, type-directed auto-await
 - **Stdlib**: ✅ 19 native modules, 150+ functions
-- **C API**: ✅ Stable embedding interface with native function registration
-- **Sandboxing**: ✅ Module whitelist/blacklist, execution/memory limits
-- **Test Coverage**: 343 tests, 1425 assertions (100%)
+- **C API + Sandboxing**: ✅ Embedding, whitelist/blacklist, execution limits
+- **Test Coverage**: 348 tests, 1573 assertions, 71 codegen fixtures (100%)
 
 ## Completed Work
 
@@ -38,24 +37,30 @@
 ### Standard Library (19 modules)
 Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types
 
+### LLVM Compiler
+- Type-directed codegen with TypedValue (CType tags propagate through all expressions)
+- Deferred function compilation at call sites with known argument types
+- Lambda lifting for closures, forward declaration for recursion
+- Higher-order functions via function pointer passing and indirect calls
+- Native executables from `yonac` CLI
+- 71 E2E codegen test fixtures
+
 ### Infrastructure
 - C embedding API (`yona_api.h`) with native function registration
 - Sandboxing (module whitelist/blacklist, execution/memory limits)
 - Module system (FQN, filesystem resolution, native + file-based)
-- 343 test cases, 1425 assertions
+- 348 test cases, 1573 assertions
 
 ## Remaining Work
 
-### Phase 1: LLVM Backend (High Priority)
+### Phase 1: LLVM Completion
 
-Yona is statically typed — the compiler generates native code with unboxed primitives.
 See [LLVM Backend Plan](llvm-backend-plan.md) for details.
 
-- Pipeline: parse → type check → codegen → LLVM IR → optimize → link
-- Unboxed primitives: `Int` → `i64`, `Float` → `double`
-- Closures: function pointer + typed environment
-- Pattern matching: decision tree codegen
-- Async: LLVM coroutines at PromiseType coercion points
+- Module compilation (compile modules to object files, link with native stdlib)
+- Dict/Set construction in codegen
+- LLVM coroutine intrinsics for async functions
+- Tail call optimization, partial application in compiled code
 
 ### Phase 3: Remaining Stdlib
 - Exception utilities, Transducers, Scheduler, eval
