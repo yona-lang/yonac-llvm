@@ -26,6 +26,7 @@ const std::unordered_map<std::string_view, TokenType>& Lexer::get_keywords() noe
         {"catch", TokenType::YCATCH},
         {"raise", TokenType::YRAISE},
         {"with", TokenType::YWITH},
+        {"extern", TokenType::YEXTERN},
         {"fun", TokenType::YFUN},
         {"lambda", TokenType::YLAMBDA},
         {"record", TokenType::YRECORD},
@@ -954,6 +955,7 @@ std::string_view token_type_to_string(TokenType type) noexcept {
         case TokenType::YCATCH: return "CATCH";
         case TokenType::YRAISE: return "RAISE";
         case TokenType::YWITH: return "WITH";
+        case TokenType::YEXTERN: return "EXTERN";
         case TokenType::YFUN: return "FUN";
         case TokenType::YLAMBDA: return "LAMBDA";
         case TokenType::YRECORD: return "RECORD";

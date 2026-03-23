@@ -598,6 +598,17 @@ void ImportExpr::print(std::ostream &os) const {
   os << "  " << *expr;
 }
 
+ExternDeclExpr::ExternDeclExpr(SourceContext token, string name,
+                                 compiler::types::Type type, ExprNode *body)
+    : ExprNode(token), name(std::move(name)), declared_type(std::move(type)),
+      body(body->with_parent<ExprNode>(this)) {}
+
+ExternDeclExpr::~ExternDeclExpr() { delete body; }
+
+void ExternDeclExpr::print(std::ostream &os) const {
+  os << "extern " << name << " in " << *body;
+}
+
 RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message)
     : ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this)) {}
 

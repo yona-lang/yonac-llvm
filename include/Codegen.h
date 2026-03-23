@@ -100,6 +100,19 @@ private:
     // External module function mapping: local name → mangled symbol name
     std::unordered_map<std::string, std::string> extern_functions_;
 
+    // C FFI function info: symbol name → {return type, param types}
+    struct CFFISignature {
+        CType return_type;
+        std::vector<CType> param_types;
+    };
+    std::unordered_map<std::string, CFFISignature> cffi_signatures_;
+
+    // Register known C library function signatures
+    void register_cffi_signatures();
+
+    // Check if a module FQN is a C FFI import (starts with "C\")
+    static bool is_cffi_import(const std::string& mod_fqn);
+
     // Runtime function declarations
     llvm::Function* rt_print_int_ = nullptr;
     llvm::Function* rt_print_float_ = nullptr;
@@ -166,8 +179,9 @@ private:
                                        const DeferredFunction& def,
                                        const std::vector<TypedValue>& args);
 
-    // Imports
+    // Imports and extern declarations
     TypedValue codegen_import(ImportExpr* node);
+    TypedValue codegen_extern_decl(ExternDeclExpr* node);
 
     // Collections
     TypedValue codegen_tuple(TupleExpr* node);

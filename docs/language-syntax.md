@@ -491,6 +491,27 @@ import Package\Module as M in
   M.function1(42)
 ```
 
+### Extern Declarations (C FFI)
+
+Declare external C functions with type annotations. The linker resolves the symbols.
+
+```yona
+# Call C math functions
+extern sqrt : Float -> Float in
+extern pow : Float -> Float -> Float in
+  sqrt (pow 2.0 10.0)   # sqrt(1024.0) = 32.0
+
+# Call C string functions
+extern strlen : String -> Int in
+  strlen "hello"         # 5
+
+# Call C I/O functions
+extern puts : String -> Int in
+  puts "Hello from C!"
+```
+
+The type annotation uses Yona types: `Int` → `i64`, `Float` → `double`, `String` → `char*`, `Bool` → `i1`. Multiple parameters use curried syntax: `Float -> Float -> Float` means two `Float` args returning `Float`.
+
 ## Special Forms
 
 ### With Expressions (Context Management)

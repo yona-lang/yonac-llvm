@@ -93,6 +93,7 @@ ResultType AstVisitor<ResultType>::dispatchVisit(AstNode *node) const {
     if (auto* n = dynamic_cast<RecordNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<RecordInstanceExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ModuleExpr*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<ExternDeclExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ImportExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ImportClauseExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ModuleImport*>(node)) return visit(n);

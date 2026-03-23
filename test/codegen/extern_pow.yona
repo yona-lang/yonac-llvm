@@ -1,0 +1,1 @@
+extern pow : Float -> Float -> Float in pow 2.0 10.0

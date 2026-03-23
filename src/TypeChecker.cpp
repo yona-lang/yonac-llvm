@@ -1216,10 +1216,14 @@ Type TypeChecker::visit(TryCatchExpr *node) const {
 
 // Module system
 Type TypeChecker::visit(ImportExpr *node) const {
-    // Process imports but don't change the type
-    if (node->expr) {
-        return check(node->expr);
-    }
+    if (node->expr) return check(node->expr);
+    return Type(compiler::types::Unit);
+}
+
+Type TypeChecker::visit(ExternDeclExpr *node) const {
+    // Bind the extern name in the type environment with its declared type
+    if (env) env->bind(node->name, node->declared_type);
+    if (node->body) return check(node->body);
     return Type(compiler::types::Unit);
 }
 

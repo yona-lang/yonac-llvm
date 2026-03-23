@@ -134,6 +134,7 @@ enum AstNodeType {
   AST_EXPR_CALL,
   AST_MODULE_IMPORT,
   AST_FUNCTIONS_IMPORT,
+  AST_EXTERN_DECL,
   AST_SEQ_GENERATOR_EXPR,
   AST_SET_GENERATOR_EXPR,
   AST_DICT_GENERATOR_REDUCER,
@@ -1265,6 +1266,26 @@ public:
   }
   [[nodiscard]] AstNodeType get_type() const override { return AST_IMPORT_EXPR; };
   ~ImportExpr() override;
+};
+
+// extern name : Type -> Type in body
+class YONA_API ExternDeclExpr final : public ExprNode {
+private:
+  void print(std::ostream &os) const override;
+
+public:
+  string name;              // C function name
+  compiler::types::Type declared_type;  // type annotation
+  ExprNode *body;           // expression using the extern
+
+  explicit ExternDeclExpr(SourceContext token, string name,
+                           compiler::types::Type type, ExprNode *body);
+  template<typename ResultType>
+  ResultType accept(const AstVisitor<ResultType> &visitor) const {
+    return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+  }
+  [[nodiscard]] AstNodeType get_type() const override { return AST_EXTERN_DECL; };
+  ~ExternDeclExpr() override;
 };
 
 class YONA_API RaiseExpr final : public ExprNode {

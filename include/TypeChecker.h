@@ -174,6 +174,7 @@ public:
     Type visit(WithExpr *node) const override;
     Type visit(DoExpr *node) const override;
     Type visit(ImportExpr *node) const override;
+    Type visit(ExternDeclExpr *node) const override;
     Type visit(ModuleExpr *node) const override;
 
     // Binary operators

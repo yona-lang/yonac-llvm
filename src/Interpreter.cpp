@@ -1421,6 +1421,12 @@ InterpreterResult Interpreter::visit(ImportExpr *node) const {
 
   return result;
 }
+InterpreterResult Interpreter::visit(ExternDeclExpr *node) const {
+  CHECK_EXCEPTION_RETURN();
+  // In interpreted mode, extern declarations are no-ops — the function
+  // won't be available unless linked. Just evaluate the body.
+  return node->body->template accept<InterpreterResult>(*this);
+}
 InterpreterResult Interpreter::visit(InExpr *node) const {
   CHECK_EXCEPTION_RETURN();
   auto left = (node->left->template accept<InterpreterResult>(*this).value);

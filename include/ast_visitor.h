@@ -54,6 +54,7 @@ class HeadTailsPattern;
 class IfExpr;
 class ImportClauseExpr;
 class ImportExpr;
+class ExternDeclExpr;
 class InExpr;
 class IntegerExpr;
 class JoinExpr;
@@ -186,6 +187,7 @@ public:
   virtual ResultType visit(IfExpr *node) const = 0;
   virtual ResultType visit(ImportClauseExpr *node) const = 0;
   virtual ResultType visit(ImportExpr *node) const = 0;
+  virtual ResultType visit(ExternDeclExpr *node) const = 0;
   virtual ResultType visit(InExpr *node) const = 0;
   virtual ResultType visit(IntegerExpr *node) const = 0;
   virtual ResultType visit(JoinExpr *node) const = 0;

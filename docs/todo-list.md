@@ -2,7 +2,7 @@
 
 ## Summary
 - **Critical Issues**: 0 (all resolved ✅)
-- **Test Coverage**: 352 tests, 1603 assertions, 75 codegen fixtures ✅
+- **Test Coverage**: 352 tests, 1609 assertions, 78 codegen fixtures ✅
 - **LLVM Compiler**: Type-directed codegen, compiles to native executables ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
 - **Interpreter**: Feature-complete with transparent async ✅
@@ -69,7 +69,7 @@ Cross-language linking with C, Rust, Go, Zig — anything that speaks the system
 - [ ] Monomorphization: specialize polymorphic functions at import site (like Rust generics)
 - [x] Native stdlib in compiled runtime: Math (abs, max, min, factorial, sqrt, sin, cos), String (length, toUpperCase, toLowerCase), List (length, head, tail, reverse), Types (toInt, toFloat)
 - [ ] Remaining native stdlib functions (map, filter, fold — need closure calling convention in C)
-- [ ] `extern` declarations for calling C functions from Yona
+- [x] `extern` keyword for calling C functions: `extern sqrt : Float -> Float in sqrt 2.0`
 - [ ] Multi-module linking: compile multiple `.yona` files, link together
 
 ### Remaining — Other Codegen

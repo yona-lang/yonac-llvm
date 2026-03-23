@@ -61,6 +61,7 @@ enum class TokenType {
     YLAMBDA,
     YRECORD,
     YTYPE,
+    YEXTERN,     // extern
 
     // Operators
     YPLUS,           // +

@@ -1752,6 +1752,9 @@ private:
             case TokenType::YIMPORT:
                 return parse_import_expr();
 
+            case TokenType::YEXTERN:
+                return parse_extern_decl();
+
             case TokenType::YRECORD:
                 return parse_record_expr();
 
@@ -2591,6 +2594,44 @@ private:
     }
 
     // Import expression parsing
+    // extern name : Type -> Type in body
+    unique_ptr<ExprNode> parse_extern_decl() {
+        SourceLocation loc = current_location();
+        advance(); // consume 'extern'
+        skip_newlines();
+
+        // Parse function name
+        if (!check(TokenType::YIDENTIFIER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected function name after 'extern'");
+            return nullptr;
+        }
+        string name(advance().lexeme);
+
+        // Expect ':'
+        expect(TokenType::YCOLON, "Expected ':' after extern function name");
+        skip_newlines();
+
+        // Parse type annotation
+        auto type_ann = parse_type();
+        if (!type_ann) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected type annotation after ':'");
+            return nullptr;
+        }
+
+        skip_newlines();
+        expect(TokenType::YIN, "Expected 'in' after extern type annotation");
+        skip_newlines();
+
+        // Parse body
+        auto body = parse_expr();
+        if (!body) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected expression after 'in' in extern");
+            return nullptr;
+        }
+
+        return make_unique<ExternDeclExpr>(loc, name, *type_ann, body.release());
+    }
+
     unique_ptr<ExprNode> parse_import_expr() {
         // BOOST_LOG_TRIVIAL(debug) << "parse_import_expr: Starting";
         SourceLocation loc = current_location();

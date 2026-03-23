@@ -1,0 +1,1 @@
+extern strlen : String -> Int in strlen "hello"

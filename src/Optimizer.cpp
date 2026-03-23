@@ -49,6 +49,7 @@ OptimizerResult Optimizer::visit(HeadTailsPattern *node) const { return Optimize
 OptimizerResult Optimizer::visit(IfExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(ImportClauseExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(ImportExpr *node) const { return OptimizerResult(node); }
+OptimizerResult Optimizer::visit(ExternDeclExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(InExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(IntegerExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(JoinExpr *node) const { return OptimizerResult(node); }

@@ -279,6 +279,7 @@ public:
   InterpreterResult visit(IfExpr *node) const override;
   InterpreterResult visit(ImportClauseExpr *node) const override;
   InterpreterResult visit(ImportExpr *node) const override;
+  InterpreterResult visit(ExternDeclExpr *node) const override;
   InterpreterResult visit(InExpr *node) const override;
   InterpreterResult visit(IntegerExpr *node) const override;
   InterpreterResult visit(JoinExpr *node) const override;

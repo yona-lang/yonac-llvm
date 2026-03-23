@@ -54,6 +54,7 @@ public:
   [[nodiscard]] OptimizerResult visit(IfExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(ImportClauseExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(ImportExpr *node) const override;
+  [[nodiscard]] OptimizerResult visit(ExternDeclExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(InExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(IntegerExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(JoinExpr *node) const override;

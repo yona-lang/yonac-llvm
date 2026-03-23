@@ -379,6 +379,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));
         case AST_LAMBDA_ALIAS:    return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
         case AST_IMPORT_EXPR:     return codegen_import(static_cast<ImportExpr*>(node));
+        case AST_EXTERN_DECL:    return codegen_extern_decl(static_cast<ExternDeclExpr*>(node));
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
         case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
         case AST_CONS_LEFT_EXPR:  return codegen_cons(static_cast<ConsLeftExpr*>(node));
@@ -1119,6 +1120,68 @@ TypedValue Codegen::codegen_join(JoinExpr* node) {
     if (left.type == CType::STRING || right.type == CType::STRING)
         return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
     return {};
+}
+
+// ===== Extern Declarations =====
+
+static CType yona_type_to_ctype(const types::Type& t) {
+    if (std::holds_alternative<types::BuiltinType>(t)) {
+        switch (std::get<types::BuiltinType>(t)) {
+            case types::SignedInt64: case types::SignedInt32:
+            case types::SignedInt16: case types::SignedInt128:
+            case types::UnsignedInt64: case types::UnsignedInt32:
+            case types::UnsignedInt16: case types::UnsignedInt128:
+                return CType::INT;
+            case types::Float64: case types::Float32: case types::Float128:
+                return CType::FLOAT;
+            case types::Bool: return CType::BOOL;
+            case types::String: return CType::STRING;
+            case types::Unit: return CType::UNIT;
+            default: return CType::INT;
+        }
+    }
+    return CType::INT;
+}
+
+TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
+    // Extract parameter types and return type from the declared type
+    // Type is a FunctionType: arg -> ret  or  arg1 -> arg2 -> ret (curried)
+    std::vector<LType*> param_types;
+    std::vector<CType> param_ctypes;
+    CType ret_ctype = CType::INT;
+    LType* ret_llvm = LType::getInt64Ty(*context_);
+
+    auto current_type = node->declared_type;
+
+    // Uncurry: A -> B -> C becomes params=[A, B], ret=C
+    while (std::holds_alternative<std::shared_ptr<types::FunctionType>>(current_type)) {
+        auto ft = std::get<std::shared_ptr<types::FunctionType>>(current_type);
+        CType param_ct = yona_type_to_ctype(ft->argumentType);
+        param_ctypes.push_back(param_ct);
+        param_types.push_back(llvm_type(param_ct));
+        current_type = ft->returnType;
+    }
+    ret_ctype = yona_type_to_ctype(current_type);
+    ret_llvm = llvm_type(ret_ctype);
+
+    // Declare the extern function
+    auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
+    auto* fn = module_->getFunction(node->name);
+    if (!fn) {
+        fn = Function::Create(fn_type, Function::ExternalLinkage,
+                               node->name, module_.get());
+    }
+
+    // Register as a compiled function so codegen_apply can find it
+    CompiledFunction cf;
+    cf.fn = fn;
+    cf.return_type = ret_ctype;
+    cf.param_types = param_ctypes;
+    compiled_functions_[node->name] = cf;
+    named_values_[node->name] = {fn, CType::FUNCTION};
+
+    // Compile the body
+    return codegen(node->body);
 }
 
 // ===== Imports =====
