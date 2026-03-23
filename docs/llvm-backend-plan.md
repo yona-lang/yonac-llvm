@@ -270,10 +270,38 @@ Note: arithmetic, comparison, boolean logic — all compile to native LLVM instr
 
 ### Phase 4: Module System
 
-- Compile modules to object files
-- Module exports as symbol table
-- Import → link-time resolution
-- Native module FFI (call into existing C++ stdlib)
+Yona modules compile to standard object files with C-ABI-compatible exports.
+This enables cross-language linking with C, Rust, Go, Zig, and any language
+that produces standard object files.
+
+**Module compilation:**
+- Each `.yona` module compiles to a `.o` file
+- Exported functions use mangled names: `yona_Pkg_Mod__func`
+- Standard C calling convention — callable from any language
+- Import resolution: re-parse source module header for export list and types
+- Polymorphic functions monomorphized at import site
+
+**Native stdlib access (auto-generated shims):**
+```
+Compiled Yona code (unboxed i64/double/ptr)
+    ↓
+Auto-generated shim: box args → RuntimeObject, call native, unbox result
+    ↓
+Native C++ stdlib (RuntimeObject-based)
+```
+
+**Cross-language linking:**
+```c
+// Calling Yona from C:
+extern int64_t yona_Math_Extra__factorial(int64_t n);
+printf("10! = %ld\n", yona_Math_Extra__factorial(10));
+
+// Calling C from Yona (via extern declaration):
+// extern sqrt : Float -> Float from "m"
+// let x = sqrt 2.0 in x
+```
+
+**Linking:** `cc main.c my_module.o compiled_runtime.o -lyona_lib -o program`
 
 ### Phase 5: Coroutines (Async)
 

@@ -57,12 +57,36 @@ Type-directed codegen with unboxed primitives. See [LLVM Backend Plan](llvm-back
 - [x] Runtime library (compiled_runtime.c): print, string concat, seq operations, symbol equality
 - [x] 71 E2E codegen test fixtures
 
-### Remaining
-- [ ] Module compilation (compile modules to object files, link with native stdlib)
+### Remaining — Module Compilation
+
+Compile `.yona` modules to object files with C-ABI-compatible exports.
+Cross-language linking with C, Rust, Go, Zig — anything that speaks the system linker.
+
+- [ ] Module → object file: compile module functions with mangled names (`yona_Pkg_Mod__func`)
+- [ ] Import resolution: re-parse source module header to get export list and types
+- [ ] Monomorphization: specialize polymorphic functions at import site (like Rust generics)
+- [ ] Native stdlib shims: auto-generate wrappers that box/unbox between i64/ptr and RuntimeObject
+- [ ] Link compiled code with `libyona_lib` for native module access
+- [ ] `extern` declarations for calling C functions from Yona
+- [ ] Multi-module linking: compile multiple `.yona` files, link together
+
+### Remaining — Other Codegen
+
 - [ ] Dict/Set construction in codegen
 - [ ] LLVM coroutine intrinsics for async functions
-- [ ] Tail call optimization
+- [ ] Tail call optimization (`musttail` attribute)
 - [ ] Partial application in compiled code
+
+### Future Improvements (Module System)
+
+- [ ] `.yonai` interface files (pre-compiled module metadata, avoids re-parsing sources)
+- [ ] Dynamic linking (`.so`/`.dylib`) for hot-reloadable modules
+- [ ] FFI declaration files for C libraries (map C\Math.sqrt → libc sqrt)
+- [ ] Cross-language FFI: Rust `#[no_mangle] extern "C"`, Go cgo, Zig C ABI
+- [ ] Boxed export mode for polymorphic modules (generic `id : a -> a` without monomorphization)
+- [ ] Rewrite performance-critical stdlib in pure C for compiled runtime (bypass shims)
+- [ ] Whole-program optimization: inline across module boundaries when all sources available
+- [ ] Incremental compilation: only recompile changed modules
 
 ## Phase 3: Remaining Stdlib (Medium Priority)
 
