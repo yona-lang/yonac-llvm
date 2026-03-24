@@ -10,27 +10,50 @@
 
 ## Remaining Work
 
+### Type System & Codegen Architecture (see docs/type-system-plan.md)
+
+Phase 1: Bridge TypeChecker → Codegen
+- [ ] Add `resolved_type` field to AST nodes
+- [ ] Complete TypeChecker stub visitors (~40 methods returning nullptr)
+- [ ] Wire TypeChecker into yonac pipeline (Parse → TypeCheck → Codegen)
+- [ ] Use resolved types in codegen (replace ad-hoc inference)
+- [ ] Type-aware TypedValue (carry full `Type` alongside `CType`)
+- [ ] `llvm_type_of(Type)` mapping function
+- [ ] Symbol interning: compile symbols to `i64` IDs, integer comparison
+
+Phase 2: Typed Collections
+- [ ] `Seq<T>` with typed elements (element type from TypeChecker)
+- [ ] `Set<T>` construction + runtime (alloc, add, contains, size)
+- [ ] `Dict<K,V>` construction + runtime (alloc, get, put, contains)
+- [ ] Homogeneous collection enforcement (heterogeneous = type error)
+
+Phase 3: Sum Types
+- [ ] Uniform tuple encoding for Option/Result (`(:tag, value)` always a tuple)
+- [ ] Pattern matching on symbol-tagged tuples via integer switch
+- [ ] Future: proper ADT syntax (`type Option a = Some a | None`)
+
+Phase 4: Cross-Module Monomorphization
+- [ ] Whole-program compilation mode (import AST, monomorphize at call site)
+- [ ] Future: `.yonai` interface files for separate compilation
+
+Phase 5: Records
+- [ ] Named LLVM structs for record types
+- [ ] Field access via `extractvalue` / `getelementptr`
+- [ ] Record patterns in case expressions
+
 ### Tooling
+- [ ] Compiler error messages review (make errors clear, actionable, and user-friendly)
 - [ ] Side effect hook callback (intercept native calls for auditing)
 - [ ] AST-to-Yona pretty printer (round-trip: parse → AST → source)
 - [ ] Monaco/CodeMirror language definition (syntax highlighting, bracket matching)
 - [ ] REPL improvements (history, completion, multi-line input)
-- [ ] Compiler error messages review (make errors clear, actionable, and user-friendly)
 
 ### Testing
 - [ ] Http module tests (requires network access)
 - [ ] System module edge case tests (exit, setEnv — side effects)
 
-### Codegen Gaps
-- [ ] Tagged union / boxed values — runtime representation for polymorphic types
-  - Enables: Dict/Set construction, Option/Result types, heterogeneous collections
-  - Approach: `{tag, payload}` struct where tag is CType discriminant, payload is i64 or ptr
-  - Boxing: wrap unboxed primitives (i64, double, ptr) when stored in polymorphic containers
-  - Unboxing: extract primitive value when type is statically known
-- [ ] Dict/Set construction in codegen (depends on tagged unions)
+### Codegen Gaps (non-type-system)
 - [ ] Large struct return ABI (>16 bytes / 3+ element tuples need sret convention)
-- [ ] Monomorphization of polymorphic functions at import site
-- [ ] Remaining native stdlib in compiled runtime (closure calling convention in C for complex types)
 
 ### Stdlib Gaps (vs yona-lang.org)
 - [ ] Exception utilities, stack traces
@@ -42,11 +65,12 @@
 
 ### Future Improvements
 - [ ] LLVM coroutine intrinsics (replace thread pool for zero-overhead async)
-- [ ] `.yonai` interface files (pre-compiled module metadata)
 - [ ] Dynamic linking (`.so`/`.dylib`) for hot-reloadable modules
 - [ ] Whole-program optimization across module boundaries
 - [ ] Incremental compilation
 - [ ] STM, CSP channels, advanced concurrency
+- [ ] Type classes (dictionary-passing, layers on monomorphization)
+- [ ] Algebraic data type syntax (`type Option a = Some a | None`)
 
 ## Completed Work
 
@@ -75,13 +99,14 @@
 
 ### LLVM Compiler
 - Type-directed codegen with TypedValue (CType tags propagate through all expressions)
-- Deferred function compilation at call sites with known argument types
+- Deferred function compilation at call sites with known argument types (monomorphization)
 - Lambda lifting for closures, forward declaration for recursion
 - Higher-order functions (function pointer passing, indirect calls)
 - Partial application (compile-time wrapper generation, zero runtime overhead)
 - Case expressions (decision tree: integer, symbol, variable, wildcard, head-tail, empty seq, tuple, or-patterns)
 - Tuples (LLVM structs), sequences (runtime heap arrays), symbols (interned strings)
 - Module compilation with C-ABI exports, cross-language linking
+- Module type metadata (pattern + body-based type inference for parameters and return types)
 - Import resolution, native stdlib shims, `extern`/`extern async` for C FFI
 - Async codegen: CType::PROMISE, thread pool, auto-await, parallel let
 - Optimization passes: tail call elimination, constant folding, GVN, DCE
@@ -93,8 +118,8 @@
 - Tuple module (fst, snd, swap, mapBoth, zip, unzip)
 - Range module (range, toList, contains, length, take, drop)
 - List module (map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, zip, any, all, contains, isEmpty, lookup, splitAt)
-- Yona source modules take priority over native C++ when found in YONA_PATH
 - Test module (assertEqual, assertNotEqual, assertTrue, assertFalse, assertGreater, assertLess, assertContains, assertEmpty, suite, run)
+- Yona source modules take priority over native C++ when found in YONA_PATH
 - Interpreter supports lexical closures and proper module-internal function scoping
 
 ### Test Coverage
