@@ -1,0 +1,40 @@
+module Std\Range exports range, toList, contains, length, take, drop as
+
+range start stop = (:range, start, stop)
+
+toList r =
+    case r of
+        (:range, start, stop) ->
+            if start > stop then []
+            else
+                let next = (:range, start + 1, stop) in
+                start :: (toList next)
+    end
+
+contains value r =
+    case r of
+        (:range, start, stop) -> value >= start && value <= stop
+    end
+
+length r =
+    case r of
+        (:range, start, stop) ->
+            if stop >= start then stop - start + 1
+            else 0
+    end
+
+take n r =
+    case r of
+        (:range, start, stop) ->
+            if start + n - 1 > stop then (:range, start, stop)
+            else (:range, start, start + n - 1)
+    end
+
+drop n r =
+    case r of
+        (:range, start, stop) ->
+            if start + n > stop then (:range, stop + 1, stop)
+            else (:range, start + n, stop)
+    end
+
+end

@@ -1,0 +1,5 @@
+import abs, max, min from Std\Math in
+let a = abs(0 - 10),
+    b = max 3 7,
+    c = min 5 2
+in a + b + c

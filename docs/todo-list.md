@@ -1,11 +1,12 @@
 # TODO List - Yona-LLVM
 
 ## Summary
-- **Test Coverage**: 353 tests, 1625 assertions, 86 codegen fixtures ✅
+- **Test Coverage**: 581 tests, 2486 assertions, 100 codegen fixtures ✅
 - **LLVM Compiler**: Feature-complete — type-directed codegen, modules, async, optimizations ✅
-- **Interpreter**: Feature-complete with transparent async ✅
+- **Interpreter**: Feature-complete with transparent async, lexical closures ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
 - **Native Stdlib**: 19 modules, 150+ functions ✅
+- **Yona Stdlib**: 6 pure Yona modules in `lib/Std/` (Option, Result, Tuple, Range, List, Test) ✅
 
 ## Remaining Work
 
@@ -14,11 +15,17 @@
 - [ ] AST-to-Yona pretty printer (round-trip: parse → AST → source)
 - [ ] Monaco/CodeMirror language definition (syntax highlighting, bracket matching)
 - [ ] REPL improvements (history, completion, multi-line input)
+- [ ] Compiler error messages review (make errors clear, actionable, and user-friendly)
+
+### Testing
+- [ ] Http module tests (requires network access)
+- [ ] System module edge case tests (exit, setEnv — side effects)
 
 ### Codegen Gaps
 - [ ] Dict/Set construction in codegen
 - [ ] Module type metadata (infer import function types from source — currently defaults to i64)
 - [ ] Monomorphization of polymorphic functions at import site
+- [ ] Higher-order function parameters in compiled modules (function pointer type inference)
 - [ ] Remaining native stdlib in compiled runtime (map, filter, fold — need closure calling convention in C)
 
 ### Stdlib Gaps (vs yona-lang.org)
@@ -48,6 +55,7 @@
 - Import aliases, symbol equality, string concatenation with auto-conversion
 - `extern` and `extern async` declarations for C FFI
 - Zero-arity function auto-evaluation (strict semantics)
+- Constructor pattern uppercase convention (lowercase identifiers are variables, not constructors)
 
 ### Type System
 - Hindley-Milner with polymorphism
@@ -56,7 +64,9 @@
 
 ### Interpreter
 - Tree-walking with frame-based scoping, pattern matching, currying
+- Lexical closures (function bodies execute in defining scope, not call-site scope)
 - Transparent async via thread pool + DependencyAnalyzer
+- Yona source modules override native C++ modules when available via YONA_PATH
 - 19 native stdlib modules (Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types)
 
 ### LLVM Compiler
@@ -71,7 +81,23 @@
 - Import resolution, native stdlib shims, `extern`/`extern async` for C FFI
 - Async codegen: CType::PROMISE, thread pool, auto-await, parallel let
 - Optimization passes: tail call elimination, constant folding, GVN, DCE
-- 86 E2E codegen test fixtures
+- 100 E2E codegen test fixtures (including 18 stdlib import tests)
+
+### Yona Stdlib (`lib/Std/`)
+- Option module (some, none, isSome, isNone, unwrapOr, map)
+- Result module (ok, err, isOk, isErr, unwrapOr, map, mapErr)
+- Tuple module (fst, snd, swap, mapBoth, zip, unzip)
+- Range module (range, toList, contains, length, take, drop)
+- List module (map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, zip, any, all, contains, isEmpty, lookup, splitAt)
+- Yona source modules take priority over native C++ when found in YONA_PATH
+- Test module (assertEqual, assertNotEqual, assertTrue, assertFalse, assertGreater, assertLess, assertContains, assertEmpty, suite, run)
+- Interpreter supports lexical closures and proper module-internal function scoping
+
+### Test Coverage
+- Comprehensive stdlib tests: 581 tests, 2486 assertions
+- All 19 stdlib modules tested (Math, IO, System, List, Option, Result, Tuple, Range, String, Set, Dict, Timer, Http, Json, Regexp, File, Random, Time, Types)
+- Codegen stdlib tests: Math (abs, max, min, factorial, sqrt, sin, cos), String (length, upper, lower), List (len, head, tail, reverse), Types (toInt, toFloat)
+- Integration tests: cross-module operations (List+String, Regexp+List, Math combined, List chaining)
 
 ### Infrastructure
 - C embedding API (`yona_api.h`) with native function registration

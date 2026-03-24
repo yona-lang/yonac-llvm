@@ -1183,7 +1183,9 @@ private:
             string name(advance().lexeme);
 
             // Check for constructor pattern (e.g., Person(x, y))
-            if (check(TokenType::YLPAREN)) {
+            // Constructor names start with uppercase to distinguish from
+            // variable patterns followed by tuple patterns (e.g., f (a, b))
+            if (check(TokenType::YLPAREN) && !name.empty() && isupper(name[0])) {
                 advance(); // consume '('
                 vector<pair<NameExpr*, Pattern*>> fields;
                 vector<PatternNode*> patterns;

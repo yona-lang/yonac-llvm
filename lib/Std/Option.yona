@@ -1,0 +1,31 @@
+module Std\Option exports some, none, isSome, isNone, unwrapOr, map as
+
+some value = (:some, value)
+
+none = :none
+
+isSome opt =
+    case opt of
+        (:some, _) -> true
+        _          -> false
+    end
+
+isNone opt =
+    case opt of
+        :none -> true
+        _     -> false
+    end
+
+unwrapOr default opt =
+    case opt of
+        (:some, value) -> value
+        _              -> default
+    end
+
+map fn opt =
+    case opt of
+        (:some, value) -> (:some, fn value)
+        other          -> other
+    end
+
+end

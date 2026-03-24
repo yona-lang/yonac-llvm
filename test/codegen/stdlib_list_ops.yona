@@ -1,0 +1,5 @@
+import head, length from Std\List in
+let xs = [10, 20, 30, 40],
+    h = head xs,
+    n = length xs
+in h + n

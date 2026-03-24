@@ -172,6 +172,9 @@ struct ModuleValue {
   // Module source file path (for debugging and reloading)
   string source_path;
 
+  // Whether this module was loaded from a native C++ implementation
+  bool is_native = false;
+
   // Helper to get exported function by name
   shared_ptr<FunctionValue> get_export(const string& name) const {
     auto it = exports.find(name);

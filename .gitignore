@@ -55,10 +55,12 @@ node_modules/
 *.tmp
 *~
 *.swp
-test_*
 debug_*
 
 # Test outputs
 *.yona
 !test/code/*.yona
+!test/code/**/*.yona
+!test/codegen/*.yona
+!lib/**/*.yona
 a.out

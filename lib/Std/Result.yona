@@ -1,0 +1,37 @@
+module Std\Result exports ok, err, isOk, isErr, unwrapOr, map, mapErr as
+
+ok value = (:ok, value)
+
+err error = (:err, error)
+
+isOk result =
+    case result of
+        (:ok, _) -> true
+        _        -> false
+    end
+
+isErr result =
+    case result of
+        (:err, _) -> true
+        _         -> false
+    end
+
+unwrapOr default result =
+    case result of
+        (:ok, value) -> value
+        _            -> default
+    end
+
+map fn result =
+    case result of
+        (:ok, value) -> (:ok, fn value)
+        other        -> other
+    end
+
+mapErr fn result =
+    case result of
+        (:err, error) -> (:err, fn error)
+        other         -> other
+    end
+
+end

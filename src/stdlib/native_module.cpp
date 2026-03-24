@@ -103,7 +103,9 @@ void NativeModuleRegistry::apply_to_interpreter(
 ) {
     for (auto& native_module : modules) {
         native_module->initialize();
-        module_cache[native_module->get_cache_key()] = native_module->get_module();
+        auto mod = native_module->get_module();
+        mod->is_native = true;
+        module_cache[native_module->get_cache_key()] = mod;
     }
 }
 

@@ -148,8 +148,9 @@ bool Interpreter::match_fun_args(const vector<PatternNode *> &patterns, const ve
     }
   }
 
-  // Frame is kept with bindings - merge to parent
-  IS.merge_frame_to_parent();
+  // Frame is kept with bindings — caller must pop after body executes.
+  // Do NOT merge to parent: function bodies execute in their own frame
+  // so recursive calls don't corrupt the caller's bindings.
   return true;
 }
 
@@ -1284,20 +1285,28 @@ InterpreterResult Interpreter::visit(FunctionExpr *node) const {
   // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Creating function with arity=" << arity
   //                          << ", name=" << (node->name.empty() ? "<lambda>" : node->name);
 
-  function code = [this, node](const vector<RuntimeObjectPtr> &args) -> RuntimeObjectPtr {
-    // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing function with " << args.size() << " args";
+  // Capture the defining frame for lexical scoping (closures).
+  // When the function is called, its body executes in a frame whose parent
+  // is the defining frame, not the call-site frame. This ensures:
+  // 1. Closures can access variables from their definition scope
+  // 2. Recursive calls get their own frame (no binding corruption)
+  auto defining_frame = IS.frame;
+
+  function code = [this, node, defining_frame](const vector<RuntimeObjectPtr> &args) -> RuntimeObjectPtr {
+    // Save the caller's frame and switch to the defining scope
+    auto caller_frame = IS.frame;
+    IS.frame = defining_frame;
 
     if (match_fun_args(node->patterns, args)) {
-      // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments matched patterns";
-      // match_fun_args pushes a frame and merges it if successful
+      // match_fun_args pushes a child frame with pattern bindings.
+      // The body executes in this child frame (parent = defining_frame).
 
+      RuntimeObjectPtr result_val = nullptr;
       for (const auto body : node->bodies) {
-        // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Processing body";
         if (dynamic_cast<BodyWithoutGuards *>(body)) {
-          // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Executing body without guards";
           auto result = body->template accept<InterpreterResult>(*this);
-          // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Body execution complete";
-          return (result).value;
+          result_val = result.value;
+          break;
         }
 
         const auto body_with_guards = dynamic_cast<BodyWithGuards *>(body);
@@ -1305,10 +1314,16 @@ InterpreterResult Interpreter::visit(FunctionExpr *node) const {
           continue;
         }
 
-        return (body_with_guards->expr->template accept<InterpreterResult>(*this).value);
+        result_val = body_with_guards->expr->template accept<InterpreterResult>(*this).value;
+        break;
       }
+
+      IS.pop_frame();
+      IS.frame = caller_frame;
+      return result_val;
     } else {
-      // BOOST_LOG_TRIVIAL(debug) << "FunctionExpr: Arguments did not match patterns";
+      // Arguments did not match patterns
+      IS.frame = caller_frame;
     }
 
     return nullptr;
@@ -1659,15 +1674,19 @@ InterpreterResult Interpreter::visit(ModuleExpr *node) const {
     // The result is the constructor function which gets stored in the frame
   }
 
-  // Process functions and populate exports
+  // Process functions: write ALL to module frame (for mutual references),
+  // and populate exports for externally visible ones.
   for (auto func : node->functions) {
     auto func_result = (func->template accept<InterpreterResult>(*this).value);
     CHECK_EXCEPTION_RETURN();
     if (func_result->type == Function) {
       auto func_value = func_result->get<shared_ptr<FunctionValue>>();
+      const string& func_name = func->name;
+
+      // Write to module frame so other functions can reference it
+      IS.frame->write(func_name, make_shared<RuntimeObject>(Function, func_value));
 
       // Add to exports if it's in the export list
-      const string& func_name = func->name;
       if (find(node->exports.begin(), node->exports.end(), func_name) != node->exports.end()) {
         module->exports[func_name] = func_value;
       }
@@ -2692,6 +2711,18 @@ shared_ptr<ModuleValue> Interpreter::get_or_load_module(const shared_ptr<FqnValu
   // Check cache first
   auto it = IS.module_cache.find(cache_key);
   if (it != IS.module_cache.end()) {
+    // If cached module is native, check if a Yona source file exists.
+    // Yona source modules take priority over native C++ implementations,
+    // allowing stdlib modules to be written in Yona itself.
+    if (it->second->is_native) {
+      auto relative_path = fqn_to_path(fqn);
+      auto source_file = find_module_file(relative_path);
+      if (!source_file.empty()) {
+        auto module = load_module(fqn);
+        IS.module_cache[cache_key] = module;
+        return module;
+      }
+    }
     return it->second;
   }
 

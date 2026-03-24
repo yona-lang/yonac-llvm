@@ -1,0 +1,1 @@
+extern yona_Std_String__toLowerCase : String -> String in yona_Std_String__toLowerCase "HELLO"
