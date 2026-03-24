@@ -204,8 +204,29 @@ private:
                                    const std::unordered_set<std::string>& bound,
                                    std::unordered_set<std::string>& free_vars);
 
+    // Infer parameter type from a function pattern node
+    CType infer_type_from_pattern(PatternNode* pat);
+
+    // Inferred parameter type with source pattern for struct layout
+    struct InferredParamType {
+        CType type = CType::INT;
+        PatternNode* source_pattern = nullptr; // tuple/seq pattern for element types
+    };
+
+    // Infer parameter types for a module function by analyzing patterns and body
+    std::vector<InferredParamType> infer_param_types(FunctionExpr* func);
+
     // Print a typed value
     void codegen_print(const TypedValue& tv);
+
+public:
+    // Module function type metadata — populated during compile_module,
+    // can be queried by importers for type-safe cross-module linking.
+    struct ModuleFunctionMeta {
+        std::vector<CType> param_types;
+        CType return_type;
+    };
+    std::unordered_map<std::string, ModuleFunctionMeta> module_meta_;
 };
 
 } // namespace yona::compiler::codegen

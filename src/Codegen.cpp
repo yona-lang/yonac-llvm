@@ -203,6 +203,125 @@ Module* Codegen::compile(AstNode* node) {
     return module_.get();
 }
 
+// Infer a CType from a single pattern node.
+// Tuple patterns → TUPLE, sequence/head-tail patterns → SEQ,
+// symbol patterns → SYMBOL, etc. Variable/wildcard defaults to INT.
+CType Codegen::infer_type_from_pattern(PatternNode* pat) {
+    if (!pat) return CType::INT;
+
+    switch (pat->get_type()) {
+        case AST_TUPLE_PATTERN:
+            return CType::TUPLE;
+
+        case AST_SEQ_PATTERN:
+        case AST_HEAD_TAILS_PATTERN:
+        case AST_TAILS_HEAD_PATTERN:
+        case AST_HEAD_TAILS_HEAD_PATTERN:
+            return CType::SEQ;
+
+        case AST_PATTERN_VALUE: {
+            auto* pv = static_cast<PatternValue*>(pat);
+            // Check what kind of value it is
+            if (std::holds_alternative<SymbolExpr*>(pv->expr))
+                return CType::SYMBOL;
+            if (std::holds_alternative<IdentifierExpr*>(pv->expr))
+                return CType::INT; // variable — unknown, default to INT
+            if (std::holds_alternative<LiteralExpr<void*>*>(pv->expr)) {
+                auto* lit = std::get<LiteralExpr<void*>*>(pv->expr);
+                // Check literal type from AST node type
+                if (dynamic_cast<IntegerExpr*>(lit))
+                    return CType::INT;
+                if (dynamic_cast<FloatExpr*>(lit))
+                    return CType::FLOAT;
+                if (dynamic_cast<StringExpr*>(lit))
+                    return CType::STRING;
+                if (dynamic_cast<TrueLiteralExpr*>(lit) || dynamic_cast<FalseLiteralExpr*>(lit))
+                    return CType::BOOL;
+            }
+            return CType::INT;
+        }
+
+        case AST_UNDERSCORE_PATTERN:
+        case AST_UNDERSCORE_NODE:
+            return CType::INT; // wildcard — unknown
+
+        case AST_AS_DATA_STRUCTURE_PATTERN: {
+            auto* as = static_cast<AsDataStructurePattern*>(pat);
+            return infer_type_from_pattern(as->pattern);
+        }
+
+        case AST_OR_PATTERN: {
+            auto* op = static_cast<OrPattern*>(pat);
+            if (!op->patterns.empty())
+                return infer_type_from_pattern(op->patterns[0].get());
+            return CType::INT;
+        }
+
+        default:
+            return CType::INT;
+    }
+}
+
+// Infer parameter types for a function by analyzing its patterns
+// and body. Pattern-based inference handles tuple/seq/symbol patterns.
+// Body-based inference handles variable parameters used as case scrutinees.
+std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr* func) {
+    std::vector<InferredParamType> result;
+    result.resize(func->patterns.size());
+
+    // First: infer from patterns directly
+    std::unordered_map<std::string, size_t> param_index;
+    for (size_t i = 0; i < func->patterns.size(); i++) {
+        auto* pat = func->patterns[i];
+        result[i].type = infer_type_from_pattern(pat);
+        result[i].source_pattern = pat;
+
+        if (pat->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(pat);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                param_index[(*id)->name->value] = i;
+        }
+    }
+
+    // Second: analyze body for case expressions that reveal parameter types
+    if (!func->bodies.empty()) {
+        ExprNode* body_expr = nullptr;
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(func->bodies[0]))
+            body_expr = bwg->expr;
+
+        std::function<void(AstNode*)> analyze = [&](AstNode* node) {
+            if (!node) return;
+            if (node->get_type() == AST_CASE_EXPR) {
+                auto* ce = static_cast<CaseExpr*>(node);
+                if (ce->expr && ce->expr->get_type() == AST_IDENTIFIER_EXPR) {
+                    auto* id = static_cast<IdentifierExpr*>(ce->expr);
+                    auto it = param_index.find(id->name->value);
+                    if (it != param_index.end() && result[it->second].type == CType::INT) {
+                        for (auto* clause : ce->clauses) {
+                            CType pat_type = infer_type_from_pattern(clause->pattern);
+                            if (pat_type != CType::INT) {
+                                result[it->second].type = pat_type;
+                                result[it->second].source_pattern = clause->pattern;
+                                break;
+                            }
+                        }
+                    }
+                }
+                for (auto* clause : ce->clauses) analyze(clause->body);
+            }
+            if (auto* le = dynamic_cast<LetExpr*>(node)) analyze(le->expr);
+            else if (auto* ie = dynamic_cast<IfExpr*>(node)) {
+                analyze(ie->thenExpr); analyze(ie->elseExpr);
+            } else if (auto* de = dynamic_cast<DoExpr*>(node)) {
+                for (auto* s : de->steps) analyze(s);
+            }
+        };
+        if (body_expr) analyze(body_expr);
+    }
+
+    return result;
+}
+
 Module* Codegen::compile_module(ModuleExpr* mod) {
     // Build the module FQN string
     std::string fqn;
@@ -225,9 +344,7 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
         codegen_function_def(func, fn_name);
     }
 
-    // Second pass: compile each function
-    // For exported functions, compile with dummy args to determine types,
-    // then create external linkage functions
+    // Second pass: compile each function with inferred parameter types
     for (auto* func : mod->functions) {
         std::string fn_name = func->name;
         bool is_exported = export_set.count(fn_name) > 0;
@@ -235,17 +352,55 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
         auto def_it = deferred_functions_.find(fn_name);
         if (def_it == deferred_functions_.end()) continue;
 
-        // Build default args (all i64 for now — refined at call site for polymorphic)
-        std::vector<TypedValue> dummy_args;
+        // Infer parameter types from function patterns and body analysis
+        auto inferred = infer_param_types(func);
+
+        std::vector<TypedValue> typed_args;
         for (size_t i = 0; i < func->patterns.size(); i++) {
-            dummy_args.push_back({ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::INT});
+            CType ct = (i < inferred.size()) ? inferred[i].type : CType::INT;
+            auto* dummy_val = ConstantInt::get(LType::getInt64Ty(*context_), 0);
+
+            if (ct == CType::TUPLE) {
+                // Find the tuple pattern (from direct pattern or body case pattern)
+                PatternNode* src = (i < inferred.size()) ? inferred[i].source_pattern : nullptr;
+                auto* tp = src ? dynamic_cast<TuplePattern*>(src) : nullptr;
+                if (tp) {
+                    std::vector<LType*> elem_types;
+                    std::vector<CType> elem_ctypes;
+                    for (size_t j = 0; j < tp->patterns.size(); j++) {
+                        CType et = infer_type_from_pattern(static_cast<PatternNode*>(tp->patterns[j]));
+                        elem_types.push_back(llvm_type(et));
+                        elem_ctypes.push_back(et);
+                    }
+                    auto* st = StructType::get(*context_, elem_types);
+                    typed_args.push_back({UndefValue::get(st), CType::TUPLE, elem_ctypes});
+                } else {
+                    typed_args.push_back({dummy_val, ct});
+                }
+            } else if (ct == CType::SEQ) {
+                auto* ptr_type = PointerType::get(*context_, 0);
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SEQ});
+            } else if (ct == CType::STRING) {
+                auto* ptr_type = PointerType::get(*context_, 0);
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::STRING});
+            } else if (ct == CType::FLOAT) {
+                typed_args.push_back({ConstantFP::get(LType::getDoubleTy(*context_), 0.0), CType::FLOAT});
+            } else if (ct == CType::BOOL) {
+                typed_args.push_back({ConstantInt::get(LType::getInt1Ty(*context_), 0), CType::BOOL});
+            } else if (ct == CType::SYMBOL) {
+                auto* ptr_type = PointerType::get(*context_, 0);
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SYMBOL});
+            } else {
+                typed_args.push_back({dummy_val, ct});
+            }
         }
 
-        auto cf = compile_function(fn_name, def_it->second, dummy_args);
+        auto cf = compile_function(fn_name, def_it->second, typed_args);
 
         if (is_exported) {
-            // Create an external wrapper with mangled name
+            // Store type metadata for importers
             std::string mangled = mangle_name(fqn, fn_name);
+            module_meta_[mangled] = {cf.param_types, cf.return_type};
 
             // Check if the function already has the right linkage
             if (cf.fn->getName() != mangled) {
@@ -617,21 +772,50 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
 TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& name) {
     std::string fn_name = name.empty() ? (node->name.empty() ? "lambda_" + std::to_string(lambda_counter_++) : node->name) : name;
 
-    // Extract parameter names
+    // Extract parameter names and collect bound variables from patterns.
+    // For simple variable patterns: param name is the variable name.
+    // For complex patterns (tuples, sequences): param name is synthetic,
+    // and the pattern's variables are added to the bound set for free var analysis.
     DeferredFunction def;
     def.ast = node;
+    std::unordered_set<std::string> bound;
     for (size_t i = 0; i < node->patterns.size(); i++) {
         std::string pname = "arg" + std::to_string(i);
-        if (i < node->patterns.size() && node->patterns[i]->get_type() == AST_PATTERN_VALUE) {
-            auto* pv = static_cast<PatternValue*>(node->patterns[i]);
-            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+        auto* pat = node->patterns[i];
+        if (pat->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(pat);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                 pname = (*id)->name->value;
+                bound.insert(pname);
+            }
+        } else if (pat->get_type() == AST_TUPLE_PATTERN) {
+            // Collect variable names from tuple elements
+            auto* tp = static_cast<TuplePattern*>(pat);
+            for (auto* elem : tp->patterns) {
+                if (elem->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(elem);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        bound.insert((*id)->name->value);
+                }
+            }
+        } else if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
+            auto* hp = static_cast<HeadTailsPattern*>(pat);
+            for (auto* head : hp->heads) {
+                if (head->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(head);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        bound.insert((*id)->name->value);
+                }
+            }
+            if (hp->tail && hp->tail->get_type() == AST_PATTERN_VALUE) {
+                auto* pv = static_cast<PatternValue*>(hp->tail);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    bound.insert((*id)->name->value);
+            }
         }
         def.param_names.push_back(pname);
+        bound.insert(pname);
     }
-
-    // Find free variables
-    std::unordered_set<std::string> bound(def.param_names.begin(), def.param_names.end());
     std::unordered_set<std::string> fv_set;
     if (!node->bodies.empty()) {
         auto* body = node->bodies[0];
@@ -660,12 +844,19 @@ TypedValue Codegen::codegen_lambda_alias(LambdaAlias* node) {
 Codegen::CompiledFunction Codegen::compile_function(
     const std::string& name, const DeferredFunction& def, const std::vector<TypedValue>& args) {
 
-    // Build parameter types from actual argument types
+    // Build parameter types from actual argument types.
+    // For complex types (TUPLE, SEQ, STRING), use the actual LLVM type from args
+    // since llvm_type() only returns the generic fallback (i64 for TUPLE).
     std::vector<LType*> param_types;
     std::vector<CType> param_ctypes;
     for (size_t i = 0; i < def.param_names.size(); i++) {
         CType ct = (i < args.size()) ? args[i].type : CType::INT;
-        param_types.push_back(llvm_type(ct));
+        if (i < args.size() && args[i].val && args[i].val->getType() != llvm_type(ct)) {
+            // Use the actual LLVM type from the argument (e.g., struct for TUPLE)
+            param_types.push_back(args[i].val->getType());
+        } else {
+            param_types.push_back(llvm_type(ct));
+        }
         param_ctypes.push_back(ct);
     }
 
@@ -735,6 +926,27 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
         arg.setName(pname);
         named_values_[pname] = {&arg, ct, st};
+
+        // Destructure complex patterns (tuples, sequences) into element variables
+        if (i < def.ast->patterns.size()) {
+            auto* pat = def.ast->patterns[i];
+            if (ct == CType::TUPLE && pat->get_type() == AST_TUPLE_PATTERN) {
+                auto* tp = static_cast<TuplePattern*>(pat);
+                for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+                    auto* elem_pat = tp->patterns[ti];
+                    if (elem_pat->get_type() == AST_PATTERN_VALUE) {
+                        auto* pv = static_cast<PatternValue*>(elem_pat);
+                        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                            CType et = (ti < st.size()) ? st[ti] : CType::INT;
+                            auto* elem = builder_->CreateExtractValue(&arg, {(unsigned)ti});
+                            named_values_[(*id)->name->value] = {elem, et};
+                        }
+                    }
+                    // Underscore patterns are silently ignored
+                }
+            }
+        }
+
         i++;
     }
 
@@ -789,6 +1001,26 @@ Codegen::CompiledFunction Codegen::compile_function(
                 }
                 arg.setName(pname);
                 named_values_[pname] = {&arg, ct, st};
+
+                // Destructure complex patterns (same as first pass)
+                if (i < def.ast->patterns.size()) {
+                    auto* pat = def.ast->patterns[i];
+                    if (ct == CType::TUPLE && pat->get_type() == AST_TUPLE_PATTERN) {
+                        auto* tp = static_cast<TuplePattern*>(pat);
+                        for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+                            auto* elem_pat = tp->patterns[ti];
+                            if (elem_pat->get_type() == AST_PATTERN_VALUE) {
+                                auto* pv = static_cast<PatternValue*>(elem_pat);
+                                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                    CType et = (ti < st.size()) ? st[ti] : CType::INT;
+                                    auto* elem = builder_->CreateExtractValue(&arg, {(unsigned)ti});
+                                    named_values_[(*id)->name->value] = {elem, et};
+                                }
+                            }
+                        }
+                    }
+                }
+
                 i++;
             }
 
@@ -915,10 +1147,23 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         auto ext_it = extern_functions_.find(fn_name);
         if (ext_it != extern_functions_.end()) {
             std::string mangled = ext_it->second;
-            // Declare the extern function with the correct signature based on args
+
+            // Try to get return type from module metadata
+            CType ret_ctype = CType::INT; // default
+            auto meta_it = module_meta_.find(mangled);
+            if (meta_it != module_meta_.end()) {
+                ret_ctype = meta_it->second.return_type;
+            } else {
+                // Check CFFI signatures
+                auto cffi_it = cffi_signatures_.find(mangled);
+                if (cffi_it != cffi_signatures_.end())
+                    ret_ctype = cffi_it->second.return_type;
+            }
+
+            // Declare the extern function with the correct signature
             std::vector<LType*> arg_types;
             for (auto& a : all_args) arg_types.push_back(a.val->getType());
-            auto ret_llvm = LType::getInt64Ty(*context_); // default i64 return
+            auto ret_llvm = llvm_type(ret_ctype);
             auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
 
             auto* ext_fn = module_->getFunction(mangled);
@@ -929,7 +1174,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
 
             std::vector<Value*> vals;
             for (auto& a : all_args) vals.push_back(a.val);
-            return {builder_->CreateCall(ext_fn, vals, "extern_call"), CType::INT};
+            return {builder_->CreateCall(ext_fn, vals, "extern_call"), ret_ctype};
         }
 
         // Try as an LLVM function in the module

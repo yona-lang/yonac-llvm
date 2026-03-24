@@ -1,0 +1,4 @@
+let t = (42, 99) in
+case t of
+    (a, b) -> a + b
+end
