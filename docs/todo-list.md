@@ -22,7 +22,12 @@
 - [ ] System module edge case tests (exit, setEnv — side effects)
 
 ### Codegen Gaps
-- [ ] Dict/Set construction in codegen
+- [ ] Tagged union / boxed values — runtime representation for polymorphic types
+  - Enables: Dict/Set construction, Option/Result types, heterogeneous collections
+  - Approach: `{tag, payload}` struct where tag is CType discriminant, payload is i64 or ptr
+  - Boxing: wrap unboxed primitives (i64, double, ptr) when stored in polymorphic containers
+  - Unboxing: extract primitive value when type is statically known
+- [ ] Dict/Set construction in codegen (depends on tagged unions)
 - [ ] Large struct return ABI (>16 bytes / 3+ element tuples need sret convention)
 - [ ] Monomorphization of polymorphic functions at import site
 - [ ] Remaining native stdlib in compiled runtime (closure calling convention in C for complex types)
