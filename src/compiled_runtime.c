@@ -96,10 +96,8 @@ int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
 }
 
 /* ===== Symbol runtime ===== */
-
-int yona_rt_symbol_eq(const char* a, const char* b) {
-    return strcmp(a, b) == 0;
-}
+/* Symbols are interned to i64 IDs at compile time. Comparison is icmp eq. */
+/* Print takes the string name (resolved by the compiler from the symbol table). */
 
 void yona_rt_print_symbol(const char* name) {
     printf(":%s", name);

@@ -1,0 +1,8 @@
+let classify x =
+    case x of
+        :red   -> 1
+        :green -> 2
+        :blue  -> 3
+        _      -> 0
+    end
+in classify :green + classify :blue + classify :red

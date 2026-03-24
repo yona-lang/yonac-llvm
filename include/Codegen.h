@@ -132,8 +132,14 @@ private:
     llvm::Function* rt_seq_join_ = nullptr;
     llvm::Function* rt_seq_head_ = nullptr;
     llvm::Function* rt_seq_tail_ = nullptr;
-    llvm::Function* rt_symbol_eq_ = nullptr;
     llvm::Function* rt_print_symbol_ = nullptr;
+
+    // Symbol interning: name → i64 ID, ID → global string constant
+    std::unordered_map<std::string, int64_t> symbol_ids_;
+    std::vector<llvm::Constant*> symbol_strings_;  // ID → @"name" global string ptr
+
+    // Intern a symbol name, returning its i64 ID
+    int64_t intern_symbol(const std::string& name);
     llvm::Function* rt_async_call_ = nullptr;
     llvm::Function* rt_async_await_ = nullptr;
     llvm::Function* rt_closure2_create_ = nullptr;
@@ -216,8 +222,9 @@ private:
     // Infer parameter types for a module function by analyzing patterns and body
     std::vector<InferredParamType> infer_param_types(FunctionExpr* func);
 
-    // Print a typed value
+    // Print a typed value (with newline) / value only (no newline)
     void codegen_print(const TypedValue& tv);
+    void codegen_print_value(const TypedValue& tv);
 
 public:
     // Module function type metadata — populated during compile_module,

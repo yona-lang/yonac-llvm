@@ -132,7 +132,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::TUPLE:  return LType::getInt64Ty(*context_); // overridden per-tuple
         case CType::UNIT:   return LType::getInt64Ty(*context_);
         case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
-        case CType::SYMBOL: return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::SYMBOL: return LType::getInt64Ty(*context_); // interned symbol ID
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
     }
     return LType::getInt64Ty(*context_);
@@ -166,8 +166,7 @@ void Codegen::declare_runtime() {
     rt_seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
     rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
     rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
-    rt_symbol_eq_     = decl("yona_rt_symbol_eq", LType::getInt32Ty(*context_), {ptr, ptr});
-    rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr});
+    rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
 
     // Async runtime: promise = async_call(fn_ptr, arg), result = async_await(promise)
     // fn_ptr type: i64 (*)(i64) — function pointer taking and returning i64
@@ -430,8 +429,7 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
             } else if (ct == CType::BOOL) {
                 typed_args.push_back({ConstantInt::get(LType::getInt1Ty(*context_), 0), CType::BOOL});
             } else if (ct == CType::SYMBOL) {
-                auto* ptr_type = PointerType::get(*context_, 0);
-                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SYMBOL});
+                typed_args.push_back({ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::SYMBOL});
             } else if (ct == CType::FUNCTION) {
                 auto* ptr_type = PointerType::get(*context_, 0);
                 typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::FUNCTION});
@@ -543,45 +541,52 @@ Function* Codegen::codegen_main(AstNode* node) {
 
 // ===== Print (type-directed) =====
 
-// Print a value without trailing newline
-void codegen_print_value(IRBuilder<>* builder, const TypedValue& tv,
-                          Function* print_int, Function* print_float,
-                          Function* print_string, Function* print_bool,
-                          Function* print_seq, Function* print_symbol,
-                          LLVMContext& ctx) {
+void Codegen::codegen_print_value(const TypedValue& tv) {
     if (!tv.val) return;
     switch (tv.type) {
-        case CType::INT:    builder->CreateCall(print_int, {tv.val}); break;
-        case CType::FLOAT:  builder->CreateCall(print_float, {tv.val}); break;
-        case CType::BOOL:   builder->CreateCall(print_bool, {tv.val}); break;
-        case CType::STRING: builder->CreateCall(print_string, {tv.val}); break;
-        case CType::SEQ:    builder->CreateCall(print_seq, {tv.val}); break;
+        case CType::INT:    builder_->CreateCall(rt_print_int_, {tv.val}); break;
+        case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {tv.val}); break;
+        case CType::BOOL:   builder_->CreateCall(rt_print_bool_, {tv.val}); break;
+        case CType::STRING: builder_->CreateCall(rt_print_string_, {tv.val}); break;
+        case CType::SEQ:    builder_->CreateCall(rt_print_seq_, {tv.val}); break;
         case CType::TUPLE: {
-            builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("(")});
+            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("(")});
             if (tv.val->getType()->isStructTy()) {
                 auto* st = cast<StructType>(tv.val->getType());
                 for (unsigned i = 0; i < st->getNumElements(); i++) {
                     if (i > 0)
-                        builder->CreateCall(print_string, {builder->CreateGlobalStringPtr(", ")});
-                    auto elem = builder->CreateExtractValue(tv.val, {i});
+                        builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(", ")});
+                    auto elem = builder_->CreateExtractValue(tv.val, {i});
                     CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
-                    codegen_print_value(builder, {elem, et}, print_int, print_float,
-                                        print_string, print_bool, print_seq, print_symbol, ctx);
+                    codegen_print_value({elem, et});
                 }
             }
-            builder->CreateCall(print_string, {builder->CreateGlobalStringPtr(")")});
+            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(")")});
             break;
         }
-        case CType::UNIT:     builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("()")}); break;
-        case CType::FUNCTION: builder->CreateCall(print_string, {builder->CreateGlobalStringPtr("<function>")}); break;
-        case CType::SYMBOL:   builder->CreateCall(print_symbol, {tv.val}); break;
+        case CType::UNIT:     builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("()")}); break;
+        case CType::FUNCTION: builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<function>")}); break;
+        case CType::SYMBOL: {
+            // Symbol is an interned i64 ID. Look up the string for printing.
+            if (auto* ci = dyn_cast<ConstantInt>(tv.val)) {
+                int64_t id = ci->getSExtValue();
+                if (id >= 0 && id < (int64_t)symbol_strings_.size()) {
+                    builder_->CreateCall(rt_print_symbol_, {symbol_strings_[id]});
+                }
+            } else {
+                // Runtime symbol value — need a table lookup.
+                // Emit a GEP into the symbol names table (emitted at finalization).
+                // For now, emit a placeholder.
+                builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(":<dynamic>")});
+            }
+            break;
+        }
     }
 }
 
 void Codegen::codegen_print(const TypedValue& tv) {
     auto resolved = auto_await(tv);
-    codegen_print_value(builder_.get(), resolved, rt_print_int_, rt_print_float_,
-                         rt_print_string_, rt_print_bool_, rt_print_seq_, rt_print_symbol_, *context_);
+    codegen_print_value(resolved);
     builder_->CreateCall(rt_print_newline_, {});
 }
 
@@ -654,8 +659,18 @@ TypedValue Codegen::codegen_string(StringExpr* node) {
 TypedValue Codegen::codegen_unit(UnitExpr*) {
     return {ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::UNIT};
 }
+int64_t Codegen::intern_symbol(const std::string& name) {
+    auto it = symbol_ids_.find(name);
+    if (it != symbol_ids_.end()) return it->second;
+    int64_t id = static_cast<int64_t>(symbol_strings_.size());
+    symbol_ids_[name] = id;
+    symbol_strings_.push_back(builder_->CreateGlobalStringPtr(name, "sym." + name));
+    return id;
+}
+
 TypedValue Codegen::codegen_symbol(SymbolExpr* node) {
-    return {builder_->CreateGlobalStringPtr(node->value), CType::SYMBOL};
+    int64_t id = intern_symbol(node->value);
+    return {ConstantInt::get(LType::getInt64Ty(*context_), id), CType::SYMBOL};
 }
 
 // ===== Arithmetic (type-directed) =====
@@ -1454,10 +1469,11 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 named_values_[(*id)->name->value] = scrutinee;
                 builder_->CreateBr(body_bb);
             } else if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
-                auto sym_str = builder_->CreateGlobalStringPtr((*sym)->value);
-                auto cmp = builder_->CreateCall(rt_symbol_eq_, {scrutinee.val, sym_str});
-                auto cmp_bool = builder_->CreateICmpNE(cmp, ConstantInt::get(LType::getInt32Ty(*context_), 0));
-                builder_->CreateCondBr(cmp_bool, body_bb, next_bb);
+                // Symbol comparison: integer equality on interned IDs
+                int64_t sym_id = intern_symbol((*sym)->value);
+                auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
+                auto cmp = builder_->CreateICmpEQ(scrutinee.val, sym_val);
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
                 auto* an = reinterpret_cast<AstNode*>(*lit);
                 if (an->get_type() == AST_INTEGER_EXPR) {
@@ -1525,10 +1541,10 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 } else if (alt->get_type() == AST_PATTERN_VALUE) {
                     auto* pv = static_cast<PatternValue*>(alt);
                     if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
-                        auto sym_str = builder_->CreateGlobalStringPtr((*sym)->value);
-                        auto cmp = builder_->CreateCall(rt_symbol_eq_, {scrutinee.val, sym_str});
-                        auto cmp_bool = builder_->CreateICmpNE(cmp, ConstantInt::get(LType::getInt32Ty(*context_), 0));
-                        builder_->CreateCondBr(cmp_bool, body_bb, alt_next);
+                        int64_t sym_id = intern_symbol((*sym)->value);
+                        auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
+                        auto cmp = builder_->CreateICmpEQ(scrutinee.val, sym_val);
+                        builder_->CreateCondBr(cmp, body_bb, alt_next);
                     } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
                         auto* an = reinterpret_cast<AstNode*>(*lit);
                         if (an->get_type() == AST_INTEGER_EXPR) {
