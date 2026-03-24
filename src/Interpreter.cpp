@@ -19,7 +19,6 @@
 
 
 using namespace yona::compiler::types;
-using namespace yona::typechecker;
 
 #define BINARY_OP_EXTRACTION(ROT, VT, start, offset, op)                                                                                             \
   map_value<ROT, VT>({node->left, node->right},                                                                                                      \
@@ -2745,13 +2744,6 @@ Interpreter::Interpreter() {
 
 // Helper to create runtime objects with type information
 RuntimeObjectPtr Interpreter::make_typed_object(RuntimeObjectType type, RuntimeObjectData data, AstNode* node) const {
-  if (node && type_checker.has_value()) {
-    // Check if we have type information for this node
-    auto it = type_annotations.find(node);
-    if (it != type_annotations.end()) {
-      return make_shared<RuntimeObject>(type, std::move(data), it->second);
-    }
-  }
   return make_shared<RuntimeObject>(type, std::move(data));
 }
 
@@ -2911,31 +2903,6 @@ Type Interpreter::runtime_type_to_static_type(RuntimeObjectType type) const {
     case Function: return nullptr; // Need more info
     default: return nullptr;
   }
-}
-
-// Type checking integration
-void Interpreter::enable_type_checking(bool enable) {
-  if (enable && !type_checker.has_value()) {
-    type_checker = make_unique<TypeChecker>(type_context, nullptr);
-  } else if (!enable) {
-    type_checker.reset();
-  }
-}
-
-bool Interpreter::type_check(AstNode* node) {
-  if (!type_checker.has_value()) {
-    enable_type_checking(true);
-  }
-
-  // Reset context for fresh type checking
-  type_context = TypeInferenceContext();
-  type_annotations.clear();
-
-  // Perform type checking
-  Type inferred_type = (*type_checker)->check(node);
-
-  // Return whether type checking succeeded
-  return !type_context.has_errors();
 }
 
 // --- Async support ---

@@ -196,15 +196,6 @@ int main(const int argc, const char *argv[]) {
         auto optimizer_result = parse_result.node->accept(optimizer);
         auto optimized_ast = optimizer_result.node;
 
-        // Type check before interpretation
-        interpreter.enable_type_checking(true);
-        if (!interpreter.type_check(optimized_ast)) {
-          for (const auto& error : interpreter.get_type_errors()) {
-            std::cerr << *error << std::endl;
-          }
-          continue;
-        }
-
         // Interpret the expression
         auto interpreter_result = optimized_ast->accept(interpreter);
         auto result = interpreter_result.value;
@@ -242,19 +233,7 @@ int main(const int argc, const char *argv[]) {
       std::cout << *optimized_ast << std::endl;
     }
 
-    // Enable type checking (can be made optional via command line flag later)
-    interpreter.enable_type_checking(true);
-
-    // Type check the AST before interpretation
-    if (!interpreter.type_check(optimized_ast)) {
-      std::cerr << "Type checking failed:" << std::endl;
-      for (const auto& error : interpreter.get_type_errors()) {
-        std::cerr << *error << std::endl;
-      }
-      return EXIT_FAILURE;
-    }
-
-    // Interpret the type-checked AST
+    // Interpret the AST
     auto interpreter_result = optimized_ast->accept(interpreter);
     auto result = interpreter_result.value;
 

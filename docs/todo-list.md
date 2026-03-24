@@ -1,7 +1,7 @@
 # TODO List - Yona-LLVM
 
 ## Summary
-- **Test Coverage**: 581 tests, 2486 assertions, 100 codegen fixtures ✅
+- **Test Coverage**: 533 tests, 2249 assertions, 100 codegen fixtures ✅
 - **LLVM Compiler**: Feature-complete — type-directed codegen, modules, async, optimizations ✅
 - **Interpreter**: Feature-complete with transparent async, lexical closures ✅
 - **C Embedding API**: Stable C interface with sandboxing ✅
@@ -12,14 +12,11 @@
 
 ### Type System & Codegen Architecture (see docs/type-system-plan.md)
 
-Phase 1: Bridge TypeChecker → Codegen
-- [ ] Add `resolved_type` field to AST nodes
-- [ ] Complete TypeChecker stub visitors (~40 methods returning nullptr)
-- [ ] Wire TypeChecker into yonac pipeline (Parse → TypeCheck → Codegen)
-- [ ] Use resolved types in codegen (replace ad-hoc inference)
-- [ ] Type-aware TypedValue (carry full `Type` alongside `CType`)
-- [ ] `llvm_type_of(Type)` mapping function
+Phase 1: Extend Codegen Type System
 - [ ] Symbol interning: compile symbols to `i64` IDs, integer comparison
+- [ ] Add `DICT`, `SET` to CType enum
+- [ ] Propagate element types via `TypedValue::subtypes` for all collections
+- [ ] Compile-time type error checking (validate types during codegen, clear error messages)
 
 Phase 2: Typed Collections
 - [ ] `Seq<T>` with typed elements (element type from TypeChecker)

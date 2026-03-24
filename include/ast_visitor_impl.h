@@ -214,7 +214,7 @@ template class AstVisitor<InterpreterResult>;
 // Explicit template instantiation for OptimizerResult
 template class AstVisitor<compiler::OptimizerResult>;
 
-// Explicit template instantiation for TypeChecker using Type
+// Explicit template instantiation for Type visitor
 template class AstVisitor<Type>;
 
 } // namespace yona::ast

@@ -71,114 +71,50 @@ symbol table maps names to IDs. Comparison is a single `icmp eq i64`.
 - `codegen_print` for symbols calls `yona_rt_print_symbol(i64)` with the string table
 - All codegen test fixtures with symbols continue to work (output is the same)
 
-## Phase 1: Bridge TypeChecker → Codegen
+## Phase 1: Extend Codegen Type System
 
-The foundational change that enables everything else.
+The codegen already has its own type inference (`infer_type_from_pattern`,
+`infer_param_types`, `infer_expr_type`) and the `TypedValue` system with
+`CType` + `subtypes`. Extend this incrementally rather than building a
+separate TypeChecker.
 
-### 1.1 Add resolved types to AST nodes
+The old TypeChecker (Hindley-Milner, `src/TypeChecker.cpp`) was removed —
+it was 40% complete, not connected to the codegen, and would have required
+more effort to complete than to extend the codegen's own inference.
 
-```cpp
-// In ast.h, add to AstNode:
-optional<compiler::types::Type> resolved_type;
-```
+### 1.1 Symbol interning
 
-After type checking, every expression node carries its inferred type.
+Symbols become `i64` IDs instead of string pointers:
+- Add `symbol_ids_` map to Codegen (name → integer ID)
+- `codegen_symbol` returns `{i64_constant, CType::SYMBOL}`
+- `llvm_type(CType::SYMBOL)` returns `i64`
+- Pattern matching uses `icmp eq i64` instead of `strcmp`
+- Emit symbol name table as global for printing
 
-### 1.2 Complete the TypeChecker
-
-The TypeChecker has ~40 visitor methods that return `nullptr` (stubs). These
-must be completed to return correct types for:
-
-- Binary operators (arithmetic, comparison, logical, bitwise)
-- Cons (`::`) and join (`++`) operators
-- Pipe operators (`|>`, `<|`)
-- Collection literals (seq, set, dict)
-- Pattern matching (case expressions)
-- Let expressions, do blocks
-- String interpolation
-- Function application (apply)
-- Tuple construction
-- Module imports
-
-Priority: complete the visitors needed for the codegen test suite first.
-
-### 1.3 Wire TypeChecker into yonac pipeline
-
-```
-Parse → TypeCheck → Codegen
-```
-
-In `cli/main.cpp`, after parsing and before codegen:
-1. Create a TypeChecker
-2. Visit the AST root — this fills `resolved_type` on every node
-3. Pass the typed AST to the codegen
-
-### 1.4 Use resolved types in codegen
-
-Replace the ad-hoc inference (`infer_type_from_pattern`, `infer_param_types`,
-`infer_expr_type`) with reads from `node->resolved_type`:
+### 1.2 Add DICT, SET to CType
 
 ```cpp
-TypedValue Codegen::codegen(AstNode* node) {
-    // The TypeChecker has resolved the type of this node
-    auto type = node->resolved_type;
-    // ... use type for LLVM type selection, collection element types, etc.
-}
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT };
 ```
 
-### 1.5 Replace CType with Type-aware TypedValue
+### 1.3 Propagate element types via subtypes
 
-`CType` can remain as a convenience for LLVM type dispatch, but `TypedValue`
-should also carry the full `Type` for decisions that need parameterization:
+Use the existing `TypedValue::subtypes` vector consistently:
+- `Seq<Int>` → `{val, CType::SEQ, subtypes={INT}}`
+- `Set<Symbol>` → `{val, CType::SET, subtypes={SYMBOL}}`
+- `Dict<String, Int>` → `{val, CType::DICT, subtypes={STRING, INT}}`
+- Element types inferred from literal construction expressions
 
-```cpp
-struct TypedValue {
-    llvm::Value* val = nullptr;
-    CType ctype = CType::INT;                        // for LLVM type dispatch
-    optional<compiler::types::Type> type;             // full type for parameterized decisions
-    std::vector<CType> subtypes;                      // keep for backward compat
-};
-```
+### 1.4 Future: compile-time type error checking
 
-### 1.6 Type-to-LLVM mapping
+Type error checking will be implemented as a codegen-integrated pass
+that validates types during compilation. This is simpler than a separate
+TypeChecker because the codegen already tracks types via TypedValue.
 
-```cpp
-llvm::Type* Codegen::llvm_type_of(const compiler::types::Type& type) {
-    if (auto* bt = get_if<BuiltinType>(&type)) {
-        switch (*bt) {
-            case SignedInt64:    return i64;
-            case Float64:       return double;
-            case Bool:          return i1;
-            case String:        return ptr;
-            case Symbol:        return i64;   // interned ID
-            case Unit:          return i64;   // dummy
-            ...
-        }
-    }
-    if (auto* coll = get_if<shared_ptr<SingleItemCollectionType>>(&type)) {
-        return ptr;  // Seq<T> and Set<T> are heap pointers
-    }
-    if (auto* dict = get_if<shared_ptr<DictCollectionType>>(&type)) {
-        return ptr;  // Dict<K,V> is a heap pointer
-    }
-    if (auto* prod = get_if<shared_ptr<ProductType>>(&type)) {
-        // Tuple: LLVM struct with typed fields
-        vector<llvm::Type*> fields;
-        for (auto& t : (*prod)->types) fields.push_back(llvm_type_of(t));
-        return StructType::get(*context_, fields);
-    }
-    if (auto* fn = get_if<shared_ptr<FunctionType>>(&type)) {
-        return ptr;  // function pointer
-    }
-    if (auto* rec = get_if<shared_ptr<RecordType>>(&type)) {
-        return ptr;  // pointer to named struct
-    }
-    if (auto* prom = get_if<shared_ptr<PromiseType>>(&type)) {
-        return ptr;  // promise handle
-    }
-    return i64;  // fallback
-}
-```
+Possible approaches:
+- Validate at each `codegen()` call that operand types are compatible
+- Report clear errors with source locations
+- Enforce homogeneous collections (reject `[1, "hello"]`)
 
 ## Phase 2: Typed Collections
 

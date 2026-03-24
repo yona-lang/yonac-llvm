@@ -13,7 +13,6 @@
 #include "yona_export.h"
 #include "ast.h"
 #include "runtime.h"
-#include "TypeChecker.h"
 #include "runtime_async.h"
 #include "dependency_analyzer.h"
 
@@ -173,8 +172,6 @@ struct InterpreterState {
 class YONA_API Interpreter final : public AstVisitor<InterpreterResult> {
 private:
   mutable InterpreterState IS;  // mutable because visitor methods are const
-  mutable optional<unique_ptr<typechecker::TypeChecker>> type_checker;  // Optional type checker
-  mutable typechecker::TypeInferenceContext type_context;  // Type inference context
   mutable unordered_map<AstNode*, compiler::types::Type> type_annotations;  // Store inferred types
 
   template <RuntimeObjectType ROT, typename VT> optional<VT> get_value(AstNode *node) const;
@@ -228,16 +225,6 @@ public:
   InterpreterState& get_state() { return IS; }
   const InterpreterState& get_state() const { return IS; }
 
-  // Enable/disable type checking
-  void enable_type_checking(bool enable = true);
-
-  // Type check an AST node before interpretation
-  bool type_check(AstNode* node);
-
-  // Get type errors from last type check
-  const vector<shared_ptr<yona_error>>& get_type_errors() const {
-    return type_context.get_errors();
-  }
   InterpreterResult visit(AddExpr *node) const override;
   InterpreterResult visit(AliasCall *node) const override;
   InterpreterResult visit(ApplyExpr *node) const override;

@@ -28,9 +28,6 @@ public:
     // This method handles all std::any operations internally
     runtime::RuntimeObjectPtr evaluate(ast::AstNode* node);
 
-    // Enable/disable type checking
-    void enable_type_checking(bool enable = true);
-
 private:
     class Impl;
     std::unique_ptr<Impl> pImpl;

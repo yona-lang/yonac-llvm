@@ -594,22 +594,15 @@ TEST_CASE("PromiseType is a valid type") {
   CHECK(get<BuiltinType>(unwrapped) == SignedInt64);
 }
 
-TEST_CASE("Promise<T> unifies with T via coercion") {
+TEST_CASE("Promise<T> type utilities") {
   using namespace yona::compiler::types;
-  using namespace yona::typechecker;
 
-  TypeInferenceContext ctx;
-  TypeChecker tc(ctx);
-
-  // Promise<Int> should unify with Int (coercion inserts await)
   auto promise_int = make_promise_type(Type(SignedInt64));
   auto plain_int = Type(SignedInt64);
 
-  // Access unification through type checking
-  // Create a simple test: check that Promise<Int> + Int works
-  // We test indirectly by verifying the types are compatible
   CHECK(is_promise(promise_int));
   CHECK(unwrap_promise(promise_int) == plain_int);
+  CHECK(!is_promise(plain_int));
 }
 
 TEST_CASE("Nested Promise<Promise<T>> unwraps to T") {

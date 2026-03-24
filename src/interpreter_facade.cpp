@@ -15,10 +15,6 @@ public:
         auto result = interpreter.visit(node);
         return std::any_cast<runtime::RuntimeObjectPtr>(result);
     }
-
-    void enable_type_checking(bool enable) {
-        interpreter.enable_type_checking(enable);
-    }
 };
 
 InterpreterFacade::InterpreterFacade() : pImpl(std::make_unique<Impl>()) {}
@@ -28,10 +24,6 @@ InterpreterFacade::~InterpreterFacade() = default;
 
 runtime::RuntimeObjectPtr InterpreterFacade::evaluate(ast::AstNode* node) {
     return pImpl->evaluate(node);
-}
-
-void InterpreterFacade::enable_type_checking(bool enable) {
-    pImpl->enable_type_checking(enable);
 }
 
 } // namespace yona::interp
