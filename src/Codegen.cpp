@@ -291,6 +291,8 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
 
         std::function<void(AstNode*)> analyze = [&](AstNode* node) {
             if (!node) return;
+
+            // Case expressions: scrutinee type inference
             if (node->get_type() == AST_CASE_EXPR) {
                 auto* ce = static_cast<CaseExpr*>(node);
                 if (ce->expr && ce->expr->get_type() == AST_IDENTIFIER_EXPR) {
@@ -309,11 +311,51 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
                 }
                 for (auto* clause : ce->clauses) analyze(clause->body);
             }
-            if (auto* le = dynamic_cast<LetExpr*>(node)) analyze(le->expr);
-            else if (auto* ie = dynamic_cast<IfExpr*>(node)) {
-                analyze(ie->thenExpr); analyze(ie->elseExpr);
+
+            // Apply expressions: if a parameter is in function position, it's FUNCTION
+            if (node->get_type() == AST_APPLY_EXPR) {
+                auto* ae = static_cast<ApplyExpr*>(node);
+                // Check NameCall: fn x → fn is in function position
+                if (auto* nc = dynamic_cast<NameCall*>(ae->call)) {
+                    auto it = param_index.find(nc->name->value);
+                    if (it != param_index.end() && result[it->second].type == CType::INT) {
+                        result[it->second].type = CType::FUNCTION;
+                        result[it->second].source_pattern = nullptr;
+                    }
+                }
+                // Check ExprCall where expr is an identifier (curried application)
+                if (auto* ec = dynamic_cast<ExprCall*>(ae->call)) {
+                    if (auto* id = dynamic_cast<IdentifierExpr*>(ec->expr)) {
+                        auto it = param_index.find(id->name->value);
+                        if (it != param_index.end() && result[it->second].type == CType::INT) {
+                            result[it->second].type = CType::FUNCTION;
+                            result[it->second].source_pattern = nullptr;
+                        }
+                    }
+                    // Recurse into the call expression (nested apply chains)
+                    analyze(ec->expr);
+                }
+                // Recurse into arguments
+                for (auto& a : ae->args) {
+                    if (std::holds_alternative<ExprNode*>(a)) analyze(std::get<ExprNode*>(a));
+                    else analyze(std::get<ValueExpr*>(a));
+                }
+            }
+
+            // Recurse into all expression types that may contain sub-expressions
+            if (auto* le = dynamic_cast<LetExpr*>(node)) {
+                analyze(le->expr);
+                for (auto* alias : le->aliases) analyze(alias);
+            } else if (auto* ie = dynamic_cast<IfExpr*>(node)) {
+                analyze(ie->condition); analyze(ie->thenExpr); analyze(ie->elseExpr);
             } else if (auto* de = dynamic_cast<DoExpr*>(node)) {
                 for (auto* s : de->steps) analyze(s);
+            } else if (auto* bop = dynamic_cast<BinaryOpExpr*>(node)) {
+                analyze(bop->left); analyze(bop->right);
+            } else if (auto* te = dynamic_cast<TupleExpr*>(node)) {
+                for (auto* v : te->values) analyze(v);
+            } else if (auto* ve = dynamic_cast<ValuesSequenceExpr*>(node)) {
+                for (auto* v : ve->values) analyze(v);
             }
         };
         if (body_expr) analyze(body_expr);
@@ -390,6 +432,9 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
             } else if (ct == CType::SYMBOL) {
                 auto* ptr_type = PointerType::get(*context_, 0);
                 typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SYMBOL});
+            } else if (ct == CType::FUNCTION) {
+                auto* ptr_type = PointerType::get(*context_, 0);
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::FUNCTION});
             } else {
                 typed_args.push_back({dummy_val, ct});
             }
@@ -824,8 +869,20 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
     }
     for (auto& v : fv_set) {
         auto it = named_values_.find(v);
-        if (it != named_values_.end() && it->second.type != CType::FUNCTION)
+        if (it != named_values_.end()) {
+            // Skip known functions (compiled or deferred) — they're global symbols.
+            // But DO capture function pointers (runtime values: parameters, closures).
+            if (it->second.type == CType::FUNCTION) {
+                // Compiled function: skip (it's a global LLVM function)
+                if (it->second.val && isa<Function>(it->second.val))
+                    continue;
+                // Deferred function: skip (will be compiled later as a global)
+                if (deferred_functions_.count(v) > 0)
+                    continue;
+                // Runtime function pointer (parameter, closure): capture it
+            }
             def.free_vars.push_back(v);
+        }
     }
 
     deferred_functions_[fn_name] = def;
@@ -871,15 +928,58 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
     }
 
-    // Create function with i64 return (may be recreated if body returns different type)
-    auto ret_type = LType::getInt64Ty(*context_);
+    // Pre-infer return type from body structure to avoid type mismatches
+    // during first compilation pass (especially for recursive functions).
+    // Walks the AST to determine the type of the first evaluable expression.
+    std::function<CType(AstNode*)> infer_expr_type = [&](AstNode* node) -> CType {
+        if (!node) return CType::INT;
+        auto ct = node->get_type();
+        if (ct == AST_VALUES_SEQUENCE_EXPR) return CType::SEQ;
+        if (ct == AST_TUPLE_EXPR) return CType::TUPLE;
+        if (ct == AST_SYMBOL_EXPR) return CType::SYMBOL;
+        if (ct == AST_STRING_EXPR) return CType::STRING;
+        if (ct == AST_INTEGER_EXPR) return CType::INT;
+        if (ct == AST_FLOAT_EXPR) return CType::FLOAT;
+        if (ct == AST_TRUE_LITERAL_EXPR || ct == AST_FALSE_LITERAL_EXPR) return CType::BOOL;
+        if (ct == AST_CONS_LEFT_EXPR || ct == AST_CONS_RIGHT_EXPR || ct == AST_JOIN_EXPR) return CType::SEQ;
+        if (ct == AST_IDENTIFIER_EXPR) {
+            auto* id = static_cast<IdentifierExpr*>(node);
+            for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+                if (def.param_names[pi] == id->name->value && pi < args.size())
+                    return args[pi].type;
+            }
+        }
+        // Recurse through wrappers
+        if (ct == AST_CASE_EXPR) {
+            auto* ce = static_cast<CaseExpr*>(node);
+            if (!ce->clauses.empty()) return infer_expr_type(ce->clauses[0]->body);
+        }
+        if (ct == AST_LET_EXPR) {
+            auto* le = static_cast<LetExpr*>(node);
+            return infer_expr_type(le->expr);
+        }
+        if (ct == AST_IF_EXPR) {
+            auto* ie = static_cast<IfExpr*>(node);
+            return infer_expr_type(ie->thenExpr);
+        }
+        return CType::INT;
+    };
+
+    CType preliminary_ret = CType::INT;
+    if (!def.ast->bodies.empty()) {
+        auto* body = def.ast->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+            preliminary_ret = infer_expr_type(bwg->expr);
+    }
+
+    auto ret_type = llvm_type(preliminary_ret);
     auto fn_type = llvm::FunctionType::get(ret_type, param_types, false);
     auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 
     // Register immediately so recursive calls find this function
     CompiledFunction cf_preliminary;
     cf_preliminary.fn = fn;
-    cf_preliminary.return_type = CType::INT; // default, updated after body
+    cf_preliminary.return_type = preliminary_ret;
     cf_preliminary.param_types = param_ctypes;
     cf_preliminary.capture_names = def.free_vars;
     compiled_functions_[name] = cf_preliminary;
@@ -1478,7 +1578,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) {
         bool found = false;
         for (auto& [tv, bb] : results) if (bb == *it) { found = true; break; }
-        if (!found) phi->addIncoming(ConstantInt::get(results[0].first.val->getType(), 0), *it);
+        if (!found) phi->addIncoming(Constant::getNullValue(results[0].first.val->getType()), *it);
     }
     return {phi, results[0].first.type, results[0].first.subtypes};
 }

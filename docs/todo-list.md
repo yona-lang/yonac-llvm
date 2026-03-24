@@ -24,9 +24,8 @@
 ### Codegen Gaps
 - [ ] Dict/Set construction in codegen
 - [ ] Large struct return ABI (>16 bytes / 3+ element tuples need sret convention)
-- [ ] Higher-order function parameters in compiled modules (function pointer type inference)
 - [ ] Monomorphization of polymorphic functions at import site
-- [ ] Remaining native stdlib in compiled runtime (map, filter, fold — need closure calling convention in C)
+- [ ] Remaining native stdlib in compiled runtime (closure calling convention in C for complex types)
 
 ### Stdlib Gaps (vs yona-lang.org)
 - [ ] Exception utilities, stack traces

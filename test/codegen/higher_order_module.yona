@@ -1,0 +1,15 @@
+let double x = x * 2 in
+let add a b = a + b in
+let map fn seq =
+    case seq of
+        []    -> []
+        [h|t] -> (fn h) :: (map fn t)
+    end
+in
+let fold fn acc seq =
+    case seq of
+        []    -> acc
+        [h|t] -> fold fn (fn acc h) t
+    end
+in
+fold add 0 (map double [1, 2, 3, 4, 5])
