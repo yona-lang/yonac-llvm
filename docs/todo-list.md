@@ -13,9 +13,9 @@
 ### Type System & Codegen Architecture (see docs/type-system-plan.md)
 
 Phase 1: Extend Codegen Type System
-- [ ] Symbol interning: compile symbols to `i64` IDs, integer comparison
-- [ ] Add `DICT`, `SET` to CType enum
-- [ ] Propagate element types via `TypedValue::subtypes` for all collections
+- [x] Symbol interning: compile symbols to `i64` IDs, integer comparison ✅
+- [x] Add `DICT`, `SET` to CType, dict/set construction + runtime ✅
+- [x] Propagate element types via `TypedValue::subtypes` for all collections ✅
 - [ ] Compile-time type error checking (validate types during codegen, clear error messages)
 
 Phase 2: Typed Collections

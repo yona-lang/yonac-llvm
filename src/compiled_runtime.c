@@ -103,6 +103,56 @@ void yona_rt_print_symbol(const char* name) {
     printf(":%s", name);
 }
 
+/* ===== Set runtime ===== */
+/* Set: [count, elem0, elem1, ...] — same layout as sequence.         */
+/* Elements are i64 (the element type is known at compile time).       */
+/* Deduplication is the caller's responsibility at construction time.  */
+
+int64_t* yona_rt_set_alloc(int64_t count) {
+    int64_t* set = (int64_t*)malloc((count + 1) * sizeof(int64_t));
+    set[0] = count;
+    return set;
+}
+
+void yona_rt_set_put(int64_t* set, int64_t index, int64_t value) {
+    set[index + 1] = value;
+}
+
+void yona_rt_print_set(int64_t* set) {
+    int64_t len = set[0];
+    printf("{");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%ld", set[i + 1]);
+    }
+    printf("}");
+}
+
+/* ===== Dict runtime ===== */
+/* Dict: [count, key0, val0, key1, val1, ...] — interleaved keys and values. */
+/* Both keys and values are i64 (their types are known at compile time).     */
+
+int64_t* yona_rt_dict_alloc(int64_t count) {
+    int64_t* dict = (int64_t*)malloc((count * 2 + 1) * sizeof(int64_t));
+    dict[0] = count;
+    return dict;
+}
+
+void yona_rt_dict_set(int64_t* dict, int64_t index, int64_t key, int64_t value) {
+    dict[index * 2 + 1] = key;
+    dict[index * 2 + 2] = value;
+}
+
+void yona_rt_print_dict(int64_t* dict) {
+    int64_t len = dict[0];
+    printf("{");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%ld: %ld", dict[i * 2 + 1], dict[i * 2 + 2]);
+    }
+    printf("}");
+}
+
 /* Forward declarations for runtime functions used by shims */
 int64_t* yona_rt_seq_alloc(int64_t count);
 int64_t* yona_rt_seq_tail(int64_t* seq);

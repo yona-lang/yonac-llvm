@@ -133,6 +133,8 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::UNIT:   return LType::getInt64Ty(*context_);
         case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::SYMBOL: return LType::getInt64Ty(*context_); // interned symbol ID
+        case CType::SET:    return PointerType::get(LType::getInt64Ty(*context_), 0);
+        case CType::DICT:   return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
     }
     return LType::getInt64Ty(*context_);
@@ -167,6 +169,16 @@ void Codegen::declare_runtime() {
     rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
     rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
     rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
+
+    // Set runtime
+    rt_set_alloc_     = decl("yona_rt_set_alloc", i64p, {i64});
+    rt_set_put_       = decl("yona_rt_set_put", vd, {i64p, i64, i64});
+    rt_print_set_     = decl("yona_rt_print_set", vd, {i64p});
+
+    // Dict runtime
+    rt_dict_alloc_    = decl("yona_rt_dict_alloc", i64p, {i64});
+    rt_dict_set_      = decl("yona_rt_dict_set", vd, {i64p, i64, i64, i64});
+    rt_print_dict_    = decl("yona_rt_print_dict", vd, {i64p});
 
     // Async runtime: promise = async_call(fn_ptr, arg), result = async_await(promise)
     // fn_ptr type: i64 (*)(i64) — function pointer taking and returning i64
@@ -564,6 +576,8 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
             builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(")")});
             break;
         }
+        case CType::SET:    builder_->CreateCall(rt_print_set_, {tv.val}); break;
+        case CType::DICT:   builder_->CreateCall(rt_print_dict_, {tv.val}); break;
         case CType::UNIT:     builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("()")}); break;
         case CType::FUNCTION: builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<function>")}); break;
         case CType::SYMBOL: {
@@ -629,6 +643,8 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_EXTERN_DECL:    return codegen_extern_decl(static_cast<ExternDeclExpr*>(node));
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
         case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
+        case AST_SET_EXPR:        return codegen_set(static_cast<SetExpr*>(node));
+        case AST_DICT_EXPR:       return codegen_dict(static_cast<DictExpr*>(node));
         case AST_CONS_LEFT_EXPR:  return codegen_cons(static_cast<ConsLeftExpr*>(node));
         case AST_JOIN_EXPR:       return codegen_join(static_cast<JoinExpr*>(node));
         default:
@@ -950,6 +966,8 @@ Codegen::CompiledFunction Codegen::compile_function(
         if (!node) return CType::INT;
         auto ct = node->get_type();
         if (ct == AST_VALUES_SEQUENCE_EXPR) return CType::SEQ;
+        if (ct == AST_SET_EXPR) return CType::SET;
+        if (ct == AST_DICT_EXPR) return CType::DICT;
         if (ct == AST_TUPLE_EXPR) return CType::TUPLE;
         if (ct == AST_SYMBOL_EXPR) return CType::SYMBOL;
         if (ct == AST_STRING_EXPR) return CType::STRING;
@@ -1635,20 +1653,55 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
     auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
     auto seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
 
+    CType elem_type = CType::INT; // default
     for (size_t i = 0; i < n; i++) {
         auto tv = codegen(node->values[i]);
         if (!tv) return {};
+        if (i == 0) elem_type = tv.type;
         auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
         builder_->CreateCall(rt_seq_set_, {seq, idx, tv.val});
     }
-    return {seq, CType::SEQ};
+    return {seq, CType::SEQ, {elem_type}};
+}
+
+TypedValue Codegen::codegen_set(SetExpr* node) {
+    size_t n = node->values.size();
+    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
+    auto set = builder_->CreateCall(rt_set_alloc_, {count}, "set");
+
+    CType elem_type = CType::INT;
+    for (size_t i = 0; i < n; i++) {
+        auto tv = codegen(node->values[i]);
+        if (!tv) return {};
+        if (i == 0) elem_type = tv.type;
+        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
+        builder_->CreateCall(rt_set_put_, {set, idx, tv.val});
+    }
+    return {set, CType::SET, {elem_type}};
+}
+
+TypedValue Codegen::codegen_dict(DictExpr* node) {
+    size_t n = node->values.size();
+    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
+    auto dict = builder_->CreateCall(rt_dict_alloc_, {count}, "dict");
+
+    CType key_type = CType::INT, val_type = CType::INT;
+    for (size_t i = 0; i < n; i++) {
+        auto key_tv = codegen(node->values[i].first);
+        auto val_tv = codegen(node->values[i].second);
+        if (!key_tv || !val_tv) return {};
+        if (i == 0) { key_type = key_tv.type; val_type = val_tv.type; }
+        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
+        builder_->CreateCall(rt_dict_set_, {dict, idx, key_tv.val, val_tv.val});
+    }
+    return {dict, CType::DICT, {key_type, val_type}};
 }
 
 TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     auto elem = codegen(node->left);
     auto seq = codegen(node->right);
     if (!elem || !seq) return {};
-    return {builder_->CreateCall(rt_seq_cons_, {elem.val, seq.val}, "cons"), CType::SEQ};
+    return {builder_->CreateCall(rt_seq_cons_, {elem.val, seq.val}, "cons"), CType::SEQ, {elem.type}};
 }
 
 TypedValue Codegen::codegen_join(JoinExpr* node) {

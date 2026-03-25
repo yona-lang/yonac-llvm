@@ -33,13 +33,13 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
     llvm::Value* val = nullptr;
     CType type = CType::INT;
-    std::vector<CType> subtypes; // tuple element types
+    std::vector<CType> subtypes; // tuple: element types; SEQ/SET: {elem_type}; DICT: {key_type, val_type}
 
     TypedValue() = default;
     TypedValue(llvm::Value* v, CType t) : val(v), type(t) {}
@@ -133,6 +133,12 @@ private:
     llvm::Function* rt_seq_head_ = nullptr;
     llvm::Function* rt_seq_tail_ = nullptr;
     llvm::Function* rt_print_symbol_ = nullptr;
+    llvm::Function* rt_set_alloc_ = nullptr;
+    llvm::Function* rt_set_put_ = nullptr;
+    llvm::Function* rt_print_set_ = nullptr;
+    llvm::Function* rt_dict_alloc_ = nullptr;
+    llvm::Function* rt_dict_set_ = nullptr;
+    llvm::Function* rt_print_dict_ = nullptr;
 
     // Symbol interning: name → i64 ID, ID → global string constant
     std::unordered_map<std::string, int64_t> symbol_ids_;
@@ -199,6 +205,8 @@ private:
     // Collections
     TypedValue codegen_tuple(TupleExpr* node);
     TypedValue codegen_seq(ValuesSequenceExpr* node);
+    TypedValue codegen_set(SetExpr* node);
+    TypedValue codegen_dict(DictExpr* node);
     TypedValue codegen_cons(ConsLeftExpr* node);
     TypedValue codegen_join(JoinExpr* node);
 
