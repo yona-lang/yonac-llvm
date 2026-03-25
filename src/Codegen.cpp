@@ -596,9 +596,10 @@ bool Codegen::emit_interface_file(const std::string& path) {
         adts[info.type_name].push_back(&info);
 
     for (auto& [type_name, ctors] : adts) {
-        out << "ADT " << type_name << " " << ctors.size() << "\n";
+        int max_arity = 0;
+        for (auto* c : ctors) if (c->arity > max_arity) max_arity = c->arity;
+        out << "ADT " << type_name << " " << ctors.size() << " " << max_arity << "\n";
         for (auto* ctor : ctors) {
-            // Find constructor name from adt_constructors_ map
             for (auto& [cname, cinfo] : adt_constructors_) {
                 if (&cinfo == ctor)
                     out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity << "\n";
@@ -622,6 +623,9 @@ bool Codegen::load_interface_file(const std::string& path) {
 
     std::string line;
     std::string current_adt;
+    int current_total_variants = 0;
+    int current_max_arity = 0;
+    std::vector<std::string> current_ctor_names;
 
     while (std::getline(in, line)) {
         if (line.empty()) continue;
@@ -631,14 +635,20 @@ bool Codegen::load_interface_file(const std::string& path) {
         iss >> keyword;
 
         if (keyword == "ADT") {
-            iss >> current_adt; // type name
-            // variant count is informational
+            // Finalize previous ADT's total_variants/max_arity
+            for (auto& cn : current_ctor_names) {
+                adt_constructors_[cn].total_variants = current_total_variants;
+                adt_constructors_[cn].max_arity = current_max_arity;
+            }
+            current_ctor_names.clear();
+
+            iss >> current_adt >> current_total_variants >> current_max_arity;
         } else if (keyword == "CTOR") {
             std::string name;
             int tag, arity;
             iss >> name >> tag >> arity;
-            // Register constructor for pattern matching and expression codegen
-            adt_constructors_[name] = {current_adt, tag, arity, 0, 0};
+            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants, current_max_arity};
+            current_ctor_names.push_back(name);
         } else if (keyword == "FN") {
             std::string mangled;
             int param_count;
@@ -2082,13 +2092,15 @@ TypedValue Codegen::codegen_import(ImportExpr* node) {
                 // Check if it's an ADT constructor (loaded from .yonai)
                 auto ctor_it = adt_constructors_.find(func_name);
                 if (ctor_it != adt_constructors_.end()) {
-                    // Constructor — register for codegen_apply / codegen_identifier
-                    // Zero-arity constructors are constants, N-arity are functions
-                    if (ctor_it->second.arity == 0) {
-                        // Will be handled by codegen_identifier
-                        named_values_[import_name] = {nullptr, CType::ADT};
-                    } else {
+                    // Zero-arity constructors are handled by codegen_identifier
+                    // via adt_constructors_ lookup — don't register in named_values_.
+                    // N-arity constructors are handled by codegen_apply.
+                    if (ctor_it->second.arity > 0) {
                         named_values_[import_name] = {nullptr, CType::FUNCTION};
+                    }
+                    // If import_name differs from constructor name, register alias
+                    if (import_name != func_name) {
+                        adt_constructors_[import_name] = ctor_it->second;
                     }
                     continue;
                 }
