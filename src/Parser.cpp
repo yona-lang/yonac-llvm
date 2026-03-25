@@ -48,6 +48,14 @@ private:
     ParserConfig config_;
     string_view filename_;
 
+    // ADT constructor registry for pattern parsing
+    struct ConstructorInfo {
+        string type_name;
+        int tag;
+        int arity;
+    };
+    std::unordered_map<std::string, ConstructorInfo> constructor_registry_;
+
     // Performance optimization: cache for created AST nodes
     vector<unique_ptr<AstNode>> ast_pool_;
 
@@ -266,14 +274,19 @@ private:
         vector<FunctionDeclaration*> function_declarations;
         vector<FunctionExpr*> functions;
         vector<RecordNode*> records;
+        vector<AdtDeclNode*> adt_declarations;
 
         while (!check(TokenType::YEND) && !is_at_end()) {
             skip_newlines();
             if (check(TokenType::YEND)) break;
             if (match(TokenType::YTYPE)) {
-                if (auto type_def = parse_type_definition()) {
-                    // Convert TypeDefinition to RecordNode if it's a record type
-                    // For now, skip this as we need to understand the type structure better
+                if (auto adt = parse_adt_declaration()) {
+                    // Register constructors for pattern parsing
+                    for (size_t ci = 0; ci < adt->variants.size(); ci++) {
+                        auto* ctor = adt->variants[ci];
+                        constructor_registry_[ctor->name] = {adt->name, static_cast<int>(ci), static_cast<int>(ctor->field_type_names.size())};
+                    }
+                    adt_declarations.push_back(adt.release());
                 }
             } else if (match(TokenType::YRECORD)) {
                 if (auto record = parse_record_definition()) {
@@ -314,7 +327,8 @@ private:
                 exports,
                 records,
                 functions,
-                function_declarations
+                function_declarations,
+                adt_declarations
             );
         }
 
@@ -333,7 +347,8 @@ private:
             exports,
             records,
             functions,
-            function_declarations
+            function_declarations,
+            adt_declarations
         );
     }
 
@@ -873,6 +888,74 @@ private:
         return make_unique<RecordNode>(loc, record_name_expr, fields);
     }
 
+    unique_ptr<AdtDeclNode> parse_adt_declaration() {
+        // YTYPE was already consumed by the caller (parse_module_internal)
+        SourceLocation loc = previous_location();
+
+        // Parse type name (must start with uppercase)
+        if (!check(TokenType::YIDENTIFIER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected type name after 'type'");
+            return nullptr;
+        }
+
+        string type_name(current().lexeme);
+        advance();
+
+        // Parse type parameters (optional, lowercase identifiers before '=')
+        vector<string> type_params;
+        while (check(TokenType::YIDENTIFIER) && !check(TokenType::YASSIGN)) {
+            string param(current().lexeme);
+            if (islower(param[0])) {
+                type_params.push_back(param);
+                advance();
+            } else {
+                break;
+            }
+        }
+
+        if (!expect(TokenType::YASSIGN, "Expected '=' in type definition")) {
+            return nullptr;
+        }
+
+        skip_newlines();
+
+        // Parse constructor variants separated by |
+        vector<AdtConstructor*> variants;
+        do {
+            skip_newlines();
+
+            if (!check(TokenType::YIDENTIFIER)) break;
+
+            // Constructor names must start with uppercase
+            string ctor_name(current().lexeme);
+            if (!isupper(ctor_name[0])) break;
+            advance();
+
+            // Parse field type names (lowercase identifiers until | or newline/end)
+            vector<string> field_types;
+            while (check(TokenType::YIDENTIFIER)) {
+                string field(current().lexeme);
+                if (islower(field[0])) {
+                    field_types.push_back(field);
+                    advance();
+                } else {
+                    break; // Next constructor (uppercase) or something else
+                }
+            }
+
+            variants.push_back(new AdtConstructor(loc, ctor_name, field_types));
+
+            skip_newlines();
+        } while (match(TokenType::YPIPE));
+
+        if (variants.empty()) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected at least one constructor in ADT declaration");
+            return nullptr;
+        }
+
+        return make_unique<AdtDeclNode>(loc, type_name, type_params, variants);
+    }
+
     unique_ptr<TypeDefinition> parse_type_definition() {
         if (!match(TokenType::YTYPE)) {
             return nullptr;
@@ -1180,6 +1263,22 @@ private:
 
         // Variable pattern or constructor pattern
         if (check(TokenType::YIDENTIFIER)) {
+            // Check for ADT constructor pattern (juxtaposition style, e.g., Some x)
+            string peek_name(current().lexeme);
+            if (!peek_name.empty() && isupper(peek_name[0])) {
+                auto ctor_it = constructor_registry_.find(peek_name);
+                if (ctor_it != constructor_registry_.end()) {
+                    advance(); // consume constructor name
+                    int arity = ctor_it->second.arity;
+                    vector<PatternNode*> sub_pats;
+                    for (int j = 0; j < arity; j++) {
+                        auto sub = parse_pattern_primary();
+                        if (sub) sub_pats.push_back(sub.release());
+                    }
+                    return make_unique<ConstructorPattern>(loc, peek_name, sub_pats);
+                }
+            }
+
             string name(advance().lexeme);
 
             // Check for constructor pattern (e.g., Person(x, y))

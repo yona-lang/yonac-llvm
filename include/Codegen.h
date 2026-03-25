@@ -33,7 +33,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -99,6 +99,19 @@ private:
 
     int lambda_counter_ = 0;
     std::string last_lambda_name_;
+
+    // ADT constructor metadata
+    struct AdtInfo {
+        std::string type_name;
+        int tag;
+        int arity;
+        int total_variants; // total number of constructors in this ADT
+        int max_arity;      // maximum arity across all constructors
+    };
+    std::unordered_map<std::string, AdtInfo> adt_constructors_;
+
+    // ADT struct type cache: type_name → struct type
+    std::unordered_map<std::string, llvm::StructType*> adt_struct_types_;
 
     // External module function mapping: local name → mangled symbol name
     std::unordered_map<std::string, std::string> extern_functions_;

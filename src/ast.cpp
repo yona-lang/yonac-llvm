@@ -312,9 +312,11 @@ BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 void BodyWithoutGuards::print(std::ostream &os) const { os << " = " << *expr; }
 
 ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
-                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations)
+                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
+                       const vector<AdtDeclNode *> &adt_declarations)
     : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), records(nodes_with_parent(std::move(records), this)),
-      functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)) {}
+      functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)),
+      adt_declarations(nodes_with_parent(std::move(adt_declarations), this)) {}
 
 ModuleExpr::~ModuleExpr() {
   delete fqn;
@@ -323,6 +325,8 @@ ModuleExpr::~ModuleExpr() {
   for (const auto p : functions)
     delete p;
   for (const auto p : functionDeclarations)
+    delete p;
+  for (const auto p : adt_declarations)
     delete p;
 }
 
@@ -1337,6 +1341,60 @@ void TypeDefinition::print(std::ostream &os) const {
     if (i++ < typeNames.size() - 1) {
       os << " ";
     }
+  }
+}
+
+// AdtConstructor implementation
+AdtConstructor::AdtConstructor(SourceContext token, string name, vector<string> field_types)
+    : AstNode(token), name(std::move(name)), field_type_names(std::move(field_types)) {}
+
+AdtConstructor::~AdtConstructor() = default;
+
+void AdtConstructor::print(std::ostream &os) const {
+  os << name;
+  for (const auto &ft : field_type_names) {
+    os << " " << ft;
+  }
+}
+
+// AdtDeclNode implementation
+AdtDeclNode::AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants)
+    : AstNode(token), name(std::move(name)), type_params(std::move(type_params)),
+      variants(nodes_with_parent(std::move(variants), this)) {}
+
+AdtDeclNode::~AdtDeclNode() {
+  for (const auto p : variants)
+    delete p;
+}
+
+void AdtDeclNode::print(std::ostream &os) const {
+  os << "type " << name;
+  for (const auto &tp : type_params) {
+    os << " " << tp;
+  }
+  os << " = ";
+  for (size_t i = 0; i < variants.size(); i++) {
+    os << *variants[i];
+    if (i < variants.size() - 1) {
+      os << " | ";
+    }
+  }
+}
+
+// ConstructorPattern implementation
+ConstructorPattern::ConstructorPattern(SourceContext token, string name, vector<PatternNode*> sub_patterns)
+    : PatternNode(token), constructor_name(std::move(name)),
+      sub_patterns(nodes_with_parent(std::move(sub_patterns), this)) {}
+
+ConstructorPattern::~ConstructorPattern() {
+  for (const auto p : sub_patterns)
+    delete p;
+}
+
+void ConstructorPattern::print(std::ostream &os) const {
+  os << constructor_name;
+  for (const auto p : sub_patterns) {
+    os << " " << *p;
   }
 }
 

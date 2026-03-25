@@ -101,6 +101,9 @@ ResultType AstVisitor<ResultType>::dispatchVisit(AstNode *node) const {
     if (auto* n = dynamic_cast<TypeDeclaration*>(node)) return visit(n);
     if (auto* n = dynamic_cast<TypeDefinition*>(node)) return visit(n);
     if (auto* n = dynamic_cast<TypeInstance*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<AdtConstructor*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<AdtDeclNode*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<ConstructorPattern*>(node)) return visit(n);
     if (auto* n = dynamic_cast<MainNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<FunctionAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<PatternAlias*>(node)) return visit(n);

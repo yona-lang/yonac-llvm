@@ -38,6 +38,9 @@ class PatternValue;
 class TypeDefinition;
 class ModuleExpr;
 class FunctionExpr;
+class AdtConstructor;
+class AdtDeclNode;
+class ConstructorPattern;
 
 using namespace std;
 using namespace compiler::types;
@@ -166,7 +169,10 @@ enum AstNodeType {
   AST_RECORD_PATTERN,
   AST_OR_PATTERN,
   AST_CASE_EXPR,
-  AST_CASE_CLAUSE
+  AST_CASE_CLAUSE,
+  AST_ADT_DECL,
+  AST_ADT_CONSTRUCTOR,
+  AST_CONSTRUCTOR_PATTERN
 };
 
 struct expr_wrapper {
@@ -734,9 +740,11 @@ public:
   vector<RecordNode *> records;
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
+  vector<AdtDeclNode *> adt_declarations;
 
   explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
-                      const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations);
+                      const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
+                      const vector<AdtDeclNode *> &adt_declarations = {});
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
@@ -1978,6 +1986,55 @@ public:
   }
   [[nodiscard]] AstNodeType get_type() const override { return AST_OR_PATTERN; };
   ~OrPattern() override;
+};
+
+class AdtConstructor final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string name;
+    vector<string> field_type_names;
+
+    explicit AdtConstructor(SourceContext token, string name, vector<string> field_types);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_ADT_CONSTRUCTOR; };
+    ~AdtConstructor() override;
+};
+
+class AdtDeclNode final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string name;
+    vector<string> type_params;
+    vector<AdtConstructor*> variants;
+
+    explicit AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_ADT_DECL; };
+    ~AdtDeclNode() override;
+};
+
+class ConstructorPattern final : public PatternNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string constructor_name;
+    vector<PatternNode*> sub_patterns;
+
+    explicit ConstructorPattern(SourceContext token, string name, vector<PatternNode*> sub_patterns);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_CONSTRUCTOR_PATTERN; };
+    ~ConstructorPattern() override;
 };
 
 class YONA_API CaseExpr final : public ExprNode {

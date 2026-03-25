@@ -226,6 +226,8 @@ public:
   const InterpreterState& get_state() const { return IS; }
 
   InterpreterResult visit(AddExpr *node) const override;
+  InterpreterResult visit(AdtConstructor *node) const override;
+  InterpreterResult visit(AdtDeclNode *node) const override;
   InterpreterResult visit(AliasCall *node) const override;
   InterpreterResult visit(ApplyExpr *node) const override;
   InterpreterResult visit(AsDataStructurePattern *node) const override;
@@ -241,6 +243,7 @@ public:
   InterpreterResult visit(CatchExpr *node) const override;
   InterpreterResult visit(CatchPatternExpr *node) const override;
   InterpreterResult visit(CharacterExpr *node) const override;
+  InterpreterResult visit(ConstructorPattern *node) const override;
   InterpreterResult visit(ConsLeftExpr *node) const override;
   InterpreterResult visit(ConsRightExpr *node) const override;
   InterpreterResult visit(DictExpr *node) const override;

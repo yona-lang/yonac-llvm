@@ -2436,6 +2436,18 @@ InterpreterResult Interpreter::visit(TypeDefinition *node) const {
   // Return Unit as definitions don't produce runtime values
   return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
 }
+InterpreterResult Interpreter::visit(AdtDeclNode *node) const {
+  CHECK_EXCEPTION_RETURN();
+  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+}
+InterpreterResult Interpreter::visit(AdtConstructor *node) const {
+  CHECK_EXCEPTION_RETURN();
+  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+}
+InterpreterResult Interpreter::visit(ConstructorPattern *node) const {
+  CHECK_EXCEPTION_RETURN();
+  return InterpreterResult(make_shared<RuntimeObject>(Unit, nullptr));
+}
 InterpreterResult Interpreter::visit(TypeNode *node) const {
   CHECK_EXCEPTION_RETURN();
 

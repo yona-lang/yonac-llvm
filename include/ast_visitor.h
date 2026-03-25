@@ -13,6 +13,8 @@ namespace yona::ast {
 
 // Forward declarations
 class AddExpr;
+class AdtConstructor;
+class AdtDeclNode;
 class AliasCall;
 class ApplyExpr;
 class AsDataStructurePattern;
@@ -134,6 +136,7 @@ class TypeNameNode;
 class CallExpr;
 class GeneratorExpr;
 class CollectionExtractorExpr;
+class ConstructorPattern;
 
 // Templated visitor base class that allows each visitor to specify its own return type
 template<typename ResultType>
@@ -146,6 +149,8 @@ protected:
 public:
   virtual ~AstVisitor() = default;
   virtual ResultType visit(AddExpr *node) const = 0;
+  virtual ResultType visit(AdtConstructor *node) const = 0;
+  virtual ResultType visit(AdtDeclNode *node) const = 0;
   virtual ResultType visit(AliasCall *node) const = 0;
   virtual ResultType visit(ApplyExpr *node) const = 0;
   virtual ResultType visit(AsDataStructurePattern *node) const = 0;
@@ -161,6 +166,7 @@ public:
   virtual ResultType visit(CatchExpr *node) const = 0;
   virtual ResultType visit(CatchPatternExpr *node) const = 0;
   virtual ResultType visit(CharacterExpr *node) const = 0;
+  virtual ResultType visit(ConstructorPattern *node) const = 0;
   virtual ResultType visit(ConsLeftExpr *node) const = 0;
   virtual ResultType visit(ConsRightExpr *node) const = 0;
   virtual ResultType visit(DictExpr *node) const = 0;

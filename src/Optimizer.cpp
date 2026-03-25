@@ -9,6 +9,8 @@
 namespace yona::compiler {
 using namespace std;
 OptimizerResult Optimizer::visit(AddExpr *node) const { return OptimizerResult(node); }
+OptimizerResult Optimizer::visit(AdtConstructor *node) const { return OptimizerResult(node); }
+OptimizerResult Optimizer::visit(AdtDeclNode *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(AliasCall *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(ApplyExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(AsDataStructurePattern *node) const { return OptimizerResult(node); }
@@ -24,6 +26,7 @@ OptimizerResult Optimizer::visit(CaseClause *node) const { return OptimizerResul
 OptimizerResult Optimizer::visit(CatchExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(CatchPatternExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(CharacterExpr *node) const { return OptimizerResult(node); }
+OptimizerResult Optimizer::visit(ConstructorPattern *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(ConsLeftExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(ConsRightExpr *node) const { return OptimizerResult(node); }
 OptimizerResult Optimizer::visit(DictExpr *node) const { return OptimizerResult(node); }

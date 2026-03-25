@@ -136,6 +136,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::SET:    return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::DICT:   return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::ADT:    return LType::getInt64Ty(*context_); // overridden per-ADT
     }
     return LType::getInt64Ty(*context_);
 }
@@ -268,6 +269,9 @@ CType Codegen::infer_type_from_pattern(PatternNode* pat) {
             return CType::INT;
         }
 
+        case AST_CONSTRUCTOR_PATTERN:
+            return CType::ADT;
+
         default:
             return CType::INT;
     }
@@ -391,6 +395,23 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
     // Build export set for visibility control
     std::unordered_set<std::string> export_set(mod->exports.begin(), mod->exports.end());
 
+    // Process ADT declarations: register constructors
+    for (auto* adt : mod->adt_declarations) {
+        // Compute max arity across all constructors in this ADT
+        int max_arity = 0;
+        for (auto* ctor : adt->variants) {
+            int a = static_cast<int>(ctor->field_type_names.size());
+            if (a > max_arity) max_arity = a;
+        }
+
+        for (size_t ci = 0; ci < adt->variants.size(); ci++) {
+            auto* ctor = adt->variants[ci];
+            int arity = static_cast<int>(ctor->field_type_names.size());
+            adt_constructors_[ctor->name] = {adt->name, static_cast<int>(ci), arity,
+                                              static_cast<int>(adt->variants.size()), max_arity};
+        }
+    }
+
     // First pass: register all functions as deferred
     for (auto* func : mod->functions) {
         std::string fn_name = func->name;
@@ -445,6 +466,27 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
             } else if (ct == CType::FUNCTION) {
                 auto* ptr_type = PointerType::get(*context_, 0);
                 typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::FUNCTION});
+            } else if (ct == CType::ADT) {
+                // Build the ADT struct type based on the constructor pattern
+                // Find which ADT type by looking at the case patterns
+                PatternNode* src = (i < inferred.size()) ? inferred[i].source_pattern : nullptr;
+                auto* cp = src ? dynamic_cast<ConstructorPattern*>(src) : nullptr;
+                if (cp) {
+                    auto ctor_it = adt_constructors_.find(cp->constructor_name);
+                    if (ctor_it != adt_constructors_.end()) {
+                        auto i8_ty = LType::getInt8Ty(*context_);
+                        auto i64_ty = LType::getInt64Ty(*context_);
+                        std::vector<LType*> fields = {i8_ty};
+                        for (int f = 0; f < ctor_it->second.max_arity; f++)
+                            fields.push_back(i64_ty);
+                        auto* st = StructType::get(*context_, fields);
+                        typed_args.push_back({UndefValue::get(st), CType::ADT});
+                    } else {
+                        typed_args.push_back({dummy_val, ct});
+                    }
+                } else {
+                    typed_args.push_back({dummy_val, ct});
+                }
             } else {
                 typed_args.push_back({dummy_val, ct});
             }
@@ -595,6 +637,10 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
             }
             break;
         }
+        case CType::ADT: {
+            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<adt>")});
+            break;
+        }
     }
 }
 
@@ -647,6 +693,9 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_DICT_EXPR:       return codegen_dict(static_cast<DictExpr*>(node));
         case AST_CONS_LEFT_EXPR:  return codegen_cons(static_cast<ConsLeftExpr*>(node));
         case AST_JOIN_EXPR:       return codegen_join(static_cast<JoinExpr*>(node));
+        case AST_ADT_DECL:       return {}; // handled at module level
+        case AST_ADT_CONSTRUCTOR: return {};
+        case AST_CONSTRUCTOR_PATTERN: return {};
         default:
             std::cerr << "Codegen: unsupported node type " << node->get_type() << "\n";
             return {};
@@ -836,6 +885,26 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     // Check if it's a deferred function (not yet compiled — referenced as value)
     auto def_it = deferred_functions_.find(node->name->value);
     if (def_it != deferred_functions_.end()) {
+        last_lambda_name_ = node->name->value;
+        return {nullptr, CType::FUNCTION};
+    }
+    // Check if it's a zero-arity ADT constructor
+    auto adt_it = adt_constructors_.find(node->name->value);
+    if (adt_it != adt_constructors_.end() && adt_it->second.arity == 0) {
+        // Build the ADT struct type for this type: {i8, i64*max_arity}
+        auto i8_ty = LType::getInt8Ty(*context_);
+        auto i64_ty = LType::getInt64Ty(*context_);
+        std::vector<LType*> fields = {i8_ty};
+        for (int f = 0; f < adt_it->second.max_arity; f++) {
+            fields.push_back(i64_ty);
+        }
+        auto* struct_type = StructType::get(*context_, fields);
+        Value* val = UndefValue::get(struct_type);
+        val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, adt_it->second.tag), {0});
+        return {val, CType::ADT};
+    }
+    // Check if it's a non-zero-arity ADT constructor (used as a function reference)
+    if (adt_it != adt_constructors_.end()) {
         last_lambda_name_ = node->name->value;
         return {nullptr, CType::FUNCTION};
     }
@@ -1235,6 +1304,43 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         }
     }
 
+    // Check if it's an ADT constructor call
+    auto adt_it = adt_constructors_.find(fn_name);
+    if (adt_it != adt_constructors_.end() && adt_it->second.arity > 0) {
+        auto& info = adt_it->second;
+        auto i8_ty = LType::getInt8Ty(*context_);
+        auto i64_ty = LType::getInt64Ty(*context_);
+        // Build struct type: {i8, i64*max_arity}
+        std::vector<LType*> fields = {i8_ty};
+        for (int f = 0; f < info.max_arity; f++) {
+            fields.push_back(i64_ty);
+        }
+        auto* struct_type = StructType::get(*context_, fields);
+        Value* val = UndefValue::get(struct_type);
+        val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, info.tag), {0});
+        for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
+            Value* arg_val = all_args[ai].val;
+            // Cast to i64 if needed
+            if (arg_val->getType() != i64_ty) {
+                if (arg_val->getType()->isIntegerTy())
+                    arg_val = builder_->CreateZExtOrTrunc(arg_val, i64_ty);
+                else if (arg_val->getType()->isDoubleTy())
+                    arg_val = builder_->CreateBitCast(arg_val, i64_ty);
+                else if (arg_val->getType()->isPointerTy())
+                    arg_val = builder_->CreatePtrToInt(arg_val, i64_ty);
+                else if (arg_val->getType()->isStructTy()) {
+                    // For struct values (e.g. nested ADTs), store to alloca and load as i64
+                    auto* alloca = builder_->CreateAlloca(arg_val->getType());
+                    builder_->CreateStore(arg_val, alloca);
+                    auto* cast_ptr = builder_->CreateBitCast(alloca, PointerType::get(i64_ty, 0));
+                    arg_val = builder_->CreateLoad(i64_ty, cast_ptr);
+                }
+            }
+            val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
+        }
+        return {val, CType::ADT};
+    }
+
     // Find or compile the function
     // First try direct lookup, then resolve through named_values_ indirection
     auto cf_it = compiled_functions_.find(fn_name);
@@ -1585,6 +1691,34 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
                 if (oi + 1 < op->patterns.size())
                     builder_->SetInsertPoint(alt_next);
+            }
+        } else if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+            auto* cp = static_cast<ConstructorPattern*>(pat);
+            auto ctor_it = adt_constructors_.find(cp->constructor_name);
+            if (ctor_it != adt_constructors_.end()) {
+                int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
+                // Extract tag from scrutinee (field 0 of the struct)
+                auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
+                auto tag_val = ConstantInt::get(LType::getInt8Ty(*context_), tag);
+                auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+                builder_->SetInsertPoint(body_bb);
+                // Bind sub-patterns to payload fields
+                for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
+                    auto field_val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
+                    auto* sub_pat = cp->sub_patterns[fi];
+                    if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                        auto* pv = static_cast<PatternValue*>(sub_pat);
+                        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                            named_values_[(*id)->name->value] = {field_val, CType::INT};
+                    } else if (sub_pat->get_type() == AST_UNDERSCORE_PATTERN) {
+                        // Wildcard — ignore this field
+                    }
+                }
+                body_inline = true;
+            } else {
+                builder_->CreateBr(body_bb);
             }
         } else {
             builder_->CreateBr(body_bb);

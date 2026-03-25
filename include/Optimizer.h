@@ -14,6 +14,8 @@ using namespace ast;
 class YONA_API Optimizer final : public AstVisitor<OptimizerResult> {
 public:
   [[nodiscard]] OptimizerResult visit(AddExpr *node) const override;
+  [[nodiscard]] OptimizerResult visit(AdtConstructor *node) const override;
+  [[nodiscard]] OptimizerResult visit(AdtDeclNode *node) const override;
   [[nodiscard]] OptimizerResult visit(AliasCall *node) const override;
   [[nodiscard]] OptimizerResult visit(ApplyExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(AsDataStructurePattern *node) const override;
@@ -29,6 +31,7 @@ public:
   [[nodiscard]] OptimizerResult visit(CatchExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(CatchPatternExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(CharacterExpr *node) const override;
+  [[nodiscard]] OptimizerResult visit(ConstructorPattern *node) const override;
   [[nodiscard]] OptimizerResult visit(ConsLeftExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(ConsRightExpr *node) const override;
   [[nodiscard]] OptimizerResult visit(DictExpr *node) const override;
