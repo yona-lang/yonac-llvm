@@ -12,31 +12,27 @@
 
 ### Type System & Codegen Architecture (see docs/type-system-plan.md)
 
-Phase 1: Extend Codegen Type System
-- [x] Symbol interning: compile symbols to `i64` IDs, integer comparison ✅
-- [x] Add `DICT`, `SET` to CType, dict/set construction + runtime ✅
-- [x] Propagate element types via `TypedValue::subtypes` for all collections ✅
-- [ ] Compile-time type error checking (validate types during codegen, clear error messages)
+Codegen Type System (completed)
+- [x] Symbol interning: symbols are `i64` IDs, comparison is `icmp eq` ✅
+- [x] Dict/Set construction with typed elements ✅
+- [x] Element type propagation via `TypedValue::subtypes` ✅
 
-Phase 2: Typed Collections
-- [ ] `Seq<T>` with typed elements (element type from TypeChecker)
-- [ ] `Set<T>` construction + runtime (alloc, add, contains, size)
-- [ ] `Dict<K,V>` construction + runtime (alloc, get, put, contains)
-- [ ] Homogeneous collection enforcement (heterogeneous = type error)
+Algebraic Data Types (see docs/type-system-plan.md)
+- [ ] AST nodes: `AdtDeclNode`, `ConstructorPattern`, constructor registry
+- [ ] Parser: `type Option a = Some a | None` syntax with `|` continuation
+- [ ] Codegen: `CType::ADT`, flat struct `{i8 tag, payload}`, constructor functions as deferred compilation
+- [ ] Pattern matching: tag check + field extraction in `codegen_case`
+- [ ] Stdlib migration: rewrite Option, Result using ADTs
+- [ ] Recursive ADTs: heap-allocated nodes, runtime alloc/access functions
+- [ ] Exhaustiveness checking (warnings)
 
-Phase 3: Sum Types
-- [ ] Uniform tuple encoding for Option/Result (`(:tag, value)` always a tuple)
-- [ ] Pattern matching on symbol-tagged tuples via integer switch
-- [ ] Future: proper ADT syntax (`type Option a = Some a | None`)
-
-Phase 4: Cross-Module Monomorphization
-- [ ] Whole-program compilation mode (import AST, monomorphize at call site)
+Cross-Module Monomorphization
+- [ ] Whole-program compilation (import AST, monomorphize at call site)
 - [ ] Future: `.yonai` interface files for separate compilation
 
-Phase 5: Records
+Records
 - [ ] Named LLVM structs for record types
-- [ ] Field access via `extractvalue` / `getelementptr`
-- [ ] Record patterns in case expressions
+- [ ] Field access, functional update, record patterns
 
 ### Tooling
 - [ ] Compiler error messages review (make errors clear, actionable, and user-friendly)

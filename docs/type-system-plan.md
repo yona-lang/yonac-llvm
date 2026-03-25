@@ -1,400 +1,367 @@
 # Type System & Codegen Architecture Plan
 
-## Problem Statement
-
-The LLVM codegen uses an ad-hoc type system (`CType` enum with 10 flat tags) that
-has reached its limits. The language already has a rich type system in `types.h`
-(parameterized collections, function types, product types, sum types, records)
-and a Hindley-Milner TypeChecker — but neither is connected to the codegen.
-
-This gap blocks: typed collections (Dict, Set), algebraic data types (Option,
-Result), polymorphic module functions, records, and correct symbol representation.
-
 ## Design Principles
 
-1. **No boxing.** Yona has static H-M inference — types are always known at
-   compile time. Monomorphization, not boxing, is the strategy.
+1. **No boxing.** Monomorphization, not boxing. Types are always known at
+   compile time via inference and deferred compilation at call sites.
 2. **Homogeneous collections.** `[1, "hello"]` is a type error. Collections
    are parameterized: `Seq<Int>`, `Dict<String, Int>`, `Set<Symbol>`.
-3. **Symbols are integers.** Interned at compile time to numeric IDs.
-   Comparison is `icmp eq`, not `strcmp`.
-4. **Bridge the TypeChecker to the codegen.** The TypeChecker provides
-   resolved types; the codegen maps them to LLVM types.
-5. **Monomorphize polymorphic functions.** Each call site compiles a
-   concrete specialization. The existing deferred compilation is already this.
+3. **Symbols are integers.** Interned at compile time to `i64` IDs. ✅ Done.
+4. **Algebraic data types.** Proper sum types with named constructors.
+   Replaces the `(:some, value)` / `:none` tuple+symbol encoding.
+5. **Constructors are functions.** First-class, partially applicable,
+   passable to higher-order functions (`map Some [1, 2, 3]`).
 
-## Symbol Interning
+## Completed Work
 
-### Current State (wrong)
+### Symbol Interning ✅
 
-Symbols (`:ok`, `:none`, `:range`) are stored as `char*` pointers to string
-constants. Comparison uses `strcmp` via `yona_rt_symbol_eq`. This is:
-- Slow (string comparison for every match)
-- Wasteful (stores full string in binary)
-- Fragile (pointer identity doesn't work, need runtime call)
+Symbols are interned to sequential `i64` IDs at compile time.
+Comparison is `icmp eq i64` (1 cycle, was `strcmp` ~20 cycles).
+Pattern matching on symbols generates integer switch/select.
 
-### New Design
+### Dict/Set Construction ✅
 
-Symbols are interned to sequential `i64` IDs at compile time. A global
-symbol table maps names to IDs. Comparison is a single `icmp eq i64`.
+`CType::SET` and `CType::DICT` added. Element types tracked via
+`TypedValue::subtypes`. Runtime functions for alloc/set/print.
 
-```
-:ok     → 0
-:err    → 1
-:none   → 2
-:some   → 3
-:range  → 4
-:pass   → 5
-:fail   → 6
-...
-```
+## Algebraic Data Types (ADTs)
 
-**In the codegen:**
-- `codegen_symbol(":ok")` → `ConstantInt::get(i64, symbol_table_[":ok"])`
-- Symbol comparison: `builder_->CreateICmpEQ(lhs, rhs)`
-- `CType::SYMBOL` maps to `i64` (not `ptr`)
-- Pattern matching on symbols: integer comparison (can use switch)
+### Syntax
 
-**In the runtime:**
-- `yona_rt_print_symbol(i64 id)` → looks up name from a global string table
-- The string table is emitted as a global array in the LLVM module:
-  `@yona_symbol_names = [N x ptr] [ptr @"ok", ptr @"err", ...]`
-
-**In the interpreter:**
-- `SymbolValue` can optionally carry an integer ID alongside the string name
-  for compatibility, or the interpreter continues using string-based comparison
-
-**Impact on existing code:**
-- `codegen_symbol` returns `{i64_constant, CType::SYMBOL}` instead of `{global_string_ptr, CType::SYMBOL}`
-- `llvm_type(CType::SYMBOL)` returns `i64` instead of `ptr`
-- Case expression symbol matching uses `icmp eq` instead of `call @yona_rt_symbol_eq`
-- `codegen_print` for symbols calls `yona_rt_print_symbol(i64)` with the string table
-- All codegen test fixtures with symbols continue to work (output is the same)
-
-## Phase 1: Extend Codegen Type System
-
-The codegen already has its own type inference (`infer_type_from_pattern`,
-`infer_param_types`, `infer_expr_type`) and the `TypedValue` system with
-`CType` + `subtypes`. Extend this incrementally rather than building a
-separate TypeChecker.
-
-The old TypeChecker (Hindley-Milner, `src/TypeChecker.cpp`) was removed —
-it was 40% complete, not connected to the codegen, and would have required
-more effort to complete than to extend the codegen's own inference.
-
-### 1.1 Symbol interning
-
-Symbols become `i64` IDs instead of string pointers:
-- Add `symbol_ids_` map to Codegen (name → integer ID)
-- `codegen_symbol` returns `{i64_constant, CType::SYMBOL}`
-- `llvm_type(CType::SYMBOL)` returns `i64`
-- Pattern matching uses `icmp eq i64` instead of `strcmp`
-- Emit symbol name table as global for printing
-
-### 1.2 Add DICT, SET to CType
-
-```cpp
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT };
-```
-
-### 1.3 Propagate element types via subtypes
-
-Use the existing `TypedValue::subtypes` vector consistently:
-- `Seq<Int>` → `{val, CType::SEQ, subtypes={INT}}`
-- `Set<Symbol>` → `{val, CType::SET, subtypes={SYMBOL}}`
-- `Dict<String, Int>` → `{val, CType::DICT, subtypes={STRING, INT}}`
-- Element types inferred from literal construction expressions
-
-### 1.4 Future: compile-time type error checking
-
-Type error checking will be implemented as a codegen-integrated pass
-that validates types during compilation. This is simpler than a separate
-TypeChecker because the codegen already tracks types via TypedValue.
-
-Possible approaches:
-- Validate at each `codegen()` call that operand types are compatible
-- Report clear errors with source locations
-- Enforce homogeneous collections (reject `[1, "hello"]`)
-
-## Phase 2: Typed Collections
-
-With element types known from the TypeChecker, collections become type-safe.
-
-### 2.1 Sequences: `Seq<T>`
-
-**Layout:** `[count: i64, elem0: T, elem1: T, ...]`
-
-For elements that fit in 64 bits (Int, Float, Bool, Symbol, String ptr,
-Seq ptr, Function ptr), the current `int64_t*` layout works unchanged.
-
-For compound elements (tuples, records), elements are pointers to
-heap-allocated structs: `[count, ptr0, ptr1, ...]`.
-
-The codegen uses `node->resolved_type` to determine the element type `T`,
-then selects the appropriate `seq_get`/`seq_set` operations:
-- `Seq<Int>`: `seq_get` returns `i64`, interpret as INT
-- `Seq<String>`: `seq_get` returns `i64`, interpret as `ptr` (inttoptr)
-- `Seq<(Int, String)>`: `seq_get` returns `i64`, interpret as `ptr` to struct
-
-### 2.2 Sets: `Set<T>`
-
-Same memory layout as `Seq<T>`. Additional runtime functions:
-- `yona_rt_set_alloc(count)` → allocate
-- `yona_rt_set_add(set, elem)` → returns new set with dedup
-- `yona_rt_set_contains(set, elem)` → boolean check
-
-For integer/symbol elements, dedup uses `==`. For string elements, dedup
-uses `strcmp`. The comparison function is selected at compile time based on
-the element type (monomorphized).
-
-### 2.3 Dicts: `Dict<K, V>`
-
-**Layout:** `[count: i64, key0: K, val0: V, key1: K, val1: V, ...]`
-
-Runtime functions:
-- `yona_rt_dict_alloc(count)` → allocate
-- `yona_rt_dict_get(dict, key, key_size, val_size)` → find value by key
-- `yona_rt_dict_put(dict, key, value, key_size, val_size)` → returns new dict
-- `yona_rt_dict_contains(dict, key, key_size)` → boolean check
-
-Key comparison is monomorphized:
-- `Dict<Int, V>`: integer equality
-- `Dict<Symbol, V>`: integer equality (symbols are interned IDs)
-- `Dict<String, V>`: string comparison
-
-### 2.4 Codegen for collection literals
-
-```cpp
-TypedValue Codegen::codegen_dict(DictExpr* node) {
-    // Get key and value types from resolved_type: Dict<K, V>
-    auto dict_type = get<shared_ptr<DictCollectionType>>(*node->resolved_type);
-    auto key_ctype = ctype_of(dict_type->keyType);
-    auto val_ctype = ctype_of(dict_type->valueType);
-
-    size_t n = node->values.size();
-    auto count = ConstantInt::get(i64, n);
-    auto dict = builder_->CreateCall(rt_dict_alloc_, {count});
-
-    for (size_t i = 0; i < n; i++) {
-        auto key_tv = codegen(node->values[i].first);
-        auto val_tv = codegen(node->values[i].second);
-        auto idx = ConstantInt::get(i64, i);
-        builder_->CreateCall(rt_dict_set_, {dict, idx, key_tv.val, val_tv.val});
-    }
-    return {dict, CType::DICT};
-}
-```
-
-## Phase 3: Sum Types / Algebraic Data Types
-
-### 3.1 Pragmatic encoding (now)
-
-Use uniform tuples for tagged unions. Option becomes:
+Haskell-style with uppercase constructors. Module-level only.
+Multi-line supported via `|` continuation (lexer already suppresses
+newlines after `|`).
 
 ```yona
-some value = (:some, value)
-none = (:none, 0)           -- always a tuple, never bare symbol
-```
+module Std\Option exports Some, None, isSome, isNone, unwrapOr, map as
 
-Both are `(Symbol, T)` — same LLVM struct `{i64, T}` (since symbols are now
-`i64` IDs). Pattern matching:
+type Option a = Some a | None
 
-```yona
-case opt of
-    (:some, v) -> ...    -- compare first element == symbol_id("some")
-    (:none, _) -> ...    -- compare first element == symbol_id("none")
+isSome opt =
+    case opt of
+        Some _ -> true
+        None   -> false
+    end
+
+isNone opt =
+    case opt of
+        None   -> true
+        Some _ -> false
+    end
+
+unwrapOr default opt =
+    case opt of
+        Some value -> value
+        None       -> default
+    end
+
+map fn opt =
+    case opt of
+        Some value -> Some (fn value)
+        None       -> None
+    end
+
 end
 ```
 
-Compiles to:
+Multi-line type declarations:
+
+```yona
+type Result a e =
+    Ok a |
+    Err e
+
+type Tree a =
+    Leaf a |
+    Branch (Tree a) (Tree a)
+```
+
+Enum-style (no payload):
+
+```yona
+type Color = Red | Green | Blue
+```
+
+### Constructors as Functions
+
+Each constructor is a first-class function:
+
+```yona
+Some 42               -- construction: Some is a 1-arity function
+None                  -- zero-arity: auto-evaluated to the ADT value
+map Some [1, 2, 3]   -- higher-order: produces [Some 1, Some 2, Some 3]
+let f = Ok in f 42    -- first-class: bind constructor to variable
+```
+
+Constructors are registered as deferred functions in the codegen,
+reusing the entire existing infrastructure: deferred compilation,
+monomorphization at call sites, partial application.
+
+Constructors must be unique within a module scope. Bare names (not
+qualified by type name) — `Some x` not `Option.Some x`.
+
+### Compiled Representation
+
+#### Non-recursive ADTs (Option, Result, Color)
+
+Flat LLVM struct: `{i8 tag, payload...}`. Stack-allocatable, no heap.
+
 ```llvm
-%tag = extractvalue {i64, i64} %opt, 0
-switch i64 %tag, label %default [
-    i64 3, label %some_arm    ; symbol_id("some") = 3
-    i64 2, label %none_arm    ; symbol_id("none") = 2
+; type Option a = Some a | None
+; Monomorphized for Int: Option Int
+%Option.Int = type { i8, i64 }
+
+; Some 42:
+%x = insertvalue { i8, i64 } undef, i8 0, 0    ; tag = 0 (Some)
+%x1 = insertvalue { i8, i64 } %x, i64 42, 1    ; payload = 42
+
+; None:
+%y = insertvalue { i8, i64 } undef, i8 1, 0    ; tag = 1 (None)
+; payload left undef — never read
+
+; Pattern matching:
+%tag = extractvalue { i8, i64 } %scrutinee, 0
+switch i8 %tag, label %default [
+    i8 0, label %some_arm
+    i8 1, label %none_arm
 ]
+some_arm:
+    %value = extractvalue { i8, i64 } %scrutinee, 1
+    ; ... use %value ...
 ```
 
-This is fast (integer switch, no string comparison) and uniform (both
-variants are the same LLVM type).
+For variants with different payload sizes, the struct uses the
+largest variant's payload size. Smaller variants leave trailing
+fields undef.
 
-### 3.2 Proper ADTs (future language extension)
+```llvm
+; type Result a e = Ok a | Err e
+; Monomorphized for (Int, String): Result Int String
+; Ok has i64 payload, Err has ptr payload — both fit in i64
+%Result.Int.String = type { i8, i64 }
+```
+
+#### Zero-payload variants (None, Nil, Red, Green, Blue)
+
+Just the tag. The struct still has the payload field (for uniform
+type), but it's left undef and never read.
+
+For enum-style ADTs (all zero-payload), the struct degenerates to
+just `i8` (the tag). The codegen can optimize this.
+
+#### Recursive ADTs (List, Tree)
+
+Heap-allocated via runtime. The value is a `ptr` to a node:
+
+```c
+// In compiled_runtime.c:
+typedef struct {
+    int8_t tag;
+    int64_t fields[];   // flexible array member
+} yona_adt_node_t;
+
+void* yona_rt_adt_alloc(int8_t tag, int64_t num_fields);
+int8_t yona_rt_adt_get_tag(void* node);
+int64_t yona_rt_adt_get_field(void* node, int64_t index);
+void yona_rt_adt_set_field(void* node, int64_t index, int64_t value);
+```
+
+```llvm
+; type List a = Cons a (List a) | Nil
+
+; Cons 1 (Cons 2 Nil):
+%nil = call ptr @yona_rt_adt_alloc(i8 1, i64 0)          ; Nil
+%inner = call ptr @yona_rt_adt_alloc(i8 0, i64 2)        ; Cons
+call void @yona_rt_adt_set_field(ptr %inner, i64 0, i64 2)  ; head = 2
+call void @yona_rt_adt_set_field(ptr %inner, i64 1, i64 %nil) ; tail = Nil
+%outer = call ptr @yona_rt_adt_alloc(i8 0, i64 2)        ; Cons
+call void @yona_rt_adt_set_field(ptr %outer, i64 0, i64 1)  ; head = 1
+call void @yona_rt_adt_set_field(ptr %outer, i64 1, i64 %inner) ; tail
+
+; Pattern matching:
+%tag = call i8 @yona_rt_adt_get_tag(ptr %list)
+switch i8 %tag, label %default [
+    i8 0, label %cons_arm
+    i8 1, label %nil_arm
+]
+cons_arm:
+    %head = call i64 @yona_rt_adt_get_field(ptr %list, i64 0)
+    %tail = call i64 @yona_rt_adt_get_field(ptr %list, i64 1)
+    ; tail is a ptr to another List node
+```
+
+**Recursiveness detection:** During ADT declaration processing, check
+if any variant's field types reference the type being defined. If yes,
+use pointer-based layout. Otherwise, use flat struct layout.
+
+### AST Changes
+
+New AST node types:
+
+```cpp
+// ADT variant constructor: "Some a" or "Nil"
+class AdtConstructor : public AstNode {
+    string name;                      // "Some", "None", "Cons", etc.
+    vector<AstNode*> field_types;     // type expressions for fields
+};
+
+// Full ADT declaration: "type Option a = Some a | None"
+class AdtDeclNode : public AstNode {
+    string name;                      // "Option"
+    vector<string> type_params;       // ["a"]
+    vector<AdtConstructor*> variants; // [Some a, None]
+};
+
+// Constructor pattern: "Some x" or "Cons h t"
+class ConstructorPattern : public PatternNode {
+    string constructor_name;          // "Some"
+    vector<PatternNode*> sub_patterns; // [x]
+};
+```
+
+Extend `ModuleExpr` with `vector<AdtDeclNode*> adt_declarations`.
+
+### Parser Changes
+
+1. **`parse_type_definition`**: Already handles `type Name = ...`.
+   Extend to parse `|`-separated variant constructors. Each variant
+   is an uppercase identifier followed by zero or more type arguments.
+
+2. **Pattern parsing**: When `parse_pattern_primary` encounters an
+   uppercase identifier that's a registered constructor, parse it as
+   a `ConstructorPattern` with subsequent sub-patterns. The constructor
+   registry is populated during module-level type declaration parsing.
+
+3. **Multi-line**: `|` at end of line suppresses following newline
+   (already works). So `type Foo = A Int |\n    B String` parses
+   correctly.
+
+4. **Constructor expressions**: `Some 42` is parsed as normal
+   juxtaposition: `Some` is an identifier, `42` is an argument.
+   During codegen, `Some` resolves to the constructor function.
+
+### Codegen Changes
+
+1. **`CType::ADT`**: New enum variant.
+
+2. **Constructor registry**: Maps constructor name → type name, tag,
+   arity. Populated when processing `AdtDeclNode` in `compile_module`.
+
+3. **Constructor functions**: Registered as deferred functions.
+   `Some` compiles to `\x -> insertvalue {i8, i64} undef, ...`.
+   `None` compiles to a constant `{i8 1, undef}`.
+
+4. **`codegen_case` extension**: New branch for `ConstructorPattern`.
+   Extract tag from scrutinee, compare, extract payload fields.
+
+5. **Module exports**: Type constructors added to module exports
+   when the type name is exported.
+
+### types.h Extension
+
+```cpp
+struct AdtVariant {
+    string name;               // "Some", "None"
+    vector<Type> field_types;  // empty for nullary constructors
+};
+
+struct AdtType {
+    string name;                  // "Option"
+    vector<string> type_params;   // ["a"]
+    vector<AdtVariant> variants;  // [{Some, [a]}, {None, []}]
+};
+
+// Add to Type variant:
+using Type = variant<..., shared_ptr<AdtType>, nullptr_t>;
+```
+
+### Implementation Phases
+
+```
+Phase 1: AST and Parser
+  ├── New AST nodes (AdtDeclNode, ConstructorPattern)
+  ├── Extend parse_type_definition for ADT variants
+  ├── Constructor registry in parser
+  ├── Constructor pattern parsing (uppercase identifiers)
+  └── Multi-line type declarations
+
+Phase 2: Codegen (non-recursive ADTs)
+  ├── CType::ADT, constructor registry
+  ├── Constructor functions as deferred compilation
+  ├── Flat struct layout: {i8 tag, payload...}
+  ├── Pattern matching: tag check + field extraction
+  └── Print support for ADT values
+
+Phase 3: Stdlib migration
+  ├── Rewrite Std/Option with type Option a = Some a | None
+  ├── Rewrite Std/Result with type Result a e = Ok a | Err e
+  └── Update tests
+
+Phase 4: Recursive ADTs
+  ├── Recursiveness detection
+  ├── Runtime: adt_alloc, get_tag, get_field, set_field
+  ├── Pointer-based layout
+  └── Recursive pattern matching
+
+Phase 5: Polish
+  ├── Exhaustiveness checking (warnings)
+  ├── Better error messages
+  └── Cross-module constructor resolution
+```
+
+### Stdlib After Migration
 
 ```yona
+-- Std/Option.yona
+module Std\Option exports Some, None, isSome, isNone, unwrapOr, map as
+
 type Option a = Some a | None
+
+isSome opt = case opt of Some _ -> true; None -> false end
+isNone opt = case opt of None -> true; Some _ -> false end
+unwrapOr default opt = case opt of Some v -> v; None -> default end
+map fn opt = case opt of Some v -> Some (fn v); None -> None end
+
+end
+
+-- Std/Result.yona
+module Std\Result exports Ok, Err, isOk, isErr, unwrapOr, map, mapErr as
+
 type Result a e = Ok a | Err e
-type Tree a = Leaf a | Branch (Tree a) (Tree a)
+
+isOk r = case r of Ok _ -> true; Err _ -> false end
+isErr r = case r of Err _ -> true; Ok _ -> false end
+unwrapOr default r = case r of Ok v -> v; Err _ -> default end
+map fn r = case r of Ok v -> Ok (fn v); Err e -> Err e end
+mapErr fn r = case r of Err e -> Err (fn e); Ok v -> Ok v end
+
+end
 ```
 
-Requires: new syntax, parser changes, TypeChecker support for user-defined
-types, codegen for tagged union construction and destruction.
+## Other Phases (unchanged)
 
-Not needed for the current stdlib — the tuple+symbol encoding works.
+### Cross-Module Monomorphization
 
-## Phase 4: Cross-Module Monomorphization
+Whole-program compilation first (import AST, monomorphize at call site).
+`.yonai` interface files for separate compilation later.
 
-### 4.1 Whole-program compilation (now)
+### Records
 
-`yonac` compiles all modules together. When `main.yona` imports `map` from
-`Std\List`, the compiler:
+Named LLVM structs. Field access via `extractvalue`/`getelementptr`.
 
-1. Parses `Std/List.yona` to get the AST
-2. Type-checks it
-3. Stores `map`'s AST as a deferred function
-4. At each call site in `main.yona`, compiles a monomorphized `map`
-   with concrete element types
+### Type Classes (Future)
 
-This is the existing deferred compilation mechanism, extended to work
-across module boundaries.
-
-### 4.2 Separate compilation with interface files (future)
-
-For large projects, whole-program compilation is slow. The solution:
-
-1. Compile each module to `.o` + `.yonai` (interface file with AST of
-   polymorphic functions)
-2. The importer reads `.yonai` and monomorphizes at its compilation
-3. Link all `.o` files together
-
-The `.yonai` file contains:
-- Module FQN
-- Export list with full type signatures
-- AST of polymorphic (generic) exported functions
-- Pre-compiled monomorphic specializations for common types
-
-## Phase 5: Records
-
-Records compile as named LLVM structs:
-
-```yona
-record Person = (name : String, age : Int)
-```
-→ `%Person = type { ptr, i64 }`
-
-- Construction: `Person("Alice", 30)` → `insertvalue` chain
-- Field access: `person.name` → `extractvalue %Person %p, 0`
-- Pattern matching: `case p of Person(n, a) -> ...` → extract fields
-- Functional update: `person { age = 31 }` → copy struct, replace field
-
-## Type Classes (Future Consideration)
-
-Not implemented now. If needed later, implement as dictionary passing:
-
-```yona
-class Eq a where
-    eq : a -> a -> Bool
-
-instance Eq Int where
-    eq x y = x == y
-```
-
-Compiles to:
-```
--- Dictionary struct for Eq
-type EqDict a = { eq : a -> a -> Bool }
-
--- Instance dictionary
-eqIntDict = { eq = \x y -> x == y }
-
--- Polymorphic function using type class
-contains : Eq a => a -> [a] -> Bool
--- becomes:
-contains : EqDict a -> a -> [a] -> Bool
-```
-
-The type class constraint `Eq a =>` becomes an implicit first argument
-(the dictionary). The compiler inserts the dictionary at each call site.
-
-This layers cleanly on top of monomorphization — each monomorphized version
-gets the concrete dictionary inlined and optimized away.
-
-## Migration Strategy
-
-### Incremental, backward-compatible
-
-Each phase is independently implementable and testable. Existing tests
-never break because monomorphic integer/float/string code paths are unchanged.
-
-```
-Phase 1: TypeChecker → Codegen bridge
-  ├── 1.1: resolved_type on AST nodes
-  ├── 1.2: Complete TypeChecker visitors
-  ├── 1.3: Wire into yonac pipeline
-  ├── 1.4: Use resolved types in codegen
-  ├── 1.5: Type-aware TypedValue
-  └── 1.6: Symbol interning (i64 IDs)
-
-Phase 2: Typed collections
-  ├── 2.1: Seq<T> with typed elements
-  ├── 2.2: Set<T> construction + runtime
-  └── 2.3: Dict<K,V> construction + runtime
-
-Phase 3: Sum types
-  ├── 3.1: Uniform tuple encoding for Option/Result
-  └── 3.2: Proper ADT syntax (future)
-
-Phase 4: Cross-module monomorphization
-  ├── 4.1: Whole-program compilation
-  └── 4.2: .yonai interface files (future)
-
-Phase 5: Records
-  └── Named LLVM structs with field access
-```
+Dictionary passing on top of monomorphization. Not planned now.
 
 ## Performance Characteristics
 
-| Operation | Current | After |
-|-----------|---------|-------|
-| Integer arithmetic | `add i64` (1 cycle) | unchanged |
-| Symbol comparison | `call strcmp` (~20 cycles) | `icmp eq i64` (1 cycle) |
-| Symbol pattern match | string compare per arm | integer switch |
-| Seq element access | `load i64` | unchanged for `Seq<Int>` |
-| Dict lookup | not supported | linear scan with typed compare |
-| Function call (mono) | direct call | unchanged |
-| Function call (poly) | indirect call via ptr | monomorphized → direct call |
-| Tuple construction | LLVM struct | unchanged |
-| Collection memory | `[count, i64, i64, ...]` | `[count, T, T, ...]` (same size for primitives) |
-
-## What Changes in Each File
-
-### `include/ast.h`
-- Add `optional<compiler::types::Type> resolved_type` to `AstNode`
-
-### `include/types.h`
-- No structural changes needed (already rich enough)
-- May add convenience functions for type queries
-
-### `src/TypeChecker.cpp`
-- Complete all stub visitors (return concrete types instead of nullptr)
-- Store resolved type on each visited node via `node->resolved_type = ...`
-
-### `include/Codegen.h`
-- Add `optional<compiler::types::Type>` to `TypedValue`
-- Add `llvm_type_of(Type)` method
-- Add `ctype_of(Type)` convenience method
-- Add symbol table: `unordered_map<string, int64_t> symbol_ids_`
-- Add dict/set runtime function pointers
-- Add `codegen_dict`, `codegen_set` methods
-
-### `src/Codegen.cpp`
-- Implement `llvm_type_of(Type)` and `ctype_of(Type)`
-- Update `codegen_symbol` to use integer IDs
-- Update symbol pattern matching to use `icmp eq`
-- Remove `infer_type_from_pattern`, `infer_param_types` (replaced by TypeChecker)
-- Implement `codegen_dict`, `codegen_set`
-- Update `codegen_print` for new symbol representation
-- Emit symbol name table as global constant
-
-### `src/compiled_runtime.c`
-- Change `yona_rt_print_symbol` to take `i64` ID + table pointer
-- Add set runtime: `set_alloc`, `set_add`, `set_contains`, `set_size`
-- Add dict runtime: `dict_alloc`, `dict_get`, `dict_put`, `dict_contains`
-- Remove `yona_rt_symbol_eq` (replaced by integer comparison)
-
-### `cli/main.cpp`
-- Add TypeChecker pass between parsing and codegen
-
-### `lib/Std/Option.yona`, `lib/Std/Result.yona`
-- Change `none = :none` → `none = (:none, 0)` (uniform tuple encoding)
-- Change `err error = (:err, error)` to ensure consistent tuple shape
-- All pattern matches use tuple patterns, not bare symbol patterns
+| Operation | Before | After |
+|-----------|--------|-------|
+| Symbol comparison | `strcmp` (~20 cycles) | `icmp eq i64` (1 cycle) ✅ |
+| Symbol pattern match | string compare chain | integer switch ✅ |
+| ADT construction | N/A (tuple+symbol hack) | `insertvalue` (1-2 cycles) |
+| ADT pattern match | N/A | `extractvalue` + `icmp` (2-3 cycles) |
+| Option Some/None | 2-tuple with string tag | `{i8, i64}` struct |
+| Dict/Set construction | not supported | runtime alloc + fill ✅ |
+| Polymorphic functions | indirect call | monomorphized direct call |
