@@ -18,11 +18,11 @@ Codegen Type System (completed)
 - [x] Element type propagation via `TypedValue::subtypes` ✅
 
 Algebraic Data Types (see docs/type-system-plan.md)
-- [ ] AST nodes: `AdtDeclNode`, `ConstructorPattern`, constructor registry
-- [ ] Parser: `type Option a = Some a | None` syntax with `|` continuation
-- [ ] Codegen: `CType::ADT`, flat struct `{i8 tag, payload}`, constructor functions as deferred compilation
-- [ ] Pattern matching: tag check + field extraction in `codegen_case`
-- [ ] Stdlib migration: rewrite Option, Result using ADTs
+- [x] AST nodes: `AdtDeclNode`, `ConstructorPattern`, constructor registry ✅
+- [x] Parser: `type Option a = Some a | None` syntax with `|` continuation ✅
+- [x] Codegen: `CType::ADT`, flat struct `{i8 tag, payload}`, constructor functions ✅
+- [x] Pattern matching: tag check + field extraction in `codegen_case` ✅
+- [ ] Stdlib migration: rewrite Option, Result using ADTs (needs interpreter ADT support or cross-module monomorphization)
 - [ ] Recursive ADTs: heap-allocated nodes, runtime alloc/access functions
 - [ ] Exhaustiveness checking (warnings)
 
