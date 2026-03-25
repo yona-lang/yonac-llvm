@@ -90,22 +90,12 @@ file(GLOB all_lib_SRCS
 		"${PROJECT_SOURCE_DIR}/include/*.h"
 		"${PROJECT_SOURCE_DIR}/src/*.cpp"
 		"${PROJECT_SOURCE_DIR}/src/*.c"
-		"${PROJECT_SOURCE_DIR}/include/stdlib/*.h"
-		"${PROJECT_SOURCE_DIR}/src/stdlib/*.cpp"
 )
 
 file(GLOB all_TESTS
 		"${PROJECT_SOURCE_DIR}/test/*.h"
 		"${PROJECT_SOURCE_DIR}/test/*.cpp"
 		"${PROJECT_SOURCE_DIR}/test/*.c"
-		"${PROJECT_SOURCE_DIR}/test/stdlib/*.h"
-		"${PROJECT_SOURCE_DIR}/test/stdlib/*.cpp"
-)
-
-file(GLOB all_repl_SRCS
-		"${PROJECT_SOURCE_DIR}/include/*.h"
-		"${PROJECT_SOURCE_DIR}/repl/*.cpp"
-		"${PROJECT_SOURCE_DIR}/repl/*.c"
 )
 
 file(GLOB all_yonac_SRCS
@@ -142,12 +132,6 @@ endif()
 if (CMAKE_VERSION VERSION_GREATER 3.12)
 	set_property(TARGET yona_lib PROPERTY CXX_STANDARD 23)
 endif ()
-
-# REPL executable
-add_executable(yona ${all_repl_SRCS})
-target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(yona PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_link_libraries(yona PRIVATE yona_lib CLI11::CLI11)
 
 # Compiler executable
 add_executable(yonac ${all_yonac_SRCS})

@@ -2,7 +2,6 @@
 
 #include "ast.h"
 #include "ast_visitor.h"
-#include "ast_visitor_result.h"
 #include "optimizer_result.h"
 
 // This file contains the implementation of dispatchVisit that requires complete type information
@@ -209,10 +208,6 @@ ResultType AstVisitor<ResultType>::visit(CollectionExtractorExpr *node) const {
     // CollectionExtractorExpr is intermediate - dispatch to concrete type
     return dispatchVisit(node);
 }
-
-// Explicit template instantiation for InterpreterResult
-// This ensures the template methods are available for linking
-template class AstVisitor<InterpreterResult>;
 
 // Explicit template instantiation for OptimizerResult
 template class AstVisitor<compiler::OptimizerResult>;

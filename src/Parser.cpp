@@ -1104,7 +1104,7 @@ private:
             auto token = advance();
             auto value = get<int64_t>(token.value);
             // Create a LiteralExpr for the integer - this is a workaround
-            // We'll handle it specially in the interpreter
+            // Handled at runtime
             auto literal_expr = new IntegerExpr(loc, static_cast<int>(value));
             // Cast to void* to fit in PatternValue (ugly hack)
             return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(literal_expr));
@@ -2591,7 +2591,7 @@ private:
         auto func_expr = new FunctionExpr(loc, "", params, bodies);
 
         // For anonymous lambdas, we return the FunctionExpr directly
-        // The interpreter will handle it as a function value
+        // Handled as a function value at runtime
         return unique_ptr<ExprNode>(func_expr);
     }
 
@@ -3064,7 +3064,7 @@ ParseResult Parser::parse_input(istream& stream) {
             auto expr_ptr = result.value().release();
             auto source_ctx = expr_ptr->source_context;
 
-            // Wrap expression in MainNode for interpreter
+            // Wrap expression in MainNode for evaluation
             auto main_node = new MainNode(source_ctx, expr_ptr);
 
             // Create shared_ptr directly

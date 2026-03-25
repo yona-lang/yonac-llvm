@@ -107,7 +107,7 @@ Examples:
 ### Module Caching
 
 Modules are cached after first load to improve performance:
-- Each module is loaded and evaluated only once per interpreter session
+- Each module is loaded and evaluated only once per compilation
 - Subsequent imports reuse the cached module
 - Cache key is the fully-qualified module name
 

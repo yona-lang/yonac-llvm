@@ -10,7 +10,6 @@
 #include "yona_export.h"
 #include "common.h"
 #include "types.h"
-#include "ast_visitor_result.h"
 #include "ast_visitor.h"
 
 #include <ostream>
