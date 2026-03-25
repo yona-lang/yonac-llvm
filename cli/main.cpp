@@ -8,10 +8,8 @@
 //   yonac -e "1 + 2"                  # compile expression
 //   yonac --emit-ir -e "1 + 2"        # print LLVM IR
 //   yonac --emit-obj -e "1 + 2"       # emit object file
-//   yonac module.yona --emit-obj      # compile module to object file
-//
-// Module files (starting with 'module' keyword) compile to object files
-// with externally-visible functions. Expression files compile to executables.
+//   yonac module.yona                 # compile module to .o + .yonai
+//   yonac -I lib main.yona            # compile with module search path
 
 #include <iostream>
 #include <fstream>
@@ -29,9 +27,7 @@ using namespace std;
 using namespace yona;
 using namespace yona::compiler::codegen;
 
-// Check if source code is a module (starts with 'module' keyword)
 static bool is_module_source(const string& source) {
-    // Skip whitespace and find the first token
     auto it = source.begin();
     while (it != source.end() && (*it == ' ' || *it == '\t' || *it == '\n' || *it == '\r'))
         ++it;
@@ -47,10 +43,12 @@ int main(int argc, char* argv[]) {
     string output_file;
     bool emit_ir = false;
     bool emit_obj = false;
+    vector<string> include_paths;
 
     app.add_option("input", input_file, "Input .yona file");
     app.add_option("-e,--expression", expression, "Compile expression");
     app.add_option("-o,--output", output_file, "Output file");
+    app.add_option("-I,--include", include_paths, "Module search paths (for .yonai files)");
     app.add_flag("--emit-ir", emit_ir, "Print LLVM IR instead of compiling");
     app.add_flag("--emit-obj", emit_obj, "Emit object file only (don't link)");
 
@@ -79,7 +77,6 @@ int main(int argc, char* argv[]) {
     // Set default output
     if (output_file.empty()) {
         if (is_module || emit_obj) {
-            // Module or --emit-obj: default to .o
             if (!input_file.empty())
                 output_file = filesystem::path(input_file).stem().string() + ".o";
             else
@@ -92,10 +89,21 @@ int main(int argc, char* argv[]) {
     // Codegen
     string module_name = is_module ? "yona_module" : "yona_program";
     Codegen codegen(module_name);
+
+    // Set module search paths for import resolution
+    codegen.module_paths_ = include_paths;
+    // Also search the directory containing the input file
+    if (!input_file.empty()) {
+        auto parent = filesystem::path(input_file).parent_path();
+        if (!parent.empty())
+            codegen.module_paths_.push_back(parent.string());
+    }
+    // Search current directory
+    codegen.module_paths_.push_back(".");
+
     llvm::Module* llvm_mod = nullptr;
 
     if (is_module) {
-        // Parse as module
         parser::Parser parser;
         auto result = parser.parse_module(source, input_file.empty() ? "<expression>" : input_file);
         if (!result.has_value()) {
@@ -106,7 +114,6 @@ int main(int argc, char* argv[]) {
         }
         llvm_mod = codegen.compile_module(result.value().get());
     } else {
-        // Parse as expression
         parser::Parser parser;
         istringstream stream(source);
         auto parse_result = parser.parse_input(stream);
@@ -122,7 +129,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Emit IR
     if (emit_ir) {
         cout << codegen.emit_ir();
         return 0;
@@ -135,10 +141,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // For modules, we're done (modules produce .o files, not executables)
-    if (is_module || emit_obj) {
+    // For modules, also emit interface file (.yonai)
+    if (is_module) {
+        auto yonai_path = filesystem::path(output_file).replace_extension(".yonai");
+        codegen.emit_interface_file(yonai_path.string());
         return 0;
     }
+
+    if (emit_obj) return 0;
 
     // Link expression into executable
     auto exe_dir = filesystem::path(argv[0]).parent_path();

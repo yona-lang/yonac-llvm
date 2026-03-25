@@ -29,6 +29,9 @@
 
 #include <iostream>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
+#include <map>
 
 namespace yona::compiler::codegen {
 
@@ -543,6 +546,119 @@ bool Codegen::emit_object_file(const std::string& path) {
         return false;
     pass.run(*module_);
     dest.flush();
+    return true;
+}
+
+static std::string ctype_to_string(CType ct) {
+    switch (ct) {
+        case CType::INT: return "INT";
+        case CType::FLOAT: return "FLOAT";
+        case CType::BOOL: return "BOOL";
+        case CType::STRING: return "STRING";
+        case CType::SEQ: return "SEQ";
+        case CType::TUPLE: return "TUPLE";
+        case CType::UNIT: return "UNIT";
+        case CType::FUNCTION: return "FUNCTION";
+        case CType::SYMBOL: return "SYMBOL";
+        case CType::PROMISE: return "PROMISE";
+        case CType::SET: return "SET";
+        case CType::DICT: return "DICT";
+        case CType::ADT: return "ADT";
+    }
+    return "INT";
+}
+
+static CType string_to_ctype(const std::string& s) {
+    if (s == "INT") return CType::INT;
+    if (s == "FLOAT") return CType::FLOAT;
+    if (s == "BOOL") return CType::BOOL;
+    if (s == "STRING") return CType::STRING;
+    if (s == "SEQ") return CType::SEQ;
+    if (s == "TUPLE") return CType::TUPLE;
+    if (s == "UNIT") return CType::UNIT;
+    if (s == "FUNCTION") return CType::FUNCTION;
+    if (s == "SYMBOL") return CType::SYMBOL;
+    if (s == "PROMISE") return CType::PROMISE;
+    if (s == "SET") return CType::SET;
+    if (s == "DICT") return CType::DICT;
+    if (s == "ADT") return CType::ADT;
+    return CType::INT;
+}
+
+bool Codegen::emit_interface_file(const std::string& path) {
+    std::ofstream out(path);
+    if (!out.is_open()) return false;
+
+    // Write ADT definitions
+    // Group constructors by type name
+    std::map<std::string, std::vector<const AdtInfo*>> adts;
+    for (auto& [name, info] : adt_constructors_)
+        adts[info.type_name].push_back(&info);
+
+    for (auto& [type_name, ctors] : adts) {
+        out << "ADT " << type_name << " " << ctors.size() << "\n";
+        for (auto* ctor : ctors) {
+            // Find constructor name from adt_constructors_ map
+            for (auto& [cname, cinfo] : adt_constructors_) {
+                if (&cinfo == ctor)
+                    out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity << "\n";
+            }
+        }
+    }
+
+    // Write function signatures
+    for (auto& [mangled, meta] : module_meta_) {
+        out << "FN " << mangled << " " << meta.param_types.size();
+        for (auto ct : meta.param_types) out << " " << ctype_to_string(ct);
+        out << " -> " << ctype_to_string(meta.return_type) << "\n";
+    }
+
+    return true;
+}
+
+bool Codegen::load_interface_file(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) return false;
+
+    std::string line;
+    std::string current_adt;
+
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+
+        std::istringstream iss(line);
+        std::string keyword;
+        iss >> keyword;
+
+        if (keyword == "ADT") {
+            iss >> current_adt; // type name
+            // variant count is informational
+        } else if (keyword == "CTOR") {
+            std::string name;
+            int tag, arity;
+            iss >> name >> tag >> arity;
+            // Register constructor for pattern matching and expression codegen
+            adt_constructors_[name] = {current_adt, tag, arity, 0, 0};
+        } else if (keyword == "FN") {
+            std::string mangled;
+            int param_count;
+            iss >> mangled >> param_count;
+
+            ModuleFunctionMeta meta;
+            for (int i = 0; i < param_count; i++) {
+                std::string type_str;
+                iss >> type_str;
+                meta.param_types.push_back(string_to_ctype(type_str));
+            }
+            std::string arrow;
+            iss >> arrow; // "->"
+            std::string ret_str;
+            iss >> ret_str;
+            meta.return_type = string_to_ctype(ret_str);
+
+            module_meta_[mangled] = meta;
+        }
+    }
     return true;
 }
 
@@ -1923,22 +2039,39 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
 // ===== Imports =====
 
 TypedValue Codegen::codegen_import(ImportExpr* node) {
-    // Process each import clause: generate extern declarations for module functions
     for (auto* clause : node->clauses) {
         if (clause->get_type() == AST_FUNCTIONS_IMPORT) {
             auto* fi = static_cast<FunctionsImport*>(clause);
 
-            // Build module FQN string
+            // Build module FQN and filesystem path
             std::string mod_fqn;
+            std::filesystem::path mod_path;
             if (fi->fromFqn->packageName.has_value()) {
                 auto* pkg = fi->fromFqn->packageName.value();
                 for (size_t i = 0; i < pkg->parts.size(); i++) {
                     if (i > 0) mod_fqn += "\\";
                     mod_fqn += pkg->parts[i]->value;
+                    mod_path /= pkg->parts[i]->value;
                 }
                 mod_fqn += "\\";
             }
             mod_fqn += fi->fromFqn->moduleName->value;
+            mod_path /= fi->fromFqn->moduleName->value;
+
+            // Try to load the module's interface file (.yonai)
+            std::string yonai_file;
+            auto yonai_name = mod_path;
+            yonai_name.replace_extension(".yonai");
+            for (auto& search_path : module_paths_) {
+                auto candidate = std::filesystem::path(search_path) / yonai_name;
+                if (std::filesystem::exists(candidate)) {
+                    yonai_file = candidate.string();
+                    break;
+                }
+            }
+            if (!yonai_file.empty()) {
+                load_interface_file(yonai_file);
+            }
 
             // For each imported function, declare an extern with the mangled name
             for (auto* alias : fi->aliases) {
@@ -1946,39 +2079,27 @@ TypedValue Codegen::codegen_import(ImportExpr* node) {
                 std::string import_name = alias->alias ? alias->alias->value : func_name;
                 std::string mangled = mangle_name(mod_fqn, func_name);
 
-                // Check if already declared
-                auto* existing = module_->getFunction(mangled);
-                if (!existing) {
-                    // We don't know the exact signature yet — default to i64(i64, i64)
-                    // for 2-arg functions. For proper signature resolution, we'd need to
-                    // parse the module's source or read a .yonai metadata file.
-                    // For now, create a variadic-like i64 signature and let the linker resolve.
-
-                    // Try common arities: check if it's used and infer from call site
-                    // For now, declare with no args — the call site will cast as needed
-                    // Actually, we can't know arity without metadata. Use a generic approach:
-                    // declare as taking variable i64 args via a wrapper that takes ptr.
-
-                    // Simplest: don't declare yet. When codegen_apply encounters this name,
-                    // it will find it in named_values_ as a FUNCTION and handle it.
+                // Check if it's an ADT constructor (loaded from .yonai)
+                auto ctor_it = adt_constructors_.find(func_name);
+                if (ctor_it != adt_constructors_.end()) {
+                    // Constructor — register for codegen_apply / codegen_identifier
+                    // Zero-arity constructors are constants, N-arity are functions
+                    if (ctor_it->second.arity == 0) {
+                        // Will be handled by codegen_identifier
+                        named_values_[import_name] = {nullptr, CType::ADT};
+                    } else {
+                        named_values_[import_name] = {nullptr, CType::FUNCTION};
+                    }
+                    continue;
                 }
 
-                // Register the mangled name so codegen_apply can find it
-                // Store a marker that this is an external module function
-                if (!existing) {
-                    // Placeholder — actual function created at call site with known arity
-                    named_values_[import_name] = {nullptr, CType::FUNCTION, {/* subtypes: mangled name hack */}};
-                }
-
-                // Store the mangled name mapping for the apply codegen
-                // We need a way to map import_name → mangled name
-                // Use a simple side table
+                // Regular function — declare as extern
+                named_values_[import_name] = {nullptr, CType::FUNCTION};
                 extern_functions_[import_name] = mangled;
             }
         }
     }
 
-    // Compile the body expression
     return codegen(node->expr);
 }
 

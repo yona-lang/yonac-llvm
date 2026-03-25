@@ -68,7 +68,12 @@ public:
     llvm::Module* compile_module(ModuleExpr* module);
 
     bool emit_object_file(const std::string& output_path);
+    bool emit_interface_file(const std::string& output_path);
+    bool load_interface_file(const std::string& path);
     std::string emit_ir();
+
+    // Module search paths for resolving imports
+    std::vector<std::string> module_paths_;
 
     // Run LLVM optimization passes
     void optimize();
