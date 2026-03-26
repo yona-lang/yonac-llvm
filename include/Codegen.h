@@ -110,8 +110,9 @@ private:
         std::string type_name;
         int tag;
         int arity;
-        int total_variants; // total number of constructors in this ADT
-        int max_arity;      // maximum arity across all constructors
+        int total_variants;
+        int max_arity;
+        bool is_recursive = false; // true if any field references the type itself
     };
     std::unordered_map<std::string, AdtInfo> adt_constructors_;
 
@@ -157,6 +158,10 @@ private:
     llvm::Function* rt_dict_alloc_ = nullptr;
     llvm::Function* rt_dict_set_ = nullptr;
     llvm::Function* rt_print_dict_ = nullptr;
+    llvm::Function* rt_adt_alloc_ = nullptr;
+    llvm::Function* rt_adt_get_tag_ = nullptr;
+    llvm::Function* rt_adt_get_field_ = nullptr;
+    llvm::Function* rt_adt_set_field_ = nullptr;
 
     // Symbol interning: name → i64 ID, ID → global string constant
     std::unordered_map<std::string, int64_t> symbol_ids_;

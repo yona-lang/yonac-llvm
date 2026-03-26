@@ -190,6 +190,13 @@ void Codegen::declare_runtime() {
     auto promise_ptr = ptr; // opaque pointer to yona_promise_t
     rt_async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
     rt_async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
+
+    // ADT runtime (recursive types)
+    auto i8 = LType::getInt8Ty(*context_);
+    rt_adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i8, i64});
+    rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i8, {ptr});
+    rt_adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
+    rt_adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
 }
 
 // ===== Public API =====
@@ -398,20 +405,24 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
     // Build export set for visibility control
     std::unordered_set<std::string> export_set(mod->exports.begin(), mod->exports.end());
 
-    // Process ADT declarations: register constructors
+    // Process ADT declarations: register constructors, detect recursion
     for (auto* adt : mod->adt_declarations) {
-        // Compute max arity across all constructors in this ADT
         int max_arity = 0;
+        bool is_recursive = false;
         for (auto* ctor : adt->variants) {
             int a = static_cast<int>(ctor->field_type_names.size());
             if (a > max_arity) max_arity = a;
+            // Check if any field type references the ADT itself
+            for (auto& ft : ctor->field_type_names) {
+                if (ft == adt->name) { is_recursive = true; break; }
+            }
         }
 
         for (size_t ci = 0; ci < adt->variants.size(); ci++) {
             auto* ctor = adt->variants[ci];
             int arity = static_cast<int>(ctor->field_type_names.size());
             adt_constructors_[ctor->name] = {adt->name, static_cast<int>(ci), arity,
-                                              static_cast<int>(adt->variants.size()), max_arity};
+                                              static_cast<int>(adt->variants.size()), max_arity, is_recursive};
         }
     }
 
@@ -477,13 +488,18 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                 if (cp) {
                     auto ctor_it = adt_constructors_.find(cp->constructor_name);
                     if (ctor_it != adt_constructors_.end()) {
-                        auto i8_ty = LType::getInt8Ty(*context_);
-                        auto i64_ty = LType::getInt64Ty(*context_);
-                        std::vector<LType*> fields = {i8_ty};
-                        for (int f = 0; f < ctor_it->second.max_arity; f++)
-                            fields.push_back(i64_ty);
-                        auto* st = StructType::get(*context_, fields);
-                        typed_args.push_back({UndefValue::get(st), CType::ADT});
+                        if (ctor_it->second.is_recursive) {
+                            auto* ptr_type = PointerType::get(*context_, 0);
+                            typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::ADT});
+                        } else {
+                            auto i8_ty = LType::getInt8Ty(*context_);
+                            auto i64_ty = LType::getInt64Ty(*context_);
+                            std::vector<LType*> fields = {i8_ty};
+                            for (int f = 0; f < ctor_it->second.max_arity; f++)
+                                fields.push_back(i64_ty);
+                            auto* st = StructType::get(*context_, fields);
+                            typed_args.push_back({UndefValue::get(st), CType::ADT});
+                        }
                     } else {
                         typed_args.push_back({dummy_val, ct});
                     }
@@ -597,8 +613,13 @@ bool Codegen::emit_interface_file(const std::string& path) {
 
     for (auto& [type_name, ctors] : adts) {
         int max_arity = 0;
-        for (auto* c : ctors) if (c->arity > max_arity) max_arity = c->arity;
-        out << "ADT " << type_name << " " << ctors.size() << " " << max_arity << "\n";
+        bool is_recursive = false;
+        for (auto* c : ctors) {
+            if (c->arity > max_arity) max_arity = c->arity;
+            if (c->is_recursive) is_recursive = true;
+        }
+        out << "ADT " << type_name << " " << ctors.size() << " " << max_arity
+            << (is_recursive ? " recursive" : "") << "\n";
         for (auto* ctor : ctors) {
             for (auto& [cname, cinfo] : adt_constructors_) {
                 if (&cinfo == ctor)
@@ -625,6 +646,7 @@ bool Codegen::load_interface_file(const std::string& path) {
     std::string current_adt;
     int current_total_variants = 0;
     int current_max_arity = 0;
+    bool current_is_recursive = false;
     std::vector<std::string> current_ctor_names;
 
     while (std::getline(in, line)) {
@@ -643,11 +665,16 @@ bool Codegen::load_interface_file(const std::string& path) {
             current_ctor_names.clear();
 
             iss >> current_adt >> current_total_variants >> current_max_arity;
+            std::string recursive_flag;
+            if (iss >> recursive_flag && recursive_flag == "recursive")
+                current_is_recursive = true;
+            else
+                current_is_recursive = false;
         } else if (keyword == "CTOR") {
             std::string name;
             int tag, arity;
             iss >> name >> tag >> arity;
-            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants, current_max_arity};
+            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants, current_max_arity, current_is_recursive};
             current_ctor_names.push_back(name);
         } else if (keyword == "FN") {
             std::string mangled;
@@ -1017,17 +1044,25 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     // Check if it's a zero-arity ADT constructor
     auto adt_it = adt_constructors_.find(node->name->value);
     if (adt_it != adt_constructors_.end() && adt_it->second.arity == 0) {
-        // Build the ADT struct type for this type: {i8, i64*max_arity}
         auto i8_ty = LType::getInt8Ty(*context_);
         auto i64_ty = LType::getInt64Ty(*context_);
-        std::vector<LType*> fields = {i8_ty};
-        for (int f = 0; f < adt_it->second.max_arity; f++) {
-            fields.push_back(i64_ty);
+
+        if (adt_it->second.is_recursive) {
+            // Recursive ADT: heap-allocate via runtime
+            auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
+                {ConstantInt::get(i8_ty, adt_it->second.tag),
+                 ConstantInt::get(i64_ty, 0)}, "adt_node");
+            return {node_ptr, CType::ADT};
+        } else {
+            // Non-recursive: flat struct {i8, i64*max_arity}
+            std::vector<LType*> fields = {i8_ty};
+            for (int f = 0; f < adt_it->second.max_arity; f++)
+                fields.push_back(i64_ty);
+            auto* struct_type = StructType::get(*context_, fields);
+            Value* val = UndefValue::get(struct_type);
+            val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, adt_it->second.tag), {0});
+            return {val, CType::ADT};
         }
-        auto* struct_type = StructType::get(*context_, fields);
-        Value* val = UndefValue::get(struct_type);
-        val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, adt_it->second.tag), {0});
-        return {val, CType::ADT};
     }
     // Check if it's a non-zero-arity ADT constructor (used as a function reference)
     if (adt_it != adt_constructors_.end()) {
@@ -1436,35 +1471,48 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         auto& info = adt_it->second;
         auto i8_ty = LType::getInt8Ty(*context_);
         auto i64_ty = LType::getInt64Ty(*context_);
-        // Build struct type: {i8, i64*max_arity}
-        std::vector<LType*> fields = {i8_ty};
-        for (int f = 0; f < info.max_arity; f++) {
-            fields.push_back(i64_ty);
-        }
-        auto* struct_type = StructType::get(*context_, fields);
-        Value* val = UndefValue::get(struct_type);
-        val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, info.tag), {0});
-        for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
-            Value* arg_val = all_args[ai].val;
-            // Cast to i64 if needed
-            if (arg_val->getType() != i64_ty) {
-                if (arg_val->getType()->isIntegerTy())
-                    arg_val = builder_->CreateZExtOrTrunc(arg_val, i64_ty);
-                else if (arg_val->getType()->isDoubleTy())
-                    arg_val = builder_->CreateBitCast(arg_val, i64_ty);
-                else if (arg_val->getType()->isPointerTy())
-                    arg_val = builder_->CreatePtrToInt(arg_val, i64_ty);
-                else if (arg_val->getType()->isStructTy()) {
-                    // For struct values (e.g. nested ADTs), store to alloca and load as i64
-                    auto* alloca = builder_->CreateAlloca(arg_val->getType());
-                    builder_->CreateStore(arg_val, alloca);
-                    auto* cast_ptr = builder_->CreateBitCast(alloca, PointerType::get(i64_ty, 0));
-                    arg_val = builder_->CreateLoad(i64_ty, cast_ptr);
-                }
+
+        // Helper: cast value to i64 for storage
+        auto to_i64 = [&](Value* arg_val) -> Value* {
+            if (arg_val->getType() == i64_ty) return arg_val;
+            if (arg_val->getType()->isIntegerTy())
+                return builder_->CreateZExtOrTrunc(arg_val, i64_ty);
+            if (arg_val->getType()->isPointerTy())
+                return builder_->CreatePtrToInt(arg_val, i64_ty);
+            if (arg_val->getType()->isDoubleTy())
+                return builder_->CreateBitCast(arg_val, i64_ty);
+            if (arg_val->getType()->isStructTy()) {
+                auto* alloca = builder_->CreateAlloca(arg_val->getType());
+                builder_->CreateStore(arg_val, alloca);
+                return builder_->CreateLoad(i64_ty, alloca);
             }
-            val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
+            return arg_val;
+        };
+
+        if (info.is_recursive) {
+            // Recursive ADT: heap-allocate via runtime
+            auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
+                {ConstantInt::get(i8_ty, info.tag),
+                 ConstantInt::get(i64_ty, info.arity)}, "adt_node");
+            for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
+                Value* arg_val = to_i64(all_args[ai].val);
+                builder_->CreateCall(rt_adt_set_field_,
+                    {node_ptr, ConstantInt::get(i64_ty, ai), arg_val});
+            }
+            return {node_ptr, CType::ADT};
+        } else {
+            // Non-recursive: flat struct {i8, i64*max_arity}
+            std::vector<LType*> fields = {i8_ty};
+            for (int f = 0; f < info.max_arity; f++) fields.push_back(i64_ty);
+            auto* struct_type = StructType::get(*context_, fields);
+            Value* val = UndefValue::get(struct_type);
+            val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, info.tag), {0});
+            for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
+                Value* arg_val = to_i64(all_args[ai].val);
+                val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
+            }
+            return {val, CType::ADT};
         }
-        return {val, CType::ADT};
     }
 
     // Find or compile the function
@@ -1823,23 +1871,57 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto ctor_it = adt_constructors_.find(cp->constructor_name);
             if (ctor_it != adt_constructors_.end()) {
                 int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
-                // Extract tag from scrutinee (field 0 of the struct)
-                auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
-                auto tag_val = ConstantInt::get(LType::getInt8Ty(*context_), tag);
-                auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
-                builder_->CreateCondBr(cmp, body_bb, next_bb);
+                auto i8_ty = LType::getInt8Ty(*context_);
+                auto i64_ty = LType::getInt64Ty(*context_);
 
-                builder_->SetInsertPoint(body_bb);
-                // Bind sub-patterns to payload fields
-                for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
-                    auto field_val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
-                    auto* sub_pat = cp->sub_patterns[fi];
-                    if (sub_pat->get_type() == AST_PATTERN_VALUE) {
-                        auto* pv = static_cast<PatternValue*>(sub_pat);
-                        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-                            named_values_[(*id)->name->value] = {field_val, CType::INT};
-                    } else if (sub_pat->get_type() == AST_UNDERSCORE_PATTERN) {
-                        // Wildcard — ignore this field
+                if (ctor_it->second.is_recursive) {
+                    // Recursive ADT: scrutinee is a pointer, use runtime accessors
+                    auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+                    auto tag_val = ConstantInt::get(i8_ty, tag);
+                    auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+                    builder_->SetInsertPoint(body_bb);
+                    for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
+                        auto field_val = builder_->CreateCall(rt_adt_get_field_,
+                            {scrutinee.val, ConstantInt::get(i64_ty, fi)});
+                        auto* sub_pat = cp->sub_patterns[fi];
+                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub_pat);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                // Determine if this field is a recursive self-reference.
+                                // If so, the i64 value is actually a pointer to another ADT node.
+                                // For recursive ADTs: the last field(s) that reference
+                                // the type itself need to be cast from i64 to ptr.
+                                // Heuristic: last field of a multi-field recursive constructor.
+                                if (ctor_it->second.is_recursive && fi == cp->sub_patterns.size() - 1 &&
+                                    ctor_it->second.arity > 1) {
+                                    // Last field of a multi-field recursive constructor is likely the self-ref
+                                    named_values_[(*id)->name->value] = {
+                                        builder_->CreateIntToPtr(field_val, PointerType::get(*context_, 0)),
+                                        CType::ADT};
+                                } else {
+                                    named_values_[(*id)->name->value] = {field_val, CType::INT};
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Non-recursive: flat struct, use extractvalue
+                    auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
+                    auto tag_val = ConstantInt::get(i8_ty, tag);
+                    auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+                    builder_->SetInsertPoint(body_bb);
+                    for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
+                        auto field_val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
+                        auto* sub_pat = cp->sub_patterns[fi];
+                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub_pat);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                named_values_[(*id)->name->value] = {field_val, CType::INT};
+                        }
                     }
                 }
                 body_inline = true;

@@ -931,15 +931,28 @@ private:
             if (!isupper(ctor_name[0])) break;
             advance();
 
-            // Parse field type names (lowercase identifiers until | or newline/end)
+            // Parse field type expressions until | or newline/end
             vector<string> field_types;
-            while (check(TokenType::YIDENTIFIER)) {
-                string field(current().lexeme);
-                if (islower(field[0])) {
-                    field_types.push_back(field);
+            while (!check(TokenType::YPIPE) && !check(TokenType::YNEWLINE) &&
+                   !is_at_end() && !check(TokenType::YEND)) {
+                if (check(TokenType::YIDENTIFIER)) {
+                    field_types.push_back(string(current().lexeme));
                     advance();
+                } else if (check(TokenType::YLPAREN)) {
+                    advance(); // consume (
+                    if (check(TokenType::YIDENTIFIER)) {
+                        field_types.push_back(string(current().lexeme));
+                        advance();
+                    }
+                    int depth = 1;
+                    while (depth > 0 && !is_at_end()) {
+                        if (check(TokenType::YLPAREN)) depth++;
+                        else if (check(TokenType::YRPAREN)) depth--;
+                        if (depth > 0) advance();
+                    }
+                    if (check(TokenType::YRPAREN)) advance();
                 } else {
-                    break; // Next constructor (uppercase) or something else
+                    break;
                 }
             }
 
