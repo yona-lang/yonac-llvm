@@ -45,7 +45,8 @@
 - [ ] REPL (compile-and-run mode)
 
 ### Codegen Bugs
-- [ ] Multi-function module compilation: LLVM verification error when module has multiple functions that return SEQ (type mismatch in function recreation). Individual functions compile fine.
+- [ ] Multi-line module function bodies: LLVM "referring to basic block in another function" error with multi-line case expressions in modules. Single-line functions work. Likely caused by function recreation (erased function's basic blocks referenced by new function).
+- [ ] Cross-function monomorphization: when a module function calls another with different argument types than inferred defaults (e.g. `reverse` calling `fold` with SEQ accumulator instead of INT).
 
 ### Stdlib
 - [ ] Compile full stdlib with yonac (List, Tuple, Range, Test) — blocked by multi-function module bug

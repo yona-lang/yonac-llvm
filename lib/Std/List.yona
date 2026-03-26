@@ -1,110 +1,37 @@
-module Std\List exports map, filter, fold, foldl, foldr, length, head, tail,
-    reverse, take, drop, flatten, any, all, contains, isEmpty, lookup as
+module Std\List exports map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, any, all, contains, isEmpty, lookup as
 
-map fn seq =
-    case seq of
-        []     -> []
-        [h|t]  -> (fn h) :: (map fn t)
-    end
+map fn seq = case seq of [] -> []; [h|t] -> (fn h) :: (map fn t) end
 
-filter fn seq =
-    case seq of
-        []    -> []
-        [h|t] ->
-            if fn h then h :: (filter fn t)
-            else filter fn t
-    end
+filter fn seq = case seq of [] -> []; [h|t] -> if fn h then h :: (filter fn t) else filter fn t end
 
-fold fn acc seq =
-    case seq of
-        []    -> acc
-        [h|t] -> fold fn (fn acc h) t
-    end
+fold fn acc seq = case seq of [] -> acc; [h|t] -> fold fn (fn acc h) t end
 
-foldl fn acc seq =
-    case seq of
-        []    -> acc
-        [h|t] -> foldl fn (fn acc h) t
-    end
+foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end
 
-foldr fn acc seq =
-    case seq of
-        []    -> acc
-        [h|t] -> fn h (foldr fn acc t)
-    end
+foldr fn acc seq = case seq of [] -> acc; [h|t] -> fn h (foldr fn acc t) end
 
-length seq =
-    case seq of
-        []    -> 0
-        [_|t] -> 1 + (length t)
-    end
+length seq = case seq of [] -> 0; [_|t] -> 1 + (length t) end
 
-head seq =
-    case seq of
-        [h|_] -> h
-    end
+head seq = case seq of [h|_] -> h end
 
-tail seq =
-    case seq of
-        [_|t] -> t
-    end
+tail seq = case seq of [_|t] -> t end
 
-reverse seq = fold (\acc x -> x :: acc) [] seq
+reverse seq = case seq of [] -> []; [h|t] -> (reverse t) ++ [h] end
 
-take n seq =
-    if n <= 0 then []
-    else
-        case seq of
-            []    -> []
-            [h|t] -> h :: (take (n - 1) t)
-        end
+take n seq = if n <= 0 then [] else case seq of [] -> []; [h|t] -> h :: (take (n - 1) t) end
 
-drop n seq =
-    if n <= 0 then seq
-    else
-        case seq of
-            []    -> []
-            [_|t] -> drop (n - 1) t
-        end
+drop n seq = if n <= 0 then seq else case seq of [] -> []; [_|t] -> drop (n - 1) t end
 
-flatten seq =
-    case seq of
-        []    -> []
-        [h|t] -> h ++ (flatten t)
-    end
+flatten seq = case seq of [] -> []; [h|t] -> h ++ (flatten t) end
 
-any fn seq =
-    case seq of
-        []    -> false
-        [h|t] -> if fn h then true else any fn t
-    end
+any fn seq = case seq of [] -> false; [h|t] -> if fn h then true else any fn t end
 
-all fn seq =
-    case seq of
-        []    -> true
-        [h|t] -> if fn h then all fn t else false
-    end
+all fn seq = case seq of [] -> true; [h|t] -> if fn h then all fn t else false end
 
-contains elem seq =
-    case seq of
-        []    -> false
-        [h|t] -> if h == elem then true else contains elem t
-    end
+contains elem seq = case seq of [] -> false; [h|t] -> if h == elem then true else contains elem t end
 
-isEmpty seq =
-    case seq of
-        [] -> true
-        _  -> false
-    end
+isEmpty seq = case seq of [] -> true; _ -> false end
 
-lookup idx seq =
-    if idx <= 0 then
-        case seq of
-            [h|_] -> h
-        end
-    else
-        case seq of
-            [_|t] -> lookup (idx - 1) t
-        end
+lookup idx seq = if idx <= 0 then case seq of [h|_] -> h end else case seq of [_|t] -> lookup (idx - 1) t end
 
 end
