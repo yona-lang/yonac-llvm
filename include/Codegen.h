@@ -112,7 +112,9 @@ private:
         int arity;
         int total_variants;
         int max_arity;
-        bool is_recursive = false; // true if any field references the type itself
+        bool is_recursive = false;
+        std::vector<std::string> field_names;  // named fields (empty for positional)
+        std::vector<CType> field_types;         // CType of each field
     };
     std::unordered_map<std::string, AdtInfo> adt_constructors_;
 

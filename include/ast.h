@@ -736,12 +736,11 @@ private:
 public:
   FqnExpr *fqn;
   vector<string> exports;
-  vector<RecordNode *> records;
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
   vector<AdtDeclNode *> adt_declarations;
 
-  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
+  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
                       const vector<AdtDeclNode *> &adt_declarations = {});
   template<typename ResultType>
@@ -1992,9 +1991,11 @@ private:
     void print(std::ostream &os) const override;
 public:
     string name;
-    vector<string> field_type_names;
+    vector<string> field_type_names;  // type of each field
+    vector<string> field_names;       // named fields (empty for positional constructors)
 
-    explicit AdtConstructor(SourceContext token, string name, vector<string> field_types);
+    explicit AdtConstructor(SourceContext token, string name, vector<string> field_types,
+                            vector<string> field_names = {});
     template<typename ResultType>
     ResultType accept(const AstVisitor<ResultType> &visitor) const {
         return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

@@ -311,17 +311,15 @@ BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
 void BodyWithoutGuards::print(std::ostream &os) const { os << " = " << *expr; }
 
-ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports, const vector<RecordNode *> &records,
+ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
                        const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
                        const vector<AdtDeclNode *> &adt_declarations)
-    : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), records(nodes_with_parent(std::move(records), this)),
+    : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
       functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)),
       adt_declarations(nodes_with_parent(std::move(adt_declarations), this)) {}
 
 ModuleExpr::~ModuleExpr() {
   delete fqn;
-  for (const auto p : records)
-    delete p;
   for (const auto p : functions)
     delete p;
   for (const auto p : functionDeclarations)
@@ -341,10 +339,6 @@ void ModuleExpr::print(std::ostream &os) const {
   }
 
   os << " as" << endl;
-
-  for (const auto p : records) {
-    os << *p << endl;
-  }
 
   for (const auto p : functionDeclarations) {
     os << *p << endl;
@@ -1345,8 +1339,8 @@ void TypeDefinition::print(std::ostream &os) const {
 }
 
 // AdtConstructor implementation
-AdtConstructor::AdtConstructor(SourceContext token, string name, vector<string> field_types)
-    : AstNode(token), name(std::move(name)), field_type_names(std::move(field_types)) {}
+AdtConstructor::AdtConstructor(SourceContext token, string name, vector<string> field_types, vector<string> field_names)
+    : AstNode(token), name(std::move(name)), field_type_names(std::move(field_types)), field_names(std::move(field_names)) {}
 
 AdtConstructor::~AdtConstructor() = default;
 

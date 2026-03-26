@@ -381,6 +381,15 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
                 for (auto* v : te->values) analyze(v);
             } else if (auto* ve = dynamic_cast<ValuesSequenceExpr*>(node)) {
                 for (auto* v : ve->values) analyze(v);
+            } else if (auto* fa = dynamic_cast<FieldAccessExpr*>(node)) {
+                // Field access: if the object is a parameter, it must be an ADT
+                if (auto* id = dynamic_cast<IdentifierExpr*>(fa->identifier)) {
+                    auto it = param_index.find(id->name->value);
+                    if (it != param_index.end() && result[it->second].type == CType::INT) {
+                        result[it->second].type = CType::ADT;
+                        result[it->second].source_pattern = nullptr;
+                    }
+                }
             }
         };
         if (body_expr) analyze(body_expr);
@@ -421,8 +430,21 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
         for (size_t ci = 0; ci < adt->variants.size(); ci++) {
             auto* ctor = adt->variants[ci];
             int arity = static_cast<int>(ctor->field_type_names.size());
+            // Map type names to CTypes
+            std::vector<CType> ftypes;
+            for (auto& tn : ctor->field_type_names) {
+                if (tn == "Int" || tn == "a" || tn == "b" || tn == "e") ftypes.push_back(CType::INT);
+                else if (tn == "Float") ftypes.push_back(CType::FLOAT);
+                else if (tn == "String") ftypes.push_back(CType::STRING);
+                else if (tn == "Bool") ftypes.push_back(CType::BOOL);
+                else if (tn == "Symbol") ftypes.push_back(CType::SYMBOL);
+                else if (tn == adt->name) ftypes.push_back(CType::ADT); // self-reference
+                else ftypes.push_back(CType::INT); // default
+            }
+
             adt_constructors_[ctor->name] = {adt->name, static_cast<int>(ci), arity,
-                                              static_cast<int>(adt->variants.size()), max_arity, is_recursive};
+                                              static_cast<int>(adt->variants.size()), max_arity, is_recursive,
+                                              ctor->field_names, ftypes};
         }
     }
 
@@ -507,7 +529,27 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                         typed_args.push_back({dummy_val, ct});
                     }
                 } else {
-                    typed_args.push_back({dummy_val, ct});
+                    // No constructor pattern — inferred from field access or other usage.
+                    // Search adt_constructors_ for a constructor with matching field names.
+                    bool found = false;
+                    for (auto& [cname, cinfo] : adt_constructors_) {
+                        if (!cinfo.field_names.empty()) {
+                            if (cinfo.is_recursive) {
+                                auto* ptr_type = PointerType::get(*context_, 0);
+                                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::ADT});
+                            } else {
+                                auto i8_ty = LType::getInt8Ty(*context_);
+                                auto i64_ty = LType::getInt64Ty(*context_);
+                                std::vector<LType*> fields = {i8_ty};
+                                for (int f = 0; f < cinfo.max_arity; f++) fields.push_back(i64_ty);
+                                auto* st = StructType::get(*context_, fields);
+                                typed_args.push_back({UndefValue::get(st), CType::ADT});
+                            }
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) typed_args.push_back({dummy_val, ct});
                 }
             } else {
                 typed_args.push_back({dummy_val, ct});
@@ -846,6 +888,39 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_LAMBDA_ALIAS:    return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
         case AST_IMPORT_EXPR:     return codegen_import(static_cast<ImportExpr*>(node));
         case AST_EXTERN_DECL:    return codegen_extern_decl(static_cast<ExternDeclExpr*>(node));
+        case AST_FIELD_ACCESS_EXPR: {
+            auto* fa = static_cast<FieldAccessExpr*>(node);
+            auto obj = codegen(fa->identifier);
+            if (!obj) return {};
+            std::string field_name = fa->name->value;
+            if (obj.type == CType::ADT) {
+                for (auto& [ctor_name, info] : adt_constructors_) {
+                    for (size_t fi = 0; fi < info.field_names.size(); fi++) {
+                        if (info.field_names[fi] == field_name) {
+                            CType ftype = (fi < info.field_types.size()) ? info.field_types[fi] : CType::INT;
+                            if (info.is_recursive) {
+                                auto val = builder_->CreateCall(rt_adt_get_field_,
+                                    {obj.val, ConstantInt::get(LType::getInt64Ty(*context_), fi)});
+                                if (ftype == CType::STRING || ftype == CType::SEQ || ftype == CType::ADT)
+                                    return {builder_->CreateIntToPtr(val, PointerType::get(*context_, 0)), ftype};
+                                return {val, ftype};
+                            } else {
+                                auto val = builder_->CreateExtractValue(obj.val, {(unsigned)(fi + 1)});
+                                // Cast i64 to ptr if field type is pointer-based
+                                if (ftype == CType::STRING || ftype == CType::SEQ ||
+                                    ftype == CType::SET || ftype == CType::DICT ||
+                                    ftype == CType::FUNCTION || ftype == CType::ADT) {
+                                    val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
+                                }
+                                return {val, ftype};
+                            }
+                        }
+                    }
+                }
+            }
+            std::cerr << "Codegen: unknown field '" << field_name << "'\n";
+            return {};
+        }
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
         case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
         case AST_SET_EXPR:        return codegen_set(static_cast<SetExpr*>(node));
@@ -1224,6 +1299,16 @@ Codegen::CompiledFunction Codegen::compile_function(
                 fields.push_back(lt);
             }
             return {StructType::get(*context_, fields), CType::TUPLE};
+        }
+        if (ct == AST_FIELD_ACCESS_EXPR) {
+            auto* fa = static_cast<FieldAccessExpr*>(node);
+            std::string fname = fa->name->value;
+            for (auto& [cname, info] : adt_constructors_) {
+                for (size_t fi = 0; fi < info.field_names.size(); fi++) {
+                    if (info.field_names[fi] == fname && fi < info.field_types.size())
+                        return {llvm_type(info.field_types[fi]), info.field_types[fi]};
+                }
+            }
         }
         if (ct == AST_IDENTIFIER_EXPR) {
             auto* id = static_cast<IdentifierExpr*>(node);

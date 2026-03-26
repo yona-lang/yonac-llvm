@@ -273,7 +273,6 @@ private:
 
         vector<FunctionDeclaration*> function_declarations;
         vector<FunctionExpr*> functions;
-        vector<RecordNode*> records;
         vector<AdtDeclNode*> adt_declarations;
 
         while (!check(TokenType::YEND) && !is_at_end()) {
@@ -287,10 +286,6 @@ private:
                         constructor_registry_[ctor->name] = {adt->name, static_cast<int>(ci), static_cast<int>(ctor->field_type_names.size())};
                     }
                     adt_declarations.push_back(adt.release());
-                }
-            } else if (match(TokenType::YRECORD)) {
-                if (auto record = parse_record_definition()) {
-                    records.push_back(record.release());
                 }
             } else {
                 if (auto func = parse_function()) {
@@ -325,7 +320,6 @@ private:
                 start_loc,
                 fqn.release(),
                 exports,
-                records,
                 functions,
                 function_declarations,
                 adt_declarations
@@ -345,7 +339,6 @@ private:
             start_loc,
             fqn.release(),
             exports,
-            records,
             functions,
             function_declarations,
             adt_declarations
@@ -931,32 +924,54 @@ private:
             if (!isupper(ctor_name[0])) break;
             advance();
 
-            // Parse field type expressions until | or newline/end
             vector<string> field_types;
-            while (!check(TokenType::YPIPE) && !check(TokenType::YNEWLINE) &&
-                   !is_at_end() && !check(TokenType::YEND)) {
-                if (check(TokenType::YIDENTIFIER)) {
-                    field_types.push_back(string(current().lexeme));
-                    advance();
-                } else if (check(TokenType::YLPAREN)) {
-                    advance(); // consume (
+            vector<string> field_names;
+
+            if (match(TokenType::YLBRACE)) {
+                // Named fields: Constructor { name : Type, age : Type }
+                while (!check(TokenType::YRBRACE) && !is_at_end()) {
+                    skip_newlines();
+                    if (!check(TokenType::YIDENTIFIER)) break;
+                    string fname(advance().lexeme);
+                    expect(TokenType::YCOLON, "Expected ':' after field name");
+                    if (!check(TokenType::YIDENTIFIER)) {
+                        error(ParseError::Type::INVALID_SYNTAX, "Expected type name after ':'");
+                        break;
+                    }
+                    string ftype(advance().lexeme);
+                    field_names.push_back(fname);
+                    field_types.push_back(ftype);
+                    if (!match(TokenType::YCOMMA)) break;
+                    skip_newlines();
+                }
+                expect(TokenType::YRBRACE, "Expected '}' after named fields");
+            } else {
+                // Positional fields: Constructor a b (Type c)
+                while (!check(TokenType::YPIPE) && !check(TokenType::YNEWLINE) &&
+                       !is_at_end() && !check(TokenType::YEND)) {
                     if (check(TokenType::YIDENTIFIER)) {
                         field_types.push_back(string(current().lexeme));
                         advance();
+                    } else if (check(TokenType::YLPAREN)) {
+                        advance();
+                        if (check(TokenType::YIDENTIFIER)) {
+                            field_types.push_back(string(current().lexeme));
+                            advance();
+                        }
+                        int depth = 1;
+                        while (depth > 0 && !is_at_end()) {
+                            if (check(TokenType::YLPAREN)) depth++;
+                            else if (check(TokenType::YRPAREN)) depth--;
+                            if (depth > 0) advance();
+                        }
+                        if (check(TokenType::YRPAREN)) advance();
+                    } else {
+                        break;
                     }
-                    int depth = 1;
-                    while (depth > 0 && !is_at_end()) {
-                        if (check(TokenType::YLPAREN)) depth++;
-                        else if (check(TokenType::YRPAREN)) depth--;
-                        if (depth > 0) advance();
-                    }
-                    if (check(TokenType::YRPAREN)) advance();
-                } else {
-                    break;
                 }
             }
 
-            variants.push_back(new AdtConstructor(loc, ctor_name, field_types));
+            variants.push_back(new AdtConstructor(loc, ctor_name, field_types, field_names));
 
             skip_newlines();
         } while (match(TokenType::YPIPE));
@@ -1299,28 +1314,24 @@ private:
             // variable patterns followed by tuple patterns (e.g., f (a, b))
             if (check(TokenType::YLPAREN) && !name.empty() && isupper(name[0])) {
                 advance(); // consume '('
-                vector<pair<NameExpr*, Pattern*>> fields;
-                vector<PatternNode*> patterns;
+                vector<PatternNode*> sub_pats;
 
                 if (!check(TokenType::YRPAREN)) {
                     do {
                         // Check for named field pattern: name=pattern
                         if (check(TokenType::YIDENTIFIER) && peek(1).type == TokenType::YASSIGN) {
-                            // Named field pattern
-                            string field_name(advance().lexeme);
+                            // Named field pattern — skip field name, use the pattern positionally
+                            advance(); // consume field name
                             advance(); // consume '='
                             auto pattern = parse_pattern();
                             if (pattern) {
-                                patterns.push_back(pattern.get());
-                                fields.push_back({new NameExpr(loc, field_name), pattern.release()});
+                                sub_pats.push_back(pattern.release());
                             }
                         } else {
                             // Positional pattern
                             auto pattern = parse_pattern();
                             if (pattern) {
-                                patterns.push_back(pattern.get());
-                                // For positional patterns, we don't have field names
-                                fields.push_back({nullptr, pattern.release()});
+                                sub_pats.push_back(pattern.release());
                             }
                         }
                     } while (match(TokenType::YCOMMA));
@@ -1328,8 +1339,7 @@ private:
 
                 expect(TokenType::YRPAREN, "Expected ')' after constructor pattern arguments");
 
-                // Create a RecordPattern with the constructor name
-                return make_unique<RecordPattern>(loc, name, fields);
+                return make_unique<ConstructorPattern>(loc, name, sub_pats);
             }
 
             // Check for @ pattern
