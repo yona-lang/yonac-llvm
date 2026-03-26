@@ -27,8 +27,7 @@
 ## Remaining Work
 
 ### Exhaustiveness Checking
-- [ ] Warn when case expression doesn't cover all ADT constructors
-- [ ] Track constructor set per ADT type during codegen
+- [x] Warn when case expression doesn't cover all ADT constructors ✅
 
 ### Records
 - [ ] Named LLVM structs for record types
@@ -45,6 +44,9 @@
 - [ ] Compiler error messages (clear, actionable)
 - [ ] REPL (compile-and-run mode)
 
+### Codegen Bugs
+- [ ] Multi-function module compilation: LLVM verification error when module has multiple functions that return SEQ (type mismatch in function recreation). Individual functions compile fine.
+
 ### Stdlib
-- [ ] Compile full stdlib with yonac (List, Tuple, Range, Test)
+- [ ] Compile full stdlib with yonac (List, Tuple, Range, Test) — blocked by multi-function module bug
 - [ ] Exception utilities, stack traces

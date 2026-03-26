@@ -1,5 +1,5 @@
 module Std\List exports map, filter, fold, foldl, foldr, length, head, tail,
-    reverse, take, drop, flatten, zip, any, all, contains, isEmpty, lookup, splitAt as
+    reverse, take, drop, flatten, any, all, contains, isEmpty, lookup as
 
 map fn seq =
     case seq of
@@ -73,16 +73,6 @@ flatten seq =
         [h|t] -> h ++ (flatten t)
     end
 
-zip a b =
-    case a of
-        [] -> []
-        [ha|ta] ->
-            case b of
-                []     -> []
-                [hb|tb] -> (ha, hb) :: (zip ta tb)
-            end
-    end
-
 any fn seq =
     case seq of
         []    -> false
@@ -115,17 +105,6 @@ lookup idx seq =
     else
         case seq of
             [_|t] -> lookup (idx - 1) t
-        end
-
-splitAt n seq =
-    if n <= 0 then ([], seq)
-    else
-        case seq of
-            []    -> ([], [])
-            [h|t] ->
-                case splitAt (n - 1) t of
-                    (before, after) -> (h :: before, after)
-                end
         end
 
 end
