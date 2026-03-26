@@ -53,6 +53,7 @@ private:
         string type_name;
         int tag;
         int arity;
+        vector<string> field_names; // for named field constructors
     };
     std::unordered_map<std::string, ConstructorInfo> constructor_registry_;
 
@@ -283,7 +284,8 @@ private:
                     // Register constructors for pattern parsing
                     for (size_t ci = 0; ci < adt->variants.size(); ci++) {
                         auto* ctor = adt->variants[ci];
-                        constructor_registry_[ctor->name] = {adt->name, static_cast<int>(ci), static_cast<int>(ctor->field_type_names.size())};
+                        constructor_registry_[ctor->name] = {adt->name, static_cast<int>(ci),
+                            static_cast<int>(ctor->field_type_names.size()), ctor->field_names};
                     }
                     adt_declarations.push_back(adt.release());
                 }
@@ -1297,6 +1299,24 @@ private:
                 auto ctor_it = constructor_registry_.find(peek_name);
                 if (ctor_it != constructor_registry_.end()) {
                     advance(); // consume constructor name
+                    // Named field pattern: Person { name = n, age = a }
+                    if (check(TokenType::YLBRACE)) {
+                        advance(); // consume {
+                        vector<pair<NameExpr*, Pattern*>> named_fields;
+                        while (!check(TokenType::YRBRACE) && !is_at_end()) {
+                            skip_newlines();
+                            if (!check(TokenType::YIDENTIFIER)) break;
+                            string fname(advance().lexeme);
+                            expect(TokenType::YASSIGN, "Expected '=' after field name in pattern");
+                            auto pat = parse_pattern();
+                            if (pat) named_fields.push_back({new NameExpr(loc, fname), pat.release()});
+                            if (!match(TokenType::YCOMMA)) break;
+                            skip_newlines();
+                        }
+                        expect(TokenType::YRBRACE, "Expected '}' after named field pattern");
+                        return make_unique<RecordPattern>(loc, peek_name, named_fields);
+                    }
+                    // Positional pattern: Some x, Cons h t
                     int arity = ctor_it->second.arity;
                     vector<PatternNode*> sub_pats;
                     for (int j = 0; j < arity; j++) {
@@ -1515,6 +1535,30 @@ private:
             }
             last_position = current_;
 
+            // Field update: expr { field = value, ... }
+            if (check(TokenType::YLBRACE) && peek(1).type == TokenType::YIDENTIFIER &&
+                peek(2).type == TokenType::YASSIGN) {
+                auto sloc = left->source_context;
+                auto* id_expr = dynamic_cast<IdentifierExpr*>(left.release());
+                if (!id_expr) { left.reset(); break; }
+                advance(); // consume {
+                vector<pair<NameExpr*, ExprNode*>> updates;
+                while (!check(TokenType::YRBRACE) && !is_at_end()) {
+                    skip_newlines();
+                    if (!check(TokenType::YIDENTIFIER)) break;
+                    SourceLocation floc = current_location();
+                    string fname(advance().lexeme);
+                    expect(TokenType::YASSIGN, "Expected '=' after field name in update");
+                    auto val = parse_expr();
+                    if (val) updates.push_back({new NameExpr(floc, fname), val.release()});
+                    if (!match(TokenType::YCOMMA)) break;
+                    skip_newlines();
+                }
+                expect(TokenType::YRBRACE, "Expected '}' after field update");
+                left = make_unique<FieldUpdateExpr>(sloc, id_expr, updates);
+                continue;
+            }
+
             // Check for function application by juxtaposition (e.g., f x)
             // YNEWLINE naturally stops juxtaposition since it's not in could_be_argument()
             if (min_prec <= Precedence::CALL && could_be_argument(peek().type)) {
@@ -1697,7 +1741,43 @@ private:
 
             case TokenType::YIDENTIFIER: {
                 auto token = advance();
-                auto name_expr = new NameExpr(loc, string(token.lexeme));
+                string id_name(token.lexeme);
+
+                // Named ADT construction: Person { name = "Alice", age = 30 }
+                if (!id_name.empty() && isupper(id_name[0]) && check(TokenType::YLBRACE)) {
+                    auto ctor_it = constructor_registry_.find(id_name);
+                    if (ctor_it != constructor_registry_.end() && !ctor_it->second.field_names.empty()) {
+                        advance(); // consume {
+                        // Parse named field assignments
+                        std::unordered_map<string, unique_ptr<ExprNode>> field_exprs;
+                        while (!check(TokenType::YRBRACE) && !is_at_end()) {
+                            skip_newlines();
+                            if (!check(TokenType::YIDENTIFIER)) break;
+                            string fname(advance().lexeme);
+                            expect(TokenType::YASSIGN, "Expected '=' after field name");
+                            auto expr = parse_expr();
+                            if (expr) field_exprs[fname] = std::move(expr);
+                            if (!match(TokenType::YCOMMA)) break;
+                            skip_newlines();
+                        }
+                        expect(TokenType::YRBRACE, "Expected '}' after named construction");
+
+                        // Reorder to positional based on declared field order
+                        auto& field_order = ctor_it->second.field_names;
+                        auto call_name = new NameCall(loc, new NameExpr(loc, id_name));
+                        vector<variant<ExprNode*, ValueExpr*>> args;
+                        for (auto& fn : field_order) {
+                            auto it = field_exprs.find(fn);
+                            if (it != field_exprs.end())
+                                args.push_back(it->second.release());
+                            else
+                                args.push_back(static_cast<ExprNode*>(new UnitExpr(loc))); // missing field
+                        }
+                        return make_unique<ApplyExpr>(loc, call_name, args);
+                    }
+                }
+
+                auto name_expr = new NameExpr(loc, id_name);
                 return make_unique<IdentifierExpr>(loc, name_expr);
             }
 

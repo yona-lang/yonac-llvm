@@ -30,11 +30,11 @@
 - [x] Warn when case expression doesn't cover all ADT constructors ✅
 
 ### Named ADT Fields
-- [x] Named field syntax: `Person { name : String, age : Int }` ✅
+- [x] Named field syntax: `type Person = Person { name : String, age : Int }` ✅
 - [x] Dot syntax field access: `p.name` ✅
-- [ ] Named construction: `Person { name = "Alice", age = 30 }`
-- [ ] Functional update: `p { age = 31 }`
-- [ ] Named field patterns in case: `case p of Person { name = n } -> n end`
+- [x] Named construction: `Person { name = 42, age = 30 }` ✅
+- [x] Functional update: `p { age = 31 }` ✅
+- [x] Named field patterns: `case p of Person { age = a } -> a end` ✅
 
 ### Type Checking
 - [ ] Compile-time type error reporting (validate during codegen)

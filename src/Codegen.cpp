@@ -263,6 +263,9 @@ CType Codegen::infer_type_from_pattern(PatternNode* pat) {
             return CType::INT;
         }
 
+        case AST_RECORD_PATTERN:
+            return CType::ADT; // named field pattern
+
         case AST_UNDERSCORE_PATTERN:
         case AST_UNDERSCORE_NODE:
             return CType::INT; // wildcard — unknown
@@ -509,9 +512,14 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                 // Build the ADT struct type based on the constructor pattern
                 // Find which ADT type by looking at the case patterns
                 PatternNode* src = (i < inferred.size()) ? inferred[i].source_pattern : nullptr;
-                auto* cp = src ? dynamic_cast<ConstructorPattern*>(src) : nullptr;
-                if (cp) {
-                    auto ctor_it = adt_constructors_.find(cp->constructor_name);
+                // Find constructor name from either ConstructorPattern or RecordPattern
+                std::string ctor_name_lookup;
+                if (auto* cp = src ? dynamic_cast<ConstructorPattern*>(src) : nullptr)
+                    ctor_name_lookup = cp->constructor_name;
+                else if (auto* rp = src ? dynamic_cast<RecordPattern*>(src) : nullptr)
+                    ctor_name_lookup = rp->recordType;
+                if (!ctor_name_lookup.empty()) {
+                    auto ctor_it = adt_constructors_.find(ctor_name_lookup);
                     if (ctor_it != adt_constructors_.end()) {
                         if (ctor_it->second.is_recursive) {
                             auto* ptr_type = PointerType::get(*context_, 0);
@@ -888,6 +896,44 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_LAMBDA_ALIAS:    return codegen_lambda_alias(static_cast<LambdaAlias*>(node));
         case AST_IMPORT_EXPR:     return codegen_import(static_cast<ImportExpr*>(node));
         case AST_EXTERN_DECL:    return codegen_extern_decl(static_cast<ExternDeclExpr*>(node));
+        case AST_FIELD_UPDATE_EXPR: {
+            auto* fu = static_cast<FieldUpdateExpr*>(node);
+            auto obj = codegen(fu->identifier);
+            if (!obj || obj.type != CType::ADT) {
+                std::cerr << "Codegen: field update requires ADT value\n";
+                return {};
+            }
+            // Find the constructor with the matching field names
+            for (auto& [ctor_name, info] : adt_constructors_) {
+                if (info.field_names.empty()) continue;
+                // Copy the struct, replace updated fields
+                Value* result = obj.val;
+                for (auto& [name_expr, val_expr] : fu->updates) {
+                    auto new_val = codegen(val_expr);
+                    if (!new_val) return {};
+                    for (size_t fi = 0; fi < info.field_names.size(); fi++) {
+                        if (info.field_names[fi] == name_expr->value) {
+                            if (info.is_recursive) {
+                                // Heap ADT: create new node, copy all fields, replace one
+                                // For simplicity, not supported yet for recursive types
+                                std::cerr << "Codegen: field update on recursive ADT not supported\n";
+                                return {};
+                            }
+                            Value* store_val = new_val.val;
+                            if (store_val->getType() != LType::getInt64Ty(*context_)) {
+                                if (store_val->getType()->isPointerTy())
+                                    store_val = builder_->CreatePtrToInt(store_val, LType::getInt64Ty(*context_));
+                            }
+                            result = builder_->CreateInsertValue(result, store_val, {(unsigned)(fi + 1)});
+                            break;
+                        }
+                    }
+                }
+                return {result, CType::ADT};
+            }
+            std::cerr << "Codegen: no ADT constructor found for field update\n";
+            return {};
+        }
         case AST_FIELD_ACCESS_EXPR: {
             auto* fa = static_cast<FieldAccessExpr*>(node);
             auto obj = codegen(fa->identifier);
@@ -2078,6 +2124,63 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                             auto* pv = static_cast<PatternValue*>(sub_pat);
                             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
                                 named_values_[(*id)->name->value] = {field_val, CType::INT};
+                        }
+                    }
+                }
+                body_inline = true;
+            } else {
+                builder_->CreateBr(body_bb);
+            }
+        } else if (pat->get_type() == AST_RECORD_PATTERN) {
+            // Named field pattern: Person { name = n, age = a }
+            auto* rp = static_cast<RecordPattern*>(pat);
+            auto ctor_it = adt_constructors_.find(rp->recordType);
+            if (ctor_it != adt_constructors_.end()) {
+                int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
+                auto i8_ty = LType::getInt8Ty(*context_);
+                auto i64_ty = LType::getInt64Ty(*context_);
+
+                if (ctor_it->second.is_recursive) {
+                    auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i8_ty, tag)),
+                                           body_bb, next_bb);
+                    builder_->SetInsertPoint(body_bb);
+                    for (auto& [name_expr, pattern] : rp->items) {
+                        if (!name_expr) continue;
+                        for (size_t fi = 0; fi < ctor_it->second.field_names.size(); fi++) {
+                            if (ctor_it->second.field_names[fi] == name_expr->value) {
+                                auto val = builder_->CreateCall(rt_adt_get_field_,
+                                    {scrutinee.val, ConstantInt::get(i64_ty, fi)});
+                                if (pattern->get_type() == AST_PATTERN_VALUE) {
+                                    auto* pv = static_cast<PatternValue*>(pattern);
+                                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                        named_values_[(*id)->name->value] = {val, CType::INT};
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i8_ty, tag)),
+                                           body_bb, next_bb);
+                    builder_->SetInsertPoint(body_bb);
+                    for (auto& [name_expr, pattern] : rp->items) {
+                        if (!name_expr) continue;
+                        for (size_t fi = 0; fi < ctor_it->second.field_names.size(); fi++) {
+                            if (ctor_it->second.field_names[fi] == name_expr->value) {
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                auto val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
+                                if (ftype == CType::STRING || ftype == CType::SEQ || ftype == CType::ADT)
+                                    val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
+                                if (pattern->get_type() == AST_PATTERN_VALUE) {
+                                    auto* pv = static_cast<PatternValue*>(pattern);
+                                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                        named_values_[(*id)->name->value] = {val, ftype};
+                                }
+                                break;
+                            }
                         }
                     }
                 }
