@@ -44,10 +44,7 @@
 - [ ] Compiler error messages (clear, actionable)
 - [ ] REPL (compile-and-run mode)
 
-### Codegen Bugs
-- [ ] Multi-line module function bodies: LLVM "referring to basic block in another function" error with multi-line case expressions in modules. Single-line functions work. Likely caused by function recreation (erased function's basic blocks referenced by new function).
-- [ ] Cross-function monomorphization: when a module function calls another with different argument types than inferred defaults (e.g. `reverse` calling `fold` with SEQ accumulator instead of INT).
-
 ### Stdlib
-- [ ] Compile full stdlib with yonac (List, Tuple, Range, Test) — blocked by multi-function module bug
+- [x] List module compiles with 17 exported functions ✅
+- [ ] Compile remaining stdlib with yonac (Tuple, Range, Test)
 - [ ] Exception utilities, stack traces

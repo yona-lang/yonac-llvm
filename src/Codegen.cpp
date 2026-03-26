@@ -432,10 +432,13 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
         codegen_function_def(func, fn_name);
     }
 
-    // Second pass: compile each function with inferred parameter types
+    // Second pass: compile only EXPORTED functions with inferred types.
+    // Non-exported functions stay deferred and compile on demand at call sites
+    // with correct argument types (monomorphization).
     for (auto* func : mod->functions) {
         std::string fn_name = func->name;
         bool is_exported = export_set.count(fn_name) > 0;
+        if (!is_exported) continue; // internal functions compile at call sites
 
         auto def_it = deferred_functions_.find(fn_name);
         if (def_it == deferred_functions_.end()) continue;
@@ -538,6 +541,9 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
             }
         }
     }
+
+    // Clear builder insert point after module compilation
+    builder_->ClearInsertionPoint();
 
     // Verify
     std::string err;
@@ -1324,7 +1330,6 @@ Codegen::CompiledFunction Codegen::compile_function(
     CType ret_ctype = body_tv ? body_tv.type : CType::INT;
 
     if (body_tv && body_tv.val) {
-        // If body type doesn't match return type, we need to recreate the function
         if (body_tv.val->getType() != ret_type) {
             // Remove the function and recreate with correct return type
             fn->eraseFromParent();
@@ -1821,22 +1826,33 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto min_len = ConstantInt::get(LType::getInt64Ty(*context_), htp->heads.size());
             builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
 
+            // Determine element type from the sequence's subtypes
+            CType elem_type = (!scrutinee.subtypes.empty()) ? scrutinee.subtypes[0] : CType::INT;
+
             builder_->SetInsertPoint(body_bb);
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
                 auto idx = ConstantInt::get(LType::getInt64Ty(*context_), hi);
                 auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
+                // If element type is pointer-based (SEQ, STRING, FUNCTION, etc.),
+                // cast the i64 from seq_get to ptr
+                Value* elem_val = hv;
+                if (elem_type == CType::SEQ || elem_type == CType::STRING ||
+                    elem_type == CType::FUNCTION || elem_type == CType::ADT ||
+                    elem_type == CType::SET || elem_type == CType::DICT) {
+                    elem_val = builder_->CreateIntToPtr(hv, PointerType::get(*context_, 0));
+                }
                 auto* hp = htp->heads[hi];
                 if (hp->get_type() == AST_PATTERN_VALUE) {
                     auto* pv = static_cast<PatternValue*>(hp);
                     if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-                        named_values_[(*id)->name->value] = {hv, CType::INT};
+                        named_values_[(*id)->name->value] = {elem_val, elem_type};
                 }
             }
             if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
                 auto tv = builder_->CreateCall(rt_seq_tail_, {scrutinee.val});
                 auto* pv = static_cast<PatternValue*>(htp->tail);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-                    named_values_[(*id)->name->value] = {tv, CType::SEQ};
+                    named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
             }
             body_inline = true;
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
@@ -2085,11 +2101,17 @@ TypedValue Codegen::codegen_join(JoinExpr* node) {
     auto right = codegen(node->right);
     if (!left || !right) return {};
 
-    if (left.type == CType::SEQ && right.type == CType::SEQ)
-        return {builder_->CreateCall(rt_seq_join_, {left.val, right.val}), CType::SEQ};
     if (left.type == CType::STRING || right.type == CType::STRING)
         return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
-    return {};
+    // Join (++) always produces a sequence. Both operands must be sequences.
+    // If an operand is typed as INT (element type not propagated from sequence
+    // destructuring), the i64 value is actually a pointer to a sequence —
+    // cast to ptr. This is semantically correct: ++ only operates on sequences.
+    auto as_seq = [&](const TypedValue& tv) -> Value* {
+        if (tv.val->getType()->isPointerTy()) return tv.val;
+        return builder_->CreateIntToPtr(tv.val, PointerType::get(*context_, 0));
+    };
+    return {builder_->CreateCall(rt_seq_join_, {as_seq(left), as_seq(right)}), CType::SEQ};
 }
 
 // ===== Extern Declarations =====
