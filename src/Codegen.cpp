@@ -1745,6 +1745,40 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     auto scrutinee = auto_await(codegen(node->expr));
     if (!scrutinee) return {};
 
+    // Exhaustiveness check for ADT scrutinees
+    if (scrutinee.type == CType::ADT) {
+        // Find the ADT type name from the first constructor pattern
+        std::string adt_type_name;
+        bool has_wildcard = false;
+        std::unordered_set<std::string> covered_ctors;
+
+        for (auto* clause : node->clauses) {
+            auto* pat = clause->pattern;
+            if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+                auto* cp = static_cast<ConstructorPattern*>(pat);
+                covered_ctors.insert(cp->constructor_name);
+                if (adt_type_name.empty()) {
+                    auto it = adt_constructors_.find(cp->constructor_name);
+                    if (it != adt_constructors_.end())
+                        adt_type_name = it->second.type_name;
+                }
+            } else if (pat->get_type() == AST_UNDERSCORE_PATTERN ||
+                       pat->get_type() == AST_PATTERN_VALUE) {
+                has_wildcard = true;
+            }
+        }
+
+        if (!adt_type_name.empty() && !has_wildcard) {
+            // Check all constructors of this ADT are covered
+            for (auto& [name, info] : adt_constructors_) {
+                if (info.type_name == adt_type_name && covered_ctors.count(name) == 0) {
+                    std::cerr << "Warning: non-exhaustive pattern match on " << adt_type_name
+                              << " — missing constructor " << name << "\n";
+                }
+            }
+        }
+    }
+
     auto fn = builder_->GetInsertBlock()->getParent();
     auto merge_bb = BasicBlock::Create(*context_, "case.end");
     std::vector<std::pair<TypedValue, BasicBlock*>> results;
