@@ -29,11 +29,12 @@
 ### Exhaustiveness Checking
 - [x] Warn when case expression doesn't cover all ADT constructors ✅
 
-### Records
-- [ ] Named LLVM structs for record types
-- [ ] Field access via extractvalue
-- [ ] Functional update (copy struct, replace field)
-- [ ] Record patterns in case expressions
+### Named ADT Fields
+- [x] Named field syntax: `Person { name : String, age : Int }` ✅
+- [x] Dot syntax field access: `p.name` ✅
+- [ ] Named construction: `Person { name = "Alice", age = 30 }`
+- [ ] Functional update: `p { age = 31 }`
+- [ ] Named field patterns in case: `case p of Person { name = n } -> n end`
 
 ### Type Checking
 - [ ] Compile-time type error reporting (validate during codegen)
