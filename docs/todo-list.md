@@ -46,5 +46,8 @@
 
 ### Stdlib
 - [x] List module compiles with 17 exported functions ✅
-- [ ] Compile remaining stdlib with yonac (Tuple, Range, Test)
+- [x] Option and Result compiled with ADTs ✅
+- [x] Test module compiles ✅
+- [ ] Tuple module (needs tuple pattern destructuring in function params fix)
+- [ ] Range module (needs function recreation fix for tuple-returning functions)
 - [ ] Exception utilities, stack traces
