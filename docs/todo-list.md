@@ -2,57 +2,49 @@
 
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
-- **Test Coverage**: 35 tests, 441 assertions (codegen E2E + ADT tests)
-- **Type System**: Symbol interning, Dict/Set, ADTs, monomorphization via deferred compilation
+- **Tests**: 35 tests, 441 assertions (codegen E2E + ADT tests)
+- **Type System**: ADTs, symbol interning, Dict/Set, monomorphization, .yonai interface files
 
 ## Completed
 
 - Lexer, Parser, AST (newline-aware, juxtaposition, string interpolation)
-- LLVM codegen with TypedValue (type-directed, CType tags propagate)
-- Deferred function compilation at call sites (monomorphization)
+- LLVM codegen with TypedValue (type-directed, CType tags)
+- Deferred function compilation (monomorphization at call sites)
 - Lambda lifting, higher-order functions, partial application
-- Case expressions (integer, symbol, variable, wildcard, head-tail, tuple, or-pattern, constructor)
-- Tuples (LLVM structs), sequences (runtime heap arrays)
-- Symbol interning (i64 IDs, icmp eq comparison)
+- Case expressions (integer, symbol, wildcard, head-tail, tuple, constructor, or-pattern)
+- Symbol interning (i64 IDs, icmp eq)
 - Dict/Set construction with typed elements
-- Algebraic data types (`type Option a = Some a | None`)
-- Module compilation with C-ABI exports, cross-language linking
-- Module type metadata (pattern + body-based type inference)
-- Async codegen (CType::PROMISE, thread pool, auto-await, parallel let)
+- ADTs: non-recursive (flat struct) and recursive (heap nodes)
+- ADT constructors as first-class functions
+- Interface files (.yonai) for cross-module type-safe linking
+- Stdlib: Option and Result using ADTs
+- Module compilation with C-ABI exports
+- Module type metadata (pattern + body-based inference)
+- Async codegen (CType::PROMISE, thread pool, auto-await)
 - Optimization passes (TCE, constant folding, GVN, DCE)
 - `extern` / `extern async` for C FFI
 
 ## Remaining Work
 
-### ADTs
-- [x] Non-recursive ADTs: flat struct {i8 tag, payload} ✅
-- [x] Recursive ADTs: heap-allocated nodes, runtime alloc/access ✅
-- [x] Stdlib migration: Option, Result rewritten with ADTs ✅
-- [x] Interface files (.yonai) for cross-module linking ✅
-- [ ] Exhaustiveness checking (warnings)
-
-### Cross-Module
-- [x] Interface files (.yonai) for type-safe linking ✅
+### Exhaustiveness Checking
+- [ ] Warn when case expression doesn't cover all ADT constructors
+- [ ] Track constructor set per ADT type during codegen
 
 ### Records
 - [ ] Named LLVM structs for record types
-- [ ] Field access, functional update, record patterns
+- [ ] Field access via extractvalue
+- [ ] Functional update (copy struct, replace field)
+- [ ] Record patterns in case expressions
 
 ### Type Checking
-- [ ] Compile-time type error checking (validate during codegen, clear error messages)
+- [ ] Compile-time type error reporting (validate during codegen)
 - [ ] Homogeneous collection enforcement
+- [ ] Clear error messages with source locations
 
 ### Tooling
-- [ ] Compiler error messages (clear, actionable, with source locations)
+- [ ] Compiler error messages (clear, actionable)
 - [ ] REPL (compile-and-run mode)
 
 ### Stdlib
-- [ ] Yona-written stdlib modules compiled with yonac
+- [ ] Compile full stdlib with yonac (List, Tuple, Range, Test)
 - [ ] Exception utilities, stack traces
-- [ ] HTTP client with TLS
-
-### Future
-- [ ] LLVM coroutine intrinsics (replace thread pool)
-- [ ] Whole-program optimization across module boundaries
-- [ ] Incremental compilation
-- [ ] Type classes (dictionary passing)
