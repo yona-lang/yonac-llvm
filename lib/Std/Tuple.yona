@@ -1,4 +1,4 @@
-module Std\Tuple exports fst, snd, swap, mapBoth, zip, unzip as
+module Std\Tuple exports fst, snd, swap, mapBoth as
 
 fst (a, _) = a
 
@@ -7,30 +7,5 @@ snd (_, b) = b
 swap (a, b) = (b, a)
 
 mapBoth f g (a, b) = (f a, g b)
-
-zip seq1 seq2 =
-    case seq1 of
-        [] -> []
-        [h1|t1] ->
-            case seq2 of
-                [] -> []
-                [h2|t2] ->
-                    let rest = zip t1 t2 in
-                    (h1, h2) :: rest
-            end
-    end
-
-unzip seq =
-    case seq of
-        [] -> ([], [])
-        [h|t] ->
-            let rest = unzip t in
-            case h of
-                (a, b) ->
-                    case rest of
-                        (firsts, seconds) -> (a :: firsts, b :: seconds)
-                    end
-            end
-    end
 
 end

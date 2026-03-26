@@ -45,9 +45,5 @@
 - [ ] REPL (compile-and-run mode)
 
 ### Stdlib
-- [x] List module compiles with 17 exported functions ✅
-- [x] Option and Result compiled with ADTs ✅
-- [x] Test module compiles ✅
-- [ ] Tuple module (needs tuple pattern destructuring in function params fix)
-- [ ] Range module (needs function recreation fix for tuple-returning functions)
+- [x] All 6 stdlib modules compile: Option (7), Result (8), List (17), Tuple (4), Range (6), Test (3) ✅
 - [ ] Exception utilities, stack traces

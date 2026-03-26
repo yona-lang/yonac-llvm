@@ -1195,53 +1195,75 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
     }
 
-    // Pre-infer return type from body structure to avoid type mismatches
-    // during first compilation pass (especially for recursive functions).
-    // Walks the AST to determine the type of the first evaluable expression.
-    std::function<CType(AstNode*)> infer_expr_type = [&](AstNode* node) -> CType {
-        if (!node) return CType::INT;
+    // Pre-infer return LLVM type from body structure. Returns the actual
+    // LLVM type (including struct layout for tuples) so the function is
+    // created with the correct signature — no recreation needed.
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto i8_ty = LType::getInt8Ty(*context_);
+
+    std::function<std::pair<LType*, CType>(AstNode*)> infer_ret = [&](AstNode* node) -> std::pair<LType*, CType> {
+        if (!node) return {i64_ty, CType::INT};
         auto ct = node->get_type();
-        if (ct == AST_VALUES_SEQUENCE_EXPR) return CType::SEQ;
-        if (ct == AST_SET_EXPR) return CType::SET;
-        if (ct == AST_DICT_EXPR) return CType::DICT;
-        if (ct == AST_TUPLE_EXPR) return CType::TUPLE;
-        if (ct == AST_SYMBOL_EXPR) return CType::SYMBOL;
-        if (ct == AST_STRING_EXPR) return CType::STRING;
-        if (ct == AST_INTEGER_EXPR) return CType::INT;
-        if (ct == AST_FLOAT_EXPR) return CType::FLOAT;
-        if (ct == AST_TRUE_LITERAL_EXPR || ct == AST_FALSE_LITERAL_EXPR) return CType::BOOL;
-        if (ct == AST_CONS_LEFT_EXPR || ct == AST_CONS_RIGHT_EXPR || ct == AST_JOIN_EXPR) return CType::SEQ;
+        if (ct == AST_VALUES_SEQUENCE_EXPR || ct == AST_CONS_LEFT_EXPR ||
+            ct == AST_CONS_RIGHT_EXPR || ct == AST_JOIN_EXPR)
+            return {llvm_type(CType::SEQ), CType::SEQ};
+        if (ct == AST_SET_EXPR) return {llvm_type(CType::SET), CType::SET};
+        if (ct == AST_DICT_EXPR) return {llvm_type(CType::DICT), CType::DICT};
+        if (ct == AST_SYMBOL_EXPR) return {i64_ty, CType::SYMBOL};
+        if (ct == AST_STRING_EXPR) return {llvm_type(CType::STRING), CType::STRING};
+        if (ct == AST_INTEGER_EXPR) return {i64_ty, CType::INT};
+        if (ct == AST_FLOAT_EXPR) return {llvm_type(CType::FLOAT), CType::FLOAT};
+        if (ct == AST_TRUE_LITERAL_EXPR || ct == AST_FALSE_LITERAL_EXPR)
+            return {llvm_type(CType::BOOL), CType::BOOL};
+        if (ct == AST_TUPLE_EXPR) {
+            // Determine struct layout from tuple elements
+            auto* te = static_cast<TupleExpr*>(node);
+            std::vector<LType*> fields;
+            for (auto* v : te->values) {
+                auto [lt, _] = infer_ret(v);
+                fields.push_back(lt);
+            }
+            return {StructType::get(*context_, fields), CType::TUPLE};
+        }
         if (ct == AST_IDENTIFIER_EXPR) {
             auto* id = static_cast<IdentifierExpr*>(node);
             for (size_t pi = 0; pi < def.param_names.size(); pi++) {
-                if (def.param_names[pi] == id->name->value && pi < args.size())
-                    return args[pi].type;
+                if (def.param_names[pi] == id->name->value && pi < args.size()) {
+                    LType* lt = (args[pi].val && args[pi].val->getType() != llvm_type(args[pi].type))
+                        ? args[pi].val->getType() : llvm_type(args[pi].type);
+                    return {lt, args[pi].type};
+                }
+            }
+            // Check ADT constructors (zero-arity)
+            auto adt_it = adt_constructors_.find(id->name->value);
+            if (adt_it != adt_constructors_.end()) {
+                if (adt_it->second.is_recursive)
+                    return {PointerType::get(*context_, 0), CType::ADT};
+                std::vector<LType*> fields = {i8_ty};
+                for (int f = 0; f < adt_it->second.max_arity; f++) fields.push_back(i64_ty);
+                return {StructType::get(*context_, fields), CType::ADT};
             }
         }
         // Recurse through wrappers
         if (ct == AST_CASE_EXPR) {
             auto* ce = static_cast<CaseExpr*>(node);
-            if (!ce->clauses.empty()) return infer_expr_type(ce->clauses[0]->body);
+            if (!ce->clauses.empty()) return infer_ret(ce->clauses[0]->body);
         }
-        if (ct == AST_LET_EXPR) {
-            auto* le = static_cast<LetExpr*>(node);
-            return infer_expr_type(le->expr);
-        }
-        if (ct == AST_IF_EXPR) {
-            auto* ie = static_cast<IfExpr*>(node);
-            return infer_expr_type(ie->thenExpr);
-        }
-        return CType::INT;
+        if (ct == AST_LET_EXPR) return infer_ret(static_cast<LetExpr*>(node)->expr);
+        if (ct == AST_IF_EXPR) return infer_ret(static_cast<IfExpr*>(node)->thenExpr);
+        return {i64_ty, CType::INT};
     };
 
     CType preliminary_ret = CType::INT;
+    LType* ret_type = i64_ty;
     if (!def.ast->bodies.empty()) {
         auto* body = def.ast->bodies[0];
-        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
-            preliminary_ret = infer_expr_type(bwg->expr);
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            auto [lt, ct] = infer_ret(bwg->expr);
+            ret_type = lt;
+            preliminary_ret = ct;
+        }
     }
-
-    auto ret_type = llvm_type(preliminary_ret);
     auto fn_type = llvm::FunctionType::get(ret_type, param_types, false);
     auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 

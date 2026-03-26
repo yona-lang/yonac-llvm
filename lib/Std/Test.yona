@@ -1,13 +1,8 @@
-module Std\Test exports assertEqual, assertNotEqual, assertTrue, assertFalse,
-    assertGreater, assertLess, assertContains, assertEmpty, suite, run as
+module Std\Test exports assertEqual, assertTrue, assertFalse as
 
 assertEqual expected actual =
     if expected == actual then (:pass, "assertEqual")
     else (:fail, "assertEqual: expected equal values")
-
-assertNotEqual a b =
-    if a == b then (:fail, "assertNotEqual: values are equal")
-    else (:pass, "assertNotEqual")
 
 assertTrue value =
     if value then (:pass, "assertTrue")
@@ -16,45 +11,5 @@ assertTrue value =
 assertFalse value =
     if value then (:fail, "assertFalse: expected false")
     else (:pass, "assertFalse")
-
-assertGreater a b =
-    if a > b then (:pass, "assertGreater")
-    else (:fail, "assertGreater: first value not greater")
-
-assertLess a b =
-    if a < b then (:pass, "assertLess")
-    else (:fail, "assertLess: first value not less")
-
-assertContains elem seq =
-    case seq of
-        []    -> (:fail, "assertContains: element not found")
-        [h|t] ->
-            if h == elem then (:pass, "assertContains")
-            else assertContains elem t
-    end
-
-assertEmpty seq =
-    case seq of
-        [] -> (:pass, "assertEmpty")
-        _  -> (:fail, "assertEmpty: sequence not empty")
-    end
-
-suite name tests = (:suite, name, tests)
-
-run s =
-    case s of
-        (:suite, name, tests) -> runTests name tests 0 0
-    end
-
-runTests name tests passed failed =
-    case tests of
-        [] -> (:results, name, passed, failed)
-        [h|t] ->
-            case h of
-                (:pass, _) -> runTests name t (passed + 1) failed
-                (:fail, msg) -> runTests name t passed (failed + 1)
-                _ -> runTests name t passed (failed + 1)
-            end
-    end
 
 end
