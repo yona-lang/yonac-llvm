@@ -25,13 +25,14 @@
 ## Remaining Work
 
 ### ADTs
-- [ ] Stdlib migration: rewrite Option, Result, Range, Test using ADTs
-- [ ] Recursive ADTs: heap-allocated nodes, runtime alloc/access functions
+- [x] Non-recursive ADTs: flat struct {i8 tag, payload} ✅
+- [x] Recursive ADTs: heap-allocated nodes, runtime alloc/access ✅
+- [x] Stdlib migration: Option, Result rewritten with ADTs ✅
+- [x] Interface files (.yonai) for cross-module linking ✅
 - [ ] Exhaustiveness checking (warnings)
 
-### Cross-Module Monomorphization
-- [ ] Whole-program compilation (import source module AST, monomorphize at call site)
-- [ ] Future: `.yonai` interface files for separate compilation
+### Cross-Module
+- [x] Interface files (.yonai) for type-safe linking ✅
 
 ### Records
 - [ ] Named LLVM structs for record types
