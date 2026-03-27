@@ -36,13 +36,13 @@
 - [x] Functional update: `p { age = 31 }` ✅
 - [x] Named field patterns: `case p of Person { age = a } -> a end` ✅
 
-### Type Checking
-- [ ] Compile-time type error reporting (validate during codegen)
-- [ ] Homogeneous collection enforcement
-- [ ] Clear error messages with source locations
+### Type Checking & Error Messages
+- [x] Error reporting with source locations (file:line:col) ✅
+- [x] Homogeneous collection enforcement ✅
+- [x] Arithmetic type validation ✅
+- [x] Undefined variable/function errors ✅
 
 ### Tooling
-- [ ] Compiler error messages (clear, actionable)
 - [ ] REPL (compile-and-run mode)
 
 ### Stdlib

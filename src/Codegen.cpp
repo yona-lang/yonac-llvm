@@ -211,6 +211,14 @@ void Codegen::declare_runtime() {
     rt_raise_->addFnAttr(llvm::Attribute::NoReturn);
 }
 
+void Codegen::report_error(const SourceLocation& loc, const std::string& message) {
+    error_count_++;
+    if (loc.is_valid())
+        std::cerr << loc.filename << ":" << loc.line << ":" << loc.column << ": error: " << message << "\n";
+    else
+        std::cerr << "error: " << message << "\n";
+}
+
 // ===== Public API =====
 
 std::string Codegen::mangle_name(const std::string& module_fqn, const std::string& func_name) {
@@ -917,7 +925,7 @@ TypedValue Codegen::codegen(AstNode* node) {
             auto* fu = static_cast<FieldUpdateExpr*>(node);
             auto obj = codegen(fu->identifier);
             if (!obj || obj.type != CType::ADT) {
-                std::cerr << "Codegen: field update requires ADT value\n";
+                report_error(fu->source_context, "field update requires ADT value");
                 return {};
             }
             // Find the constructor with the matching field names
@@ -933,7 +941,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                             if (info.is_recursive) {
                                 // Heap ADT: create new node, copy all fields, replace one
                                 // For simplicity, not supported yet for recursive types
-                                std::cerr << "Codegen: field update on recursive ADT not supported\n";
+                                report_error(fu->source_context, "field update on recursive ADT not supported");
                                 return {};
                             }
                             Value* store_val = new_val.val;
@@ -948,7 +956,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                 }
                 return {result, CType::ADT};
             }
-            std::cerr << "Codegen: no ADT constructor found for field update\n";
+            report_error(fu->source_context, "no ADT constructor found for field update");
             return {};
         }
         case AST_FIELD_ACCESS_EXPR: {
@@ -981,7 +989,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                     }
                 }
             }
-            std::cerr << "Codegen: unknown field '" << field_name << "'\n";
+            report_error(fa->source_context, "unknown field '" + field_name + "'");
             return {};
         }
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
@@ -994,7 +1002,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_ADT_CONSTRUCTOR: return {};
         case AST_CONSTRUCTOR_PATTERN: return {};
         default:
-            std::cerr << "Codegen: unsupported node type " << node->get_type() << "\n";
+            report_error(node->source_context, "unsupported expression type");
             return {};
     }
 }
@@ -1041,6 +1049,18 @@ TypedValue Codegen::codegen_binary(AstNode* left_node, AstNode* right_node, cons
     auto left = auto_await(codegen(left_node));
     auto right = auto_await(codegen(right_node));
     if (!left || !right) return {};
+
+    // Type validation for arithmetic operators
+    if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
+        bool left_numeric = (left.type == CType::INT || left.type == CType::FLOAT);
+        bool right_numeric = (right.type == CType::INT || right.type == CType::FLOAT);
+        bool both_string = (left.type == CType::STRING && right.type == CType::STRING);
+        if (!left_numeric && !right_numeric && !both_string) {
+            report_error(left_node->source_context,
+                "type error: operator '" + op + "' requires numeric or string operands");
+            return {};
+        }
+    }
 
     // String concatenation
     if (left.type == CType::STRING && right.type == CType::STRING && op == "+") {
@@ -1227,7 +1247,7 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
         last_lambda_name_ = node->name->value;
         return {nullptr, CType::FUNCTION};
     }
-    std::cerr << "Codegen: unknown variable '" << node->name->value << "'\n";
+    report_error(node->source_context, "undefined variable '" + node->name->value + "'");
     return {};
 }
 
@@ -1784,7 +1804,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         // Try as an LLVM function in the module
         auto* fn = module_->getFunction(fn_name);
         if (!fn) {
-            std::cerr << "Codegen: unknown function '" << fn_name << "'\n";
+            report_error(node->source_context, "undefined function '" + fn_name + "'");
             return {};
         }
         std::vector<Value*> vals;
@@ -2478,11 +2498,15 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
     auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
     auto seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
 
-    CType elem_type = CType::INT; // default
+    CType elem_type = CType::INT;
     for (size_t i = 0; i < n; i++) {
         auto tv = codegen(node->values[i]);
         if (!tv) return {};
         if (i == 0) elem_type = tv.type;
+        else if (tv.type != elem_type)
+            report_error(node->values[i]->source_context,
+                "type error: heterogeneous sequence — expected " + ctype_to_string(elem_type)
+                + " but got " + ctype_to_string(tv.type));
         auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
         builder_->CreateCall(rt_seq_set_, {seq, idx, tv.val});
     }

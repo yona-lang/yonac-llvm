@@ -266,7 +266,11 @@ private:
     void codegen_print(const TypedValue& tv);
     void codegen_print_value(const TypedValue& tv);
 
+    // Compile error reporting with source location
+    void report_error(const SourceLocation& loc, const std::string& message);
+
 public:
+    int error_count_ = 0;
     // Module function type metadata — populated during compile_module,
     // can be queried by importers for type-safe cross-module linking.
     struct ModuleFunctionMeta {
