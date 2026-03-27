@@ -68,6 +68,15 @@ Phase 6: Concurrency
 - [ ] Package manager / build system
 - [ ] LSP server
 
+### Distribution & Packaging
+- [ ] RPM package (Fedora/RHEL/CentOS)
+- [ ] DEB package (Debian/Ubuntu)
+- [ ] Homebrew formula (macOS)
+- [ ] Windows installer (MSI or NSIS)
+- [ ] Static binary releases (Linux/macOS/Windows) via GitHub Releases
+- [ ] Docker image
+- [ ] CI/CD pipeline for automated releases
+
 ### Type System
 - [ ] Type annotations
 - [ ] Traits / type classes
