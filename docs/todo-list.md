@@ -49,7 +49,6 @@ Phase 6: Concurrency
 - [x] Wildcard import (`import Std\List in expr`) ✅
 - [x] ADT field names in .yonai (cross-module named field access) ✅
 - [ ] Re-exports (module re-exporting from another module)
-- [ ] Error propagation operator (`?`)
 - [ ] Lazy sequences / iterators
 
 ### Codegen Optimizations
