@@ -189,6 +189,8 @@ void Codegen::declare_runtime() {
     auto fn_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {i64}, false), 0);
     auto promise_ptr = ptr; // opaque pointer to yona_promise_t
     rt_async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
+    auto thunk_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {}, false), 0);
+    rt_async_call_thunk_ = decl("yona_rt_async_call_thunk", promise_ptr, {thunk_ptr_ty});
     rt_async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
 
     // ADT runtime (recursive types)
@@ -2018,13 +2020,71 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         if (it != named_values_.end()) call_args.push_back(it->second.val);
     }
 
-    // Async function: wrap in yona_rt_async_call → returns PROMISE
+    // Async function: wrap in thread pool call → returns PROMISE
     if (cf.return_type == CType::PROMISE) {
         CType inner_ret = CType::INT;
         auto nv_it = named_values_.find(fn_name);
         if (nv_it != named_values_.end() && !nv_it->second.subtypes.empty())
             inner_ret = nv_it->second.subtypes[0];
-        auto promise = builder_->CreateCall(rt_async_call_, {cf.fn, call_args[0]}, "async_call");
+
+        Value* promise;
+        if (call_args.size() == 1) {
+            // Single-arg: use legacy yona_rt_async_call(fn, arg)
+            promise = builder_->CreateCall(rt_async_call_, {cf.fn, call_args[0]}, "async_call");
+        } else {
+            // Multi-arg: generate a thunk that captures all args
+            auto i64_ty = LType::getInt64Ty(*context_);
+            auto thunk_type = llvm::FunctionType::get(i64_ty, {}, false);
+            auto thunk_name = fn_name + "_async_thunk_" + std::to_string(lambda_counter_++);
+            auto thunk = Function::Create(thunk_type, Function::InternalLinkage, thunk_name, module_.get());
+
+            // Save current state
+            auto saved_block = builder_->GetInsertBlock();
+            auto saved_point = builder_->GetInsertPoint();
+
+            auto thunk_entry = BasicBlock::Create(*context_, "entry", thunk);
+            builder_->SetInsertPoint(thunk_entry);
+
+            // Rebuild args as constants embedded in the thunk
+            std::vector<Value*> thunk_call_args;
+            for (size_t ai = 0; ai < call_args.size(); ai++) {
+                // For runtime values, we need to pass them through. Since the thunk
+                // is generated at the call site, the LLVM values are available.
+                // But thunks are separate functions — they can't reference the caller's SSA values.
+                // Solution: use global variables or struct packing.
+                // Simplest: for constant args, embed directly. For dynamic args, not supported yet.
+                if (auto* ci = dyn_cast<Constant>(call_args[ai])) {
+                    thunk_call_args.push_back(ci);
+                } else {
+                    // Dynamic arg — store to a global, load in thunk
+                    auto* gv = new GlobalVariable(*module_, call_args[ai]->getType(), false,
+                        GlobalValue::InternalLinkage, Constant::getNullValue(call_args[ai]->getType()),
+                        thunk_name + ".arg" + std::to_string(ai));
+                    // Store the value before calling async
+                    auto* store_point = saved_block;
+                    // We'll store after restoring — need to do it before the async call
+                    thunk_call_args.push_back(builder_->CreateLoad(call_args[ai]->getType(), gv));
+                    // Mark for pre-store
+                }
+            }
+
+            auto* thunk_result = builder_->CreateCall(cf.fn, thunk_call_args, "thunk_call");
+            builder_->CreateRet(thunk_result);
+
+            // Restore insertion point
+            builder_->SetInsertPoint(saved_block, saved_point);
+
+            // Store dynamic args to globals before the async call
+            for (size_t ai = 0; ai < call_args.size(); ai++) {
+                if (!isa<Constant>(call_args[ai])) {
+                    auto gv_name = thunk_name + ".arg" + std::to_string(ai);
+                    auto* gv = module_->getNamedGlobal(gv_name);
+                    if (gv) builder_->CreateStore(call_args[ai], gv);
+                }
+            }
+
+            promise = builder_->CreateCall(rt_async_call_thunk_, {thunk}, "async_thunk_call");
+        }
         return {promise, CType::PROMISE, {inner_ret}};
     }
 

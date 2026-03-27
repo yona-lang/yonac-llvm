@@ -354,9 +354,11 @@ typedef struct {
 } yona_promise_t;
 
 typedef int64_t (*yona_async_fn_t)(int64_t);
+typedef int64_t (*yona_thunk_fn_t)(void);
 
 typedef struct yona_task {
-    yona_async_fn_t fn;
+    yona_async_fn_t fn;     /* single-arg function (legacy) */
+    yona_thunk_fn_t thunk;  /* zero-arg thunk (multi-arg via closure) */
     int64_t arg;
     yona_promise_t* promise;
     struct yona_task* next;
@@ -382,8 +384,8 @@ static void* yona_pool_worker(void* unused) {
         if (!yona_task_head) yona_task_tail = NULL;
         pthread_mutex_unlock(&yona_pool_mutex);
 
-        /* Execute the task */
-        int64_t result = task->fn(task->arg);
+        /* Execute the task — either single-arg or thunk mode */
+        int64_t result = task->thunk ? task->thunk() : task->fn(task->arg);
 
         /* Fulfill the promise */
         pthread_mutex_lock(&task->promise->mutex);
@@ -407,6 +409,47 @@ static void yona_pool_init(void) {
     }
 }
 
+/* Generic async: takes a thunk (zero-arg function returning i64).
+ * The codegen generates thunks that capture multi-arg function calls. */
+typedef int64_t (*yona_thunk_t)(void);
+
+typedef struct yona_thunk_task {
+    yona_thunk_t thunk;
+    yona_promise_t* promise;
+    struct yona_thunk_task* next;
+} yona_thunk_task_t;
+
+static void* yona_pool_worker_thunk(void* unused);
+
+yona_promise_t* yona_rt_async_call_thunk(yona_thunk_t thunk) {
+    yona_pool_init();
+
+    yona_promise_t* promise = (yona_promise_t*)malloc(sizeof(yona_promise_t));
+    promise->result = 0;
+    promise->completed = 0;
+    pthread_mutex_init(&promise->mutex, NULL);
+    pthread_cond_init(&promise->cond, NULL);
+
+    yona_task_t* task = (yona_task_t*)malloc(sizeof(yona_task_t));
+    task->fn = NULL;
+    task->thunk = thunk;
+    task->arg = 0;
+    task->promise = promise;
+    task->next = NULL;
+
+    pthread_mutex_lock(&yona_pool_mutex);
+    if (yona_task_tail) {
+        yona_task_tail->next = task;
+    } else {
+        yona_task_head = task;
+    }
+    yona_task_tail = task;
+    pthread_cond_signal(&yona_pool_cond);
+    pthread_mutex_unlock(&yona_pool_mutex);
+
+    return promise;
+}
+
 /* Submit async work to thread pool. Returns promise immediately (non-blocking). */
 yona_promise_t* yona_rt_async_call(yona_async_fn_t fn, int64_t arg) {
     yona_pool_init();
@@ -419,6 +462,7 @@ yona_promise_t* yona_rt_async_call(yona_async_fn_t fn, int64_t arg) {
 
     yona_task_t* task = (yona_task_t*)malloc(sizeof(yona_task_t));
     task->fn = fn;
+    task->thunk = NULL;
     task->arg = arg;
     task->promise = promise;
     task->next = NULL;
@@ -456,6 +500,12 @@ int64_t yona_rt_async_await(yona_promise_t* promise) {
 int64_t yona_test_slow_identity(int64_t ms) {
     usleep((useconds_t)(ms * 1000));
     return ms;
+}
+
+/* Test helper: multi-arg async function — adds two numbers with a delay */
+int64_t yona_test_slow_add(int64_t a, int64_t b) {
+    usleep(10000); /* 10ms */
+    return a + b;
 }
 
 /* ===== Partial Application (Closures) ===== */

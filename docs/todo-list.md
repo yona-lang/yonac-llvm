@@ -9,7 +9,8 @@
 ## Roadmap
 
 ### Phase 1: Make the Language Usable
-- [ ] Pipe operators (`|>`, `<|`) — parsed but not compiled, desugar to function application
+- [x] Pipe operators (`|>`, `<|`) ✅
+- [x] Multi-arg async support (thunk-based thread pool calls) ✅
 - [ ] String stdlib (split, join, trim, replace, indexOf, substring, startsWith, endsWith, contains, charAt)
 - [ ] File IO stdlib (readFile, writeFile, appendFile, readLine, print, println, fileExists, deleteFile)
 - [ ] Async IO — wrap blocking IO with `extern async` for transparent async via thread pool

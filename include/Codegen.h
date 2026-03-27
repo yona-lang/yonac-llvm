@@ -164,6 +164,7 @@ private:
     llvm::Function* rt_adt_get_tag_ = nullptr;
     llvm::Function* rt_adt_get_field_ = nullptr;
     llvm::Function* rt_adt_set_field_ = nullptr;
+    llvm::Function* rt_async_call_thunk_ = nullptr;
     llvm::Function* rt_try_begin_ = nullptr;
     llvm::Function* rt_try_end_ = nullptr;
     llvm::Function* rt_raise_ = nullptr;
