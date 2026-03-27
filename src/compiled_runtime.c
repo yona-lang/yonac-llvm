@@ -14,6 +14,14 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <setjmp.h>
+#if defined(__linux__) || defined(__APPLE__)
+#include <execinfo.h>
+#define YONA_HAS_BACKTRACE 1
+#elif defined(_WIN32)
+#include <windows.h>
+#include <dbghelp.h>
+#define YONA_HAS_BACKTRACE 1
+#endif
 
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
@@ -208,9 +216,40 @@ void yona_rt_try_end(void) {
     if (yona_exc.depth > 0) yona_exc.depth--;
 }
 
+void yona_rt_print_stacktrace(void) {
+#if defined(__linux__) || defined(__APPLE__)
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    char** syms = backtrace_symbols(frames, n);
+    if (syms) {
+        fprintf(stderr, "Stack trace:\n");
+        for (int i = 2; i < n; i++)
+            fprintf(stderr, "  %s\n", syms[i]);
+        free(syms);
+    }
+#elif defined(_WIN32)
+    void* frames[64];
+    HANDLE process = GetCurrentProcess();
+    SymInitialize(process, NULL, TRUE);
+    WORD n = CaptureStackBackTrace(2, 62, frames, NULL);
+    fprintf(stderr, "Stack trace:\n");
+    SYMBOL_INFO* sym = (SYMBOL_INFO*)calloc(sizeof(SYMBOL_INFO) + 256, 1);
+    sym->MaxNameLen = 255;
+    sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+    for (WORD i = 0; i < n; i++) {
+        SymFromAddr(process, (DWORD64)frames[i], 0, sym);
+        fprintf(stderr, "  %s\n", sym->Name);
+    }
+    free(sym);
+#endif
+}
+
 void yona_rt_raise(int64_t symbol, const char* message) {
     if (yona_exc.depth == 0) {
-        fprintf(stderr, "Unhandled exception: :%ld \"%s\"\n", symbol, message ? message : "");
+        /* For display: message contains "symbol_name\0actual_message" if from codegen,
+           but since we get them separately, just print both */
+        fprintf(stderr, "Unhandled exception: \"%s\"\n", message ? message : "");
+        yona_rt_print_stacktrace();
         abort();
     }
     yona_exc.current.symbol = symbol;

@@ -1301,10 +1301,9 @@ private:
   void print(std::ostream &os) const override;
 
 public:
-  SymbolExpr *symbol;
-  StringExpr *message;
+  ExprNode *value;  // the exception value (typically an ADT constructor call)
 
-  explicit RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message);
+  explicit RaiseExpr(SourceContext token, ExprNode *value);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

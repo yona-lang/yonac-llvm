@@ -608,15 +608,12 @@ void ExternDeclExpr::print(std::ostream &os) const {
   os << "extern " << name << " in " << *body;
 }
 
-RaiseExpr::RaiseExpr(SourceContext token, SymbolExpr *symbol, StringExpr *message)
-    : ExprNode(token), symbol(symbol->with_parent<SymbolExpr>(this)), message(message->with_parent<StringExpr>(this)) {}
+RaiseExpr::RaiseExpr(SourceContext token, ExprNode *value)
+    : ExprNode(token), value(value->with_parent<ExprNode>(this)) {}
 
-RaiseExpr::~RaiseExpr() {
-  delete symbol;
-  delete message;
-}
+RaiseExpr::~RaiseExpr() { delete value; }
 
-void RaiseExpr::print(std::ostream &os) const { os << "raise " << *symbol << " " << *message; }
+void RaiseExpr::print(std::ostream &os) const { os << "raise " << *value; }
 
 WithExpr::WithExpr(SourceContext token, bool daemon, ExprNode *contextExpr, NameExpr *name, ExprNode *bodyExpr)
     : ScopedNode(token), daemon(daemon), contextExpr(contextExpr->with_parent<ExprNode>(this)), name(name->with_parent<NameExpr>(this)),

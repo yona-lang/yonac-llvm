@@ -59,7 +59,7 @@ static string compile_and_run(const string& code) {
     }
 
     string exe_path = "/tmp/yona_codegen_test";
-    string link_cmd = "cc " + obj_path + " " + rt_path + " -lm -lpthread -o " + exe_path + " 2>/dev/null";
+    string link_cmd = "cc " + obj_path + " " + rt_path + " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
     if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
 
     array<char, 256> buffer;

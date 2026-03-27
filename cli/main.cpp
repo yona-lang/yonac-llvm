@@ -165,7 +165,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    string link_cmd = "cc " + obj_file + " " + rt_obj + " -lm -lpthread -o " + output_file;
+    // -rdynamic exports symbols for backtrace_symbols() stack traces
+    string link_cmd = "cc " + obj_file + " " + rt_obj + " -lm -lpthread -rdynamic -o " + output_file;
     int link_result = system(link_cmd.c_str());
     filesystem::remove(obj_file);
 

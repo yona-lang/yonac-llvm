@@ -809,8 +809,11 @@ Function* Codegen::codegen_main(AstNode* node) {
     builder_->SetInsertPoint(bb);
 
     auto result = codegen(node);
-    if (result) codegen_print(result);
-    builder_->CreateRet(ConstantInt::get(i32, 0));
+    // Don't add print/ret if the block is already terminated (e.g., by raise)
+    if (!builder_->GetInsertBlock()->getTerminator()) {
+        if (result) codegen_print(result);
+        builder_->CreateRet(ConstantInt::get(i32, 0));
+    }
     return fn;
 }
 
@@ -1144,21 +1147,35 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
     builder_->SetInsertPoint(then_bb);
     auto then_tv = codegen(node->thenExpr);
     if (!then_tv) return {};
-    builder_->CreateBr(merge_bb);
-    auto then_end = builder_->GetInsertBlock();
+    bool then_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
+    BasicBlock* then_end = nullptr;
+    if (!then_terminated) {
+        builder_->CreateBr(merge_bb);
+        then_end = builder_->GetInsertBlock();
+    }
 
     fn->insert(fn->end(), else_bb);
     builder_->SetInsertPoint(else_bb);
     auto else_tv = codegen(node->elseExpr);
     if (!else_tv) return {};
-    builder_->CreateBr(merge_bb);
-    auto else_end = builder_->GetInsertBlock();
+    bool else_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
+    BasicBlock* else_end = nullptr;
+    if (!else_terminated) {
+        builder_->CreateBr(merge_bb);
+        else_end = builder_->GetInsertBlock();
+    }
 
     fn->insert(fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);
-    auto phi = builder_->CreatePHI(then_tv.val->getType(), 2);
-    phi->addIncoming(then_tv.val, then_end);
-    phi->addIncoming(else_tv.val, else_end);
+    unsigned phi_count = (then_end ? 1 : 0) + (else_end ? 1 : 0);
+    if (phi_count == 0) {
+        // Both branches terminate (e.g., both raise) — merge is dead
+        return then_tv;
+    }
+    LType* phi_type = then_end ? then_tv.val->getType() : else_tv.val->getType();
+    auto phi = builder_->CreatePHI(phi_type, phi_count);
+    if (then_end) phi->addIncoming(then_tv.val, then_end);
+    if (else_end) phi->addIncoming(else_tv.val, else_end);
     return {phi, then_tv.type, then_tv.subtypes};
 }
 
@@ -1567,9 +1584,11 @@ Codegen::CompiledFunction Codegen::compile_function(
             }
             ret_ctype = body_tv ? body_tv.type : CType::INT;
         }
-        builder_->CreateRet(body_tv.val);
+        if (!builder_->GetInsertBlock()->getTerminator())
+            builder_->CreateRet(body_tv.val);
     } else {
-        builder_->CreateRet(ConstantInt::get(ret_type, 0));
+        if (!builder_->GetInsertBlock()->getTerminator())
+            builder_->CreateRet(Constant::getNullValue(ret_type));
     }
 
     // Restore
@@ -2244,14 +2263,42 @@ TypedValue Codegen::codegen_do(DoExpr* node) {
 // ===== Exception Handling =====
 
 TypedValue Codegen::codegen_raise(RaiseExpr* node) {
-    int64_t sym_id = intern_symbol(node->symbol->value);
-    auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
-    auto msg_val = builder_->CreateGlobalStringPtr(node->message->value);
+    auto exc_val = codegen(node->value);
+    if (!exc_val) return {};
 
-    builder_->CreateCall(rt_raise_, {sym_val, msg_val});
+    auto i64_ty = LType::getInt64Ty(*context_);
+    Value* tag_val;
+    Value* payload_val;
+
+    if (exc_val.type == CType::ADT && exc_val.val->getType()->isStructTy()) {
+        // Non-recursive ADT: extract tag and first payload field
+        tag_val = builder_->CreateExtractValue(exc_val.val, {0});
+        tag_val = builder_->CreateZExt(tag_val, i64_ty);
+        if (cast<StructType>(exc_val.val->getType())->getNumElements() > 1) {
+            payload_val = builder_->CreateExtractValue(exc_val.val, {1});
+            // If payload is a pointer (string), keep as-is via inttoptr
+            if (payload_val->getType()->isIntegerTy())
+                payload_val = builder_->CreateIntToPtr(payload_val, PointerType::get(*context_, 0));
+        } else {
+            payload_val = ConstantPointerNull::get(PointerType::get(*context_, 0));
+        }
+    } else if (exc_val.type == CType::ADT && exc_val.val->getType()->isPointerTy()) {
+        // Recursive ADT: use runtime accessors
+        tag_val = builder_->CreateZExt(
+            builder_->CreateCall(rt_adt_get_tag_, {exc_val.val}), i64_ty);
+        auto field = builder_->CreateCall(rt_adt_get_field_, {exc_val.val, ConstantInt::get(i64_ty, 0)});
+        payload_val = builder_->CreateIntToPtr(field, PointerType::get(*context_, 0));
+    } else {
+        // Fallback: treat as integer tag with no payload
+        tag_val = exc_val.val;
+        if (tag_val->getType() != i64_ty)
+            tag_val = builder_->CreateZExtOrTrunc(tag_val, i64_ty);
+        payload_val = ConstantPointerNull::get(PointerType::get(*context_, 0));
+    }
+
+    builder_->CreateCall(rt_raise_, {tag_val, payload_val});
     builder_->CreateUnreachable();
-    // Block is now terminated — caller must check before adding more instructions
-    return {UndefValue::get(LType::getInt64Ty(*context_)), CType::UNIT};
+    return {UndefValue::get(i64_ty), CType::UNIT};
 }
 
 TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
@@ -2284,12 +2331,11 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
         if (!try_val) try_val = {ConstantInt::get(i64_ty, 0), CType::INT};
     }
 
-    // Catch body: get exception, pattern match
+    // Catch body: get exception tag and payload, pattern match
     builder_->SetInsertPoint(catch_bb);
-    auto exc_sym = builder_->CreateCall(rt_get_exc_sym_, {}, "exc.sym");
-    auto exc_msg = builder_->CreateCall(rt_get_exc_msg_, {}, "exc.msg");
+    auto exc_tag = builder_->CreateCall(rt_get_exc_sym_, {}, "exc.tag");
+    auto exc_payload = builder_->CreateCall(rt_get_exc_msg_, {}, "exc.payload");
 
-    // Pattern match against catch clauses
     TypedValue catch_val = {ConstantInt::get(i64_ty, 0), CType::INT};
     std::vector<std::pair<TypedValue, BasicBlock*>> catch_results;
 
@@ -2298,41 +2344,42 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
             auto* cp = node->catchExpr->patterns[ci];
             auto body_bb = BasicBlock::Create(*context_, "catch.body." + std::to_string(ci), fn);
             BasicBlock* next_bb;
-            if (ci + 1 < node->catchExpr->patterns.size()) {
+            if (ci + 1 < node->catchExpr->patterns.size())
                 next_bb = BasicBlock::Create(*context_, "catch.next." + std::to_string(ci+1), fn);
-            } else {
-                // Last pattern: if no match, re-raise the exception
+            else
                 next_bb = BasicBlock::Create(*context_, "catch.reraise", fn);
-            }
 
             auto* pat = cp->matchPattern;
 
-            if (pat->get_type() == AST_TUPLE_PATTERN) {
-                auto* tp = static_cast<TuplePattern*>(pat);
-                // Match symbol (first element) if it's a specific symbol
-                bool symbol_matched = false;
-                if (tp->patterns.size() >= 1 && tp->patterns[0]->get_type() == AST_PATTERN_VALUE) {
-                    auto* pv0 = static_cast<PatternValue*>(tp->patterns[0]);
-                    if (auto* sym = std::get_if<SymbolExpr*>(&pv0->expr)) {
-                        int64_t sid = intern_symbol((*sym)->value);
-                        auto cmp = builder_->CreateICmpEQ(exc_sym, ConstantInt::get(i64_ty, sid));
-                        builder_->CreateCondBr(cmp, body_bb, next_bb);
-                        symbol_matched = true;
-                    }
-                }
-                if (!symbol_matched) builder_->CreateBr(body_bb);
-
-                builder_->SetInsertPoint(body_bb);
-                // Bind pattern variables
-                for (size_t pi = 0; pi < tp->patterns.size(); pi++) {
-                    auto* sub = tp->patterns[pi];
-                    if (sub->get_type() == AST_PATTERN_VALUE) {
-                        auto* pv = static_cast<PatternValue*>(sub);
-                        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                            if (pi == 0) named_values_[(*id)->name->value] = {exc_sym, CType::SYMBOL};
-                            else named_values_[(*id)->name->value] = {exc_msg, CType::STRING};
+            if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+                // ADT constructor pattern: RuntimeError msg -> ...
+                auto* cpat = static_cast<ConstructorPattern*>(pat);
+                auto ctor_it = adt_constructors_.find(cpat->constructor_name);
+                if (ctor_it != adt_constructors_.end()) {
+                    auto tag_val = ConstantInt::get(i64_ty, ctor_it->second.tag);
+                    auto cmp = builder_->CreateICmpEQ(exc_tag, tag_val);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+                    builder_->SetInsertPoint(body_bb);
+                    // Bind sub-patterns: payload is the first field
+                    for (size_t fi = 0; fi < cpat->sub_patterns.size(); fi++) {
+                        auto* sub = cpat->sub_patterns[fi];
+                        if (sub->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                if (fi == 0) {
+                                    named_values_[(*id)->name->value] = {exc_payload, ftype};
+                                } else {
+                                    named_values_[(*id)->name->value] = {
+                                        ConstantInt::get(i64_ty, 0), CType::INT};
+                                }
+                            }
                         }
                     }
+                } else {
+                    builder_->CreateBr(body_bb);
+                    builder_->SetInsertPoint(body_bb);
                 }
             } else if (pat->get_type() == AST_UNDERSCORE_PATTERN) {
                 builder_->CreateBr(body_bb);
@@ -2340,12 +2387,12 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
             } else if (pat->get_type() == AST_PATTERN_VALUE) {
                 auto* pv = static_cast<PatternValue*>(pat);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                    // Build exception tuple and bind
+                    // Bind exception as a tuple (tag, payload)
                     auto* st = StructType::get(*context_, {i64_ty, llvm_type(CType::STRING)});
                     Value* tup = UndefValue::get(st);
-                    tup = builder_->CreateInsertValue(tup, exc_sym, {0});
-                    tup = builder_->CreateInsertValue(tup, exc_msg, {1});
-                    named_values_[(*id)->name->value] = {tup, CType::TUPLE, {CType::SYMBOL, CType::STRING}};
+                    tup = builder_->CreateInsertValue(tup, exc_tag, {0});
+                    tup = builder_->CreateInsertValue(tup, exc_payload, {1});
+                    named_values_[(*id)->name->value] = {tup, CType::TUPLE, {CType::INT, CType::STRING}};
                 }
                 builder_->CreateBr(body_bb);
                 builder_->SetInsertPoint(body_bb);
@@ -2356,20 +2403,20 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
 
             // Compile handler body
             TypedValue handler_val;
-            if (auto* pwog = std::get_if<PatternWithoutGuards*>(&cp->pattern)) {
+            if (auto* pwog = std::get_if<PatternWithoutGuards*>(&cp->pattern))
                 handler_val = codegen((*pwog)->expr);
-            }
             if (!handler_val) handler_val = {ConstantInt::get(i64_ty, 0), CType::INT};
 
-            builder_->CreateBr(merge_bb);
-            catch_results.push_back({handler_val, builder_->GetInsertBlock()});
+            if (!builder_->GetInsertBlock()->getTerminator()) {
+                builder_->CreateBr(merge_bb);
+                catch_results.push_back({handler_val, builder_->GetInsertBlock()});
+            }
 
             if (ci + 1 < node->catchExpr->patterns.size())
                 builder_->SetInsertPoint(next_bb);
-            else if (next_bb->getName().starts_with("catch.reraise")) {
-                // Last pattern didn't match — re-raise
+            else {
                 builder_->SetInsertPoint(next_bb);
-                builder_->CreateCall(rt_raise_, {exc_sym, exc_msg});
+                builder_->CreateCall(rt_raise_, {exc_tag, exc_payload});
                 builder_->CreateUnreachable();
             }
         }

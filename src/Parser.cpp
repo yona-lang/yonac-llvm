@@ -2509,40 +2509,13 @@ private:
     unique_ptr<ExprNode> parse_raise_expr() {
         SourceLocation loc = current_location();
         advance(); // consume 'raise'
-
-        // Parse exactly two arguments: error symbol and message
-        // Use prefix-only parsing to avoid juxtaposition merging them
-        auto error_type = parse_prefix_expr();
-        auto message = parse_prefix_expr();
-
-        // RaiseExpr expects SymbolExpr* and StringExpr*
-        SymbolExpr* symbol = nullptr;
-        StringExpr* str_msg = nullptr;
-
-        // Check if error_type is a SymbolExpr
-        if (auto sym = dynamic_cast<SymbolExpr*>(error_type.get())) {
-            error_type.release();
-            symbol = sym;
-        } else {
-            error(ParseError::Type::INVALID_SYNTAX, "Expected symbol for error type in raise expression");
+        // raise takes any expression — typically an ADT constructor call
+        auto value = parse_expr();
+        if (!value) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected expression after 'raise'");
             return nullptr;
         }
-
-        // Check if message is a StringExpr
-        if (auto str = dynamic_cast<StringExpr*>(message.get())) {
-            message.release();
-            str_msg = str;
-        } else if (auto lit = dynamic_cast<LiteralExpr<string>*>(message.get())) {
-            // Convert LiteralExpr<string> to StringExpr
-            message.release();
-            str_msg = new StringExpr(lit->source_context, lit->value);
-            delete lit;
-        } else {
-            error(ParseError::Type::INVALID_SYNTAX, "Expected string for error message in raise expression");
-            return nullptr;
-        }
-
-        return make_unique<RaiseExpr>(loc, symbol, str_msg);
+        return make_unique<RaiseExpr>(loc, value.release());
     }
 
     unique_ptr<ExprNode> parse_with_expr() {
