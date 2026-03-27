@@ -406,6 +406,10 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
                 for (auto* v : te->values) analyze(v);
             } else if (auto* ve = dynamic_cast<ValuesSequenceExpr*>(node)) {
                 for (auto* v : ve->values) analyze(v);
+            } else if (auto* fn_expr = dynamic_cast<FunctionExpr*>(node)) {
+                for (auto* body : fn_expr->bodies)
+                    if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+                        analyze(bwg->expr);
             } else if (auto* fa = dynamic_cast<FieldAccessExpr*>(node)) {
                 // Field access: if the object is a parameter, it must be an ADT
                 if (auto* id = dynamic_cast<IdentifierExpr*>(fa->identifier)) {
@@ -632,6 +636,9 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
 
 bool Codegen::emit_object_file(const std::string& path) {
     if (!target_machine_) return false;
+    // Ensure parent directory exists
+    auto parent = std::filesystem::path(path).parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent);
     std::error_code ec;
     raw_fd_ostream dest(path, ec, sys::fs::OF_None);
     if (ec) return false;
