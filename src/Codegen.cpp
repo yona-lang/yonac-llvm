@@ -551,9 +551,9 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                             auto* ptr_type = PointerType::get(*context_, 0);
                             typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::ADT});
                         } else {
-                            auto i8_ty = LType::getInt8Ty(*context_);
+                            auto tag_ty = LType::getInt64Ty(*context_);
                             auto i64_ty = LType::getInt64Ty(*context_);
-                            std::vector<LType*> fields = {i8_ty};
+                            std::vector<LType*> fields = {tag_ty};
                             for (int f = 0; f < ctor_it->second.max_arity; f++)
                                 fields.push_back(i64_ty);
                             auto* st = StructType::get(*context_, fields);
@@ -572,9 +572,9 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                                 auto* ptr_type = PointerType::get(*context_, 0);
                                 typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::ADT});
                             } else {
-                                auto i8_ty = LType::getInt8Ty(*context_);
+                                auto tag_ty = LType::getInt64Ty(*context_);
                                 auto i64_ty = LType::getInt64Ty(*context_);
-                                std::vector<LType*> fields = {i8_ty};
+                                std::vector<LType*> fields = {tag_ty};
                                 for (int f = 0; f < cinfo.max_arity; f++) fields.push_back(i64_ty);
                                 auto* st = StructType::get(*context_, fields);
                                 typed_args.push_back({UndefValue::get(st), CType::ADT});
@@ -1312,23 +1312,23 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     // Check if it's a zero-arity ADT constructor
     auto adt_it = adt_constructors_.find(node->name->value);
     if (adt_it != adt_constructors_.end() && adt_it->second.arity == 0) {
-        auto i8_ty = LType::getInt8Ty(*context_);
+        auto tag_ty = LType::getInt64Ty(*context_);
         auto i64_ty = LType::getInt64Ty(*context_);
 
         if (adt_it->second.is_recursive) {
             // Recursive ADT: heap-allocate via runtime
             auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
-                {ConstantInt::get(i8_ty, adt_it->second.tag),
+                {ConstantInt::get(tag_ty, adt_it->second.tag),
                  ConstantInt::get(i64_ty, 0)}, "adt_node");
             return {node_ptr, CType::ADT};
         } else {
             // Non-recursive: flat struct {i8, i64*max_arity}
-            std::vector<LType*> fields = {i8_ty};
+            std::vector<LType*> fields = {tag_ty};
             for (int f = 0; f < adt_it->second.max_arity; f++)
                 fields.push_back(i64_ty);
             auto* struct_type = StructType::get(*context_, fields);
             Value* val = UndefValue::get(struct_type);
-            val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, adt_it->second.tag), {0});
+            val = builder_->CreateInsertValue(val, ConstantInt::get(tag_ty, adt_it->second.tag), {0});
             return {val, CType::ADT};
         }
     }
@@ -1461,7 +1461,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     // LLVM type (including struct layout for tuples) so the function is
     // created with the correct signature — no recreation needed.
     auto i64_ty = LType::getInt64Ty(*context_);
-    auto i8_ty = LType::getInt8Ty(*context_);
+    auto tag_ty = LType::getInt64Ty(*context_);
 
     std::function<std::pair<LType*, CType>(AstNode*)> infer_ret = [&](AstNode* node) -> std::pair<LType*, CType> {
         if (!node) return {i64_ty, CType::INT};
@@ -1511,7 +1511,7 @@ Codegen::CompiledFunction Codegen::compile_function(
             if (adt_it != adt_constructors_.end()) {
                 if (adt_it->second.is_recursive)
                     return {PointerType::get(*context_, 0), CType::ADT};
-                std::vector<LType*> fields = {i8_ty};
+                std::vector<LType*> fields = {tag_ty};
                 for (int f = 0; f < adt_it->second.max_arity; f++) fields.push_back(i64_ty);
                 return {StructType::get(*context_, fields), CType::ADT};
             }
@@ -1770,7 +1770,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     auto adt_it = adt_constructors_.find(fn_name);
     if (adt_it != adt_constructors_.end() && adt_it->second.arity > 0) {
         auto& info = adt_it->second;
-        auto i8_ty = LType::getInt8Ty(*context_);
+        auto tag_ty = LType::getInt64Ty(*context_);
         auto i64_ty = LType::getInt64Ty(*context_);
 
         // Helper: cast value to i64 for storage
@@ -1793,7 +1793,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         if (info.is_recursive) {
             // Recursive ADT: heap-allocate via runtime
             auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
-                {ConstantInt::get(i8_ty, info.tag),
+                {ConstantInt::get(tag_ty, info.tag),
                  ConstantInt::get(i64_ty, info.arity)}, "adt_node");
             for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
                 Value* arg_val = to_i64(all_args[ai].val);
@@ -1803,11 +1803,11 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             return {node_ptr, CType::ADT};
         } else {
             // Non-recursive: flat struct {i8, i64*max_arity}
-            std::vector<LType*> fields = {i8_ty};
+            std::vector<LType*> fields = {tag_ty};
             for (int f = 0; f < info.max_arity; f++) fields.push_back(i64_ty);
             auto* struct_type = StructType::get(*context_, fields);
             Value* val = UndefValue::get(struct_type);
-            val = builder_->CreateInsertValue(val, ConstantInt::get(i8_ty, info.tag), {0});
+            val = builder_->CreateInsertValue(val, ConstantInt::get(tag_ty, info.tag), {0});
             for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
                 Value* arg_val = to_i64(all_args[ai].val);
                 val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
@@ -2275,13 +2275,13 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto ctor_it = adt_constructors_.find(cp->constructor_name);
             if (ctor_it != adt_constructors_.end()) {
                 int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
-                auto i8_ty = LType::getInt8Ty(*context_);
+                auto tag_ty = LType::getInt64Ty(*context_);
                 auto i64_ty = LType::getInt64Ty(*context_);
 
                 if (ctor_it->second.is_recursive) {
                     // Recursive ADT: scrutinee is a pointer, use runtime accessors
                     auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
-                    auto tag_val = ConstantInt::get(i8_ty, tag);
+                    auto tag_val = ConstantInt::get(tag_ty, tag);
                     auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
                     builder_->CreateCondBr(cmp, body_bb, next_bb);
 
@@ -2313,7 +2313,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 } else {
                     // Non-recursive: flat struct, use extractvalue
                     auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
-                    auto tag_val = ConstantInt::get(i8_ty, tag);
+                    auto tag_val = ConstantInt::get(tag_ty, tag);
                     auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
                     builder_->CreateCondBr(cmp, body_bb, next_bb);
 
@@ -2338,12 +2338,12 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto ctor_it = adt_constructors_.find(rp->recordType);
             if (ctor_it != adt_constructors_.end()) {
                 int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
-                auto i8_ty = LType::getInt8Ty(*context_);
+                auto tag_ty = LType::getInt64Ty(*context_);
                 auto i64_ty = LType::getInt64Ty(*context_);
 
                 if (ctor_it->second.is_recursive) {
                     auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
-                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i8_ty, tag)),
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
                                            body_bb, next_bb);
                     builder_->SetInsertPoint(body_bb);
                     for (auto& [name_expr, pattern] : rp->items) {
@@ -2363,7 +2363,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                     }
                 } else {
                     auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
-                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i8_ty, tag)),
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
                                            body_bb, next_bb);
                     builder_->SetInsertPoint(body_bb);
                     for (auto& [name_expr, pattern] : rp->items) {
