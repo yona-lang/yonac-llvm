@@ -42,7 +42,7 @@ Phase 6: Concurrency
 - [ ] Std\Collection — sorted map/set, priority queue, iterators
 
 ### Language Features
-- [ ] Generators/comprehensions — parsed but not compiled (needs transducer infrastructure → Phase 5)
+- [ ] Generators/comprehensions — parsed but not compiled (needs HOF return type inference for transducers)
 - [ ] Case guard expressions
 - [ ] `with` expression (resource management)
 - [ ] Module system improvements (wildcard import, re-exports)
@@ -77,8 +77,9 @@ Phase 6: Concurrency
 - [ ] Docker image
 - [ ] CI/CD pipeline for automated releases
 
-### Type System
-- [ ] Type annotations
+### Type System & Inference
+- [ ] HOF return type inference (a function returning a function — needed for transducers)
+- [ ] Type annotations (optional signatures)
 - [ ] Traits / type classes
 - [ ] Cross-module generics
 
