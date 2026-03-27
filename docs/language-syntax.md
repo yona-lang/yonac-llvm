@@ -145,8 +145,8 @@ factorial(0) -> 1
 factorial(n) -> n * factorial(n - 1)
 
 # Guards
-abs(x) | x >= 0 -> x
-abs(x) | x < 0  -> -x
+abs x if x >= 0 = x
+abs x if x < 0  = -x
 
 # Anonymous functions (lambdas)
 \x -> x * 2

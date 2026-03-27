@@ -458,18 +458,17 @@ private:
 
         // Parse patterns
         vector<PatternNode*> patterns;
-        while (!check(TokenType::YASSIGN) && !check(TokenType::YPIPE) && !is_at_end()) {
+        while (!check(TokenType::YASSIGN) && !check(TokenType::YIF) && !is_at_end()) {
             auto pattern = parse_pattern();
             if (pattern) {
                 patterns.push_back(pattern.release());
             }
         }
 
-        // Parse guards (if any) and create multiple BodyWithGuards
+        // Parse guards (if any): funcname patterns if guard = body
         vector<unique_ptr<FunctionBody>> bodies;
 
-        if (match(TokenType::YPIPE)) {
-            // Multiple guards
+        if (match(TokenType::YIF)) {
             do {
                 auto guard_expr = parse_expr();
                 expect(TokenType::YASSIGN, "Expected '=' after guard");
@@ -482,7 +481,7 @@ private:
                         body_expr.release()
                     ));
                 }
-            } while (match(TokenType::YPIPE));
+            } while (match(TokenType::YIF));
         } else {
             // No guards, just body
             expect(TokenType::YASSIGN, "Expected '=' after patterns");
@@ -519,13 +518,12 @@ private:
 
         // Parse body
         vector<unique_ptr<FunctionBody>> bodies;
-        if (check(TokenType::YPIPE)) {
-            // Multiple guard clauses
-            while (match(TokenType::YPIPE)) {
-                // Parse guard expression (condition)
+        if (check(TokenType::YIF)) {
+            // Multiple guard clauses: = if guard -> body
+            while (match(TokenType::YIF)) {
                 auto guard = parse_expr();
                 if (!guard) {
-                    error(ParseError::Type::INVALID_SYNTAX, "Expected guard expression after '|'");
+                    error(ParseError::Type::INVALID_SYNTAX, "Expected guard expression after 'if'");
                     break;
                 }
 
