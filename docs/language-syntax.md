@@ -317,24 +317,34 @@ end
 
 ## Exception Handling
 
+Exceptions are ADT values. Define exception types, raise them, and catch with pattern matching.
+
+### Exception Types
+
+```yona
+type Error = RuntimeError String | NotFound String | IOError String
+```
+
 ### Raise Expressions
 
 ```yona
-raise :error
-raise :not_found "Item not found"
+raise (RuntimeError "something went wrong")
+raise (NotFound "file.txt")
 ```
 
 ### Try-Catch Expressions
 
 ```yona
 try
-  risky_operation()
+    risky_operation
 catch
-  :error -> "An error occurred"
-  :not_found msg -> "Not found: " ++ msg
-  _ -> "Unknown error"
+    RuntimeError msg -> handle msg
+    NotFound path -> report path
+    _ -> default_handler
 end
 ```
+
+Unmatched exceptions are re-raised. Unhandled exceptions print a stack trace and abort.
 
 ## Operators
 
@@ -421,34 +431,49 @@ record.field # Field access
 {name: length(name) for name in names}
 ```
 
-## Records and Types
-
-### Record Definitions
-
-```yona
-record Person(name: String, age: Int)
-record Point(x: Float, y: Float)
-```
-
-### Record Creation and Access
-
-```yona
-let p = Person("Alice", 30) in
-  p.name  # Field access
-
-# Pattern matching
-case person of
-  Person(n, a) | a >= 18 -> n ++ " is an adult"
-  Person(n, _) -> n ++ " is a minor"
-end
-```
+## Algebraic Data Types
 
 ### Type Definitions
 
 ```yona
-type Maybe a = Just a | Nothing
-type Either a b = Left a | Right b
-type Tree a = Leaf | Node a (Tree a) (Tree a)
+type Option a = Some a | None
+type Result a e = Ok a | Err e
+type Color = Red | Green | Blue
+type List a = Cons a (List a) | Nil
+```
+
+### Named Fields
+
+```yona
+type Person = Person { name : String, age : Int }
+```
+
+### Construction
+
+```yona
+Some 42              # positional
+None                 # zero-arity
+Person { name = "Alice", age = 30 }  # named
+```
+
+### Field Access and Update
+
+```yona
+p.name               # dot syntax
+p { age = 31 }       # functional update (copy with field replaced)
+```
+
+### Pattern Matching
+
+```yona
+case opt of
+    Some x -> x + 1
+    None   -> 0
+end
+
+case p of
+    Person { name = n } -> n    # named field pattern
+end
 ```
 
 ## Module Syntax
@@ -456,19 +481,11 @@ type Tree a = Leaf | Node a (Tree a) (Tree a)
 ### Module Definition
 
 ```yona
-module Package\ModuleName exports func1, func2 as
-  # Type definitions
+module Package\ModuleName exports func1, func2, Active, Inactive as
   type Status = Active | Inactive
 
-  # Record definitions
-  record User(id: Int, name: String, status: Status)
-
-  # Function definitions
-  func1(x) -> x + 1
-  func2(a, b) -> a * b
-
-  # Private helper (not exported)
-  helper(x) -> x * 2
+  func1 x = x + 1
+  func2 a b = a * b
 end
 ```
 
