@@ -42,7 +42,7 @@ Phase 6: Concurrency
 - [ ] Std\Collection — sorted map/set, priority queue, iterators
 
 ### Language Features
-- [ ] Generators/comprehensions — parsed but not compiled
+- [ ] Generators/comprehensions — parsed but not compiled (needs transducer infrastructure → Phase 5)
 - [ ] Case guard expressions
 - [ ] `with` expression (resource management)
 - [ ] Module system improvements (wildcard import, re-exports)
