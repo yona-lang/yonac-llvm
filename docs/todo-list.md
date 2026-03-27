@@ -47,4 +47,5 @@
 
 ### Stdlib
 - [x] All 6 stdlib modules compile: Option (7), Result (8), List (17), Tuple (4), Range (6), Test (3) ✅
-- [ ] Exception utilities, stack traces
+- [x] Exception handling: raise/try/catch via setjmp/longjmp ✅
+- [ ] Stack traces (LLVM debug info + backtrace)
