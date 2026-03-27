@@ -45,7 +45,10 @@ Phase 6: Concurrency
 - [ ] Generators/comprehensions — parsed but not compiled (needs HOF return type inference for transducers)
 - [x] Case guard expressions (`if` keyword) ✅
 - [ ] `with` expression (resource management)
-- [ ] Module system improvements (wildcard import, re-exports)
+- [x] FQN calls without import (`Std\List::map fn seq`) ✅
+- [x] Wildcard import (`import Std\List in expr`) ✅
+- [x] ADT field names in .yonai (cross-module named field access) ✅
+- [ ] Re-exports (module re-exporting from another module)
 - [ ] Error propagation operator (`?`)
 - [ ] Lazy sequences / iterators
 

@@ -708,7 +708,14 @@ bool Codegen::emit_interface_file(const std::string& path) {
         for (auto* ctor : ctors) {
             for (auto& [cname, cinfo] : adt_constructors_) {
                 if (&cinfo == ctor)
-                    out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity << "\n";
+                    out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity;
+                    if (!ctor->field_names.empty()) {
+                        out << " fields";
+                        for (size_t fi = 0; fi < ctor->field_names.size(); fi++)
+                            out << " " << ctor->field_names[fi] << ":" << ctype_to_string(
+                                fi < ctor->field_types.size() ? ctor->field_types[fi] : CType::INT);
+                    }
+                    out << "\n";
             }
         }
     }
@@ -759,7 +766,20 @@ bool Codegen::load_interface_file(const std::string& path) {
             std::string name;
             int tag, arity;
             iss >> name >> tag >> arity;
-            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants, current_max_arity, current_is_recursive};
+            std::vector<std::string> fnames;
+            std::vector<CType> ftypes;
+            std::string token;
+            if (iss >> token && token == "fields") {
+                while (iss >> token) {
+                    auto colon = token.find(':');
+                    if (colon != std::string::npos) {
+                        fnames.push_back(token.substr(0, colon));
+                        ftypes.push_back(string_to_ctype(token.substr(colon + 1)));
+                    }
+                }
+            }
+            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants,
+                                        current_max_arity, current_is_recursive, fnames, ftypes};
             current_ctor_names.push_back(name);
         } else if (keyword == "FN") {
             std::string mangled;
