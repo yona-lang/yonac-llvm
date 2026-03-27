@@ -909,6 +909,87 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_LOGICAL_AND_EXPR: { auto l = codegen(static_cast<LogicalAndExpr*>(node)->left); auto r = codegen(static_cast<LogicalAndExpr*>(node)->right); return {builder_->CreateAnd(l.val, r.val), CType::BOOL}; }
         case AST_LOGICAL_OR_EXPR:  { auto l = codegen(static_cast<LogicalOrExpr*>(node)->left); auto r = codegen(static_cast<LogicalOrExpr*>(node)->right); return {builder_->CreateOr(l.val, r.val), CType::BOOL}; }
         case AST_LOGICAL_NOT_OP_EXPR: { auto v = codegen(static_cast<LogicalNotOpExpr*>(node)->expr); return {builder_->CreateNot(v.val), CType::BOOL}; }
+        case AST_PIPE_RIGHT_EXPR: {
+            // x |> f  →  f(x)
+            auto* pe = static_cast<PipeRightExpr*>(node);
+            auto arg = codegen(pe->left);
+            if (!arg) return {};
+            // Evaluate the function side — get its name for apply lookup
+            std::string fn_name;
+            if (pe->right->get_type() == AST_IDENTIFIER_EXPR)
+                fn_name = static_cast<IdentifierExpr*>(pe->right)->name->value;
+            if (!fn_name.empty()) {
+                // Use the same apply logic: find compiled/deferred function, call with arg
+                std::vector<TypedValue> all_args = {arg};
+                auto cf_it = compiled_functions_.find(fn_name);
+                if (cf_it == compiled_functions_.end()) {
+                    auto def_it = deferred_functions_.find(fn_name);
+                    if (def_it != deferred_functions_.end()) {
+                        compile_function(fn_name, def_it->second, all_args);
+                        cf_it = compiled_functions_.find(fn_name);
+                    }
+                }
+                if (cf_it != compiled_functions_.end()) {
+                    return {builder_->CreateCall(cf_it->second.fn, {arg.val}), cf_it->second.return_type};
+                }
+                // Check extern functions
+                auto ext_it = extern_functions_.find(fn_name);
+                if (ext_it != extern_functions_.end()) {
+                    auto* ext_fn = module_->getFunction(ext_it->second);
+                    if (!ext_fn) {
+                        auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
+                        ext_fn = Function::Create(fn_type, Function::ExternalLinkage, ext_it->second, module_.get());
+                    }
+                    return {builder_->CreateCall(ext_fn, {arg.val}), CType::INT};
+                }
+                // Indirect call via named_values_
+                auto nv_it = named_values_.find(fn_name);
+                if (nv_it != named_values_.end() && nv_it->second.type == CType::FUNCTION && nv_it->second.val) {
+                    auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
+                    return {builder_->CreateCall(fn_type, nv_it->second.val, {arg.val}), arg.type};
+                }
+            }
+            report_error(pe->source_context, "pipe: right side must be a function");
+            return {};
+        }
+        case AST_PIPE_LEFT_EXPR: {
+            // f <| x  →  f(x) — same logic, swapped sides
+            auto* pe = static_cast<PipeLeftExpr*>(node);
+            auto arg = codegen(pe->right);
+            if (!arg) return {};
+            std::string fn_name;
+            if (pe->left->get_type() == AST_IDENTIFIER_EXPR)
+                fn_name = static_cast<IdentifierExpr*>(pe->left)->name->value;
+            if (!fn_name.empty()) {
+                std::vector<TypedValue> all_args = {arg};
+                auto cf_it = compiled_functions_.find(fn_name);
+                if (cf_it == compiled_functions_.end()) {
+                    auto def_it = deferred_functions_.find(fn_name);
+                    if (def_it != deferred_functions_.end()) {
+                        compile_function(fn_name, def_it->second, all_args);
+                        cf_it = compiled_functions_.find(fn_name);
+                    }
+                }
+                if (cf_it != compiled_functions_.end())
+                    return {builder_->CreateCall(cf_it->second.fn, {arg.val}), cf_it->second.return_type};
+                auto ext_it = extern_functions_.find(fn_name);
+                if (ext_it != extern_functions_.end()) {
+                    auto* ext_fn = module_->getFunction(ext_it->second);
+                    if (!ext_fn) {
+                        auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
+                        ext_fn = Function::Create(fn_type, Function::ExternalLinkage, ext_it->second, module_.get());
+                    }
+                    return {builder_->CreateCall(ext_fn, {arg.val}), CType::INT};
+                }
+                auto nv_it = named_values_.find(fn_name);
+                if (nv_it != named_values_.end() && nv_it->second.type == CType::FUNCTION && nv_it->second.val) {
+                    auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
+                    return {builder_->CreateCall(fn_type, nv_it->second.val, {arg.val}), arg.type};
+                }
+            }
+            report_error(pe->source_context, "pipe: left side must be a function");
+            return {};
+        }
         case AST_LET_EXPR:        return codegen_let(static_cast<LetExpr*>(node));
         case AST_IF_EXPR:         return codegen_if(static_cast<IfExpr*>(node));
         case AST_CASE_EXPR:       return codegen_case(static_cast<CaseExpr*>(node));
