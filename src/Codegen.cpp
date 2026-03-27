@@ -1721,10 +1721,21 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     std::vector<ApplyExpr*> chain;
     std::string fn_name;
     ApplyExpr* cur = node;
+    std::string module_fqn; // set if this is a FQN call (Mod::func)
     while (cur) {
         chain.push_back(cur);
         if (auto* nc = dynamic_cast<NameCall*>(cur->call)) {
             fn_name = nc->name->value;
+            break;
+        } else if (auto* mc = dynamic_cast<ModuleCall*>(cur->call)) {
+            // FQN call: Std\List::map — auto-load module interface
+            fn_name = mc->funName->value;
+            if (auto* fqn = std::get_if<FqnExpr*>(&mc->fqn)) {
+                auto [fqn_str, fqn_path] = build_fqn_path(*fqn);
+                module_fqn = fqn_str;
+                load_module_interface(fqn_path);
+                register_import(fqn_str, fn_name, fn_name);
+            }
             break;
         } else if (auto* ec = dynamic_cast<ExprCall*>(cur->call)) {
             if (auto* inner = dynamic_cast<ApplyExpr*>(ec->expr)) cur = inner;
@@ -2804,67 +2815,105 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
 
 // ===== Imports =====
 
+// Build FQN string and filesystem path from an FqnExpr
+std::pair<std::string, std::filesystem::path> Codegen::build_fqn_path(FqnExpr* fqn) {
+    std::string mod_fqn;
+    std::filesystem::path mod_path;
+    if (fqn->packageName.has_value()) {
+        auto* pkg = fqn->packageName.value();
+        for (size_t i = 0; i < pkg->parts.size(); i++) {
+            if (i > 0) mod_fqn += "\\";
+            mod_fqn += pkg->parts[i]->value;
+            mod_path /= pkg->parts[i]->value;
+        }
+        mod_fqn += "\\";
+    }
+    mod_fqn += fqn->moduleName->value;
+    mod_path /= fqn->moduleName->value;
+    return {mod_fqn, mod_path};
+}
+
+// Load .yonai interface file for a module
+void Codegen::load_module_interface(const std::filesystem::path& mod_path) {
+    auto yonai_name = mod_path;
+    yonai_name.replace_extension(".yonai");
+    for (auto& search_path : module_paths_) {
+        auto candidate = std::filesystem::path(search_path) / yonai_name;
+        if (std::filesystem::exists(candidate)) {
+            load_interface_file(candidate.string());
+            return;
+        }
+    }
+}
+
+// Register a single imported function/constructor by name
+void Codegen::register_import(const std::string& mod_fqn,
+                               const std::string& func_name,
+                               const std::string& import_name) {
+    // Check if it's an ADT constructor
+    auto ctor_it = adt_constructors_.find(func_name);
+    if (ctor_it != adt_constructors_.end()) {
+        if (ctor_it->second.arity > 0)
+            named_values_[import_name] = {nullptr, CType::FUNCTION};
+        if (import_name != func_name)
+            adt_constructors_[import_name] = ctor_it->second;
+        return;
+    }
+    // Regular function
+    std::string mangled = mangle_name(mod_fqn, func_name);
+    named_values_[import_name] = {nullptr, CType::FUNCTION};
+    extern_functions_[import_name] = mangled;
+}
+
+// Register ALL exports from a loaded .yonai (wildcard import)
+void Codegen::register_all_imports(const std::string& mod_fqn) {
+    // Register all functions from module_meta_
+    for (auto& [mangled, meta] : module_meta_) {
+        // Extract function name from mangled: yona_Pkg_Mod__func → func
+        auto pos = mangled.rfind("__");
+        if (pos != std::string::npos) {
+            std::string func_name = mangled.substr(pos + 2);
+            // Only register if this function belongs to this module
+            std::string expected_prefix = "yona_";
+            for (char c : mod_fqn) expected_prefix += (c == '\\') ? '_' : c;
+            expected_prefix += "__";
+            if (mangled.find(expected_prefix) == 0) {
+                if (named_values_.find(func_name) != named_values_.end()) {
+                    // Name conflict — mark for FQN resolution
+                    // Only error if the name is actually used (deferred)
+                }
+                named_values_[func_name] = {nullptr, CType::FUNCTION};
+                extern_functions_[func_name] = mangled;
+            }
+        }
+    }
+    // Register all constructors
+    for (auto& [name, info] : adt_constructors_) {
+        if (info.type_name.find(mod_fqn) != std::string::npos ||
+            module_meta_.count(mangle_name(mod_fqn, name)) > 0) {
+            // Already registered by load_interface_file
+        }
+    }
+}
+
 TypedValue Codegen::codegen_import(ImportExpr* node) {
     for (auto* clause : node->clauses) {
         if (clause->get_type() == AST_FUNCTIONS_IMPORT) {
             auto* fi = static_cast<FunctionsImport*>(clause);
+            auto [mod_fqn, mod_path] = build_fqn_path(fi->fromFqn);
+            load_module_interface(mod_path);
 
-            // Build module FQN and filesystem path
-            std::string mod_fqn;
-            std::filesystem::path mod_path;
-            if (fi->fromFqn->packageName.has_value()) {
-                auto* pkg = fi->fromFqn->packageName.value();
-                for (size_t i = 0; i < pkg->parts.size(); i++) {
-                    if (i > 0) mod_fqn += "\\";
-                    mod_fqn += pkg->parts[i]->value;
-                    mod_path /= pkg->parts[i]->value;
-                }
-                mod_fqn += "\\";
-            }
-            mod_fqn += fi->fromFqn->moduleName->value;
-            mod_path /= fi->fromFqn->moduleName->value;
-
-            // Try to load the module's interface file (.yonai)
-            std::string yonai_file;
-            auto yonai_name = mod_path;
-            yonai_name.replace_extension(".yonai");
-            for (auto& search_path : module_paths_) {
-                auto candidate = std::filesystem::path(search_path) / yonai_name;
-                if (std::filesystem::exists(candidate)) {
-                    yonai_file = candidate.string();
-                    break;
-                }
-            }
-            if (!yonai_file.empty()) {
-                load_interface_file(yonai_file);
-            }
-
-            // For each imported function, declare an extern with the mangled name
             for (auto* alias : fi->aliases) {
                 std::string func_name = alias->name->value;
                 std::string import_name = alias->alias ? alias->alias->value : func_name;
-                std::string mangled = mangle_name(mod_fqn, func_name);
-
-                // Check if it's an ADT constructor (loaded from .yonai)
-                auto ctor_it = adt_constructors_.find(func_name);
-                if (ctor_it != adt_constructors_.end()) {
-                    // Zero-arity constructors are handled by codegen_identifier
-                    // via adt_constructors_ lookup — don't register in named_values_.
-                    // N-arity constructors are handled by codegen_apply.
-                    if (ctor_it->second.arity > 0) {
-                        named_values_[import_name] = {nullptr, CType::FUNCTION};
-                    }
-                    // If import_name differs from constructor name, register alias
-                    if (import_name != func_name) {
-                        adt_constructors_[import_name] = ctor_it->second;
-                    }
-                    continue;
-                }
-
-                // Regular function — declare as extern
-                named_values_[import_name] = {nullptr, CType::FUNCTION};
-                extern_functions_[import_name] = mangled;
+                register_import(mod_fqn, func_name, import_name);
             }
+        } else if (clause->get_type() == AST_MODULE_IMPORT) {
+            // Wildcard import: import Std\List in expr
+            auto* mi = static_cast<ModuleImport*>(clause);
+            auto [mod_fqn, mod_path] = build_fqn_path(mi->fqn);
+            load_module_interface(mod_path);
+            register_all_imports(mod_fqn);
         }
     }
 

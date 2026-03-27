@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -234,6 +235,10 @@ private:
     // Imports and extern declarations
     TypedValue codegen_import(ImportExpr* node);
     TypedValue codegen_extern_decl(ExternDeclExpr* node);
+    std::pair<std::string, std::filesystem::path> build_fqn_path(FqnExpr* fqn);
+    void load_module_interface(const std::filesystem::path& mod_path);
+    void register_import(const std::string& mod_fqn, const std::string& func_name, const std::string& import_name);
+    void register_all_imports(const std::string& mod_fqn);
 
     // Collections
     TypedValue codegen_tuple(TupleExpr* node);
