@@ -164,6 +164,11 @@ private:
     llvm::Function* rt_adt_get_tag_ = nullptr;
     llvm::Function* rt_adt_get_field_ = nullptr;
     llvm::Function* rt_adt_set_field_ = nullptr;
+    llvm::Function* rt_try_begin_ = nullptr;
+    llvm::Function* rt_try_end_ = nullptr;
+    llvm::Function* rt_raise_ = nullptr;
+    llvm::Function* rt_get_exc_sym_ = nullptr;
+    llvm::Function* rt_get_exc_msg_ = nullptr;
 
     // Symbol interning: name → i64 ID, ID → global string constant
     std::unordered_map<std::string, int64_t> symbol_ids_;
@@ -208,6 +213,8 @@ private:
     TypedValue codegen_if(IfExpr* node);
     TypedValue codegen_case(CaseExpr* node);
     TypedValue codegen_do(DoExpr* node);
+    TypedValue codegen_raise(RaiseExpr* node);
+    TypedValue codegen_try_catch(TryCatchExpr* node);
 
     // Identifiers
     TypedValue codegen_identifier(IdentifierExpr* node);

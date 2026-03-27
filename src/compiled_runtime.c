@@ -13,6 +13,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <setjmp.h>
 
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
@@ -173,6 +174,57 @@ int64_t yona_rt_adt_get_field(void* node, int64_t index) {
 
 void yona_rt_adt_set_field(void* node, int64_t index, int64_t value) {
     ((int64_t*)node)[index + 1] = value;
+}
+
+/* ===== Exception handling (setjmp/longjmp) ===== */
+
+#define YONA_MAX_TRY_DEPTH 256
+
+typedef struct {
+    int64_t symbol;
+    const char* message;
+} yona_exception_t;
+
+typedef struct {
+    jmp_buf buf[YONA_MAX_TRY_DEPTH];
+    int depth;
+    yona_exception_t current;
+} yona_exc_state_t;
+
+static _Thread_local yona_exc_state_t yona_exc = { .depth = 0 };
+
+// yona_rt_try_push: push a jmp_buf slot, return pointer to it.
+// The caller must call setjmp on the returned pointer directly
+// (setjmp must execute in the caller's stack frame).
+void* yona_rt_try_push(void) {
+    if (yona_exc.depth >= YONA_MAX_TRY_DEPTH) {
+        fprintf(stderr, "Fatal: try/catch nesting depth exceeded\n");
+        abort();
+    }
+    return &yona_exc.buf[yona_exc.depth++];
+}
+
+void yona_rt_try_end(void) {
+    if (yona_exc.depth > 0) yona_exc.depth--;
+}
+
+void yona_rt_raise(int64_t symbol, const char* message) {
+    if (yona_exc.depth == 0) {
+        fprintf(stderr, "Unhandled exception: :%ld \"%s\"\n", symbol, message ? message : "");
+        abort();
+    }
+    yona_exc.current.symbol = symbol;
+    yona_exc.current.message = message;
+    yona_exc.depth--;
+    longjmp(yona_exc.buf[yona_exc.depth], 1);
+}
+
+int64_t yona_rt_get_exception_symbol(void) {
+    return yona_exc.current.symbol;
+}
+
+const char* yona_rt_get_exception_message(void) {
+    return yona_exc.current.message;
 }
 
 /* Forward declarations for runtime functions used by shims */

@@ -197,6 +197,18 @@ void Codegen::declare_runtime() {
     rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i8, {ptr});
     rt_adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
     rt_adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
+
+    // Exception handling (setjmp/longjmp)
+    auto i32 = LType::getInt32Ty(*context_);
+    rt_try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns jmp_buf*
+    rt_try_end_       = decl("yona_rt_try_end", vd, {});
+    rt_raise_         = decl("yona_rt_raise", vd, {i64, ptr});
+    rt_get_exc_sym_   = decl("yona_rt_get_exception_symbol", i64, {});
+    rt_get_exc_msg_   = decl("yona_rt_get_exception_message", ptr, {});
+    // Declare C setjmp — must be called from the compiled function's stack frame
+    auto setjmp_fn = decl("setjmp", i32, {ptr});
+    setjmp_fn->addFnAttr(llvm::Attribute::ReturnsTwice);
+    rt_raise_->addFnAttr(llvm::Attribute::NoReturn);
 }
 
 // ===== Public API =====
@@ -890,6 +902,8 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_IF_EXPR:         return codegen_if(static_cast<IfExpr*>(node));
         case AST_CASE_EXPR:       return codegen_case(static_cast<CaseExpr*>(node));
         case AST_DO_EXPR:         return codegen_do(static_cast<DoExpr*>(node));
+        case AST_RAISE_EXPR:      return codegen_raise(static_cast<RaiseExpr*>(node));
+        case AST_TRY_CATCH_EXPR:  return codegen_try_catch(static_cast<TryCatchExpr*>(node));
         case AST_IDENTIFIER_EXPR: return codegen_identifier(static_cast<IdentifierExpr*>(node));
         case AST_FUNCTION_EXPR:   return codegen_function_def(static_cast<FunctionExpr*>(node), "");
         case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));
@@ -2225,6 +2239,168 @@ TypedValue Codegen::codegen_do(DoExpr* node) {
     TypedValue last;
     for (auto* step : node->steps) last = codegen(step);
     return last ? last : TypedValue{ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::INT};
+}
+
+// ===== Exception Handling =====
+
+TypedValue Codegen::codegen_raise(RaiseExpr* node) {
+    int64_t sym_id = intern_symbol(node->symbol->value);
+    auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
+    auto msg_val = builder_->CreateGlobalStringPtr(node->message->value);
+
+    builder_->CreateCall(rt_raise_, {sym_val, msg_val});
+    builder_->CreateUnreachable();
+    // Block is now terminated — caller must check before adding more instructions
+    return {UndefValue::get(LType::getInt64Ty(*context_)), CType::UNIT};
+}
+
+TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
+    auto fn = builder_->GetInsertBlock()->getParent();
+    auto i32_ty = LType::getInt32Ty(*context_);
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    auto try_bb = BasicBlock::Create(*context_, "try.body", fn);
+    auto catch_bb = BasicBlock::Create(*context_, "catch.entry", fn);
+    auto merge_bb = BasicBlock::Create(*context_, "try.merge");
+
+    // Push jmp_buf slot, then call setjmp in THIS function's stack frame
+    auto jmp_buf_ptr = builder_->CreateCall(rt_try_begin_, {}, "jmp.buf");
+    auto setjmp_fn = module_->getFunction("setjmp");
+    auto try_result = builder_->CreateCall(setjmp_fn, {jmp_buf_ptr}, "try.setjmp");
+    auto is_exc = builder_->CreateICmpNE(try_result, ConstantInt::get(i32_ty, 0));
+    builder_->CreateCondBr(is_exc, catch_bb, try_bb);
+
+    // Try body
+    builder_->SetInsertPoint(try_bb);
+    auto try_val = codegen(node->tryExpr);
+    bool try_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
+    BasicBlock* try_end_bb = nullptr;
+    if (!try_terminated) {
+        builder_->CreateCall(rt_try_end_, {});
+        if (!try_val) try_val = {ConstantInt::get(i64_ty, 0), CType::INT};
+        builder_->CreateBr(merge_bb);
+        try_end_bb = builder_->GetInsertBlock();
+    } else {
+        if (!try_val) try_val = {ConstantInt::get(i64_ty, 0), CType::INT};
+    }
+
+    // Catch body: get exception, pattern match
+    builder_->SetInsertPoint(catch_bb);
+    auto exc_sym = builder_->CreateCall(rt_get_exc_sym_, {}, "exc.sym");
+    auto exc_msg = builder_->CreateCall(rt_get_exc_msg_, {}, "exc.msg");
+
+    // Pattern match against catch clauses
+    TypedValue catch_val = {ConstantInt::get(i64_ty, 0), CType::INT};
+    std::vector<std::pair<TypedValue, BasicBlock*>> catch_results;
+
+    if (node->catchExpr) {
+        for (size_t ci = 0; ci < node->catchExpr->patterns.size(); ci++) {
+            auto* cp = node->catchExpr->patterns[ci];
+            auto body_bb = BasicBlock::Create(*context_, "catch.body." + std::to_string(ci), fn);
+            BasicBlock* next_bb;
+            if (ci + 1 < node->catchExpr->patterns.size()) {
+                next_bb = BasicBlock::Create(*context_, "catch.next." + std::to_string(ci+1), fn);
+            } else {
+                // Last pattern: if no match, re-raise the exception
+                next_bb = BasicBlock::Create(*context_, "catch.reraise", fn);
+            }
+
+            auto* pat = cp->matchPattern;
+
+            if (pat->get_type() == AST_TUPLE_PATTERN) {
+                auto* tp = static_cast<TuplePattern*>(pat);
+                // Match symbol (first element) if it's a specific symbol
+                bool symbol_matched = false;
+                if (tp->patterns.size() >= 1 && tp->patterns[0]->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv0 = static_cast<PatternValue*>(tp->patterns[0]);
+                    if (auto* sym = std::get_if<SymbolExpr*>(&pv0->expr)) {
+                        int64_t sid = intern_symbol((*sym)->value);
+                        auto cmp = builder_->CreateICmpEQ(exc_sym, ConstantInt::get(i64_ty, sid));
+                        builder_->CreateCondBr(cmp, body_bb, next_bb);
+                        symbol_matched = true;
+                    }
+                }
+                if (!symbol_matched) builder_->CreateBr(body_bb);
+
+                builder_->SetInsertPoint(body_bb);
+                // Bind pattern variables
+                for (size_t pi = 0; pi < tp->patterns.size(); pi++) {
+                    auto* sub = tp->patterns[pi];
+                    if (sub->get_type() == AST_PATTERN_VALUE) {
+                        auto* pv = static_cast<PatternValue*>(sub);
+                        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                            if (pi == 0) named_values_[(*id)->name->value] = {exc_sym, CType::SYMBOL};
+                            else named_values_[(*id)->name->value] = {exc_msg, CType::STRING};
+                        }
+                    }
+                }
+            } else if (pat->get_type() == AST_UNDERSCORE_PATTERN) {
+                builder_->CreateBr(body_bb);
+                builder_->SetInsertPoint(body_bb);
+            } else if (pat->get_type() == AST_PATTERN_VALUE) {
+                auto* pv = static_cast<PatternValue*>(pat);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                    // Build exception tuple and bind
+                    auto* st = StructType::get(*context_, {i64_ty, llvm_type(CType::STRING)});
+                    Value* tup = UndefValue::get(st);
+                    tup = builder_->CreateInsertValue(tup, exc_sym, {0});
+                    tup = builder_->CreateInsertValue(tup, exc_msg, {1});
+                    named_values_[(*id)->name->value] = {tup, CType::TUPLE, {CType::SYMBOL, CType::STRING}};
+                }
+                builder_->CreateBr(body_bb);
+                builder_->SetInsertPoint(body_bb);
+            } else {
+                builder_->CreateBr(body_bb);
+                builder_->SetInsertPoint(body_bb);
+            }
+
+            // Compile handler body
+            TypedValue handler_val;
+            if (auto* pwog = std::get_if<PatternWithoutGuards*>(&cp->pattern)) {
+                handler_val = codegen((*pwog)->expr);
+            }
+            if (!handler_val) handler_val = {ConstantInt::get(i64_ty, 0), CType::INT};
+
+            builder_->CreateBr(merge_bb);
+            catch_results.push_back({handler_val, builder_->GetInsertBlock()});
+
+            if (ci + 1 < node->catchExpr->patterns.size())
+                builder_->SetInsertPoint(next_bb);
+            else if (next_bb->getName().starts_with("catch.reraise")) {
+                // Last pattern didn't match — re-raise
+                builder_->SetInsertPoint(next_bb);
+                builder_->CreateCall(rt_raise_, {exc_sym, exc_msg});
+                builder_->CreateUnreachable();
+            }
+        }
+    }
+
+    // Merge
+    fn->insert(fn->end(), merge_bb);
+    builder_->SetInsertPoint(merge_bb);
+
+    if (catch_results.empty()) {
+        return try_val;
+    }
+
+    // Determine result type: use catch type if try body always raises (terminated)
+    CType result_type = try_end_bb ? try_val.type
+        : (!catch_results.empty() ? catch_results[0].first.type : CType::INT);
+    LType* result_llvm = try_end_bb ? try_val.val->getType()
+        : (!catch_results.empty() ? catch_results[0].first.val->getType() : LType::getInt64Ty(*context_));
+
+    unsigned pred_count = (try_end_bb ? 1 : 0) + catch_results.size();
+    if (pred_count == 0) return try_val;
+
+    auto phi = builder_->CreatePHI(result_llvm, pred_count, "try.result");
+    if (try_end_bb) phi->addIncoming(try_val.val, try_end_bb);
+    for (auto& [tv, bb] : catch_results) {
+        Value* incoming = tv.val;
+        if (incoming->getType() != result_llvm)
+            incoming = Constant::getNullValue(result_llvm);
+        phi->addIncoming(incoming, bb);
+    }
+    return {phi, result_type};
 }
 
 // ===== Collections =====
