@@ -2423,7 +2423,6 @@ private:
     unique_ptr<CaseClause> parse_case_clause() {
         SourceLocation loc = current_location();
 
-        // No pipe expected in case expressions according to Yona syntax
         auto pattern = parse_pattern();
 
         if (!pattern) {
@@ -2431,10 +2430,16 @@ private:
             return nullptr;
         }
 
-        // Expect arrow and body
+        // Check for guard expression: pattern if guard_expr -> body
+        ExprNode* guard = nullptr;
+        if (check(TokenType::YIF) && !check_ahead(TokenType::YARROW)) {
+            advance(); // consume 'if'
+            auto guard_expr = parse_expr();
+            if (guard_expr) guard = guard_expr.release();
+        }
+
         expect(TokenType::YARROW, "Expected '->' after pattern");
 
-        // Parse the body expression, but stop at | or end (for next pattern or end of case)
         auto body = parse_expr_until_pattern_end();
 
         if (!body) {
@@ -2442,7 +2447,7 @@ private:
             return nullptr;
         }
 
-        return make_unique<CaseClause>(loc, pattern.release(), body.release());
+        return make_unique<CaseClause>(loc, pattern.release(), body.release(), guard);
     }
 
     // NOTE: This function was removed as it was unused and contained a memory leak.

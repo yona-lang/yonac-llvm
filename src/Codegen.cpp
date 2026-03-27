@@ -2394,6 +2394,19 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         }
 
         if (!body_inline) builder_->SetInsertPoint(body_bb);
+
+        // Guard expression: pattern | guard -> body
+        if (clause->guard) {
+            auto guard_val = codegen(clause->guard);
+            if (!guard_val) return {};
+            Value* cond = guard_val.val;
+            if (guard_val.type == CType::INT)
+                cond = builder_->CreateICmpNE(cond, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+            auto guarded_bb = BasicBlock::Create(*context_, "case.guarded." + std::to_string(i), fn);
+            builder_->CreateCondBr(cond, guarded_bb, next_bb);
+            builder_->SetInsertPoint(guarded_bb);
+        }
+
         auto body_tv = codegen(clause->body);
         if (!body_tv) return {};
         builder_->CreateBr(merge_bb);

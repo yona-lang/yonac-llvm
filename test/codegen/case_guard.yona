@@ -1,0 +1,1 @@
+let classify x = case x of n if n > 0 -> 1; n if n < 0 -> 2; _ -> 0 end in classify 5 + classify (-3) + classify 0

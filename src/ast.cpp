@@ -1257,15 +1257,22 @@ void OrPattern::print(std::ostream &os) const {
 }
 
 // CaseClause implementation
-CaseClause::CaseClause(SourceContext token, Pattern *pattern, ExprNode *body)
-    : ExprNode(token), pattern(pattern->with_parent<Pattern>(this)), body(body->with_parent<ExprNode>(this)) {}
+CaseClause::CaseClause(SourceContext token, Pattern *pattern, ExprNode *body, ExprNode *guard)
+    : ExprNode(token), pattern(pattern->with_parent<Pattern>(this)),
+      body(body->with_parent<ExprNode>(this)),
+      guard(guard ? guard->with_parent<ExprNode>(this) : nullptr) {}
 
 CaseClause::~CaseClause() {
   delete pattern;
   delete body;
+  delete guard;
 }
 
-void CaseClause::print(std::ostream &os) const { os << *pattern << " -> " << *body; }
+void CaseClause::print(std::ostream &os) const {
+  os << *pattern;
+  if (guard) os << " | " << *guard;
+  os << " -> " << *body;
+}
 
 // CaseExpr implementation
 CaseExpr::CaseExpr(SourceContext token, ExprNode *expr, vector<CaseClause *> clauses)

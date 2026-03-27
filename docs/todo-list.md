@@ -43,7 +43,7 @@ Phase 6: Concurrency
 
 ### Language Features
 - [ ] Generators/comprehensions — parsed but not compiled (needs HOF return type inference for transducers)
-- [ ] Case guard expressions
+- [x] Case guard expressions (`if` keyword) ✅
 - [ ] `with` expression (resource management)
 - [ ] Module system improvements (wildcard import, re-exports)
 - [ ] Error propagation operator (`?`)

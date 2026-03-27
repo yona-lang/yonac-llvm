@@ -232,7 +232,7 @@ Juxtaposition has higher precedence than all binary operators, so `f x + g y` is
 case value of
   0 -> "zero"
   1 -> "one"
-  n | n > 0 -> "positive"
+  n if n > 0 -> "positive"
   _ -> "negative"
 end
 

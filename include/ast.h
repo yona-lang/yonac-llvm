@@ -1742,8 +1742,9 @@ private:
 public:
   Pattern *pattern;
   ExprNode *body;
+  ExprNode *guard = nullptr;  // optional guard expression (pattern | guard -> body)
 
-  explicit CaseClause(SourceContext token, Pattern *pattern, ExprNode *body);
+  explicit CaseClause(SourceContext token, Pattern *pattern, ExprNode *body, ExprNode *guard = nullptr);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
