@@ -62,6 +62,7 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 
 - `yona_lib` (shared) / `yona_lib_static`: Core library (lexer, parser, AST, codegen)
 - `yonac`: Compiler executable (links `yona_lib` + CLI11)
+- `yona`: REPL executable — compile-and-run mode (links `yona_lib`)
 - `tests`: Test executable (links `yona_lib_static` + doctest)
 
 ### Dependencies

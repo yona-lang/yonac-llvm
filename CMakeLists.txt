@@ -104,6 +104,11 @@ file(GLOB all_yonac_SRCS
 		"${PROJECT_SOURCE_DIR}/cli/*.c"
 )
 
+file(GLOB all_repl_SRCS
+		"${PROJECT_SOURCE_DIR}/include/*.h"
+		"${PROJECT_SOURCE_DIR}/repl/*.cpp"
+)
+
 # Find the libraries that correspond to the LLVM components that we wish to use
 llvm_map_components_to_libnames(llvm_libs Support Core IRReader Passes Target native nativecodegen)
 
@@ -138,6 +143,12 @@ add_executable(yonac ${all_yonac_SRCS})
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
+
+# REPL executable
+add_executable(yona ${all_repl_SRCS})
+target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(yona PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
+target_link_libraries(yona PRIVATE yona_lib)
 
 enable_testing()
 

@@ -43,7 +43,7 @@
 - [x] Undefined variable/function errors ✅
 
 ### Tooling
-- [ ] REPL (compile-and-run mode)
+- [x] REPL: `yona` executable — compile-and-run mode ✅
 
 ### Stdlib
 - [x] All 6 stdlib modules compile: Option (7), Result (8), List (17), Tuple (4), Range (6), Test (3) ✅
