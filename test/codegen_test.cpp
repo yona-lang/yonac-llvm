@@ -39,6 +39,10 @@ static string compile_and_run(const string& code) {
     if (!parse_result.node) return "PARSE_ERROR";
 
     Codegen codegen("test_module");
+    // Add module search paths for stdlib .yonai files
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
+    }
     auto module = codegen.compile(parse_result.node.get());
     if (!module) return "CODEGEN_ERROR";
 

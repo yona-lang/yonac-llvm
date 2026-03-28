@@ -287,20 +287,193 @@ double yona_Std_Math__sqrt(double x) { return sqrt(x); }
 double yona_Std_Math__sin(double x) { return sin(x); }
 double yona_Std_Math__cos(double x) { return cos(x); }
 
-/* Std\String */
-int64_t yona_Std_String__length(const char* s) { return (int64_t)strlen(s); }
+/* Std\String — pure string operations, no I/O */
+
+int64_t yona_Std_String__length(const char* s) {
+    return (int64_t)strlen(s);
+}
+
 const char* yona_Std_String__toUpperCase(const char* s) {
     size_t len = strlen(s);
     char* r = (char*)malloc(len + 1);
     for (size_t i = 0; i <= len; i++) r[i] = (char)toupper((unsigned char)s[i]);
     return r;
 }
+
 const char* yona_Std_String__toLowerCase(const char* s) {
     size_t len = strlen(s);
     char* r = (char*)malloc(len + 1);
     for (size_t i = 0; i <= len; i++) r[i] = (char)tolower((unsigned char)s[i]);
     return r;
 }
+
+const char* yona_Std_String__trim(const char* s) {
+    const char* start = s;
+    while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) start++;
+    const char* end = s + strlen(s) - 1;
+    while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
+    size_t len = end - start + 1;
+    char* r = (char*)malloc(len + 1);
+    memcpy(r, start, len);
+    r[len] = '\0';
+    return r;
+}
+
+int64_t yona_Std_String__indexOf(const char* needle, const char* haystack) {
+    const char* p = strstr(haystack, needle);
+    return p ? (int64_t)(p - haystack) : -1;
+}
+
+int64_t yona_Std_String__contains(const char* needle, const char* haystack) {
+    return strstr(haystack, needle) != NULL;
+}
+
+int64_t yona_Std_String__startsWith(const char* prefix, const char* s) {
+    size_t plen = strlen(prefix);
+    return strncmp(s, prefix, plen) == 0;
+}
+
+int64_t yona_Std_String__endsWith(const char* suffix, const char* s) {
+    size_t slen = strlen(s);
+    size_t xlen = strlen(suffix);
+    if (xlen > slen) return 0;
+    return strcmp(s + slen - xlen, suffix) == 0;
+}
+
+const char* yona_Std_String__substring(const char* s, int64_t start, int64_t len) {
+    size_t slen = strlen(s);
+    if (start < 0) start = 0;
+    if ((size_t)start >= slen) { char* r = (char*)malloc(1); r[0] = '\0'; return r; }
+    if (len < 0 || (size_t)(start + len) > slen) len = slen - start;
+    char* r = (char*)malloc(len + 1);
+    memcpy(r, s + start, len);
+    r[len] = '\0';
+    return r;
+}
+
+const char* yona_Std_String__replace(const char* old, const char* new_s, const char* s) {
+    size_t olen = strlen(old);
+    size_t nlen = strlen(new_s);
+    size_t slen = strlen(s);
+    if (olen == 0) { char* r = strdup(s); return r; }
+    /* Count occurrences */
+    size_t count = 0;
+    const char* p = s;
+    while ((p = strstr(p, old)) != NULL) { count++; p += olen; }
+    /* Build result */
+    size_t rlen = slen + count * (nlen - olen);
+    char* r = (char*)malloc(rlen + 1);
+    char* w = r;
+    p = s;
+    while (*p) {
+        if (strncmp(p, old, olen) == 0) {
+            memcpy(w, new_s, nlen);
+            w += nlen;
+            p += olen;
+        } else {
+            *w++ = *p++;
+        }
+    }
+    *w = '\0';
+    return r;
+}
+
+int64_t* yona_Std_String__split(const char* delim, const char* s) {
+    size_t dlen = strlen(delim);
+    if (dlen == 0) {
+        /* Split into individual characters */
+        size_t slen = strlen(s);
+        int64_t* result = yona_rt_seq_alloc(slen);
+        for (size_t i = 0; i < slen; i++) {
+            char* ch = (char*)malloc(2);
+            ch[0] = s[i]; ch[1] = '\0';
+            result[i + 1] = (int64_t)ch;
+        }
+        return result;
+    }
+    /* Count splits */
+    size_t count = 1;
+    const char* p = s;
+    while ((p = strstr(p, delim)) != NULL) { count++; p += dlen; }
+    int64_t* result = yona_rt_seq_alloc(count);
+    p = s;
+    for (size_t i = 0; i < count; i++) {
+        const char* next = strstr(p, delim);
+        size_t len = next ? (size_t)(next - p) : strlen(p);
+        char* part = (char*)malloc(len + 1);
+        memcpy(part, p, len);
+        part[len] = '\0';
+        result[i + 1] = (int64_t)part;
+        p = next ? next + dlen : p + len;
+    }
+    return result;
+}
+
+const char* yona_Std_String__join(const char* sep, int64_t* seq) {
+    int64_t n = seq[0];
+    if (n == 0) { char* r = (char*)malloc(1); r[0] = '\0'; return r; }
+    size_t seplen = strlen(sep);
+    /* Calculate total length */
+    size_t total = 0;
+    for (int64_t i = 0; i < n; i++) {
+        const char* part = (const char*)seq[i + 1];
+        total += strlen(part);
+        if (i > 0) total += seplen;
+    }
+    char* r = (char*)malloc(total + 1);
+    char* w = r;
+    for (int64_t i = 0; i < n; i++) {
+        if (i > 0) { memcpy(w, sep, seplen); w += seplen; }
+        const char* part = (const char*)seq[i + 1];
+        size_t plen = strlen(part);
+        memcpy(w, part, plen);
+        w += plen;
+    }
+    *w = '\0';
+    return r;
+}
+
+int64_t yona_Std_String__charAt(const char* s, int64_t idx) {
+    size_t len = strlen(s);
+    if (idx < 0 || (size_t)idx >= len) return 0;
+    return (int64_t)(unsigned char)s[idx];
+}
+
+const char* yona_Std_String__padLeft(int64_t width, const char* pad, const char* s) {
+    size_t slen = strlen(s);
+    if ((int64_t)slen >= width) return strdup(s);
+    size_t plen = strlen(pad);
+    if (plen == 0) return strdup(s);
+    char* r = (char*)malloc(width + 1);
+    size_t fill = width - slen;
+    for (size_t i = 0; i < fill; i++) r[i] = pad[i % plen];
+    memcpy(r + fill, s, slen + 1);
+    return r;
+}
+
+const char* yona_Std_String__padRight(int64_t width, const char* pad, const char* s) {
+    size_t slen = strlen(s);
+    if ((int64_t)slen >= width) return strdup(s);
+    size_t plen = strlen(pad);
+    if (plen == 0) return strdup(s);
+    char* r = (char*)malloc(width + 1);
+    memcpy(r, s, slen);
+    size_t fill = width - slen;
+    for (size_t i = 0; i < fill; i++) r[slen + i] = pad[i % plen];
+    r[width] = '\0';
+    return r;
+}
+
+const char* yona_Std_String__reverse(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)malloc(len + 1);
+    for (size_t i = 0; i < len; i++) r[i] = s[len - 1 - i];
+    r[len] = '\0';
+    return r;
+}
+
+int64_t yona_Std_String__toInt(const char* s) { return (int64_t)atoll(s); }
+double yona_Std_String__toFloat(const char* s) { return atof(s); }
 
 /* Std\List */
 int64_t yona_Std_List__length(int64_t* seq) { return seq[0]; }
@@ -313,9 +486,22 @@ int64_t* yona_Std_List__reverse(int64_t* seq) {
     return r;
 }
 
-/* Std\Types */
+/* Std\Types — type conversions */
 int64_t yona_Std_Types__toInt(const char* s) { return (int64_t)atoll(s); }
 double yona_Std_Types__toFloat(const char* s) { return atof(s); }
+const char* yona_Std_Types__intToString(int64_t n) {
+    char* r = (char*)malloc(32);
+    snprintf(r, 32, "%ld", n);
+    return r;
+}
+const char* yona_Std_Types__floatToString(double f) {
+    char* r = (char*)malloc(32);
+    snprintf(r, 32, "%g", f);
+    return r;
+}
+const char* yona_Std_Types__boolToString(int64_t b) {
+    return strdup(b ? "true" : "false");
+}
 
 // Head: first element
 int64_t yona_rt_seq_head(int64_t* seq) {

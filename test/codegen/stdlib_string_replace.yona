@@ -1,0 +1,1 @@
+import replace from Std\String in replace "world" "yona" "hello world"

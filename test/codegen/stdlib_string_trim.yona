@@ -1,0 +1,1 @@
+import trim from Std\String in trim "  hello  "
