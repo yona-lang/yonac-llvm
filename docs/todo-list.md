@@ -49,7 +49,8 @@ Phase 6: Concurrency
 - [x] Wildcard import (`import Std\List in expr`) ✅
 - [x] ADT field names in .yonai (cross-module named field access) ✅
 - [ ] Re-exports (module re-exporting from another module)
-- [ ] Lazy sequences / iterators
+- [ ] Proper closures ({fn_ptr, env_ptr} pairs — needed for functions in data structures)
+- [ ] Lazy sequences / iterators (blocked by closures in ADTs)
 
 ### Codegen Optimizations
 - [ ] Inlining pass (AlwaysInline + function inlining)
