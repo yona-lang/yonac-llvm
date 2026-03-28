@@ -1,0 +1,19 @@
+module Std\Stream exports Next, End, naturals, iterate, fromList, mapStream, filterStream, takeStream, toList as
+
+type Stream a = Next a (() -> Stream a) | End
+
+naturals n = Next n (\-> naturals (n + 1))
+
+iterate f x = Next x (\-> iterate f (f x))
+
+fromList seq = case seq of [] -> End; [h|t] -> Next h (\-> fromList t) end
+
+mapStream f s = case s of End -> End; Next h t -> Next (f h) (\-> mapStream f (t ())) end
+
+filterStream p s = case s of End -> End; Next h t -> if p h then Next h (\-> filterStream p (t ())) else filterStream p (t ()) end
+
+takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (takeStream (n - 1) (t ())) end
+
+toList s = case s of End -> []; Next h t -> h :: (toList (t ())) end
+
+end

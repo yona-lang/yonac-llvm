@@ -954,7 +954,10 @@ private:
                         advance();
                     } else if (check(TokenType::YLPAREN)) {
                         advance();
-                        if (check(TokenType::YIDENTIFIER)) {
+                        if (check(TokenType::YRPAREN)) {
+                            // () → function/thunk type
+                            field_types.push_back("()");
+                        } else if (check(TokenType::YIDENTIFIER)) {
                             field_types.push_back(string(current().lexeme));
                             advance();
                         }

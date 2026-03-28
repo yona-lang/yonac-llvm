@@ -462,13 +462,14 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
             // Map type names to CTypes
             std::vector<CType> ftypes;
             for (auto& tn : ctor->field_type_names) {
-                if (tn == "Int" || tn == "a" || tn == "b" || tn == "e") ftypes.push_back(CType::INT);
+                if (tn == "Int" || tn == "a" || tn == "b" || tn == "e" || tn == "s") ftypes.push_back(CType::INT);
                 else if (tn == "Float") ftypes.push_back(CType::FLOAT);
                 else if (tn == "String") ftypes.push_back(CType::STRING);
                 else if (tn == "Bool") ftypes.push_back(CType::BOOL);
                 else if (tn == "Symbol") ftypes.push_back(CType::SYMBOL);
-                else if (tn == adt->name) ftypes.push_back(CType::ADT); // self-reference
-                else ftypes.push_back(CType::INT); // default
+                else if (tn == adt->name) ftypes.push_back(CType::ADT);
+                else if (tn == "()" || tn == "->") ftypes.push_back(CType::FUNCTION);
+                else ftypes.push_back(CType::INT);
             }
 
             adt_constructors_[ctor->name] = {adt->name, static_cast<int>(ci), arity,
@@ -2324,20 +2325,17 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                         if (sub_pat->get_type() == AST_PATTERN_VALUE) {
                             auto* pv = static_cast<PatternValue*>(sub_pat);
                             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                                // Determine if this field is a recursive self-reference.
-                                // If so, the i64 value is actually a pointer to another ADT node.
-                                // For recursive ADTs: the last field(s) that reference
-                                // the type itself need to be cast from i64 to ptr.
-                                // Heuristic: last field of a multi-field recursive constructor.
-                                if (ctor_it->second.is_recursive && fi == cp->sub_patterns.size() - 1 &&
-                                    ctor_it->second.arity > 1) {
-                                    // Last field of a multi-field recursive constructor is likely the self-ref
-                                    named_values_[(*id)->name->value] = {
-                                        builder_->CreateIntToPtr(field_val, PointerType::get(*context_, 0)),
-                                        CType::ADT};
-                                } else {
-                                    named_values_[(*id)->name->value] = {field_val, CType::INT};
-                                }
+                                // Use field type from ADT definition
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                Value* typed_val = field_val;
+                                // Pointer-based types need inttoptr cast
+                                if (ftype == CType::ADT || ftype == CType::SEQ ||
+                                    ftype == CType::STRING || ftype == CType::FUNCTION ||
+                                    ftype == CType::SET || ftype == CType::DICT)
+                                    typed_val = builder_->CreateIntToPtr(field_val,
+                                        PointerType::get(*context_, 0));
+                                named_values_[(*id)->name->value] = {typed_val, ftype};
                             }
                         }
                     }
