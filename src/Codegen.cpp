@@ -468,7 +468,7 @@ Module* Codegen::compile_module(ModuleExpr* mod) {
                 else if (tn == "Bool") ftypes.push_back(CType::BOOL);
                 else if (tn == "Symbol") ftypes.push_back(CType::SYMBOL);
                 else if (tn == adt->name) ftypes.push_back(CType::ADT);
-                else if (tn == "()" || tn == "->") ftypes.push_back(CType::FUNCTION);
+                else if (tn == "()" || tn == "->" || tn == "fn" || tn == "Fn" || tn == "Function") ftypes.push_back(CType::FUNCTION);
                 else ftypes.push_back(CType::INT);
             }
 
@@ -1874,17 +1874,19 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         // Check if fn_name is a FUNCTION-typed variable (higher-order: indirect call)
         auto var_it = named_values_.find(fn_name);
         if (var_it != named_values_.end() && var_it->second.type == CType::FUNCTION && var_it->second.val) {
-            // Build function type from actual argument types
+            // Filter out Unit arguments (thunk calls: t () → call with 0 args)
             std::vector<LType*> arg_types;
-            for (auto& a : all_args) arg_types.push_back(a.val->getType());
-            // Return type from subtypes[0] if available, else match first arg type
+            std::vector<Value*> vals;
+            for (auto& a : all_args) {
+                if (a.type == CType::UNIT) continue; // skip unit args for thunk calls
+                arg_types.push_back(a.val->getType());
+                vals.push_back(a.val);
+            }
             CType ret_ctype = (!var_it->second.subtypes.empty()) ? var_it->second.subtypes[0]
                 : (all_args.empty() ? CType::INT : all_args[0].type);
             auto ret_llvm = llvm_type(ret_ctype);
             auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
             auto fn_ptr = var_it->second.val;
-            std::vector<Value*> vals;
-            for (auto& a : all_args) vals.push_back(a.val);
             auto result = builder_->CreateCall(fn_type, fn_ptr, vals, "indirect_call");
             return {result, ret_ctype};
         }
@@ -2352,8 +2354,16 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                         auto* sub_pat = cp->sub_patterns[fi];
                         if (sub_pat->get_type() == AST_PATTERN_VALUE) {
                             auto* pv = static_cast<PatternValue*>(sub_pat);
-                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-                                named_values_[(*id)->name->value] = {field_val, CType::INT};
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                Value* typed_val = field_val;
+                                if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
+                                    ftype == CType::STRING || ftype == CType::ADT)
+                                    typed_val = builder_->CreateIntToPtr(field_val,
+                                        PointerType::get(*context_, 0));
+                                named_values_[(*id)->name->value] = {typed_val, ftype};
+                            }
                         }
                     }
                 }

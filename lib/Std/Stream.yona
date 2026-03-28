@@ -1,9 +1,0 @@
-module Std\Stream exports Next, End, takeStream, sumStream as
-
-type Stream a = Next a (() -> Stream a) | End
-
-takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (takeStream (n - 1) (t ())) end
-
-sumStream s = case s of End -> 0; Next h t -> h + (sumStream (t ())) end
-
-end

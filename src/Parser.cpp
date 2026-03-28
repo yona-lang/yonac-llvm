@@ -518,8 +518,18 @@ private:
 
         // Parse body
         vector<unique_ptr<FunctionBody>> bodies;
+        // Distinguish guard (= if expr -> body) from if-expression body (= if expr then ...)
+        // Look ahead from current position: if -> appears before 'then', it's a guard
+        bool is_guard = false;
         if (check(TokenType::YIF)) {
-            // Multiple guard clauses: = if guard -> body
+            for (size_t off = 1; off < 20 && !is_at_end(); off++) {
+                auto t = peek(off).type;
+                if (t == TokenType::YARROW) { is_guard = true; break; }
+                if (t == TokenType::YTHEN) break;
+                if (t == TokenType::YEOF_TOKEN || t == TokenType::YEND) break;
+            }
+        }
+        if (is_guard) {
             while (match(TokenType::YIF)) {
                 auto guard = parse_expr();
                 if (!guard) {
