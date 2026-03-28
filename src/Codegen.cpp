@@ -195,8 +195,8 @@ void Codegen::declare_runtime() {
 
     // ADT runtime (recursive types)
     auto i8 = LType::getInt8Ty(*context_);
-    rt_adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i8, i64});
-    rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i8, {ptr});
+    rt_adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i64, i64});
+    rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i64, {ptr});
     rt_adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
     rt_adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
 
@@ -2313,7 +2313,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 if (ctor_it->second.is_recursive) {
                     // Recursive ADT: scrutinee is a pointer, use runtime accessors
                     auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
-                    auto tag_val = ConstantInt::get(tag_ty, tag);
+                    auto tag_val = ConstantInt::get(i64_ty, tag);
                     auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
                     builder_->CreateCondBr(cmp, body_bb, next_bb);
 

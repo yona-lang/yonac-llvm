@@ -166,14 +166,14 @@ void yona_rt_print_dict(int64_t* dict) {
 /* Heap-allocated ADT nodes: [tag (i8), field0 (i64), field1 (i64), ...] */
 /* Used for recursive types like List a = Cons a (List a) | Nil        */
 
-void* yona_rt_adt_alloc(int8_t tag, int64_t num_fields) {
+void* yona_rt_adt_alloc(int64_t tag, int64_t num_fields) {
     int64_t* node = (int64_t*)malloc((1 + num_fields) * sizeof(int64_t));
-    node[0] = (int64_t)tag;
+    node[0] = tag;
     return node;
 }
 
-int8_t yona_rt_adt_get_tag(void* node) {
-    return (int8_t)(((int64_t*)node)[0]);
+int64_t yona_rt_adt_get_tag(void* node) {
+    return ((int64_t*)node)[0];
 }
 
 int64_t yona_rt_adt_get_field(void* node, int64_t index) {
