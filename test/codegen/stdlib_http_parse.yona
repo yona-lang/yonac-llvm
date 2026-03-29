@@ -1,0 +1,1 @@
+import parseStatus, parseBody from Std\Http in let response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhello world" in parseStatus response

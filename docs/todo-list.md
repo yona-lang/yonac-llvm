@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 644 assertions across 73 test cases
-- **Stdlib**: 20 modules, ~200 exported functions (11 pure Yona + 9 C runtime)
+- **Tests**: 650 assertions across 73 test cases
+- **Stdlib**: 22 modules, ~220 exported functions (11 pure Yona + 11 C runtime)
 
 ## Roadmap
 
@@ -45,8 +45,8 @@ Phase 6: Utilities
 
 Future:
 - [ ] STM (Software Transactional Memory) — when shared mutable state is needed
-- [ ] Std\Net — TCP/UDP sockets via io_uring (Linux), kqueue (macOS)
-- [ ] Std\Http — HTTP client/server built on Std\Net
+- [x] Std\Net — TCP/UDP via io_uring: tcpConnect, tcpListen, tcpAccept, send, recv, close, udpBind, udpSendTo, udpRecv, peerAddress ✅
+- [x] Std\Http — HTTP client: buildRequest, parseStatus, parseBody, getHeader, parseUrl, httpGet (io_uring) ✅
 
 ### Language Features
 - [x] Generators/comprehensions — loop-based codegen for seq/set/dict generators with guard support ✅

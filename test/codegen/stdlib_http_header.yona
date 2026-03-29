@@ -1,0 +1,1 @@
+import getHeader from Std\Http in getHeader "Content-Type" "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nbody"

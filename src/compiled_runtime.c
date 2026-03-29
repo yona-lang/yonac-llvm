@@ -909,6 +909,234 @@ int64_t yona_Std_Process__exit(int64_t code) {
     return 0; /* unreachable */
 }
 
+/* ===== Std\Http — HTTP client ===== */
+
+/* Build an HTTP/1.1 request string */
+const char* yona_Std_Http__buildRequest(const char* method, const char* host,
+                                         const char* path, const char* body) {
+    size_t body_len = body ? strlen(body) : 0;
+    size_t host_len = strlen(host);
+    size_t path_len = strlen(path);
+    size_t method_len = strlen(method);
+
+    /* Calculate total size */
+    size_t total = method_len + 1 + path_len + 11 /* " HTTP/1.1\r\n" */
+        + 6 + host_len + 2 /* "Host: ...\r\n" */
+        + 24 /* "Connection: close\r\n" */
+        + 19 /* "User-Agent: Yona\r\n" */;
+    if (body_len > 0) {
+        total += 32 /* "Content-Length: NNN\r\n" */
+            + 48 /* "Content-Type: application/x-www-form-urlencoded\r\n" */
+            + 2 + body_len;
+    } else {
+        total += 2; /* final \r\n */
+    }
+
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, total + 64);
+    int n;
+    if (body_len > 0) {
+        n = snprintf(r, total + 64,
+            "%s %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "User-Agent: Yona\r\n"
+            "Connection: close\r\n"
+            "Content-Length: %zu\r\n"
+            "Content-Type: application/x-www-form-urlencoded\r\n"
+            "\r\n"
+            "%s",
+            method, path, host, body_len, body);
+    } else {
+        n = snprintf(r, total + 64,
+            "%s %s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "User-Agent: Yona\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            method, path, host);
+    }
+    r[n] = '\0';
+    return r;
+}
+
+/* Parse HTTP status code from response string */
+int64_t yona_Std_Http__parseStatus(const char* response) {
+    /* HTTP/1.1 200 OK\r\n... */
+    if (strncmp(response, "HTTP/", 5) != 0) return 0;
+    const char* sp = strchr(response, ' ');
+    if (!sp) return 0;
+    return (int64_t)atoi(sp + 1);
+}
+
+/* Extract HTTP response body (after \r\n\r\n) */
+const char* yona_Std_Http__parseBody(const char* response) {
+    const char* body = strstr(response, "\r\n\r\n");
+    if (!body) {
+        char* r = (char*)rc_alloc(RC_TYPE_STRING, 1);
+        r[0] = '\0';
+        return r;
+    }
+    body += 4;
+    size_t len = strlen(body);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+    memcpy(r, body, len + 1);
+    return r;
+}
+
+/* Extract a specific HTTP header value */
+const char* yona_Std_Http__getHeader(const char* name, const char* response) {
+    size_t name_len = strlen(name);
+    const char* p = response;
+    while ((p = strstr(p, name)) != NULL) {
+        /* Check it's at start of line */
+        if (p == response || *(p - 1) == '\n') {
+            p += name_len;
+            if (*p == ':') {
+                p++;
+                while (*p == ' ') p++;
+                const char* end = strstr(p, "\r\n");
+                size_t len = end ? (size_t)(end - p) : strlen(p);
+                char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+                memcpy(r, p, len);
+                r[len] = '\0';
+                return r;
+            }
+        }
+        p++;
+    }
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 1);
+    r[0] = '\0';
+    return r;
+}
+
+/* Parse URL into (host, port, path) — returns seq of 3 elements [host, port, path] */
+int64_t* yona_Std_Http__parseUrl(const char* url) {
+    int64_t* result = yona_rt_seq_alloc(3);
+    int port = 80;
+    const char* host_start = url;
+    const char* path_start = "/";
+
+    /* Skip scheme */
+    if (strncmp(url, "http://", 7) == 0) { host_start = url + 7; port = 80; }
+    else if (strncmp(url, "https://", 8) == 0) { host_start = url + 8; port = 443; }
+
+    /* Find path */
+    const char* slash = strchr(host_start, '/');
+    size_t host_len;
+    if (slash) {
+        host_len = (size_t)(slash - host_start);
+        path_start = slash;
+    } else {
+        host_len = strlen(host_start);
+    }
+
+    /* Check for port in host */
+    const char* colon = (const char*)memchr(host_start, ':', host_len);
+    if (colon) {
+        port = atoi(colon + 1);
+        host_len = (size_t)(colon - host_start);
+    }
+
+    char* host = (char*)rc_alloc(RC_TYPE_STRING, host_len + 1);
+    memcpy(host, host_start, host_len);
+    host[host_len] = '\0';
+
+    size_t path_len = strlen(path_start);
+    char* path = (char*)rc_alloc(RC_TYPE_STRING, path_len + 1);
+    memcpy(path, path_start, path_len + 1);
+
+    result[1] = (int64_t)(intptr_t)host;
+    result[2] = (int64_t)port;
+    result[3] = (int64_t)(intptr_t)path;
+    return result;
+}
+
+/* High-level: HTTP GET via io_uring — connect, send, recv through the ring.
+ * Returns uring ID (IO promise). Completion returns the full response string. */
+int64_t yona_Std_Http__httpGet(const char* url) {
+#if defined(__linux__)
+    int64_t* parsed = yona_Std_Http__parseUrl(url);
+    const char* host = (const char*)(intptr_t)parsed[1];
+    int64_t port = parsed[2];
+    const char* path = (const char*)(intptr_t)parsed[3];
+
+    /* Resolve + create socket (fast, no I/O) */
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[8]; snprintf(port_str, sizeof(port_str), "%ld", port);
+    if (getaddrinfo(host, port_str, &hints, &ai) != 0) return 0;
+    int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd < 0) { freeaddrinfo(ai); return 0; }
+
+    /* io_uring CONNECT */
+    struct sockaddr_storage addr_buf;
+    memcpy(&addr_buf, ai->ai_addr, ai->ai_addrlen);
+    socklen_t addr_len = ai->ai_addrlen;
+    freeaddrinfo(ai);
+    {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_CONNECT;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)&addr_buf;
+        sqe.off = (uint64_t)addr_len;
+        uint64_t id = ring_submit_sqe(&sqe);
+        if (ring_await(id) < 0) { close(fd); return 0; }
+    }
+
+    /* Build + io_uring SEND request */
+    const char* req = yona_Std_Http__buildRequest("GET", host, path, NULL);
+    {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_SEND;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)req;
+        sqe.len = (unsigned)strlen(req);
+        uint64_t id = ring_submit_sqe(&sqe);
+        ring_await(id);
+    }
+
+    /* io_uring RECV loop — read full response */
+    size_t buf_size = 16384;
+    size_t total = 0;
+    char* buf = (char*)rc_alloc(RC_TYPE_STRING, buf_size);
+    for (;;) {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_RECV;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)(buf + total);
+        sqe.len = (unsigned)(buf_size - total - 1);
+        uint64_t id = ring_submit_sqe(&sqe);
+        int32_t n = ring_await(id);
+        if (n <= 0) break;
+        total += (size_t)n;
+        if (total >= buf_size - 256) {
+            size_t new_size = buf_size * 2;
+            char* new_buf = (char*)rc_alloc(RC_TYPE_STRING, new_size);
+            memcpy(new_buf, buf, total);
+            buf = new_buf; buf_size = new_size;
+        }
+    }
+    buf[total] = '\0';
+    close(fd);
+
+    /* Return as IO promise via NOP + context */
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_READ_FILE;
+    ctx->fd = -1;
+    ctx->buf = buf;
+    ctx->buf_size = total;
+    ctx->close_fd = 0;
+    struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_NOP;
+    uint64_t nop_id = ring_submit_sqe(&sqe);
+    io_ctx_put(nop_id, ctx);
+    return (int64_t)nop_id;
+#else
+    return 0;
+#endif
+}
+
 /* Std\Random — pseudo-random number generation */
 
 static int yona_random_initialized = 0;
