@@ -222,4 +222,14 @@ void Codegen::emit_rc_dec(Value* val, CType type) {
     builder_->CreateCall(rt_rc_dec_, {ptr_val});
 }
 
+// ===== Arena allocation helpers =====
+
+llvm::Value* Codegen::emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes) {
+    if (!current_arena_) return nullptr;
+    auto i64_ty = LType::getInt64Ty(*context_);
+    return builder_->CreateCall(rt_arena_alloc_,
+        {current_arena_, ConstantInt::get(i64_ty, type_tag), payload_bytes},
+        "arena_obj");
+}
+
 } // namespace yona::compiler::codegen

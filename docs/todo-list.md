@@ -65,9 +65,9 @@ Phase 6: Concurrency
 ### Memory Management
 - [x] Reference counting infrastructure (RC header, rc_inc/rc_dec, type-tagged allocation) ✅
 - [x] Automatic RC at let-binding scope boundaries (inc result, dec bindings) ✅
-- [ ] Automatic RC for function parameter ownership
-- [ ] Escape analysis for stack/arena allocation
-- [ ] Arena allocator for non-escaping values
+- [x] Function parameter ownership: callee-borrows convention (no RC on params, documented) ✅
+- [x] Escape analysis: AST-level per-let-scope analysis of non-escaping bindings ✅
+- [x] Arena allocator: bump-allocated arenas for non-escaping values, bulk deallocation ✅
 
 ### Tooling
 - [x] LLVM debug info (DWARF) — `-g` flag, source lines, variable inspection, type info ✅

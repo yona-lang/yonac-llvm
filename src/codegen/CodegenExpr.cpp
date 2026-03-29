@@ -132,19 +132,129 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
 TypedValue Codegen::codegen_let(LetExpr* node) {
     set_debug_loc(node->source_context);
 
+    // Escape analysis: determine which bindings don't escape this scope
+    std::unordered_set<std::string> local_non_escaping;
+    {
+        std::unordered_set<std::string> local_fns;
+        for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
+        for (auto& [name, _] : compiled_functions_) local_fns.insert(name);
+        // Collect let-bound names
+        std::unordered_set<std::string> let_names;
+        for (auto* alias : node->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(alias))
+                let_names.insert(va->identifier->name->value);
+            else if (auto* la = dynamic_cast<LambdaAlias*>(alias))
+                let_names.insert(la->name->value);
+        }
+        // Check which escape
+        std::unordered_set<std::string> escaping;
+        // A binding escapes if it appears in the result expression
+        std::function<void(AstNode*, bool)> check_escape = [&](AstNode* n, bool ret_pos) {
+            if (!n) return;
+            if (n->get_type() == AST_IDENTIFIER_EXPR) {
+                auto* id = static_cast<IdentifierExpr*>(n);
+                if (ret_pos && let_names.count(id->name->value))
+                    escaping.insert(id->name->value);
+                return;
+            }
+            if (n->get_type() == AST_LET_EXPR) {
+                auto* le = static_cast<LetExpr*>(n);
+                check_escape(le->expr, ret_pos);
+                return;
+            }
+            if (n->get_type() == AST_IF_EXPR) {
+                auto* ie = static_cast<IfExpr*>(n);
+                check_escape(ie->thenExpr, ret_pos);
+                check_escape(ie->elseExpr, ret_pos);
+                return;
+            }
+            if (n->get_type() == AST_CASE_EXPR) {
+                auto* ce = static_cast<CaseExpr*>(n);
+                for (auto* clause : ce->clauses) check_escape(clause->body, ret_pos);
+                return;
+            }
+            if (n->get_type() == AST_DO_EXPR) {
+                auto* de = static_cast<DoExpr*>(n);
+                if (!de->steps.empty())
+                    check_escape(de->steps.back(), ret_pos);
+                return;
+            }
+            if (n->get_type() == AST_FUNCTION_EXPR) {
+                // Lambda captures — all referenced let_names escape
+                auto* fe = static_cast<FunctionExpr*>(n);
+                std::function<void(AstNode*)> walk = [&](AstNode* node) {
+                    if (!node) return;
+                    if (node->get_type() == AST_IDENTIFIER_EXPR) {
+                        auto* id2 = static_cast<IdentifierExpr*>(node);
+                        if (let_names.count(id2->name->value))
+                            escaping.insert(id2->name->value);
+                        return;
+                    }
+                    if (node->get_type() == AST_LET_EXPR) { walk(static_cast<LetExpr*>(node)->expr); return; }
+                    if (node->get_type() == AST_IF_EXPR) { auto* i = static_cast<IfExpr*>(node); walk(i->condition); walk(i->thenExpr); walk(i->elseExpr); return; }
+                    if (node->get_type() == AST_CASE_EXPR) { auto* c = static_cast<CaseExpr*>(node); walk(c->expr); for (auto* cl : c->clauses) walk(cl->body); return; }
+                    if (node->get_type() == AST_APPLY_EXPR) { auto* a = static_cast<ApplyExpr*>(node); for (auto& arg : a->args) { if (std::holds_alternative<ExprNode*>(arg)) walk(std::get<ExprNode*>(arg)); else walk(std::get<ValueExpr*>(arg)); } return; }
+                };
+                for (auto* body : fe->bodies) {
+                    if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) walk(bwg->expr);
+                }
+                return;
+            }
+            if (n->get_type() == AST_APPLY_EXPR) {
+                auto* ae = static_cast<ApplyExpr*>(n);
+                std::string callee;
+                if (auto* nc = dynamic_cast<NameCall*>(ae->call)) callee = nc->name->value;
+                bool is_local = local_fns.count(callee) > 0;
+                for (auto& arg : ae->args) {
+                    AstNode* a = std::holds_alternative<ExprNode*>(arg) ?
+                        static_cast<AstNode*>(std::get<ExprNode*>(arg)) :
+                        static_cast<AstNode*>(std::get<ValueExpr*>(arg));
+                    // Args to opaque functions escape
+                    check_escape(a, !is_local);
+                }
+                return;
+            }
+        };
+        check_escape(node->expr, true);
+
+        for (auto& name : let_names) {
+            if (!escaping.count(name))
+                local_non_escaping.insert(name);
+        }
+    }
+
+    // If there are non-escaping heap bindings, create an arena
+    llvm::Value* arena = nullptr;
+    auto saved_arena = current_arena_;
+    if (!local_non_escaping.empty()) {
+        auto i64_ty = llvm::Type::getInt64Ty(*context_);
+        arena = builder_->CreateCall(rt_arena_create_,
+            {llvm::ConstantInt::get(i64_ty, 4096)}, "arena");
+    }
+
     // Track all heap-typed bindings for RC release at scope exit
     std::vector<TypedValue> scope_bindings;
+    std::vector<bool> binding_is_arena; // parallel: true if arena-allocated
 
     for (auto* alias : node->aliases) {
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+            std::string vname = va->identifier->name->value;
+            // If non-escaping, set arena for this binding's allocation
+            bool use_arena = arena && local_non_escaping.count(vname);
+            if (use_arena) current_arena_ = arena;
+
             auto tv = codegen(va->expr);
+
+            if (use_arena) current_arena_ = saved_arena;
+
             if (tv) {
-                std::string vname = va->identifier->name->value;
                 named_values_[vname] = tv;
 
                 // Track for RC
-                if (is_heap_type(tv.type) && tv.val)
+                if (is_heap_type(tv.type) && tv.val) {
                     scope_bindings.push_back(tv);
+                    binding_is_arena.push_back(use_arena);
+                }
 
                 if (debug_info_ && di_scope_ && di_builder_ && tv.val) {
                     auto* alloca = builder_->CreateAlloca(tv.val->getType(), nullptr, vname);
@@ -161,8 +271,10 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
             }
         } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
             auto tv = codegen_lambda_alias(la);
-            if (tv && is_heap_type(tv.type) && tv.val)
+            if (tv && is_heap_type(tv.type) && tv.val) {
                 scope_bindings.push_back(tv);
+                binding_is_arena.push_back(false); // closures always heap
+            }
         } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
             auto tv = codegen(pa->expr);
             if (tv && tv.type == CType::TUPLE && tv.val->getType()->isStructTy()) {
@@ -176,8 +288,10 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
                             auto* pv = static_cast<PatternValue*>(sub);
                             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                                 named_values_[(*id)->name->value] = {elem, et};
-                                if (is_heap_type(et))
+                                if (is_heap_type(et)) {
                                     scope_bindings.push_back({elem, et});
+                                    binding_is_arena.push_back(false);
+                                }
                             }
                         }
                     }
@@ -192,10 +306,18 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     // Inc the result first in case it references a binding.
     if (!scope_bindings.empty() && result && result.val) {
         emit_rc_inc(result.val, result.type);
-        for (auto& tv : scope_bindings)
-            emit_rc_dec(tv.val, tv.type);
+        for (size_t i = 0; i < scope_bindings.size(); i++) {
+            if (i < binding_is_arena.size() && binding_is_arena[i])
+                continue; // arena-allocated: will be freed in bulk
+            emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
+        }
     }
 
+    // Destroy arena (frees all non-escaping allocations in bulk)
+    if (arena)
+        builder_->CreateCall(rt_arena_destroy_, {arena});
+
+    current_arena_ = saved_arena;
     return result;
 }
 

@@ -113,6 +113,11 @@ private:
     int lambda_counter_ = 0;
     std::string last_lambda_name_;
 
+    // Escape analysis: variables whose values don't escape the current scope
+    std::unordered_set<std::string> non_escaping_vars_;
+    // Current arena pointer (nullptr if no arena active)
+    llvm::Value* current_arena_ = nullptr;
+
     // Trait registry: trait name → info
     struct TraitInfo {
         std::string name;
@@ -238,6 +243,11 @@ private:
     llvm::Function* rt_rc_inc_ = nullptr;
     llvm::Function* rt_rc_dec_ = nullptr;
 
+    // Arena allocator
+    llvm::Function* rt_arena_create_ = nullptr;
+    llvm::Function* rt_arena_alloc_ = nullptr;
+    llvm::Function* rt_arena_destroy_ = nullptr;
+
     // DWARF debug info
     std::unique_ptr<llvm::DIBuilder> di_builder_;
     llvm::DICompileUnit* di_cu_ = nullptr;
@@ -353,6 +363,7 @@ private:
     static bool is_heap_type(CType ct);
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
+    llvm::Value* emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes);
 
     // Print a typed value (with newline) / value only (no newline)
     void codegen_print(const TypedValue& tv);

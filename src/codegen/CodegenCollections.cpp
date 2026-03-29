@@ -58,8 +58,19 @@ TypedValue Codegen::codegen_tuple(TupleExpr* node) {
 TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
     set_debug_loc(node->source_context);
     size_t n = node->values.size();
-    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
-    auto seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto count = ConstantInt::get(i64_ty, n);
+
+    Value* seq;
+    if (current_arena_) {
+        // Arena allocation: allocate payload and set length manually
+        auto payload_bytes = ConstantInt::get(i64_ty, (n + 1) * sizeof(int64_t));
+        seq = emit_arena_alloc(1 /* RC_TYPE_SEQ */, payload_bytes);
+        // Set length at seq[0]
+        builder_->CreateStore(count, seq);
+    } else {
+        seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
+    }
 
     CType elem_type = CType::INT;
     for (size_t i = 0; i < n; i++) {

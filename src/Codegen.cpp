@@ -221,6 +221,11 @@ void Codegen::declare_runtime() {
     rt_rc_inc_ = decl("yona_rt_rc_inc", vd, {ptr});
     rt_rc_dec_ = decl("yona_rt_rc_dec", vd, {ptr});
 
+    // Arena allocator
+    rt_arena_create_  = decl("yona_rt_arena_create", ptr, {i64});
+    rt_arena_alloc_   = decl("yona_rt_arena_alloc", ptr, {ptr, i64, i64});
+    rt_arena_destroy_ = decl("yona_rt_arena_destroy", vd, {ptr});
+
     // Exception handling (setjmp/longjmp)
     auto i32 = LType::getInt32Ty(*context_);
     rt_try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns jmp_buf*

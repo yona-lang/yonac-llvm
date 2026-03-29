@@ -54,6 +54,9 @@ void yona_rt_rc_inc(void* ptr) {
     header[0]++;
 }
 
+/* Sentinel refcount for arena-allocated objects. rc_dec skips these. */
+#define RC_ARENA_SENTINEL INT64_MAX
+
 /* Public: decrement refcount; free when it reaches 0 */
 /* Children are NOT recursively decremented here — the codegen is
  * responsible for decrementing pointer-typed children before the
@@ -61,9 +64,70 @@ void yona_rt_rc_inc(void* ptr) {
 void yona_rt_rc_dec(void* ptr) {
     if (!ptr) return;
     int64_t* header = ((int64_t*)ptr) - 2;
+    if (header[0] == RC_ARENA_SENTINEL) return;  /* arena-allocated, skip */
     header[0]--;
     if (header[0] <= 0) {
         free(header);  /* free from the real allocation start */
+    }
+}
+
+/* ===== Arena Allocator ===== */
+/*
+ * Bump-allocated memory block freed in bulk. Non-escaping values use
+ * this instead of malloc+RC for zero-overhead deallocation.
+ *
+ * Layout: [yona_arena_t header][...bump-allocated payloads...]
+ * Each payload has the standard RC header but with refcount=SENTINEL.
+ */
+
+#define YONA_ARENA_DEFAULT_SIZE 4096
+
+typedef struct yona_arena {
+    char* base;
+    char* cursor;
+    char* end;
+    struct yona_arena* next;  /* overflow chain */
+} yona_arena_t;
+
+void* yona_rt_arena_create(int64_t size) {
+    if (size <= 0) size = YONA_ARENA_DEFAULT_SIZE;
+    yona_arena_t* arena = (yona_arena_t*)malloc(sizeof(yona_arena_t) + size);
+    arena->base = (char*)(arena + 1);
+    arena->cursor = arena->base;
+    arena->end = arena->base + size;
+    arena->next = NULL;
+    return arena;
+}
+
+void* yona_rt_arena_alloc(void* arena_ptr, int64_t type_tag, int64_t payload_bytes) {
+    yona_arena_t* arena = (yona_arena_t*)arena_ptr;
+    size_t total = 2 * sizeof(int64_t) + (size_t)payload_bytes;
+    /* Align to 8 bytes */
+    total = (total + 7) & ~7;
+
+    /* Find an arena block with enough space */
+    while (arena->cursor + total > arena->end) {
+        if (!arena->next) {
+            /* Allocate overflow block (at least total or default size) */
+            int64_t new_size = total > YONA_ARENA_DEFAULT_SIZE ? (int64_t)total * 2 : YONA_ARENA_DEFAULT_SIZE;
+            arena->next = (yona_arena_t*)yona_rt_arena_create(new_size);
+        }
+        arena = arena->next;
+    }
+
+    int64_t* raw = (int64_t*)arena->cursor;
+    arena->cursor += total;
+    raw[0] = RC_ARENA_SENTINEL;  /* sentinel: rc_dec will skip */
+    raw[1] = type_tag;
+    return (void*)(raw + 2);  /* return pointer past header */
+}
+
+void yona_rt_arena_destroy(void* arena_ptr) {
+    yona_arena_t* arena = (yona_arena_t*)arena_ptr;
+    while (arena) {
+        yona_arena_t* next = arena->next;
+        free(arena);
+        arena = next;
     }
 }
 
