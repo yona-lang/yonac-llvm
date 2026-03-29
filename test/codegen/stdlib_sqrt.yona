@@ -1,1 +1,0 @@
-extern yona_Std_Math__sqrt : Float -> Float in yona_Std_Math__sqrt 4.0

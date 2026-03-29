@@ -1,6 +1,0 @@
-import head from Std\List in
-case [1, 2, 3] of
-  [_|t] -> case t of
-    [_|u] -> head u
-  end
-end

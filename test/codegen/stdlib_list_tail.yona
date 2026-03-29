@@ -1,4 +1,0 @@
-import length from Std\List in
-case [10, 20, 30] of
-  [_|t] -> length t
-end

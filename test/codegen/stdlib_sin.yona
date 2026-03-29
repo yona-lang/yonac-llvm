@@ -1,1 +1,0 @@
-extern sin : Float -> Float in sin 0.0

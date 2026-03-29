@@ -1,1 +1,0 @@
-extern yona_Std_Types__toFloat : String -> Float in yona_Std_Types__toFloat "3.14"
