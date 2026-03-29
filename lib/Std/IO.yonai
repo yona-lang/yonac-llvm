@@ -2,6 +2,6 @@ FN yona_Std_IO__print 1 STRING -> UNIT
 FN yona_Std_IO__println 1 STRING -> UNIT
 FN yona_Std_IO__eprint 1 STRING -> UNIT
 FN yona_Std_IO__eprintln 1 STRING -> UNIT
-FN yona_Std_IO__readLine 0 -> STRING
+AFN yona_Std_IO__readLine 0 -> STRING
 FN yona_Std_IO__printInt 1 INT -> UNIT
 FN yona_Std_IO__printFloat 1 FLOAT -> UNIT

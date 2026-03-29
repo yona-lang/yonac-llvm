@@ -173,6 +173,7 @@ Text-based format describing module exports:
 ADT TypeName variant_count max_arity [recursive]
 CTOR ConstructorName tag arity [fields name:TYPE ...]
 FN yona_Pkg_Mod__func param_count TYPE1 TYPE2 -> RETURN_TYPE
+AFN yona_Pkg_Mod__func param_count TYPE1 -> RETURN_TYPE   (async, runs in thread pool)
 TRAIT TraitName type_param method_count
   METHOD method_name
 INSTANCE TraitName TypeName

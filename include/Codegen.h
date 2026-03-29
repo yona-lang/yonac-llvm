@@ -385,6 +385,8 @@ public:
     struct ModuleFunctionMeta {
         std::vector<CType> param_types;
         CType return_type;
+        bool is_async = false;
+        CType async_inner_type = CType::INT; // actual return type for async fns
     };
     std::unordered_map<std::string, ModuleFunctionMeta> module_meta_;
 };

@@ -1285,63 +1285,66 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         if (nv_it != named_values_.end() && !nv_it->second.subtypes.empty())
             inner_ret = nv_it->second.subtypes[0];
 
+        auto i64_ty = LType::getInt64Ty(*context_);
+        auto ptr_ty = PointerType::get(*context_, 0);
+
+        // Helper: coerce a value to i64 for the async runtime interface
+        auto to_i64 = [&](Value* v) -> Value* {
+            if (v->getType() == i64_ty) return v;
+            if (v->getType()->isPointerTy()) return builder_->CreatePtrToInt(v, i64_ty);
+            if (v->getType()->isIntegerTy()) return builder_->CreateZExtOrTrunc(v, i64_ty);
+            if (v->getType()->isDoubleTy()) return builder_->CreateBitCast(v, i64_ty);
+            return v;
+        };
+
         Value* promise;
-        if (call_args.size() == 1) {
-            // Single-arg: use legacy yona_rt_async_call(fn, arg)
-            promise = builder_->CreateCall(rt_async_call_, {cf.fn, call_args[0]}, "async_call");
+        if (call_args.size() <= 1) {
+            // 0 or 1 arg: use yona_rt_async_call(fn, arg)
+            Value* arg = call_args.empty()
+                ? ConstantInt::get(i64_ty, 0)
+                : to_i64(call_args[0]);
+            promise = builder_->CreateCall(rt_async_call_, {cf.fn, arg}, "async_call");
         } else {
-            // Multi-arg: generate a thunk that captures all args
-            auto i64_ty = LType::getInt64Ty(*context_);
+            // Multi-arg: generate a thunk that captures all args via globals
             auto thunk_type = llvm::FunctionType::get(i64_ty, {}, false);
             auto thunk_name = fn_name + "_async_thunk_" + std::to_string(lambda_counter_++);
-            auto thunk = Function::Create(thunk_type, Function::InternalLinkage, thunk_name, module_.get());
+            auto thunk_fn = Function::Create(thunk_type, Function::InternalLinkage, thunk_name, module_.get());
+
+            // Create globals for each dynamic arg before building the thunk body
+            std::vector<GlobalVariable*> arg_globals;
+            for (size_t ai = 0; ai < call_args.size(); ai++) {
+                auto* gv = new GlobalVariable(*module_, call_args[ai]->getType(), false,
+                    GlobalValue::InternalLinkage, Constant::getNullValue(call_args[ai]->getType()),
+                    thunk_name + ".arg" + std::to_string(ai));
+                arg_globals.push_back(gv);
+            }
 
             // Save current state
             auto saved_block = builder_->GetInsertBlock();
             auto saved_point = builder_->GetInsertPoint();
 
-            auto thunk_entry = BasicBlock::Create(*context_, "entry", thunk);
+            // Build thunk body
+            auto thunk_entry = BasicBlock::Create(*context_, "entry", thunk_fn);
             builder_->SetInsertPoint(thunk_entry);
 
-            // Rebuild args as constants embedded in the thunk
             std::vector<Value*> thunk_call_args;
             for (size_t ai = 0; ai < call_args.size(); ai++) {
-                // For runtime values, we need to pass them through. Since the thunk
-                // is generated at the call site, the LLVM values are available.
-                // But thunks are separate functions — they can't reference the caller's SSA values.
-                // Solution: use global variables or struct packing.
-                // Simplest: for constant args, embed directly. For dynamic args, not supported yet.
-                if (auto* ci = dyn_cast<Constant>(call_args[ai])) {
-                    thunk_call_args.push_back(ci);
-                } else {
-                    // Dynamic arg — store to a global, load in thunk
-                    auto* gv = new GlobalVariable(*module_, call_args[ai]->getType(), false,
-                        GlobalValue::InternalLinkage, Constant::getNullValue(call_args[ai]->getType()),
-                        thunk_name + ".arg" + std::to_string(ai));
-                    // Store the value before calling async
-                    auto* store_point = saved_block;
-                    // We'll store after restoring — need to do it before the async call
-                    thunk_call_args.push_back(builder_->CreateLoad(call_args[ai]->getType(), gv));
-                    // Mark for pre-store
-                }
+                thunk_call_args.push_back(builder_->CreateLoad(call_args[ai]->getType(), arg_globals[ai]));
             }
 
             auto* thunk_result = builder_->CreateCall(cf.fn, thunk_call_args, "thunk_call");
-            builder_->CreateRet(thunk_result);
+            // Coerce return to i64 for the promise
+            builder_->CreateRet(to_i64(thunk_result));
 
             // Restore insertion point
             builder_->SetInsertPoint(saved_block, saved_point);
 
-            // Store dynamic args to globals before the async call
+            // Store args to globals at call site (before submitting to thread pool)
             for (size_t ai = 0; ai < call_args.size(); ai++) {
-                if (!isa<Constant>(call_args[ai])) {
-                    auto gv_name = thunk_name + ".arg" + std::to_string(ai);
-                    auto* gv = module_->getNamedGlobal(gv_name);
-                    if (gv) builder_->CreateStore(call_args[ai], gv);
-                }
+                builder_->CreateStore(call_args[ai], arg_globals[ai]);
             }
 
-            promise = builder_->CreateCall(rt_async_call_thunk_, {thunk}, "async_thunk_call");
+            promise = builder_->CreateCall(rt_async_call_thunk_, {thunk_fn}, "async_thunk_call");
         }
         return {promise, CType::PROMISE, {inner_ret}};
     }
@@ -1409,10 +1412,19 @@ Value* Codegen::wrap_in_closure(Function* fn, CType ret_type) {
 
 TypedValue Codegen::auto_await(TypedValue tv) {
     if (!tv || tv.type != CType::PROMISE) return tv;
-    auto awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
+    auto* awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
     // The awaited value's type is stored in subtypes[0]
     CType inner = (!tv.subtypes.empty()) ? tv.subtypes[0] : CType::INT;
-    return {awaited, inner};
+    // The await returns i64 — coerce to the actual type
+    Value* result = awaited;
+    auto* expected = llvm_type(inner);
+    if (expected->isPointerTy())
+        result = builder_->CreateIntToPtr(awaited, expected);
+    else if (expected == LType::getInt1Ty(*context_))
+        result = builder_->CreateTrunc(awaited, expected);
+    else if (expected->isDoubleTy())
+        result = builder_->CreateBitCast(awaited, expected);
+    return {result, inner};
 }
 
 // ===== Local static helpers for type annotations =====
