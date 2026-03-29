@@ -1278,7 +1278,20 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         if (it != named_values_.end()) call_args.push_back(it->second.val);
     }
 
-    // Async function: wrap in thread pool call → returns PROMISE
+    // io-async (AFN): call directly — function submits to io_uring and returns ID
+    if (cf.return_type == CType::PROMISE && cf.is_io_async) {
+        CType inner_ret = CType::INT;
+        auto nv_it = named_values_.find(fn_name);
+        if (nv_it != named_values_.end() && !nv_it->second.subtypes.empty())
+            inner_ret = nv_it->second.subtypes[0];
+        // Call the function directly — it returns the uring ID as i64
+        auto* result = builder_->CreateCall(cf.fn, call_args, "io_submit");
+        TypedValue tv{result, CType::PROMISE, {inner_ret}};
+        tv.is_io_promise = true;
+        return tv;
+    }
+
+    // Thread-pool async (extern async): wrap in thread pool call → returns PROMISE
     if (cf.return_type == CType::PROMISE) {
         CType inner_ret = CType::INT;
         auto nv_it = named_values_.find(fn_name);
@@ -1412,7 +1425,15 @@ Value* Codegen::wrap_in_closure(Function* fn, CType ret_type) {
 
 TypedValue Codegen::auto_await(TypedValue tv) {
     if (!tv || tv.type != CType::PROMISE) return tv;
-    auto* awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
+
+    // Dispatch: io_uring promise vs thread-pool promise
+    Value* awaited;
+    if (tv.is_io_promise) {
+        awaited = builder_->CreateCall(rt_io_await_, {tv.val}, "io_await");
+    } else {
+        awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
+    }
+
     // The awaited value's type is stored in subtypes[0]
     CType inner = (!tv.subtypes.empty()) ? tv.subtypes[0] : CType::INT;
     // The await returns i64 — coerce to the actual type

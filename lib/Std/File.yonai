@@ -1,5 +1,5 @@
-AFN yona_Std_File__readFile 1 STRING -> STRING
-FN yona_Std_File__writeFile 2 STRING STRING -> BOOL
+IO yona_Std_File__readFile 1 STRING -> STRING
+IO yona_Std_File__writeFile 2 STRING STRING -> BOOL
 FN yona_Std_File__appendFile 2 STRING STRING -> BOOL
 FN yona_Std_File__exists 1 STRING -> BOOL
 FN yona_Std_File__remove 1 STRING -> BOOL

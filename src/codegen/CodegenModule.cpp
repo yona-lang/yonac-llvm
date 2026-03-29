@@ -276,8 +276,9 @@ bool Codegen::load_interface_file(const std::string& path) {
                     break;
                 }
             }
-        } else if (keyword == "FN" || keyword == "AFN") {
-            bool is_async = (keyword == "AFN");
+        } else if (keyword == "FN" || keyword == "AFN" || keyword == "IO") {
+            bool is_thread_async = (keyword == "AFN");
+            bool is_io_async = (keyword == "IO");
             std::string mangled;
             int param_count;
             iss >> mangled >> param_count;
@@ -292,9 +293,11 @@ bool Codegen::load_interface_file(const std::string& path) {
             iss >> arrow; // "->"
             std::string ret_str;
             iss >> ret_str;
-            meta.return_type = is_async ? CType::PROMISE : string_to_ctype(ret_str);
-            meta.is_async = is_async;
-            if (is_async) meta.async_inner_type = string_to_ctype(ret_str);
+            bool is_any_async = is_thread_async || is_io_async;
+            meta.return_type = is_any_async ? CType::PROMISE : string_to_ctype(ret_str);
+            meta.is_async = is_thread_async;
+            meta.is_io_async = is_io_async;
+            if (is_any_async) meta.async_inner_type = string_to_ctype(ret_str);
 
             module_meta_[mangled] = meta;
         } else if (keyword == "GENFN_BEGIN") {
@@ -430,8 +433,26 @@ void Codegen::register_import(const std::string& mod_fqn,
     // GENFN source (if available) is stored in imported_function_sources_ for
     // on-demand monomorphization when call-site types differ from the module's.
     auto meta_it = module_meta_.find(mangled);
-    if (meta_it != module_meta_.end() && meta_it->second.is_async) {
-        // Async function: declare the underlying C function, register as returning PROMISE
+    if (meta_it != module_meta_.end() && meta_it->second.is_io_async) {
+        // IO: C function submits to io_uring and returns i64 (uring ID).
+        // Called directly (no thread pool). Result tagged as PROMISE.
+        // auto_await calls yona_rt_io_await to complete.
+        auto& meta = meta_it->second;
+        auto i64_ty = LType::getInt64Ty(*context_);
+        std::vector<LType*> param_types;
+        for (auto ct : meta.param_types) param_types.push_back(llvm_type(ct));
+        auto* fn_type = llvm::FunctionType::get(i64_ty, param_types, false);
+        auto* fn = module_->getFunction(mangled);
+        if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
+        CompiledFunction cf;
+        cf.fn = fn;
+        cf.return_type = CType::PROMISE;
+        cf.param_types = meta.param_types;
+        cf.is_io_async = true;
+        compiled_functions_[import_name] = cf;
+        named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
+    } else if (meta_it != module_meta_.end() && meta_it->second.is_async) {
+        // AFN: thread-pool async (existing mechanism)
         auto& meta = meta_it->second;
         std::vector<LType*> param_types;
         for (auto ct : meta.param_types) param_types.push_back(llvm_type(ct));
@@ -463,8 +484,23 @@ void Codegen::register_all_imports(const std::string& mod_fqn) {
             for (char c : mod_fqn) expected_prefix += (c == '\\') ? '_' : c;
             expected_prefix += "__";
             if (mangled.find(expected_prefix) == 0) {
-                if (meta.is_async) {
-                    // Async: declare C function, register as PROMISE
+                if (meta.is_io_async) {
+                    // IO: submit-and-return, returns i64 uring ID
+                    auto i64_ty = LType::getInt64Ty(*context_);
+                    std::vector<LType*> param_types;
+                    for (auto ct : meta.param_types) param_types.push_back(llvm_type(ct));
+                    auto* fn_type = llvm::FunctionType::get(i64_ty, param_types, false);
+                    auto* fn = module_->getFunction(mangled);
+                    if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
+                    CompiledFunction cf;
+                    cf.fn = fn;
+                    cf.return_type = CType::PROMISE;
+                    cf.param_types = meta.param_types;
+                    cf.is_io_async = true;
+                    compiled_functions_[func_name] = cf;
+                    named_values_[func_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
+                } else if (meta.is_async) {
+                    // AFN: thread-pool async
                     std::vector<LType*> param_types;
                     for (auto ct : meta.param_types) param_types.push_back(llvm_type(ct));
                     auto* fn_type = llvm::FunctionType::get(llvm_type(meta.async_inner_type), param_types, false);

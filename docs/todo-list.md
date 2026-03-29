@@ -42,7 +42,11 @@ Phase 6: Utilities
 - [x] Std\Log — debug, info, warn, error, setLevel, getLevel (timestamped stderr) ✅
 - [x] Std\Collection — iterate, unfold, replicate, tabulate, window, chunks, pairwise, dedup, frequencies ✅
 - [x] Std\Function — identity, const, compose, flip, on, apply, pipe, fix ✅
-- [ ] Std\Concurrent — channels, semaphores, atomics, STM
+
+Future:
+- [ ] STM (Software Transactional Memory) — when shared mutable state is needed
+- [ ] Std\Net — TCP/UDP sockets via io_uring (Linux), kqueue (macOS)
+- [ ] Std\Http — HTTP client/server built on Std\Net
 
 ### Language Features
 - [x] Generators/comprehensions — loop-based codegen for seq/set/dict generators with guard support ✅

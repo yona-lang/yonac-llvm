@@ -44,6 +44,7 @@ struct TypedValue {
     CType type = CType::INT;
     std::vector<CType> subtypes; // tuple: element types; SEQ/SET: {elem_type}; DICT: {key_type, val_type}
     std::string adt_type_name;   // For CType::ADT: the ADT type name (e.g., "Option")
+    bool is_io_promise = false;  // true: await via yona_rt_io_await, false: yona_rt_async_await
 
     TypedValue() = default;
     TypedValue(llvm::Value* v, CType t) : val(v), type(t) {}
@@ -107,6 +108,7 @@ private:
         CType return_type;
         std::vector<CType> param_types;
         std::vector<std::string> capture_names;
+        bool is_io_async = false;  // true for AFN: call directly, await via yona_rt_io_await
     };
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
@@ -242,6 +244,9 @@ private:
     // Reference counting
     llvm::Function* rt_rc_inc_ = nullptr;
     llvm::Function* rt_rc_dec_ = nullptr;
+
+    // io_uring await
+    llvm::Function* rt_io_await_ = nullptr;
 
     // Arena allocator
     llvm::Function* rt_arena_create_ = nullptr;
@@ -385,8 +390,9 @@ public:
     struct ModuleFunctionMeta {
         std::vector<CType> param_types;
         CType return_type;
-        bool is_async = false;
-        CType async_inner_type = CType::INT; // actual return type for async fns
+        bool is_async = false;       // AFN: thread-pool async
+        bool is_io_async = false;    // IO: io_uring submit-and-return
+        CType async_inner_type = CType::INT;
     };
     std::unordered_map<std::string, ModuleFunctionMeta> module_meta_;
 };

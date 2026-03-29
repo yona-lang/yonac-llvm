@@ -807,6 +807,59 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
 #endif
 #undef YONA_PLATFORM_INCLUDED
 
+/* ===== Generic io_uring completer ===== */
+/*
+ * Called by auto_await when a promise is an io_uring ID.
+ * Waits for the specific completion, does type-specific post-processing
+ * (close fd, null-terminate buffer, free context), returns the result.
+ */
+int64_t yona_rt_io_await(int64_t uring_id) {
+    if (uring_id <= 0) return 0;
+#if defined(__linux__)
+    int32_t res = ring_await((uint64_t)uring_id);
+    io_context_t* ctx = io_ctx_take((uint64_t)uring_id);
+    if (!ctx) return (int64_t)res; /* no context = raw result */
+
+    int64_t result;
+    switch (ctx->type) {
+        case IO_OP_READ_FILE:
+            if (res >= 0) ctx->buf[res] = '\0';
+            else ctx->buf[0] = '\0';
+            if (ctx->close_fd) close(ctx->fd);
+            result = (int64_t)(intptr_t)ctx->buf;
+            break;
+        case IO_OP_WRITE_FILE:
+            if (ctx->close_fd) close(ctx->fd);
+            result = (res == (int32_t)ctx->buf_size) ? 1 : 0;
+            break;
+        case IO_OP_ACCEPT:
+            free(ctx->buf); /* free the sockaddr buffer */
+            result = (res >= 0) ? (int64_t)res : -1;
+            break;
+        case IO_OP_CONNECT:
+            free(ctx->buf); /* free the copied sockaddr */
+            result = (res >= 0) ? (int64_t)ctx->fd : -1;
+            if (res < 0) close(ctx->fd);
+            break;
+        case IO_OP_SEND:
+            result = (int64_t)res;
+            break;
+        case IO_OP_RECV:
+            if (res > 0) ctx->buf[res] = '\0';
+            else ctx->buf[0] = '\0';
+            result = (int64_t)(intptr_t)ctx->buf;
+            break;
+        default:
+            result = (int64_t)res;
+            break;
+    }
+    free(ctx);
+    return result;
+#else
+    return 0;
+#endif
+}
+
 /* Std\IO */
 void yona_Std_IO__print(const char* s)   { printf("%s", s); fflush(stdout); }
 void yona_Std_IO__println(const char* s) { printf("%s\n", s); fflush(stdout); }
@@ -816,17 +869,16 @@ const char* yona_Std_IO__readLine(void)  { return yona_platform_read_line(); }
 void yona_Std_IO__printInt(int64_t n)    { printf("%ld", n); fflush(stdout); }
 void yona_Std_IO__printFloat(double f)   { printf("%g", f); fflush(stdout); }
 
-/* Std\File */
-const char* yona_Std_File__readFile(const char* path) {
-    char* r = yona_platform_read_file(path);
-    if (!r) {
-        /* Return empty string on error */
-        r = (char*)rc_alloc(RC_TYPE_STRING, 1);
-        r[0] = '\0';
-    }
-    return r;
+/* Std\File — async ops return uring ID, sync ops return directly */
+int64_t yona_Std_File__readFile(const char* path) {
+    int64_t id = yona_platform_read_file_submit(path);
+    if (id > 0) return id; /* uring ID = promise */
+    /* Fallback: sync read, return the string pointer as i64 */
+    return (int64_t)(intptr_t)yona_platform_read_file(path);
 }
 int64_t yona_Std_File__writeFile(const char* path, const char* content) {
+    int64_t id = yona_platform_write_file_submit(path, content);
+    if (id > 0) return id; /* uring ID = promise */
     return yona_platform_write_file(path, content) == 0 ? 1 : 0;
 }
 int64_t yona_Std_File__appendFile(const char* path, const char* content) {

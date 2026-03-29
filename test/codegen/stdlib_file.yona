@@ -1,1 +1,1 @@
-import writeFile, exists from Std\File in let ok = writeFile "/tmp/yona_test_file.txt" "hello yona" in if exists "/tmp/yona_test_file.txt" then "exists" else "missing"
+import writeFile, exists from Std\File in let ok = writeFile "/tmp/yona_test_file.txt" "hello yona" in if ok then (if exists "/tmp/yona_test_file.txt" then "exists" else "missing") else "write failed"
