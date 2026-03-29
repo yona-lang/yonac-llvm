@@ -1,0 +1,1 @@
+import repeat from Std\String in repeat 3 "ab"

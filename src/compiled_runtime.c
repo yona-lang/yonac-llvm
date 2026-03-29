@@ -588,6 +588,208 @@ const char* yona_Std_String__reverse(const char* s) {
 int64_t yona_Std_String__toInt(const char* s) { return (int64_t)atoll(s); }
 double yona_Std_String__toFloat(const char* s) { return atof(s); }
 
+int64_t yona_Std_String__isEmpty(const char* s) { return s[0] == '\0'; }
+
+const char* yona_Std_String__repeat(int64_t n, const char* s) {
+    size_t len = strlen(s);
+    size_t total = len * (size_t)n;
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, total + 1);
+    for (int64_t i = 0; i < n; i++) memcpy(r + i * len, s, len);
+    r[total] = '\0';
+    return r;
+}
+
+const char* yona_Std_String__take(int64_t n, const char* s) {
+    size_t len = strlen(s);
+    if ((size_t)n >= len) n = (int64_t)len;
+    if (n < 0) n = 0;
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, (size_t)n + 1);
+    memcpy(r, s, (size_t)n);
+    r[n] = '\0';
+    return r;
+}
+
+const char* yona_Std_String__drop(int64_t n, const char* s) {
+    size_t len = strlen(s);
+    if ((size_t)n >= len) return (const char*)rc_alloc(RC_TYPE_STRING, 1);
+    if (n < 0) n = 0;
+    size_t new_len = len - (size_t)n;
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, new_len + 1);
+    memcpy(r, s + n, new_len + 1);
+    return r;
+}
+
+int64_t yona_Std_String__count(const char* needle, const char* haystack) {
+    if (needle[0] == '\0') return 0;
+    int64_t count = 0;
+    size_t nlen = strlen(needle);
+    const char* p = haystack;
+    while ((p = strstr(p, needle)) != NULL) { count++; p += nlen; }
+    return count;
+}
+
+int64_t* yona_Std_String__lines(const char* s) {
+    /* Split by newline */
+    return yona_Std_String__split("\n", s);
+}
+
+const char* yona_Std_String__unlines(int64_t* seq) {
+    return yona_Std_String__join("\n", seq);
+}
+
+int64_t* yona_Std_String__chars(const char* s) {
+    size_t len = strlen(s);
+    int64_t* seq = yona_rt_seq_alloc((int64_t)len);
+    for (size_t i = 0; i < len; i++) seq[i + 1] = (int64_t)(unsigned char)s[i];
+    return seq;
+}
+
+const char* yona_Std_String__fromChars(int64_t* seq) {
+    int64_t len = seq[0];
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, (size_t)len + 1);
+    for (int64_t i = 0; i < len; i++) r[i] = (char)seq[i + 1];
+    r[len] = '\0';
+    return r;
+}
+
+/* Std\Encoding — base64, hex, URL encoding */
+
+static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+const char* yona_Std_Encoding__base64Encode(const char* s) {
+    size_t len = strlen(s);
+    size_t out_len = 4 * ((len + 2) / 3);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, out_len + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i += 3) {
+        uint32_t a = (uint8_t)s[i];
+        uint32_t b = (i + 1 < len) ? (uint8_t)s[i + 1] : 0;
+        uint32_t c = (i + 2 < len) ? (uint8_t)s[i + 2] : 0;
+        uint32_t triple = (a << 16) | (b << 8) | c;
+        r[j++] = b64_table[(triple >> 18) & 0x3F];
+        r[j++] = b64_table[(triple >> 12) & 0x3F];
+        r[j++] = (i + 1 < len) ? b64_table[(triple >> 6) & 0x3F] : '=';
+        r[j++] = (i + 2 < len) ? b64_table[triple & 0x3F] : '=';
+    }
+    r[j] = '\0';
+    return r;
+}
+
+static int b64_decode_char(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+const char* yona_Std_Encoding__base64Decode(const char* s) {
+    size_t len = strlen(s);
+    size_t out_len = 3 * len / 4;
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, out_len + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i += 4) {
+        int a = b64_decode_char(s[i]);
+        int b = (i + 1 < len) ? b64_decode_char(s[i + 1]) : 0;
+        int c = (i + 2 < len) ? b64_decode_char(s[i + 2]) : 0;
+        int d = (i + 3 < len) ? b64_decode_char(s[i + 3]) : 0;
+        if (a < 0) a = 0; if (b < 0) b = 0;
+        uint32_t triple = ((uint32_t)a << 18) | ((uint32_t)b << 12) | ((uint32_t)c << 6) | (uint32_t)d;
+        r[j++] = (triple >> 16) & 0xFF;
+        if (i + 2 < len && s[i + 2] != '=') r[j++] = (triple >> 8) & 0xFF;
+        if (i + 3 < len && s[i + 3] != '=') r[j++] = triple & 0xFF;
+    }
+    r[j] = '\0';
+    return r;
+}
+
+static const char hex_chars[] = "0123456789abcdef";
+
+const char* yona_Std_Encoding__hexEncode(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len * 2 + 1);
+    for (size_t i = 0; i < len; i++) {
+        r[i * 2] = hex_chars[((uint8_t)s[i] >> 4) & 0xF];
+        r[i * 2 + 1] = hex_chars[(uint8_t)s[i] & 0xF];
+    }
+    r[len * 2] = '\0';
+    return r;
+}
+
+static int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return 0;
+}
+
+const char* yona_Std_Encoding__hexDecode(const char* s) {
+    size_t len = strlen(s);
+    size_t out_len = len / 2;
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, out_len + 1);
+    for (size_t i = 0; i < out_len; i++)
+        r[i] = (char)((hex_val(s[i * 2]) << 4) | hex_val(s[i * 2 + 1]));
+    r[out_len] = '\0';
+    return r;
+}
+
+const char* yona_Std_Encoding__urlEncode(const char* s) {
+    size_t len = strlen(s);
+    /* Worst case: every char is encoded as %XX (3x) */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len * 3 + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            r[j++] = c;
+        } else {
+            r[j++] = '%';
+            r[j++] = hex_chars[(c >> 4) & 0xF];
+            r[j++] = hex_chars[c & 0xF];
+        }
+    }
+    r[j] = '\0';
+    return r;
+}
+
+const char* yona_Std_Encoding__urlDecode(const char* s) {
+    size_t len = strlen(s);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '%' && i + 2 < len) {
+            r[j++] = (char)((hex_val(s[i + 1]) << 4) | hex_val(s[i + 2]));
+            i += 2;
+        } else if (s[i] == '+') {
+            r[j++] = ' ';
+        } else {
+            r[j++] = s[i];
+        }
+    }
+    r[j] = '\0';
+    return r;
+}
+
+const char* yona_Std_Encoding__htmlEscape(const char* s) {
+    size_t len = strlen(s);
+    /* Worst case: every char becomes &amp; (5x) */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len * 6 + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        switch (s[i]) {
+            case '&':  memcpy(r + j, "&amp;", 5);  j += 5; break;
+            case '<':  memcpy(r + j, "&lt;", 4);   j += 4; break;
+            case '>':  memcpy(r + j, "&gt;", 4);   j += 4; break;
+            case '"':  memcpy(r + j, "&quot;", 6); j += 6; break;
+            case '\'': memcpy(r + j, "&#39;", 5);  j += 5; break;
+            default:   r[j++] = s[i]; break;
+        }
+    }
+    r[j] = '\0';
+    return r;
+}
+
 /* Std\List */
 int64_t yona_Std_List__length(int64_t* seq) { return seq[0]; }
 int64_t yona_Std_List__head(int64_t* seq) { return seq[1]; }

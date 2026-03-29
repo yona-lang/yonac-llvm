@@ -1,4 +1,5 @@
 FN yona_Std_String__length 1 STRING -> INT
+FN yona_Std_String__isEmpty 1 STRING -> BOOL
 FN yona_Std_String__toUpperCase 1 STRING -> STRING
 FN yona_Std_String__toLowerCase 1 STRING -> STRING
 FN yona_Std_String__trim 1 STRING -> STRING
@@ -14,5 +15,13 @@ FN yona_Std_String__charAt 2 STRING INT -> INT
 FN yona_Std_String__padLeft 3 INT STRING STRING -> STRING
 FN yona_Std_String__padRight 3 INT STRING STRING -> STRING
 FN yona_Std_String__reverse 1 STRING -> STRING
+FN yona_Std_String__repeat 2 INT STRING -> STRING
+FN yona_Std_String__take 2 INT STRING -> STRING
+FN yona_Std_String__drop 2 INT STRING -> STRING
+FN yona_Std_String__count 2 STRING STRING -> INT
+FN yona_Std_String__lines 1 STRING -> SEQ
+FN yona_Std_String__unlines 1 SEQ -> STRING
+FN yona_Std_String__chars 1 STRING -> SEQ
+FN yona_Std_String__fromChars 1 SEQ -> STRING
 FN yona_Std_String__toInt 1 STRING -> INT
 FN yona_Std_String__toFloat 1 STRING -> FLOAT

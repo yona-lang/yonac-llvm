@@ -1,0 +1,1 @@
+import urlEncode from Std\Encoding in urlEncode "hello world&foo=bar"

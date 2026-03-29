@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 618 assertions across 73 test cases
-- **Stdlib**: Option (10), Result (11), List (28), Tuple (9), Range (11), Test (6), Math (11), Pair (10), Bool (7) — 103 exported functions across 9 modules
+- **Tests**: 630 assertions across 73 test cases
+- **Stdlib**: 11 modules, ~140 exported functions (9 pure Yona + 2 C runtime)
 
 ## Roadmap
 
@@ -20,8 +20,8 @@ Phase 1: Core types (Result, Option, List enhancements)
 - [x] New modules: Math (11 fns), Pair (10 fns), Bool (7 fns) ✅
 
 Phase 2: String and Encoding
-- [ ] Std\String — 20+ functions (split, join, trim, replace, pad, format, etc.)
-- [ ] Std\Encoding — base64, hex, URL encoding, HTML escaping
+- [x] Std\String — 27 functions (split, join, trim, replace, pad, repeat, take, drop, count, lines, chars, etc.) ✅
+- [x] Std\Encoding — base64, hex, URL encode/decode, HTML escape ✅
 
 Phase 3: I/O Foundation (all async)
 - [ ] Std\IO — console (print, readLine, eprint)

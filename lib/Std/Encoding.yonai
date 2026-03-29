@@ -1,0 +1,7 @@
+FN yona_Std_Encoding__base64Encode 1 STRING -> STRING
+FN yona_Std_Encoding__base64Decode 1 STRING -> STRING
+FN yona_Std_Encoding__hexEncode 1 STRING -> STRING
+FN yona_Std_Encoding__hexDecode 1 STRING -> STRING
+FN yona_Std_Encoding__urlEncode 1 STRING -> STRING
+FN yona_Std_Encoding__urlDecode 1 STRING -> STRING
+FN yona_Std_Encoding__htmlEscape 1 STRING -> STRING
