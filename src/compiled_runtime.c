@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <setjmp.h>
+#include <time.h>
 #if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
 #define YONA_HAS_BACKTRACE 1
@@ -788,6 +789,50 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
     }
     r[j] = '\0';
     return r;
+}
+
+/* Std\Random — pseudo-random number generation */
+
+static int yona_random_initialized = 0;
+
+static void yona_random_init(void) {
+    if (!yona_random_initialized) {
+        srand((unsigned)time(NULL));
+        yona_random_initialized = 1;
+    }
+}
+
+int64_t yona_Std_Random__int(int64_t lo, int64_t hi) {
+    yona_random_init();
+    if (lo >= hi) return lo;
+    return lo + (int64_t)(rand() % (hi - lo + 1));
+}
+
+double yona_Std_Random__float(void) {
+    yona_random_init();
+    return (double)rand() / (double)RAND_MAX;
+}
+
+int64_t yona_Std_Random__choice(int64_t* seq) {
+    yona_random_init();
+    int64_t len = seq[0];
+    if (len <= 0) return 0;
+    return seq[1 + (int64_t)(rand() % len)];
+}
+
+int64_t* yona_Std_Random__shuffle(int64_t* seq) {
+    yona_random_init();
+    int64_t len = seq[0];
+    int64_t* result = yona_rt_seq_alloc(len);
+    memcpy(result + 1, seq + 1, len * sizeof(int64_t));
+    /* Fisher-Yates shuffle */
+    for (int64_t i = len - 1; i > 0; i--) {
+        int64_t j = (int64_t)(rand() % (i + 1));
+        int64_t tmp = result[1 + i];
+        result[1 + i] = result[1 + j];
+        result[1 + j] = tmp;
+    }
+    return result;
 }
 
 /* Std\List */

@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 630 assertions across 73 test cases
-- **Stdlib**: 11 modules, ~140 exported functions (9 pure Yona + 2 C runtime)
+- **Tests**: 632 assertions across 73 test cases
+- **Stdlib**: 12 modules, ~145 exported functions (9 pure Yona + 3 C runtime)
 
 ## Roadmap
 
@@ -35,7 +35,7 @@ Phase 4: Networking (all async)
 Phase 5: Data Formats
 - [ ] Std\Json — parse, stringify, query, pretty print
 - [ ] Std\Crypto — SHA-256, HMAC, random bytes, UUID
-- [ ] Std\Random — int, float, choice, shuffle
+- [x] Std\Random — int, float, choice, shuffle ✅
 
 Phase 6: Concurrency
 - [ ] Std\Concurrent — channels, semaphores, atomics, STM

@@ -1,0 +1,4 @@
+FN yona_Std_Random__int 2 INT INT -> INT
+FN yona_Std_Random__float 0 -> FLOAT
+FN yona_Std_Random__choice 1 SEQ -> INT
+FN yona_Std_Random__shuffle 1 SEQ -> SEQ
