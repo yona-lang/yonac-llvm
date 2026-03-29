@@ -1,39 +1,89 @@
+## ADT-based pairs with named fields — an alternative to tuples.
+##
+## Unlike tuples, `Pair` is a proper ADT with named fields (`fst`, `snd`),
+## enabling dot access and named pattern matching.
 module Std\Pair
 
 export type Pair
 export pair, first, second, mapFirst, mapSecond, mapPair, swap, toTuple, fromTuple
 
+## A pair with named fields.
 type Pair a b = Pair { fst : a, snd : b }
 
+## Creates a pair from two values.
+##
+## ```
+## pair 1 2   # => Pair { fst = 1, snd = 2 }
+## ```
 pair a b = Pair { fst = a, snd = b }
 
+## Extracts the first element.
+##
+## ```
+## first (pair 1 2)   # => 1
+## ```
 first p = case p of Pair { fst = a } -> a end
 
+## Extracts the second element.
+##
+## ```
+## second (pair 1 2)   # => 2
+## ```
 second p = case p of Pair { snd = b } -> b end
 
+## Transforms the first element.
+##
+## ```
+## mapFirst (\x -> x * 10) (pair 3 5)   # => Pair { fst = 30, snd = 5 }
+## ```
 mapFirst fn p =
     case p of
         Pair { fst = a, snd = b } -> Pair { fst = fn a, snd = b }
     end
 
+## Transforms the second element.
+##
+## ```
+## mapSecond (\x -> x * 10) (pair 3 5)   # => Pair { fst = 3, snd = 50 }
+## ```
 mapSecond fn p =
     case p of
         Pair { fst = a, snd = b } -> Pair { fst = a, snd = fn b }
     end
 
+## Transforms both elements with two functions.
+##
+## ```
+## mapPair (\x -> x + 1) (\x -> x * 2) (pair 3 5)   # => Pair { fst = 4, snd = 10 }
+## ```
 mapPair fn gn p =
     case p of
         Pair { fst = a, snd = b } -> Pair { fst = fn a, snd = gn b }
     end
 
+## Swaps the two elements.
+##
+## ```
+## swap (pair 1 2)   # => Pair { fst = 2, snd = 1 }
+## ```
 swap p =
     case p of
         Pair { fst = a, snd = b } -> Pair { fst = b, snd = a }
     end
 
+## Converts to a tuple `(a, b)`.
+##
+## ```
+## toTuple (pair 1 2)   # => (1, 2)
+## ```
 toTuple p =
     case p of
         Pair { fst = a, snd = b } -> (a, b)
     end
 
+## Creates a pair from a tuple.
+##
+## ```
+## fromTuple (1, 2)   # => Pair { fst = 1, snd = 2 }
+## ```
 fromTuple (a, b) = Pair { fst = a, snd = b }

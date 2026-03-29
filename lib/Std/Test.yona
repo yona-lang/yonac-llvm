@@ -1,27 +1,62 @@
+## Simple test assertions — returns `(:pass, name)` or `(:fail, message)`.
+##
+## Each assertion returns a symbol-tagged tuple so test runners can
+## collect results programmatically.
 module Std\Test
 
 export assertEqual, assertNotEqual, assertTrue, assertFalse, assertGreater, assertLess
 
+## Asserts that `expected` equals `actual`.
+##
+## ```
+## assertEqual 42 42   # => (:pass, "assertEqual")
+## assertEqual 1 2     # => (:fail, "assertEqual: expected equal values")
+## ```
 assertEqual expected actual =
     if expected == actual then (:pass, "assertEqual")
     else (:fail, "assertEqual: expected equal values")
 
+## Asserts that `expected` does not equal `actual`.
+##
+## ```
+## assertNotEqual 1 2   # => (:pass, "assertNotEqual")
+## ```
 assertNotEqual expected actual =
     if expected != actual then (:pass, "assertNotEqual")
     else (:fail, "assertNotEqual: expected different values")
 
+## Asserts that `value` is true.
+##
+## ```
+## assertTrue (1 > 0)   # => (:pass, "assertTrue")
+## ```
 assertTrue value =
     if value then (:pass, "assertTrue")
     else (:fail, "assertTrue: expected true")
 
+## Asserts that `value` is false.
+##
+## ```
+## assertFalse (1 > 2)   # => (:pass, "assertFalse")
+## ```
 assertFalse value =
     if value then (:fail, "assertFalse: expected false")
     else (:pass, "assertFalse")
 
+## Asserts that `a > b`.
+##
+## ```
+## assertGreater 5 3   # => (:pass, "assertGreater")
+## ```
 assertGreater a b =
     if a > b then (:pass, "assertGreater")
     else (:fail, "assertGreater: expected first > second")
 
+## Asserts that `a < b`.
+##
+## ```
+## assertLess 3 5   # => (:pass, "assertLess")
+## ```
 assertLess a b =
     if a < b then (:pass, "assertLess")
     else (:fail, "assertLess: expected first < second")

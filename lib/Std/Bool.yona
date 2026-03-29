@@ -1,17 +1,64 @@
+## Boolean combinators and conditional helpers.
+##
+## Provides logical operations beyond the built-in `&&` and `||` operators,
+## plus conditional execution helpers.
 module Std\Bool
 
 export not, and, or, xor, implies, when, unless
 
+## Logical negation.
+##
+## ```
+## not true    # => false
+## not false   # => true
+## ```
 not x = if x then false else true
 
+## Logical AND (short-circuiting).
+##
+## ```
+## and true true    # => true
+## and true false   # => false
+## ```
 and a b = if a then b else false
 
+## Logical OR (short-circuiting).
+##
+## ```
+## or false true    # => true
+## or false false   # => false
+## ```
 or a b = if a then true else b
 
+## Exclusive OR — true when exactly one argument is true.
+##
+## ```
+## xor true false   # => true
+## xor true true    # => false
+## ```
 xor a b = if a then not b else b
 
+## Logical implication: `a → b`. False only when `a` is true and `b` is false.
+##
+## ```
+## implies true true    # => true
+## implies true false   # => false
+## implies false true   # => true
+## ```
 implies a b = if a then b else true
 
+## Executes `fn ()` if `cond` is true, otherwise returns `:ok`.
+##
+## ```
+## when true (\-> 42)    # => 42
+## when false (\-> 42)   # => :ok
+## ```
 when cond fn = if cond then fn () else :ok
 
+## Executes `fn ()` if `cond` is false, otherwise returns `:ok`.
+##
+## ```
+## unless false (\-> 42)   # => 42
+## unless true (\-> 42)    # => :ok
+## ```
 unless cond fn = if cond then :ok else fn ()

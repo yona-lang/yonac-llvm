@@ -1,21 +1,70 @@
+## Operations on 2-tuples (pairs).
+##
+## Tuples are the built-in product type `(a, b)`. This module provides
+## accessors, transformers, and conversion functions.
 module Std\Tuple
 
 export fst, snd, swap, mapBoth, mapFst, mapSnd, toList, curry, uncurry
 
+## Returns the first element of a pair.
+##
+## ```
+## fst (1, 2)   # => 1
+## ```
 fst (a, _) = a
 
+## Returns the second element of a pair.
+##
+## ```
+## snd (1, 2)   # => 2
+## ```
 snd (_, b) = b
 
+## Swaps the elements of a pair.
+##
+## ```
+## swap (1, 2)   # => (2, 1)
+## ```
 swap (a, b) = (b, a)
 
+## Applies two functions to the respective elements.
+##
+## ```
+## mapBoth (\x -> x + 1) (\x -> x * 2) (3, 5)   # => (4, 10)
+## ```
 mapBoth f g (a, b) = (f a, g b)
 
+## Transforms the first element, keeping the second unchanged.
+##
+## ```
+## mapFst (\x -> x * 10) (3, 5)   # => (30, 5)
+## ```
 mapFst f (a, b) = (f a, b)
 
+## Transforms the second element, keeping the first unchanged.
+##
+## ```
+## mapSnd (\x -> x * 10) (3, 5)   # => (3, 50)
+## ```
 mapSnd f (a, b) = (a, f b)
 
+## Converts a pair to a two-element sequence.
+##
+## ```
+## toList (1, 2)   # => [1, 2]
+## ```
 toList (a, b) = [a, b]
 
+## Converts a function taking a pair into one taking two arguments.
+##
+## ```
+## let add = \(a, b) -> a + b in curry add 3 4   # => 7
+## ```
 curry f a b = f (a, b)
 
+## Converts a function taking two arguments into one taking a pair.
+##
+## ```
+## let add = \a b -> a + b in uncurry add (3, 4)   # => 7
+## ```
 uncurry f (a, b) = f a b

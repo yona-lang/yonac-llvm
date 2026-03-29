@@ -1,58 +1,118 @@
+## Optional values — represents a value that may or may not exist.
+##
+## Use `Some value` to wrap a value, `None` for absence. Chain operations
+## with `flatMap`, filter with predicates, or provide defaults with `unwrapOr`.
 module Std\Option
 
 export type Option
 export isSome, isNone, unwrapOr, map, flatMap, filter, orElse, toResult, zip, fold
 
+## An optional value: either `Some value` or `None`.
 type Option a = Some a | None
 
+## Returns `true` if the option contains a value.
+##
+## ```
+## isSome (Some 42)   # => true
+## isSome None        # => false
+## ```
 isSome opt =
     case opt of
         Some _ -> true
         None   -> false
     end
 
+## Returns `true` if the option is empty.
+##
+## ```
+## isNone None        # => true
+## isNone (Some 42)   # => false
+## ```
 isNone opt =
     case opt of
         None   -> true
         Some _ -> false
     end
 
+## Extracts the value, or returns `default` if empty.
+##
+## ```
+## unwrapOr 0 (Some 42)   # => 42
+## unwrapOr 0 None         # => 0
+## ```
 unwrapOr default opt =
     case opt of
         Some value -> value
         None       -> default
     end
 
+## Transforms the contained value with `fn`, leaving `None` unchanged.
+##
+## ```
+## map (\x -> x * 2) (Some 5)   # => Some 10
+## map (\x -> x * 2) None       # => None
+## ```
 map fn opt =
     case opt of
         Some value -> Some (fn value)
         None       -> None
     end
 
+## Applies `fn` which itself returns an Option, flattening the result.
+## Useful for chaining operations that may fail.
+##
+## ```
+## flatMap (\x -> if x > 0 then Some (x * 10) else None) (Some 5)   # => Some 50
+## flatMap (\x -> if x > 0 then Some (x * 10) else None) (Some 0)   # => None
+## ```
 flatMap fn opt =
     case opt of
         Some value -> fn value
         None       -> None
     end
 
+## Keeps the value only if it satisfies `pred`, otherwise returns `None`.
+##
+## ```
+## filter (\x -> x > 3) (Some 5)   # => Some 5
+## filter (\x -> x > 3) (Some 1)   # => None
+## ```
 filter pred opt =
     case opt of
         Some value -> if pred value then Some value else None
         None       -> None
     end
 
+## Returns this option if it contains a value, otherwise returns `alternative`.
+##
+## ```
+## orElse (Some 99) None        # => Some 99
+## orElse (Some 99) (Some 42)   # => Some 42
+## ```
 orElse alternative opt =
     case opt of
         Some value -> Some value
         None       -> alternative
     end
 
+## Converts to a Result: `Some v` becomes `(:ok, v)`, `None` becomes `(:err, err)`.
+##
+## ```
+## toResult "missing" (Some 42)   # => (:ok, 42)
+## toResult "missing" None        # => (:err, "missing")
+## ```
 toResult err opt =
     case opt of
         Some value -> (:ok, value)
         None       -> (:err, err)
     end
 
+## Combines two options into an option of a pair. Returns `None` if either is empty.
+##
+## ```
+## zip (Some 1) (Some 2)   # => Some (1, 2)
+## zip (Some 1) None       # => None
+## ```
 zip optA optB =
     case optA of
         Some a -> case optB of
@@ -62,6 +122,12 @@ zip optA optB =
         None -> None
     end
 
+## Eliminates an option: returns `onNone` if empty, applies `onSome` if present.
+##
+## ```
+## fold 0 (\x -> x * 10) (Some 5)   # => 50
+## fold 0 (\x -> x * 10) None       # => 0
+## ```
 fold onNone onSome opt =
     case opt of
         Some value -> onSome value
