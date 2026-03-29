@@ -1,0 +1,1 @@
+import writeFile, readFile, exists, remove from Std\File in let ok = writeFile "/tmp/yona_test_file.txt" "hello yona" in let content = readFile "/tmp/yona_test_file.txt" in let e = exists "/tmp/yona_test_file.txt" in let _ = remove "/tmp/yona_test_file.txt" in if e then content else "fail"

@@ -132,6 +132,11 @@ void yona_rt_arena_destroy(void* arena_ptr) {
     }
 }
 
+/* Public: allocate an RC-managed string buffer (for platform layer) */
+void* yona_rt_rc_alloc_string(size_t bytes) {
+    return rc_alloc(RC_TYPE_STRING, bytes);
+}
+
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
 }
@@ -789,6 +794,67 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
     }
     r[j] = '\0';
     return r;
+}
+
+/* ===== Platform I/O wrappers ===== */
+/* Platform implementations are included directly for single-file compilation.
+ * When the build system compiles platform files separately, remove this include. */
+#define YONA_PLATFORM_INCLUDED
+#if defined(__linux__) || defined(__APPLE__)
+#include "runtime/platform/linux.c"
+#elif defined(_WIN32)
+/* #include "runtime/platform/windows.c" */
+#endif
+#undef YONA_PLATFORM_INCLUDED
+
+/* Std\IO */
+void yona_Std_IO__print(const char* s)   { printf("%s", s); fflush(stdout); }
+void yona_Std_IO__println(const char* s) { printf("%s\n", s); fflush(stdout); }
+void yona_Std_IO__eprint(const char* s)  { fprintf(stderr, "%s", s); fflush(stderr); }
+void yona_Std_IO__eprintln(const char* s){ fprintf(stderr, "%s\n", s); fflush(stderr); }
+const char* yona_Std_IO__readLine(void)  { return yona_platform_read_line(); }
+void yona_Std_IO__printInt(int64_t n)    { printf("%ld", n); fflush(stdout); }
+void yona_Std_IO__printFloat(double f)   { printf("%g", f); fflush(stdout); }
+
+/* Std\File */
+const char* yona_Std_File__readFile(const char* path) {
+    char* r = yona_platform_read_file(path);
+    if (!r) {
+        /* Return empty string on error */
+        r = (char*)rc_alloc(RC_TYPE_STRING, 1);
+        r[0] = '\0';
+    }
+    return r;
+}
+int64_t yona_Std_File__writeFile(const char* path, const char* content) {
+    return yona_platform_write_file(path, content) == 0 ? 1 : 0;
+}
+int64_t yona_Std_File__appendFile(const char* path, const char* content) {
+    return yona_platform_append_file(path, content) == 0 ? 1 : 0;
+}
+int64_t yona_Std_File__exists(const char* path) {
+    return yona_platform_file_exists(path);
+}
+int64_t yona_Std_File__remove(const char* path) {
+    return yona_platform_remove_file(path) == 0 ? 1 : 0;
+}
+int64_t yona_Std_File__size(const char* path) {
+    return yona_platform_file_size(path);
+}
+int64_t* yona_Std_File__listDir(const char* path) {
+    return yona_platform_list_dir(path);
+}
+
+/* Std\Process */
+const char* yona_Std_Process__getenv(const char* name) {
+    return yona_platform_getenv(name);
+}
+const char* yona_Std_Process__getcwd(void) {
+    return yona_platform_getcwd();
+}
+int64_t yona_Std_Process__exit(int64_t code) {
+    exit((int)code);
+    return 0; /* unreachable */
 }
 
 /* Std\Random — pseudo-random number generation */

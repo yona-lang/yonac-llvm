@@ -1,0 +1,7 @@
+FN yona_Std_File__readFile 1 STRING -> STRING
+FN yona_Std_File__writeFile 2 STRING STRING -> BOOL
+FN yona_Std_File__appendFile 2 STRING STRING -> BOOL
+FN yona_Std_File__exists 1 STRING -> BOOL
+FN yona_Std_File__remove 1 STRING -> BOOL
+FN yona_Std_File__size 1 STRING -> INT
+FN yona_Std_File__listDir 1 STRING -> SEQ

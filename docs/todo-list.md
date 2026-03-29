@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 632 assertions across 73 test cases
-- **Stdlib**: 12 modules, ~145 exported functions (9 pure Yona + 3 C runtime)
+- **Tests**: 638 assertions across 73 test cases
+- **Stdlib**: 15 modules, ~165 exported functions (9 pure Yona + 6 C runtime)
 
 ## Roadmap
 
@@ -23,10 +23,11 @@ Phase 2: String and Encoding
 - [x] Std\String — 27 functions (split, join, trim, replace, pad, repeat, take, drop, count, lines, chars, etc.) ✅
 - [x] Std\Encoding — base64, hex, URL encode/decode, HTML escape ✅
 
-Phase 3: I/O Foundation (all async)
-- [ ] Std\IO — console (print, readLine, eprint)
-- [ ] Std\File — filesystem (readFile, writeFile, listDir, watch, temp, paths)
-- [ ] Std\Process — spawn, pipe, wait, kill, signals
+Phase 3: I/O Foundation
+- [x] Std\IO — print, println, eprint, eprintln, readLine, printInt, printFloat ✅
+- [x] Std\File — readFile, writeFile, appendFile, exists, remove, size, listDir ✅
+- [x] Std\Process — getenv, getcwd, exit ✅
+- Platform layer: src/runtime/platform/linux.c (POSIX), prepared for macOS/Windows
 
 Phase 4: Networking (all async)
 - [ ] Std\Net — TCP/UDP sockets, listeners, connections

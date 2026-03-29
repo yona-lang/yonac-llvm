@@ -194,7 +194,8 @@ int main(int argc, char* argv[]) {
         for (auto& dir : {".", "..", "../.."}) {
             auto candidate = filesystem::path(dir) / "src" / "compiled_runtime.c";
             if (filesystem::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -o " + rt_obj;
+                string src_dir = (filesystem::path(dir) / "src").string();
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_obj;
                 system(cmd.c_str());
                 break;
             }

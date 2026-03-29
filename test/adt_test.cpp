@@ -47,7 +47,7 @@ static string compile_and_run_adt(const string& mod_source, const string& expr_s
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
                 break;
             }
@@ -333,7 +333,7 @@ end
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
                 break;
             }
@@ -398,7 +398,7 @@ takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (t
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
                 break;
             }

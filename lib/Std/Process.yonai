@@ -1,0 +1,3 @@
+FN yona_Std_Process__getenv 1 STRING -> STRING
+FN yona_Std_Process__getcwd 0 -> STRING
+FN yona_Std_Process__exit 1 INT -> INT

@@ -56,7 +56,7 @@ static string compile_and_run_trait(const string& mod_source, const string& expr
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
                 break;
             }
