@@ -60,7 +60,6 @@ Phase 6: Concurrency
 - [ ] Dead argument elimination
 - [ ] LTO (link-time optimization)
 - [ ] Mutual tail call optimization
-- [ ] Escape analysis
 
 ### Memory Management
 - [x] Reference counting infrastructure (RC header, rc_inc/rc_dec, type-tagged allocation) ✅

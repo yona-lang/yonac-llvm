@@ -50,6 +50,8 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 
 **Module System**: Modules are top-level declarations (`ModuleDecl`), not expressions. No `as`/`end` — modules end at EOF. `export` statements: `export func`, `export type Name`, `export f from Mod`. Compile to native object files with C-ABI exports. Interface files (`.yonai`) provide cross-module type metadata. Exported functions include source text in `.yonai` (`GENFN_BEGIN`/`GENFN_END`) for cross-module monomorphization — when call-site types differ from the pre-compiled signature, the source is re-parsed and compiled locally with actual types.
 
+**Memory Management**: Reference counting with arena optimization. All heap objects (`SEQ`, `SET`, `DICT`, `ADT`, `FUNCTION`, `STRING`) use `rc_alloc` which prepends a `[refcount, type_tag]` header. Let bindings `rc_inc` the result and `rc_dec` bindings at scope exit. Closures `rc_inc` captured values. Function parameters use callee-borrows convention (no RC on params). Escape analysis (`include/EscapeAnalysis.h`) determines which let-bound values don't escape their scope; non-escaping values are bump-allocated from a per-scope arena (`yona_rt_arena_alloc`) with sentinel refcount (`INT64_MAX`) so `rc_dec` safely skips them, and the entire arena is freed in bulk at scope exit.
+
 **Symbol interning**: Symbols (`:ok`, `:none`) are interned to `i64` IDs at compile time. Comparison is `icmp eq i64` (1 cycle). Pattern matching on symbols generates integer switch/select.
 
 ### Core Components
