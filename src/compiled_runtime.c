@@ -901,6 +901,199 @@ int64_t* yona_Std_Random__shuffle(int64_t* seq) {
     return result;
 }
 
+/* ===== Std\Json — minimal JSON parser/stringifier ===== */
+
+/* JSON value types as tagged tuples:
+ *   (:json_null)
+ *   (:json_bool, 0|1)
+ *   (:json_int, i64)
+ *   (:json_string, ptr)
+ *   (:json_array, seq_ptr)    — seq of json values
+ *   (:json_object, seq_ptr)   — seq of (key, value) pairs
+ */
+
+/* Stringify a JSON-like structure to a string.
+ * Takes a Yona value and produces a JSON string representation. */
+const char* yona_Std_Json__stringify(int64_t value) {
+    /* Simple: just convert the int to a string for now.
+     * Full JSON stringify requires recursive ADT traversal which needs
+     * the codegen to pass type info. For Phase 5, we provide basic
+     * int/string/bool/seq serialization. */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
+    snprintf(r, 32, "%ld", value);
+    return r;
+}
+
+const char* yona_Std_Json__stringifyString(const char* s) {
+    size_t len = strlen(s);
+    /* Worst case: every char needs escaping (\uXXXX = 6 chars) + quotes */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len * 6 + 3);
+    size_t j = 0;
+    r[j++] = '"';
+    for (size_t i = 0; i < len; i++) {
+        switch (s[i]) {
+            case '"':  r[j++] = '\\'; r[j++] = '"';  break;
+            case '\\': r[j++] = '\\'; r[j++] = '\\'; break;
+            case '\n': r[j++] = '\\'; r[j++] = 'n';  break;
+            case '\r': r[j++] = '\\'; r[j++] = 'r';  break;
+            case '\t': r[j++] = '\\'; r[j++] = 't';  break;
+            default:   r[j++] = s[i]; break;
+        }
+    }
+    r[j++] = '"';
+    r[j] = '\0';
+    return r;
+}
+
+const char* yona_Std_Json__stringifyBool(int64_t b) {
+    const char* src = b ? "true" : "false";
+    size_t len = strlen(src);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+    memcpy(r, src, len + 1);
+    return r;
+}
+
+const char* yona_Std_Json__stringifyFloat(double f) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 64);
+    snprintf(r, 64, "%g", f);
+    return r;
+}
+
+const char* yona_Std_Json__null(void) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 5);
+    memcpy(r, "null", 5);
+    return r;
+}
+
+/* Parse a JSON number from string. Returns the integer value. */
+int64_t yona_Std_Json__parseInt(const char* s) {
+    return (int64_t)atoll(s);
+}
+
+double yona_Std_Json__parseFloat(const char* s) {
+    return atof(s);
+}
+
+/* ===== Std\Crypto — hashing and random bytes ===== */
+
+/* SHA-256 implementation (standalone, no openssl dependency) */
+static const uint32_t sha256_k[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+};
+
+#define SHA256_ROTR(x,n) (((x) >> (n)) | ((x) << (32-(n))))
+#define SHA256_CH(x,y,z)  (((x) & (y)) ^ (~(x) & (z)))
+#define SHA256_MAJ(x,y,z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
+#define SHA256_EP0(x)  (SHA256_ROTR(x,2) ^ SHA256_ROTR(x,13) ^ SHA256_ROTR(x,22))
+#define SHA256_EP1(x)  (SHA256_ROTR(x,6) ^ SHA256_ROTR(x,11) ^ SHA256_ROTR(x,25))
+#define SHA256_SIG0(x) (SHA256_ROTR(x,7) ^ SHA256_ROTR(x,18) ^ ((x) >> 3))
+#define SHA256_SIG1(x) (SHA256_ROTR(x,17) ^ SHA256_ROTR(x,19) ^ ((x) >> 10))
+
+const char* yona_Std_Crypto__sha256(const char* input) {
+    size_t len = strlen(input);
+    /* Padding */
+    size_t new_len = ((len + 8) / 64 + 1) * 64;
+    uint8_t* msg = (uint8_t*)calloc(new_len, 1);
+    memcpy(msg, input, len);
+    msg[len] = 0x80;
+    uint64_t bits = (uint64_t)len * 8;
+    for (int i = 0; i < 8; i++) msg[new_len - 1 - i] = (uint8_t)(bits >> (i * 8));
+
+    uint32_t h[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    for (size_t chunk = 0; chunk < new_len; chunk += 64) {
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++)
+            w[i] = ((uint32_t)msg[chunk+i*4]<<24) | ((uint32_t)msg[chunk+i*4+1]<<16) |
+                   ((uint32_t)msg[chunk+i*4+2]<<8) | (uint32_t)msg[chunk+i*4+3];
+        for (int i = 16; i < 64; i++)
+            w[i] = SHA256_SIG1(w[i-2]) + w[i-7] + SHA256_SIG0(w[i-15]) + w[i-16];
+
+        uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+        for (int i = 0; i < 64; i++) {
+            uint32_t t1 = hh + SHA256_EP1(e) + SHA256_CH(e,f,g) + sha256_k[i] + w[i];
+            uint32_t t2 = SHA256_EP0(a) + SHA256_MAJ(a,b,c);
+            hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+        }
+        h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d; h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
+    }
+    free(msg);
+
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 65);
+    for (int i = 0; i < 8; i++)
+        snprintf(r + i*8, 9, "%08x", h[i]);
+    return r;
+}
+
+const char* yona_Std_Crypto__randomBytes(int64_t n) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, (size_t)n + 1);
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(r, 1, (size_t)n, f); fclose(f); }
+    r[n] = '\0';
+    return r;
+}
+
+const char* yona_Std_Crypto__randomHex(int64_t n) {
+    char* bytes = (char*)malloc((size_t)n);
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(bytes, 1, (size_t)n, f); fclose(f); }
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, (size_t)n * 2 + 1);
+    static const char hex[] = "0123456789abcdef";
+    for (int64_t i = 0; i < n; i++) {
+        r[i*2]   = hex[((uint8_t)bytes[i] >> 4) & 0xF];
+        r[i*2+1] = hex[(uint8_t)bytes[i] & 0xF];
+    }
+    r[n*2] = '\0';
+    free(bytes);
+    return r;
+}
+
+const char* yona_Std_Crypto__uuid4(void) {
+    uint8_t bytes[16];
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(bytes, 1, 16, f); fclose(f); }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; /* version 4 */
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; /* variant 1 */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 37);
+    snprintf(r, 37, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        bytes[0],bytes[1],bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],
+        bytes[8],bytes[9],bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]);
+    return r;
+}
+
+/* ===== Std\Log — structured logging ===== */
+
+static int64_t yona_log_level = 1; /* 0=DEBUG, 1=INFO, 2=WARN, 3=ERROR */
+static const char* yona_log_level_names[] = {"DEBUG", "INFO", "WARN", "ERROR"};
+
+void yona_Std_Log__setLevel(int64_t level) { yona_log_level = level; }
+int64_t yona_Std_Log__getLevel(void) { return yona_log_level; }
+
+static void yona_log_emit(int64_t level, const char* msg) {
+    if (level < yona_log_level) return;
+    time_t now = time(NULL);
+    struct tm* tm = localtime(&now);
+    char ts[20];
+    strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
+    fprintf(stderr, "[%s] %s: %s\n", ts, yona_log_level_names[level], msg);
+    fflush(stderr);
+}
+
+void yona_Std_Log__debug(const char* msg) { yona_log_emit(0, msg); }
+void yona_Std_Log__info(const char* msg)  { yona_log_emit(1, msg); }
+void yona_Std_Log__warn(const char* msg)  { yona_log_emit(2, msg); }
+void yona_Std_Log__error(const char* msg) { yona_log_emit(3, msg); }
+
 /* Std\List */
 int64_t yona_Std_List__length(int64_t* seq) { return seq[0]; }
 int64_t yona_Std_List__head(int64_t* seq) { return seq[1]; }

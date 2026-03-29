@@ -1,10 +1,12 @@
 # Yona Standard Library API Reference
 
-**102 functions** across **9 modules**
+**119 functions** across **11 modules**
 
 | Module | Functions | Types | Description |
 |--------|-----------|-------|-------------|
 | [Std.Bool](Bool.md) | 7 | 0 | Boolean combinators and conditional helpers. |
+| [Std.Collection](Collection.md) | 9 | 0 | Higher-order collection operations — functional helpers for sequences, sets, dicts. |
+| [Std.Function](Function.md) | 8 | 0 | Function combinators — identity, composition, application, flipping. |
 | [Std.List](List.md) | 29 | 0 | Sequence (list) operations — map, filter, fold, sort, and more. |
 | [Std.Math](Math.md) | 10 | 0 | Integer math operations — arithmetic helpers and number theory. |
 | [Std.Option](Option.md) | 10 | 1 | Optional values — represents a value that may or may not exist. |

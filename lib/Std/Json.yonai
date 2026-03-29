@@ -1,0 +1,7 @@
+FN yona_Std_Json__stringify 1 INT -> STRING
+FN yona_Std_Json__stringifyString 1 STRING -> STRING
+FN yona_Std_Json__stringifyBool 1 BOOL -> STRING
+FN yona_Std_Json__stringifyFloat 1 FLOAT -> STRING
+FN yona_Std_Json__null 0 -> STRING
+FN yona_Std_Json__parseInt 1 STRING -> INT
+FN yona_Std_Json__parseFloat 1 STRING -> FLOAT

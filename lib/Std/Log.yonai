@@ -1,0 +1,6 @@
+FN yona_Std_Log__debug 1 STRING -> UNIT
+FN yona_Std_Log__info 1 STRING -> UNIT
+FN yona_Std_Log__warn 1 STRING -> UNIT
+FN yona_Std_Log__error 1 STRING -> UNIT
+FN yona_Std_Log__setLevel 1 INT -> UNIT
+FN yona_Std_Log__getLevel 0 -> INT

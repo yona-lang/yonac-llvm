@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 638 assertions across 73 test cases
-- **Stdlib**: 15 modules, ~165 exported functions (9 pure Yona + 6 C runtime)
+- **Tests**: 644 assertions across 73 test cases
+- **Stdlib**: 20 modules, ~200 exported functions (11 pure Yona + 9 C runtime)
 
 ## Roadmap
 
@@ -34,14 +34,15 @@ Phase 4: Networking (all async)
 - [ ] Std\Http — full HTTP client (Request/Response ADTs, headers, streaming, timeouts) + server
 
 Phase 5: Data Formats
-- [ ] Std\Json — parse, stringify, query, pretty print
-- [ ] Std\Crypto — SHA-256, HMAC, random bytes, UUID
+- [x] Std\Json — stringify (int, string, bool, float, null), parseInt, parseFloat ✅
+- [x] Std\Crypto — sha256, randomBytes, randomHex, uuid4 ✅
 - [x] Std\Random — int, float, choice, shuffle ✅
 
-Phase 6: Concurrency
+Phase 6: Utilities
+- [x] Std\Log — debug, info, warn, error, setLevel, getLevel (timestamped stderr) ✅
+- [x] Std\Collection — iterate, unfold, replicate, tabulate, window, chunks, pairwise, dedup, frequencies ✅
+- [x] Std\Function — identity, const, compose, flip, on, apply, pipe, fix ✅
 - [ ] Std\Concurrent — channels, semaphores, atomics, STM
-- [ ] Std\Log — structured logging with levels and formatters
-- [ ] Std\Collection — sorted map/set, priority queue, iterators
 
 ### Language Features
 - [x] Generators/comprehensions — loop-based codegen for seq/set/dict generators with guard support ✅

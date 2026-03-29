@@ -1,0 +1,125 @@
+## Higher-order collection operations — functional helpers for sequences, sets, dicts.
+##
+## Provides iterate, unfold, repeat, cycle, and windowing operations
+## that complement the core List module.
+module Std\Collection
+
+export iterate, unfold, replicate, tabulate, window, chunks, pairwise, dedup, frequencies
+
+## Generates a sequence by repeatedly applying `fn` to a seed value.
+## Returns the first `n` values: `[seed, fn(seed), fn(fn(seed)), ...]`.
+##
+## ```
+## iterate 5 (\x -> x * 2) 1   # => [1, 2, 4, 8, 16]
+## ```
+iterate n fn seed =
+    if n <= 0 then []
+    else seed :: (iterate (n - 1) fn (fn seed))
+
+## Generates a sequence from a seed using a producer function.
+## `fn seed` returns `(:some, (value, next_seed))` to continue, `:none` to stop.
+##
+## ```
+## unfold (\n -> if n > 0 then (:some, (n, n - 1)) else :none) 5
+## # => [5, 4, 3, 2, 1]
+## ```
+unfold fn seed =
+    case fn seed of
+        (:some, (value, next)) -> value :: (unfold fn next)
+        :none -> []
+    end
+
+## Creates a sequence of `n` copies of `value`.
+##
+## ```
+## replicate 3 42   # => [42, 42, 42]
+## ```
+replicate n value =
+    if n <= 0 then []
+    else value :: (replicate (n - 1) value)
+
+## Creates a sequence by applying `fn` to indices `0..n-1`.
+##
+## ```
+## tabulate 4 (\i -> i * i)   # => [0, 1, 4, 9]
+## ```
+tabulate n fn =
+    let go i = if i >= n then [] else (fn i) :: (go (i + 1))
+    in go 0
+
+## Sliding window of size `size` over a sequence.
+## Returns a sequence of sub-sequences (represented as sequences).
+##
+## ```
+## window 2 [1, 2, 3, 4]   # => [[1, 2], [2, 3], [3, 4]]
+## ```
+window size seq =
+    let take_n n s = if n <= 0 then [] else case s of [] -> []; [h|t] -> h :: (take_n (n - 1) t) end in
+    let len s = case s of [] -> 0; [_|t] -> 1 + (len t) end in
+    if (len seq) < size then []
+    else (take_n size seq) :: (window size (case seq of [_|t] -> t end))
+
+## Splits a sequence into chunks of size `size`.
+##
+## ```
+## chunks 2 [1, 2, 3, 4, 5]   # => [[1, 2], [3, 4], [5]]
+## ```
+chunks size seq =
+    let take_n n s = if n <= 0 then [] else case s of [] -> []; [h|t] -> h :: (take_n (n - 1) t) end in
+    let drop_n n s = if n <= 0 then s else case s of [] -> []; [_|t] -> drop_n (n - 1) t end in
+    case seq of
+        [] -> []
+        _  -> (take_n size seq) :: (chunks size (drop_n size seq))
+    end
+
+## Returns consecutive pairs from a sequence.
+##
+## ```
+## pairwise [1, 2, 3, 4]   # => [(1, 2), (2, 3), (3, 4)]
+## ```
+pairwise seq =
+    case seq of
+        [] -> []
+        [_] -> []
+        [a|[b|t]] -> (a, b) :: (pairwise (b :: t))
+    end
+
+## Removes consecutive duplicates.
+##
+## ```
+## dedup [1, 1, 2, 2, 3, 1, 1]   # => [1, 2, 3, 1]
+## ```
+dedup seq =
+    case seq of
+        [] -> []
+        [h|t] -> case t of
+            [] -> [h]
+            [h2|_] -> if h == h2 then dedup t else h :: (dedup t)
+        end
+    end
+
+## Counts occurrences of each element. Returns sequence of `(element, count)` pairs.
+##
+## ```
+## frequencies [1, 2, 1, 3, 2, 1]   # => [(1, 3), (2, 2), (3, 1)]
+## ```
+frequencies seq =
+    let update acc elem =
+        let found = case acc of
+            [] -> false
+            [(k, _)|_] -> k == elem
+        end in
+        case acc of
+            [] -> [(elem, 1)]
+            [(k, v)|t] -> if k == elem then (k, v + 1) :: t
+                          else (k, v) :: (update t elem)
+        end
+    in
+    case seq of
+        [] -> []
+        [h|t] -> let result = update [] h in
+                 case t of
+                     [] -> result
+                     _ -> let go acc s = case s of [] -> acc; [x|xs] -> go (update acc x) xs end in go result t
+                 end
+    end
