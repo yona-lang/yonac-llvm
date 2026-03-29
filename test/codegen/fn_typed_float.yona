@@ -1,0 +1,3 @@
+let scale : Float -> Float -> Float
+    scale factor x = factor * x
+in scale 2.5 4.0

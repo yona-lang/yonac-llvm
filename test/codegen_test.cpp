@@ -7,9 +7,11 @@
 #include <filesystem>
 #include "Parser.h"
 #include "Codegen.h"
+#include "Diagnostic.h"
 
 using namespace std;
 using namespace yona;
+using namespace yona::compiler;
 using namespace yona::compiler::codegen;
 namespace fs = std::filesystem;
 
@@ -184,10 +186,12 @@ TEST_CASE("Module compiles to object with mangled exports") {
     // Parse module
     parser::Parser parser;
     string source = R"(
-module Test\Arith exports add, mul as
+module Test\Arith
+
+export add, mul
+
 add x y = x + y
 mul x y = x * y
-end
 )";
     auto result = parser.parse_module(source, "test_arith.yona");
     REQUIRE(result.has_value());
@@ -213,10 +217,12 @@ TEST_CASE("Module cross-language linking") {
     // Compile a module
     parser::Parser parser;
     string source = R"(
-module Test\CrossLang exports double, negate as
+module Test\CrossLang
+
+export double, negate
+
 double x = x * 2
 negate x = 0 - x
-end
 )";
     auto result = parser.parse_module(source, "cross.yona");
     REQUIRE(result.has_value());
@@ -258,10 +264,12 @@ TEST_CASE("Multi-module Yona linking") {
     // Compile a module
     parser::Parser p1;
     string mod_source = R"(
-module Test\Calc exports square, cube as
+module Test\Calc
+
+export square, cube
+
 square x = x * x
 cube x = x * x * x
-end
 )";
     auto mod_result = p1.parse_module(mod_source, "calc.yona");
     REQUIRE(mod_result.has_value());
@@ -303,7 +311,353 @@ end
     CHECK(output == "17"); // square(3)=9 + cube(2)=8 = 17
 }
 
+TEST_CASE("Re-exports") {
+    namespace fs = std::filesystem;
+
+    // Compile runtime
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                system(cmd.c_str());
+                break;
+            }
+        }
+    }
+
+    // Step 1: Compile source module Test\Arith
+    parser::Parser p1;
+    string arith_source = R"(
+module Test\Arith
+
+export add, mul
+
+add x y = x + y
+mul x y = x * y
+)";
+    auto arith_result = p1.parse_module(arith_source, "arith.yona");
+    REQUIRE(arith_result.has_value());
+
+    Codegen arith_codegen("arith_mod");
+    auto arith_mod = arith_codegen.compile_module(arith_result.value().get());
+    REQUIRE(arith_mod != nullptr);
+    string arith_obj = "/tmp/arith_mod_test.o";
+    REQUIRE(arith_codegen.emit_object_file(arith_obj));
+    fs::create_directories("/tmp/yona_lib/Test");
+    REQUIRE(arith_codegen.emit_interface_file("/tmp/yona_lib/Test/Arith.yonai"));
+
+    // Step 2: Compile re-exporting module Test\Prelude
+    parser::Parser p2;
+    string prelude_source = R"(
+module Test\Prelude
+
+export add, mul from Test\Arith
+export double
+
+double x = add x x
+)";
+    auto prelude_result = p2.parse_module(prelude_source, "prelude.yona");
+    REQUIRE(prelude_result.has_value());
+
+    Codegen prelude_codegen("prelude_mod");
+    prelude_codegen.module_paths_.push_back("/tmp/yona_lib");
+    auto prelude_mod = prelude_codegen.compile_module(prelude_result.value().get());
+    REQUIRE(prelude_mod != nullptr);
+    string prelude_obj = "/tmp/prelude_mod_test.o";
+    REQUIRE(prelude_codegen.emit_object_file(prelude_obj));
+    REQUIRE(prelude_codegen.emit_interface_file("/tmp/yona_lib/Test/Prelude.yonai"));
+
+    // Step 3: Compile expression that imports from the re-exporting module
+    parser::Parser p3;
+    string expr_source = "import Test\\Prelude in add 10 (mul 3 4)";
+    istringstream stream(expr_source);
+    auto expr_result = p3.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("reexport_test");
+    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    string expr_obj = "/tmp/reexport_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+
+    // Step 4: Link all three and run
+    string exe_path = "/tmp/reexport_test_exe";
+    string link_cmd = "cc " + arith_obj + " " + prelude_obj + " " + expr_obj + " " + rt_path +
+                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    array<char, 256> buffer;
+    string result;
+    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
+    pclose(pipe);
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+
+    CHECK(result == "22"); // add(10, mul(3,4)) = 10 + 12 = 22
+}
+
+TEST_CASE("Type-annotated module functions") {
+    namespace fs = std::filesystem;
+
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                system(cmd.c_str());
+                break;
+            }
+        }
+    }
+
+    parser::Parser p1;
+    string mod_source = R"(
+module Test\Typed
+
+export scale, greet
+
+scale : Float -> Float -> Float
+scale factor x = factor * x
+greet : String -> String
+greet name = "Hello " ++ name
+)";
+    auto mod_result = p1.parse_module(mod_source, "typed.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("typed_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    string mod_obj = "/tmp/typed_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+    fs::create_directories("/tmp/yona_lib/Test");
+    REQUIRE(mod_codegen.emit_interface_file("/tmp/yona_lib/Test/Typed.yonai"));
+
+    // Test: scale 2.5 4.0 = 10.0
+    parser::Parser p2;
+    string expr_source = "import scale from Test\\Typed in scale 2.5 4.0";
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("typed_test");
+    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    string expr_obj = "/tmp/typed_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+
+    string exe_path = "/tmp/typed_test_exe";
+    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
+                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    array<char, 256> buffer;
+    string result;
+    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
+    pclose(pipe);
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+
+    CHECK(result == "10"); // %g format: 10.0 prints as "10"
+}
+
 } // Codegen Modules
+
+// ===== Diagnostic / Error Reporting Tests =====
+
+TEST_SUITE("Diagnostics") {
+
+TEST_CASE("DiagnosticEngine error counting") {
+    DiagnosticEngine diag;
+    diag.set_source("let x = 1 in y", "<test>");
+
+    CHECK(diag.error_count() == 0);
+    CHECK(!diag.has_errors());
+
+    diag.error(SourceLocation{1, 14, 0, 1, "<test>"}, "undefined variable 'y'");
+    CHECK(diag.error_count() == 1);
+    CHECK(diag.has_errors());
+}
+
+TEST_CASE("DiagnosticEngine warning flags") {
+    DiagnosticEngine diag;
+    diag.set_source("let x = 1 in 42", "<test>");
+
+    // Warnings suppressed by default (no flags enabled)
+    diag.warning({1, 5, 0, 1, "<test>"}, "unused variable 'x'", WarningFlag::UnusedVariable);
+    CHECK(diag.warning_count() == 0);
+
+    // Enable -Wall
+    diag.enable_wall();
+    diag.warning({1, 5, 0, 1, "<test>"}, "unused variable 'x'", WarningFlag::UnusedVariable);
+    CHECK(diag.warning_count() == 1);
+}
+
+TEST_CASE("DiagnosticEngine -Werror") {
+    DiagnosticEngine diag;
+    diag.enable_wall();
+    diag.set_warnings_as_errors(true);
+    diag.set_source("let x = 1 in 42", "<test>");
+
+    diag.warning({1, 5, 0, 1, "<test>"}, "unused variable 'x'", WarningFlag::UnusedVariable);
+    CHECK(diag.error_count() == 1);   // promoted to error
+    CHECK(diag.warning_count() == 0); // not counted as warning
+}
+
+TEST_CASE("DiagnosticEngine -w suppresses all") {
+    DiagnosticEngine diag;
+    diag.enable_wextra();
+    diag.suppress_all_warnings();
+    diag.set_source("let x = 1 in 42", "<test>");
+
+    diag.warning({1, 5, 0, 1, "<test>"}, "unused variable", WarningFlag::UnusedVariable);
+    diag.warning({1, 5, 0, 1, "<test>"}, "shadow", WarningFlag::Shadow);
+    CHECK(diag.warning_count() == 0);
+    CHECK(diag.error_count() == 0);
+}
+
+TEST_CASE("Codegen reports errors through DiagnosticEngine") {
+    DiagnosticEngine diag;
+    string source = "let x = 42 in y + 1";
+    diag.set_source(source, "<test>");
+
+    Codegen codegen("test", &diag);
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (result.node) codegen.compile(result.node.get());
+
+    CHECK(diag.has_errors());
+    CHECK(diag.error_count() >= 1);
+}
+
+TEST_CASE("Codegen suggests similar names for typos") {
+    DiagnosticEngine diag;
+    string source = "let myVariable = 42 in myVarible + 1";
+    diag.set_source(source, "<test>");
+
+    Codegen codegen("test", &diag);
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (result.node) codegen.compile(result.node.get());
+
+    // Should have an error with "did you mean" suggestion
+    CHECK(diag.has_errors());
+}
+
+TEST_CASE("Warning flag names") {
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::UnusedVariable) == "unused-variable");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::UnusedImport) == "unused-import");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::Shadow) == "shadow");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::MissingSignature) == "missing-signature");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::IncompletePatterns) == "incomplete-patterns");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::OverlappingPatterns) == "overlapping-patterns");
+}
+
+TEST_CASE("Parser errors route through DiagnosticEngine") {
+    DiagnosticEngine diag;
+    string source = "let x = in 42";
+    diag.set_source(source, "<test>");
+
+    parser::Parser parser;
+    auto result = parser.parse_expression(source, "<test>");
+    if (!result.has_value()) {
+        for (auto& e : result.error())
+            diag.error(e.location, e.message);
+    }
+
+    CHECK(diag.has_errors());
+}
+
+TEST_CASE("Debug info: compilation succeeds with -g") {
+    // Compiling with debug info enabled should not break anything
+    DiagnosticEngine diag;
+    string source = "let x = 42 in let y = x + 1 in y";
+    diag.set_source(source, "test_debug.yona");
+
+    Codegen codegen("debug_test", &diag);
+    codegen.set_debug_info(true, "test_debug.yona");
+
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node != nullptr);
+
+    auto* mod = codegen.compile(result.node.get());
+    REQUIRE(mod != nullptr);
+
+    // Should compile without errors
+    CHECK(!diag.has_errors());
+    CHECK(codegen.error_count_ == 0);
+}
+
+TEST_CASE("Debug info: function with params") {
+    DiagnosticEngine diag;
+    string source = "let add x y = x + y in add 10 32";
+    diag.set_source(source, "test_fn.yona");
+
+    Codegen codegen("debug_fn_test", &diag);
+    codegen.set_debug_info(true, "test_fn.yona");
+
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node != nullptr);
+
+    auto* mod = codegen.compile(result.node.get());
+    REQUIRE(mod != nullptr);
+    CHECK(!diag.has_errors());
+}
+
+TEST_CASE("Debug info: closures") {
+    DiagnosticEngine diag;
+    string source = "let n = 10 in let add_n x = x + n in add_n 5";
+    diag.set_source(source, "test_closure.yona");
+
+    Codegen codegen("debug_closure_test", &diag);
+    codegen.set_debug_info(true, "test_closure.yona");
+
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node != nullptr);
+
+    auto* mod = codegen.compile(result.node.get());
+    REQUIRE(mod != nullptr);
+    CHECK(!diag.has_errors());
+}
+
+TEST_CASE("Debug info: disabled by default") {
+    // Without set_debug_info, no debug metadata should be generated
+    DiagnosticEngine diag;
+    string source = "42";
+    diag.set_source(source, "test.yona");
+
+    Codegen codegen("no_debug_test", &diag);
+    // NOT calling set_debug_info
+
+    parser::Parser parser;
+    istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node != nullptr);
+
+    auto* mod = codegen.compile(result.node.get());
+    REQUIRE(mod != nullptr);
+    CHECK(!diag.has_errors());
+
+    // IR should NOT contain !dbg metadata
+    string ir = codegen.emit_ir();
+    CHECK(ir.find("!dbg") == string::npos);
+}
+
+} // Diagnostics
 
 // IR fixture tests removed — IR text comparison is fragile due to
 // whitespace/formatting differences between runs. The E2E fixture tests

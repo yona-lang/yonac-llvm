@@ -1,4 +1,6 @@
-module Test\Test exports add, multiply as
+module Test\Test
+
+export add, multiply
+
 add x y = x + y
 multiply x y = x * y
-end

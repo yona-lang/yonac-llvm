@@ -70,10 +70,9 @@ class LogicalOrExpr;
 class LtExpr;
 class LteExpr;
 class ModuloExpr;
-class ModuleAlias;
 class ModuleCall;
 class ExprCall;
-class ModuleExpr;
+class ModuleDecl;
 class ModuleImport;
 class MultiplyExpr;
 class NameCall;
@@ -137,6 +136,8 @@ class CallExpr;
 class GeneratorExpr;
 class CollectionExtractorExpr;
 class ConstructorPattern;
+class TraitDeclNode;
+class InstanceDeclNode;
 
 // Templated visitor base class that allows each visitor to specify its own return type
 template<typename ResultType>
@@ -207,10 +208,9 @@ public:
   virtual ResultType visit(LtExpr *node) const = 0;
   virtual ResultType visit(LteExpr *node) const = 0;
   virtual ResultType visit(ModuloExpr *node) const = 0;
-  virtual ResultType visit(ModuleAlias *node) const = 0;
   virtual ResultType visit(ModuleCall *node) const = 0;
   virtual ResultType visit(ExprCall *node) const = 0;
-  virtual ResultType visit(ModuleExpr *node) const = 0;
+  virtual ResultType visit(ModuleDecl *node) const = 0;
   virtual ResultType visit(ModuleImport *node) const = 0;
   virtual ResultType visit(MultiplyExpr *node) const = 0;
   virtual ResultType visit(NameCall *node) const = 0;
@@ -259,6 +259,8 @@ public:
   virtual ResultType visit(IdentifierExpr *node) const = 0;
   virtual ResultType visit(BuiltinTypeNode *node) const = 0;
   virtual ResultType visit(UserDefinedTypeNode *node) const = 0;
+  virtual ResultType visit(TraitDeclNode *node) const = 0;
+  virtual ResultType visit(InstanceDeclNode *node) const = 0;
   virtual ResultType visit(ScopedNode *node) const = 0;
 
   // Default implementations for intermediate classes that dispatch to concrete types

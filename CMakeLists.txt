@@ -86,7 +86,7 @@ add_definitions(${LLVM_DEFINITIONS_LIST})
 #set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 #set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
 
-file(GLOB all_lib_SRCS
+file(GLOB_RECURSE all_lib_SRCS
 		"${PROJECT_SOURCE_DIR}/include/*.h"
 		"${PROJECT_SOURCE_DIR}/src/*.cpp"
 		"${PROJECT_SOURCE_DIR}/src/*.c"

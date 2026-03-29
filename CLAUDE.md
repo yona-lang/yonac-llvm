@@ -44,19 +44,21 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 
 **Visitor pattern with generic return types**: `AstVisitor<ResultType>` is a templated base class. AST nodes implement `accept()` that dispatches to the correct `visit()` overload.
 
-**LLVM Codegen** (`src/Codegen.cpp`): Type-directed code generation using `TypedValue = {Value*, CType}`. Every codegen method returns both an LLVM value and its type tag. Functions are compiled with deferred compilation — stored as AST at definition, compiled at call site where argument types are known (monomorphization). Closures use lambda lifting (free variables become extra parameters). The `yonac` CLI compiles Yona source to native executables via LLVM.
+**LLVM Codegen** (`src/Codegen.cpp`): Type-directed code generation using `TypedValue = {Value*, CType}`. Every codegen method returns both an LLVM value and its type tag. Functions are compiled with deferred compilation — stored as AST at definition, compiled at call site where argument types are known (monomorphization). Closures use env-passing convention: `{fn_ptr, ret_tag, arity, cap0, ...}` heap arrays, functions take `(ptr env, args...)`. The `yonac` CLI compiles Yona source to native executables via LLVM.
 
-**Algebraic Data Types**: `type Option a = Some a | None` — named constructors with typed fields. Constructors are first-class functions. Compiled as flat structs `{i8 tag, payload}` for non-recursive types.
+**Algebraic Data Types**: `type Option a = Some a | None` — named constructors with typed fields. ADT fields support function type signatures: `type Stream a = Next a (() -> Stream a) | End`. Constructors are first-class functions. Non-recursive ADTs use flat structs `{i64 tag, payload}`; recursive ADTs and ADTs with function fields are heap-allocated.
+
+**Module System**: Modules are top-level declarations (`ModuleDecl`), not expressions. No `as`/`end` — modules end at EOF. `export` statements: `export func`, `export type Name`, `export f from Mod`. Compile to native object files with C-ABI exports. Interface files (`.yonai`) provide cross-module type metadata. Exported functions include source text in `.yonai` (`GENFN_BEGIN`/`GENFN_END`) for cross-module monomorphization — when call-site types differ from the pre-compiled signature, the source is re-parsed and compiled locally with actual types.
 
 **Symbol interning**: Symbols (`:ok`, `:none`) are interned to `i64` IDs at compile time. Comparison is `icmp eq i64` (1 cycle). Pattern matching on symbols generates integer switch/select.
 
 ### Core Components
 
 - **AST** (`include/ast.h`): Node hierarchy rooted at `AstNode`. Major branches: `ExprNode` (expressions), `PatternNode` (pattern matching), `ScopedNode` (scope-creating). Each node tracks `SourceContext` for error reporting.
-- **Codegen** (`src/Codegen.cpp`): LLVM IR generation with `TypedValue` system. Supports literals, arithmetic, functions, closures, recursion, case expressions, tuples, sequences, symbols, sets, dicts, ADTs, or-patterns, higher-order functions, partial application. Compiled runtime in `src/compiled_runtime.c`.
+- **Codegen** (`src/Codegen.cpp`): LLVM IR generation with `TypedValue` system. Supports literals, arithmetic, functions, closures, recursion, case expressions, tuples, sequences, symbols, sets, dicts, ADTs, or-patterns, higher-order functions, partial application, generators/comprehensions. Compiled runtime in `src/compiled_runtime.c`.
 - **Type System** (`include/types.h`): Variant-based types including builtins, function types, product/sum types, record types, ADTs, and named types. The codegen uses `CType` + `TypedValue` with compile-time type inference and monomorphization.
 - **Pattern Matching**: `CaseExpr` contains a target expression and vector of `CaseClause(pattern, body)`. Pattern types include value, tuple, seq, head-tail (`[h|t]`), dict, record, constructor (`Some x`), `as` binding (`@`), and or-patterns.
-- **Module System**: FQN-based. Modules compile to object files with C-ABI exports via name mangling (`yona_Pkg_Mod__func`). Cross-language linking with C/Rust/Go.
+- **Module System**: FQN-based. Modules (`ModuleDecl` in AST) are top-level declarations, not expressions. They compile to object files with C-ABI exports via name mangling (`yona_Pkg_Mod__func`). Interface files (`.yonai`) for cross-module type-safe linking. Three import styles: selective, wildcard, FQN calls (`Mod::func`). Cross-module generics via GENFN source in `.yonai` — on-demand re-parse and monomorphization when call-site types differ. Trait instance methods have `ExternalLinkage` for cross-module trait dispatch.
 
 ### Build Targets
 
@@ -76,4 +78,4 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 - New language features require changes across: Lexer → Parser → AST → Codegen
 - AST modifications must update the header (`ast.h`), visitor (`ast_visitor.h`), and codegen
 - Tests are in `test/` — codegen E2E fixtures in `test/codegen/*.yona` + `*.expected`
-- ADT tests in `test/adt_test.cpp`
+- ADT tests in `test/adt_test.cpp`, trait/cross-module tests in `test/trait_test.cpp`

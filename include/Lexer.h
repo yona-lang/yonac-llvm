@@ -61,7 +61,10 @@ enum class TokenType {
     YLAMBDA,
     YRECORD,
     YTYPE,
+    YTRAIT,
+    YINSTANCE,
     YEXTERN,     // extern
+    YFOR,        // for (generator comprehensions)
 
     // Operators
     YPLUS,           // +

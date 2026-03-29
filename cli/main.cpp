@@ -10,6 +10,7 @@
 //   yonac --emit-obj -e "1 + 2"       # emit object file
 //   yonac module.yona                 # compile module to .o + .yonai
 //   yonac -I lib main.yona            # compile with module search path
+//   yonac -Wall -Werror main.yona     # enable warnings, treat as errors
 
 #include <iostream>
 #include <fstream>
@@ -22,9 +23,11 @@
 #include <CLI/CLI.hpp>
 #include "Parser.h"
 #include "Codegen.h"
+#include "Diagnostic.h"
 
 using namespace std;
 using namespace yona;
+using namespace yona::compiler;
 using namespace yona::compiler::codegen;
 
 static bool is_module_source(const string& source) {
@@ -43,6 +46,11 @@ int main(int argc, char* argv[]) {
     string output_file;
     bool emit_ir = false;
     bool emit_obj = false;
+    bool flag_wall = false;
+    bool flag_wextra = false;
+    bool flag_werror = false;
+    bool flag_w = false;
+    bool flag_debug = false;
     vector<string> include_paths;
 
     app.add_option("input", input_file, "Input .yona file");
@@ -51,13 +59,20 @@ int main(int argc, char* argv[]) {
     app.add_option("-I,--include", include_paths, "Module search paths (for .yonai files)");
     app.add_flag("--emit-ir", emit_ir, "Print LLVM IR instead of compiling");
     app.add_flag("--emit-obj", emit_obj, "Emit object file only (don't link)");
+    app.add_flag("--Wall", flag_wall, "Enable common warnings");
+    app.add_flag("--Wextra", flag_wextra, "Enable all warnings");
+    app.add_flag("--Werror", flag_werror, "Treat warnings as errors");
+    app.add_flag("-w", flag_w, "Suppress all warnings");
+    app.add_flag("-g,--debug", flag_debug, "Emit DWARF debug information");
 
     CLI11_PARSE(app, argc, argv);
 
     // Get source code
     string source;
+    string filename;
     if (!expression.empty()) {
         source = expression;
+        filename = "<expression>";
     } else if (!input_file.empty()) {
         ifstream file(input_file);
         if (!file.is_open()) {
@@ -67,6 +82,7 @@ int main(int argc, char* argv[]) {
         stringstream buf;
         buf << file.rdbuf();
         source = buf.str();
+        filename = input_file;
     } else {
         cerr << "Error: no input. Use 'yonac file.yona' or 'yonac -e \"expr\"'" << endl;
         return 1;
@@ -86,30 +102,37 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Set up diagnostics
+    DiagnosticEngine diag;
+    diag.set_source(source, filename);
+    if (flag_w)      diag.suppress_all_warnings();
+    if (flag_wall)   diag.enable_wall();
+    if (flag_wextra) diag.enable_wextra();
+    if (flag_werror) diag.set_warnings_as_errors(true);
+
     // Codegen
     string module_name = is_module ? "yona_module" : "yona_program";
-    Codegen codegen(module_name);
+    Codegen codegen(module_name, &diag);
+
+    if (flag_debug) codegen.set_debug_info(true, filename);
 
     // Set module search paths for import resolution
     codegen.module_paths_ = include_paths;
-    // Also search the directory containing the input file
     if (!input_file.empty()) {
         auto parent = filesystem::path(input_file).parent_path();
         if (!parent.empty())
             codegen.module_paths_.push_back(parent.string());
     }
-    // Search current directory
     codegen.module_paths_.push_back(".");
 
     llvm::Module* llvm_mod = nullptr;
 
     if (is_module) {
         parser::Parser parser;
-        auto result = parser.parse_module(source, input_file.empty() ? "<expression>" : input_file);
+        auto result = parser.parse_module(source, filename);
         if (!result.has_value()) {
-            cerr << "Parse error";
-            for (auto& e : result.error()) cerr << ": " << e.message;
-            cerr << endl;
+            for (auto& e : result.error())
+                diag.error(e.location, e.message);
             return 1;
         }
         llvm_mod = codegen.compile_module(result.value().get());
@@ -118,15 +141,28 @@ int main(int argc, char* argv[]) {
         istringstream stream(source);
         auto parse_result = parser.parse_input(stream);
         if (!parse_result.node) {
-            cerr << "Parse error" << endl;
+            // Try the modern interface for better error messages
+            auto result = parser.parse_expression(source, filename);
+            if (!result.has_value()) {
+                for (auto& e : result.error())
+                    diag.error(e.location, e.message);
+            } else {
+                diag.error(SourceLocation::unknown(), "parse error");
+            }
             return 1;
         }
         llvm_mod = codegen.compile(parse_result.node.get());
     }
 
     if (!llvm_mod) {
-        cerr << "Codegen error" << endl;
+        // Errors already printed by DiagnosticEngine
         return 1;
+    }
+
+    // Print summary if there were warnings
+    if (diag.warning_count() > 0) {
+        cerr << diag.warning_count() << " warning"
+             << (diag.warning_count() != 1 ? "s" : "") << " generated." << endl;
     }
 
     if (emit_ir) {
@@ -137,7 +173,7 @@ int main(int argc, char* argv[]) {
     // Emit object file
     string obj_file = (is_module || emit_obj) ? output_file : (output_file + ".o");
     if (!codegen.emit_object_file(obj_file)) {
-        cerr << "Error: failed to emit object file" << endl;
+        diag.error(SourceLocation::unknown(), "failed to emit object file");
         return 1;
     }
 
@@ -171,7 +207,7 @@ int main(int argc, char* argv[]) {
     filesystem::remove(obj_file);
 
     if (link_result != 0) {
-        cerr << "Error: linking failed" << endl;
+        diag.error(SourceLocation::unknown(), "linking failed");
         return 1;
     }
 

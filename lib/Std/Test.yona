@@ -1,4 +1,6 @@
-module Std\Test exports assertEqual, assertTrue, assertFalse as
+module Std\Test
+
+export assertEqual, assertTrue, assertFalse
 
 assertEqual expected actual =
     if expected == actual then (:pass, "assertEqual")
@@ -11,5 +13,3 @@ assertTrue value =
 assertFalse value =
     if value then (:fail, "assertFalse: expected false")
     else (:pass, "assertFalse")
-
-end

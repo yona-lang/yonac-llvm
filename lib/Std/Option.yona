@@ -1,4 +1,7 @@
-module Std\Option exports Some, None, isSome, isNone, unwrapOr, map as
+module Std\Option
+
+export type Option
+export isSome, isNone, unwrapOr, map
 
 type Option a = Some a | None
 
@@ -25,5 +28,3 @@ map fn opt =
         Some value -> Some (fn value)
         None       -> None
     end
-
-end

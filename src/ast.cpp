@@ -270,9 +270,10 @@ string FqnExpr::to_string() const {
 
 void FqnExpr::print(std::ostream &os) const { os << to_string(); }
 
-FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies)
+FunctionExpr::FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies,
+                           std::optional<compiler::types::Type> type_sig)
     : ScopedNode(token), name(std::move(name)), patterns(nodes_with_parent(std::move(patterns), this)),
-      bodies(nodes_with_parent(std::move(bodies), this)) {}
+      bodies(nodes_with_parent(std::move(bodies), this)), type_signature(std::move(type_sig)) {}
 
 FunctionExpr::~FunctionExpr() {
   for (const auto p : patterns)
@@ -311,14 +312,22 @@ BodyWithoutGuards::~BodyWithoutGuards() { delete expr; }
 
 void BodyWithoutGuards::print(std::ostream &os) const { os << " = " << *expr; }
 
-ModuleExpr::ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
+ModuleDecl::ModuleDecl(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
+                       const vector<string> &exported_types,
+                       const vector<string> &exported_traits,
+                       const vector<ReExport> &re_exports,
                        const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
-                       const vector<AdtDeclNode *> &adt_declarations)
-    : ValueExpr(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports),
+                       const vector<AdtDeclNode *> &adt_declarations,
+                       const vector<TraitDeclNode *> &trait_declarations,
+                       const vector<InstanceDeclNode *> &instance_declarations)
+    : AstNode(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), exported_types(exported_types),
+      exported_traits(exported_traits), re_exports(re_exports),
       functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)),
-      adt_declarations(nodes_with_parent(std::move(adt_declarations), this)) {}
+      adt_declarations(nodes_with_parent(std::move(adt_declarations), this)),
+      trait_declarations(nodes_with_parent(std::move(trait_declarations), this)),
+      instance_declarations(nodes_with_parent(std::move(instance_declarations), this)) {}
 
-ModuleExpr::~ModuleExpr() {
+ModuleDecl::~ModuleDecl() {
   delete fqn;
   for (const auto p : functions)
     delete p;
@@ -326,19 +335,41 @@ ModuleExpr::~ModuleExpr() {
     delete p;
   for (const auto p : adt_declarations)
     delete p;
+  for (const auto p : trait_declarations)
+    delete p;
+  for (const auto p : instance_declarations)
+    delete p;
 }
 
-void ModuleExpr::print(std::ostream &os) const {
-  os << "module " << *fqn << " exports ";
+void ModuleDecl::print(std::ostream &os) const {
+  os << "module " << *fqn << endl;
 
-  for (size_t i = 0; i < exports.size(); i++) {
-    os << exports[i];
-    if (i < exports.size() - 1) {
-      os << ", ";
+  if (!exports.empty()) {
+    os << "export ";
+    for (size_t i = 0; i < exports.size(); i++) {
+      os << exports[i];
+      if (i < exports.size() - 1) {
+        os << ", ";
+      }
     }
+    os << endl;
   }
 
-  os << " as" << endl;
+  for (const auto& t : exported_types) {
+    os << "export type " << t << endl;
+  }
+
+  for (const auto& t : exported_traits) {
+    os << "export trait " << t << endl;
+  }
+
+  for (const auto p : trait_declarations) {
+    os << *p << endl;
+  }
+
+  for (const auto p : instance_declarations) {
+    os << *p << endl;
+  }
 
   for (const auto p : functionDeclarations) {
     os << *p << endl;
@@ -347,8 +378,6 @@ void ModuleExpr::print(std::ostream &os) const {
   for (const auto p : functions) {
     os << *p << endl;
   }
-
-  os << "end";
 }
 
 RecordInstanceExpr::RecordInstanceExpr(SourceContext token, NameExpr *recordType, vector<pair<NameExpr *, ExprNode *>> items)
@@ -681,16 +710,6 @@ LambdaAlias::~LambdaAlias() {
 
 void LambdaAlias::print(std::ostream &os) const { os << *name << " = " << *lambda; }
 
-ModuleAlias::ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module)
-    : AliasExpr(token), name(name->with_parent<NameExpr>(this)), module(module->with_parent<ModuleExpr>(this)) {}
-
-ModuleAlias::~ModuleAlias() {
-  delete name;
-  delete module;
-}
-
-void ModuleAlias::print(std::ostream &os) const { os << *name << " = " << *module; }
-
 ValueAlias::ValueAlias(SourceContext token, IdentifierExpr *identifier, ExprNode *expr)
     : AliasExpr(token), identifier(identifier->with_parent<IdentifierExpr>(this)), expr(expr->with_parent<ExprNode>(this)) {}
 
@@ -813,7 +832,7 @@ void FunctionsImport::print(std::ostream &os) const {
 SeqGeneratorExpr::SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression)
     : GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-      stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
+      stepExpression(stepExpression) {}
 
 SeqGeneratorExpr::~SeqGeneratorExpr() {
   delete reducerExpr;
@@ -822,13 +841,13 @@ SeqGeneratorExpr::~SeqGeneratorExpr() {
 }
 
 void SeqGeneratorExpr::print(std::ostream &os) const {
-  os << "[" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "]";
+  os << "[" << *reducerExpr << " | " << *collectionExtractor << "]";
 }
 
 SetGeneratorExpr::SetGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression)
     : GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<ExprNode>(this)),
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-      stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
+      stepExpression(stepExpression) {}
 
 SetGeneratorExpr::~SetGeneratorExpr() {
   delete reducerExpr;
@@ -837,7 +856,7 @@ SetGeneratorExpr::~SetGeneratorExpr() {
 }
 
 void SetGeneratorExpr::print(std::ostream &os) const {
-  os << "{" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "}";
+  os << "{" << *reducerExpr << " | " << *collectionExtractor << "}";
 }
 
 DictGeneratorReducer::DictGeneratorReducer(SourceContext token, ExprNode *key, ExprNode *value)
@@ -848,13 +867,13 @@ DictGeneratorReducer::~DictGeneratorReducer() {
   delete value;
 }
 
-void DictGeneratorReducer::print(std::ostream &os) const { os << *key << " = " << *value; }
+void DictGeneratorReducer::print(std::ostream &os) const { os << *key << " : " << *value; }
 
 DictGeneratorExpr::DictGeneratorExpr(SourceContext token, DictGeneratorReducer *reducerExpr, CollectionExtractorExpr *collectionExtractor,
                                      ExprNode *stepExpression)
     : GeneratorExpr(token), reducerExpr(reducerExpr->with_parent<DictGeneratorReducer>(this)),
       collectionExtractor(collectionExtractor->with_parent<CollectionExtractorExpr>(this)),
-      stepExpression(stepExpression->with_parent<ExprNode>(this)) {}
+      stepExpression(stepExpression) {}
 
 DictGeneratorExpr::~DictGeneratorExpr() {
   delete reducerExpr;
@@ -863,11 +882,14 @@ DictGeneratorExpr::~DictGeneratorExpr() {
 }
 
 void DictGeneratorExpr::print(std::ostream &os) const {
-  os << "{" << *reducerExpr << " | " << *collectionExtractor << " <- " << *stepExpression << "}";
+  os << "{" << *reducerExpr << " | " << *collectionExtractor << "}";
 }
 
-ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore identifier_or_underscore)
-    : CollectionExtractorExpr(token), expr(node_with_parent(identifier_or_underscore, this)) {}
+ValueCollectionExtractorExpr::ValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore identifier_or_underscore,
+                                                           ExprNode *collection, ExprNode *condition)
+    : CollectionExtractorExpr(token), expr(node_with_parent(identifier_or_underscore, this)),
+      collection(collection ? collection->with_parent<ExprNode>(this) : nullptr),
+      condition(condition ? condition->with_parent<ExprNode>(this) : nullptr) {}
 
 void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
   if (holds_alternative<IdentifierExpr *>(expr)) {
@@ -877,7 +899,11 @@ void release_identifier_or_underscore(const IdentifierOrUnderscore expr) {
   }
 }
 
-ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() { release_identifier_or_underscore(expr); }
+ValueCollectionExtractorExpr::~ValueCollectionExtractorExpr() {
+  release_identifier_or_underscore(expr);
+  delete collection;
+  delete condition;
+}
 
 void ValueCollectionExtractorExpr::print(std::ostream &os) const {
   if (holds_alternative<IdentifierExpr *>(expr)) {
@@ -888,12 +914,17 @@ void ValueCollectionExtractorExpr::print(std::ostream &os) const {
 }
 
 KeyValueCollectionExtractorExpr::KeyValueCollectionExtractorExpr(SourceContext token, const IdentifierOrUnderscore keyExpr,
-                                                                 const IdentifierOrUnderscore valueExpr)
-    : CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)), valueExpr(node_with_parent(valueExpr, this)) {}
+                                                                 const IdentifierOrUnderscore valueExpr,
+                                                                 ExprNode *collection, ExprNode *condition)
+    : CollectionExtractorExpr(token), keyExpr(node_with_parent(keyExpr, this)), valueExpr(node_with_parent(valueExpr, this)),
+      collection(collection ? collection->with_parent<ExprNode>(this) : nullptr),
+      condition(condition ? condition->with_parent<ExprNode>(this) : nullptr) {}
 
 KeyValueCollectionExtractorExpr::~KeyValueCollectionExtractorExpr() {
   release_identifier_or_underscore(keyExpr);
   release_identifier_or_underscore(valueExpr);
+  delete collection;
+  delete condition;
 }
 
 void KeyValueCollectionExtractorExpr::print(std::ostream &os) const {
@@ -1342,8 +1373,22 @@ void TypeDefinition::print(std::ostream &os) const {
   }
 }
 
+// FieldType implementation
+string FieldType::to_string() const {
+    if (!is_function_type) return name;
+    string result = "(";
+    for (size_t i = 0; i < param_types.size(); i++) {
+        if (i > 0) result += " -> ";
+        result += param_types[i].to_string();
+    }
+    if (!param_types.empty() && !return_types.empty()) result += " -> ";
+    if (!return_types.empty()) result += return_types[0].to_string();
+    result += ")";
+    return result;
+}
+
 // AdtConstructor implementation
-AdtConstructor::AdtConstructor(SourceContext token, string name, vector<string> field_types, vector<string> field_names)
+AdtConstructor::AdtConstructor(SourceContext token, string name, vector<FieldType> field_types, vector<string> field_names)
     : AstNode(token), name(std::move(name)), field_type_names(std::move(field_types)), field_names(std::move(field_names)) {}
 
 AdtConstructor::~AdtConstructor() = default;
@@ -1351,7 +1396,7 @@ AdtConstructor::~AdtConstructor() = default;
 void AdtConstructor::print(std::ostream &os) const {
   os << name;
   for (const auto &ft : field_type_names) {
-    os << " " << ft;
+    os << " " << ft.to_string();
   }
 }
 
@@ -1459,6 +1504,71 @@ void FunctionDeclaration::print(std::ostream &os) const {
       os << " -> ";
     }
   }
+}
+
+// TraitDeclNode implementation
+TraitDeclNode::TraitDeclNode(SourceContext token, string name, string type_param, vector<TraitMethodSig> methods,
+                             vector<pair<string, string>> superclasses)
+    : AstNode(token), name(std::move(name)), type_param(std::move(type_param)),
+      methods(std::move(methods)), superclasses(std::move(superclasses)) {}
+
+TraitDeclNode::~TraitDeclNode() {
+    for (auto& m : methods) {
+        delete m.default_impl;
+    }
+}
+
+void TraitDeclNode::print(std::ostream &os) const {
+    if (!superclasses.empty()) {
+        for (size_t i = 0; i < superclasses.size(); i++) {
+            if (i > 0) os << ", ";
+            os << superclasses[i].first << " " << superclasses[i].second;
+        }
+        os << " => ";
+    }
+    os << "trait " << name << " " << type_param << endl;
+    for (const auto& m : methods) {
+        os << "    " << m.name << " : ...";
+        if (m.default_impl) os << " (default)";
+        os << endl;
+    }
+    os << "end";
+}
+
+// InstanceDeclNode implementation
+InstanceDeclNode::InstanceDeclNode(SourceContext token, string trait_name, string type_name, vector<FunctionExpr*> methods,
+                                   vector<pair<string, string>> constraints, vector<string> type_params)
+    : AstNode(token), trait_name(std::move(trait_name)), type_name(std::move(type_name)),
+      methods(nodes_with_parent(std::move(methods), this)),
+      constraints(std::move(constraints)), type_params(std::move(type_params)) {}
+
+InstanceDeclNode::~InstanceDeclNode() {
+    for (const auto p : methods)
+        delete p;
+}
+
+void InstanceDeclNode::print(std::ostream &os) const {
+    os << "instance ";
+    if (!constraints.empty()) {
+        for (size_t i = 0; i < constraints.size(); i++) {
+            if (i > 0) os << ", ";
+            os << constraints[i].first << " " << constraints[i].second;
+        }
+        os << " => ";
+    }
+    os << trait_name << " ";
+    if (!type_params.empty()) {
+        os << "(" << type_name;
+        for (auto& tp : type_params) os << " " << tp;
+        os << ")";
+    } else {
+        os << type_name;
+    }
+    os << endl;
+    for (const auto* m : methods) {
+        os << "    " << *m << endl;
+    }
+    os << "end";
 }
 
 std::ostream &operator<<(std::ostream &os, const AstNode &obj) {

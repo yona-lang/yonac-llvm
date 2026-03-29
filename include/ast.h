@@ -35,11 +35,13 @@ class TuplePattern;
 class PatternValue;
 // AstVisitor is now defined in ast_visitor.h as a template
 class TypeDefinition;
-class ModuleExpr;
+class ModuleDecl;
 class FunctionExpr;
 class AdtConstructor;
 class AdtDeclNode;
 class ConstructorPattern;
+class TraitDeclNode;
+class InstanceDeclNode;
 
 using namespace std;
 using namespace compiler::types;
@@ -82,7 +84,7 @@ enum AstNodeType {
   AST_FQN_EXPR,
   AST_FUNCTION_EXPR,
   AST_FUNCTION_DECLARATION,
-  AST_MODULE_EXPR,
+  AST_MODULE_DECL,
   AST_RECORD_INSTANCE_EXPR,
   AST_BODY_WITH_GUARDS,
   AST_BODY_WITHOUT_GUARDS,
@@ -124,7 +126,6 @@ enum AstNodeType {
   AST_FIELD_ACCESS_EXPR,
   AST_FIELD_UPDATE_EXPR,
   AST_LAMBDA_ALIAS,
-  AST_MODULE_ALIAS,
   AST_VALUE_ALIAS,
   AST_PATTERN_ALIAS,
   AST_FQN_ALIAS,
@@ -171,7 +172,9 @@ enum AstNodeType {
   AST_CASE_CLAUSE,
   AST_ADT_DECL,
   AST_ADT_CONSTRUCTOR,
-  AST_CONSTRUCTOR_PATTERN
+  AST_CONSTRUCTOR_PATTERN,
+  AST_TRAIT_DECL,
+  AST_INSTANCE_DECL
 };
 
 struct expr_wrapper {
@@ -719,8 +722,11 @@ public:
   const string name;
   vector<PatternNode *> patterns; // args
   vector<FunctionBody *> bodies;  // 1 if without guards, or more with guards
+  std::optional<compiler::types::Type> type_signature; // optional type annotation
+  string source_text; // original source for cross-module monomorphization
 
-  explicit FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies);
+  explicit FunctionExpr(SourceContext token, string name, vector<PatternNode *> patterns, vector<FunctionBody *> bodies,
+                        std::optional<compiler::types::Type> type_sig = std::nullopt);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
@@ -729,26 +735,45 @@ public:
   ~FunctionExpr() override;
 };
 
-class ModuleExpr final : public ValueExpr {
+// ModuleDecl is a top-level declaration, NOT an expression.
+// A re-export declaration: names re-exported from another module
+struct ReExport {
+    vector<string> names;    // function/constructor names to re-export
+    string source_module;    // FQN of source module (e.g., "Std\\List")
+};
+
+// Modules compile to object files with C-ABI exports via compile_module(),
+// not through the expression codegen pipeline.
+class ModuleDecl final : public AstNode {
 private:
   void print(std::ostream &os) const override;
 
 public:
   FqnExpr *fqn;
-  vector<string> exports;
+  vector<string> exports;            // direct exports (functions defined in this module)
+  vector<string> exported_types;     // type names exported via "export type Name"
+  vector<string> exported_traits;    // trait names exported via "export trait Name"
+  vector<ReExport> re_exports;       // re-exported symbols from other modules
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
   vector<AdtDeclNode *> adt_declarations;
+  vector<TraitDeclNode *> trait_declarations;
+  vector<InstanceDeclNode *> instance_declarations;
 
-  explicit ModuleExpr(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
+  explicit ModuleDecl(SourceContext token, FqnExpr *fqn, const vector<string> &exports,
+                      const vector<string> &exported_types,
+                      const vector<string> &exported_traits,
+                      const vector<ReExport> &re_exports,
                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
-                      const vector<AdtDeclNode *> &adt_declarations = {});
+                      const vector<AdtDeclNode *> &adt_declarations = {},
+                      const vector<TraitDeclNode *> &trait_declarations = {},
+                      const vector<InstanceDeclNode *> &instance_declarations = {});
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
   }
-  [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_EXPR; };
-  ~ModuleExpr() override;
+  [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_DECL; };
+  ~ModuleDecl() override;
 };
 
 class RecordInstanceExpr final : public ValueExpr {
@@ -1382,23 +1407,6 @@ public:
   ~LambdaAlias() override;
 };
 
-class ModuleAlias final : public AliasExpr {
-private:
-  void print(std::ostream &os) const override;
-
-public:
-  NameExpr *name;
-  ModuleExpr *module;
-
-  explicit ModuleAlias(SourceContext token, NameExpr *name, ModuleExpr *module);
-  template<typename ResultType>
-  ResultType accept(const AstVisitor<ResultType> &visitor) const {
-    return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
-  }
-  [[nodiscard]] AstNodeType get_type() const override { return AST_MODULE_ALIAS; };
-  ~ModuleAlias() override;
-};
-
 class ValueAlias final : public AliasExpr {
 private:
   void print(std::ostream &os) const override;
@@ -1663,8 +1671,11 @@ private:
 
 public:
   IdentifierOrUnderscore expr;
+  ExprNode *collection;     // source collection to iterate over
+  ExprNode *condition;      // optional guard expression (nullptr if no guard)
 
-  explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore identifier_or_underscore);
+  explicit ValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore identifier_or_underscore,
+                                        ExprNode *collection = nullptr, ExprNode *condition = nullptr);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
@@ -1680,8 +1691,11 @@ private:
 public:
   IdentifierOrUnderscore keyExpr;
   IdentifierOrUnderscore valueExpr;
+  ExprNode *collection;     // source collection to iterate over
+  ExprNode *condition;      // optional guard expression (nullptr if no guard)
 
-  explicit KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr, IdentifierOrUnderscore valueExpr);
+  explicit KeyValueCollectionExtractorExpr(SourceContext token, IdentifierOrUnderscore keyExpr, IdentifierOrUnderscore valueExpr,
+                                           ExprNode *collection = nullptr, ExprNode *condition = nullptr);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
@@ -1986,15 +2000,27 @@ public:
   ~OrPattern() override;
 };
 
+// A type reference in an ADT field position.
+// Either a simple named type ("Int", "a") or a function type (Int -> Int).
+struct FieldType {
+    string name;                         // "Int", "a", "Fn", etc.
+    bool is_function_type = false;
+    vector<FieldType> param_types;       // function parameter types
+    vector<FieldType> return_types;      // 0 or 1 element (vector avoids heap alloc)
+
+    static FieldType simple(string n) { FieldType ft; ft.name = std::move(n); return ft; }
+    string to_string() const;
+};
+
 class AdtConstructor final : public AstNode {
 private:
     void print(std::ostream &os) const override;
 public:
     string name;
-    vector<string> field_type_names;  // type of each field
-    vector<string> field_names;       // named fields (empty for positional constructors)
+    vector<FieldType> field_type_names;  // type of each field
+    vector<string> field_names;          // named fields (empty for positional constructors)
 
-    explicit AdtConstructor(SourceContext token, string name, vector<string> field_types,
+    explicit AdtConstructor(SourceContext token, string name, vector<FieldType> field_types,
                             vector<string> field_names = {});
     template<typename ResultType>
     ResultType accept(const AstVisitor<ResultType> &visitor) const {
@@ -2178,6 +2204,52 @@ public:
   }
   [[nodiscard]] AstNodeType get_type() const override { return AST_FUNCTION_DECLARATION; };
   ~FunctionDeclaration() override;
+};
+
+// Method signature in a trait declaration
+struct TraitMethodSig {
+    string name;
+    compiler::types::Type type_signature;
+    FunctionExpr* default_impl = nullptr;  // Phase 3: optional default implementation
+};
+
+class TraitDeclNode final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string name;           // "Show"
+    string type_param;     // "a"
+    vector<TraitMethodSig> methods;
+    vector<pair<string, string>> superclasses;  // Phase 3: e.g., {{"Eq", "a"}} for "Eq a => Ord a"
+
+    explicit TraitDeclNode(SourceContext token, string name, string type_param, vector<TraitMethodSig> methods,
+                           vector<pair<string, string>> superclasses = {});
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TRAIT_DECL; };
+    ~TraitDeclNode() override;
+};
+
+class InstanceDeclNode final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string trait_name;     // "Show"
+    string type_name;      // "Int" or "Option" (for parameterized types)
+    vector<FunctionExpr*> methods;  // concrete implementations
+    vector<pair<string, string>> constraints;  // Phase 2: e.g., {{"Show", "a"}} for "Show a => Show (Option a)"
+    vector<string> type_params;    // Phase 2: type parameters, e.g., {"a"} for "(Option a)"
+
+    explicit InstanceDeclNode(SourceContext token, string trait_name, string type_name, vector<FunctionExpr*> methods,
+                              vector<pair<string, string>> constraints = {}, vector<string> type_params = {});
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_INSTANCE_DECL; };
+    ~InstanceDeclNode() override;
 };
 
 // AstVisitor class is now defined in ast_visitor.h as a template

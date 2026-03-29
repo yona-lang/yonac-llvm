@@ -92,11 +92,15 @@ public:
     Parser& operator=(Parser&&) noexcept;
 
     // Modern parsing interface
-    [[nodiscard]] expected<unique_ptr<ModuleExpr>, vector<ParseError>>
+    [[nodiscard]] expected<unique_ptr<ModuleDecl>, vector<ParseError>>
         parse_module(string_view source, string_view filename = "<input>");
 
     [[nodiscard]] expected<unique_ptr<ExprNode>, vector<ParseError>>
         parse_expression(string_view source, string_view filename = "<input>");
+
+    // Register ADT constructors so re-parsed code can match patterns (cross-module)
+    void register_constructor(const string& name, const string& type_name, int tag, int arity,
+                              const vector<string>& field_names = {});
 
     // Legacy interface for compatibility
     ParseResult parse_input(const vector<string>& module_name);

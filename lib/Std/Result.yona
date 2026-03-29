@@ -1,4 +1,7 @@
-module Std\Result exports Ok, Err, isOk, isErr, unwrapOr, map, mapErr as
+module Std\Result
+
+export type Result
+export isOk, isErr, unwrapOr, map, mapErr
 
 type Result a e = Ok a | Err e
 
@@ -31,5 +34,3 @@ mapErr fn r =
         Err e  -> Err (fn e)
         Ok v   -> Ok v
     end
-
-end

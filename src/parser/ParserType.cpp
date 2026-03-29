@@ -1,0 +1,330 @@
+//
+// ParserType.cpp — Type annotation and type definition parsing.
+//
+
+#include "ParserImpl.h"
+
+namespace yona::parser {
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_type() {
+    return parse_function_type();
+}
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_function_type() {
+    auto arg_type = parse_sum_type();
+    if (!arg_type) return nullptr;
+
+    if (match(TokenType::YARROW)) {
+        auto return_type = parse_function_type();
+        if (!return_type) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected return type after '->'");
+            return nullptr;
+        }
+
+        auto func_type = make_shared<compiler::types::FunctionType>();
+        func_type->argumentType = *arg_type;
+        func_type->returnType = *return_type;
+        return make_unique<compiler::types::Type>(func_type);
+    }
+
+    return arg_type;
+}
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_sum_type() {
+    auto first_type = parse_product_type();
+    if (!first_type) return nullptr;
+
+    unordered_set<compiler::types::Type> types;
+    types.insert(*first_type);
+
+    while (match(TokenType::YPIPE)) {
+        auto next_type = parse_product_type();
+        if (!next_type) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected type after '|'");
+            return nullptr;
+        }
+        types.insert(*next_type);
+    }
+
+    if (types.size() == 1) {
+        return first_type;
+    }
+
+    auto sum_type = make_shared<compiler::types::SumType>();
+    sum_type->types = types;
+    return make_unique<compiler::types::Type>(sum_type);
+}
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_product_type() {
+    if (check(TokenType::YLPAREN)) {
+        advance();
+
+        vector<compiler::types::Type> types;
+
+        if (check(TokenType::YRPAREN)) {
+            advance();
+            return make_unique<compiler::types::Type>(compiler::types::Unit);
+        }
+
+        auto first_type = parse_type();
+        if (!first_type) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected type in tuple");
+            return nullptr;
+        }
+        types.push_back(*first_type);
+
+        while (match(TokenType::YCOMMA)) {
+            auto next_type = parse_type();
+            if (!next_type) {
+                error(ParseError::Type::INVALID_SYNTAX, "Expected type after ','");
+                return nullptr;
+            }
+            types.push_back(*next_type);
+        }
+
+        if (!expect(TokenType::YRPAREN, "Expected ')' after tuple types")) {
+            return nullptr;
+        }
+
+        if (types.size() == 1) {
+            return make_unique<compiler::types::Type>(types[0]);
+        }
+
+        auto product_type = make_shared<compiler::types::ProductType>();
+        product_type->types = types;
+        return make_unique<compiler::types::Type>(product_type);
+    }
+
+    return parse_collection_type();
+}
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_collection_type() {
+    if (check(TokenType::YLBRACKET)) {
+        advance();
+
+        auto element_type = parse_type();
+        if (!element_type) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected element type in sequence");
+            return nullptr;
+        }
+
+        if (!expect(TokenType::YRBRACKET, "Expected ']' after sequence type")) {
+            return nullptr;
+        }
+
+        auto seq_type = make_shared<compiler::types::SingleItemCollectionType>();
+        seq_type->kind = compiler::types::SingleItemCollectionType::Seq;
+        seq_type->valueType = *element_type;
+        return make_unique<compiler::types::Type>(seq_type);
+    }
+
+    if (check(TokenType::YLBRACE)) {
+        advance();
+
+        auto first_type = parse_type();
+        if (!first_type) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected type in collection");
+            return nullptr;
+        }
+
+        if (match(TokenType::YCOLON)) {
+            auto value_type = parse_type();
+            if (!value_type) {
+                error(ParseError::Type::INVALID_SYNTAX, "Expected value type in dict");
+                return nullptr;
+            }
+
+            if (!expect(TokenType::YRBRACE, "Expected '}' after dict type")) {
+                return nullptr;
+            }
+
+            auto dict_type = make_shared<compiler::types::DictCollectionType>();
+            dict_type->keyType = *first_type;
+            dict_type->valueType = *value_type;
+            return make_unique<compiler::types::Type>(dict_type);
+        } else {
+            if (!expect(TokenType::YRBRACE, "Expected '}' after set type")) {
+                return nullptr;
+            }
+
+            auto set_type = make_shared<compiler::types::SingleItemCollectionType>();
+            set_type->kind = compiler::types::SingleItemCollectionType::Set;
+            set_type->valueType = *first_type;
+            return make_unique<compiler::types::Type>(set_type);
+        }
+    }
+
+    return parse_primary_type();
+}
+
+unique_ptr<compiler::types::Type> ParserImpl::parse_primary_type() {
+    if (check(TokenType::YIDENTIFIER)) {
+        string type_name(peek().lexeme);
+        advance();
+
+        static const unordered_map<string, compiler::types::BuiltinType> builtin_types = {
+            {"Bool", compiler::types::Bool},
+            {"Byte", compiler::types::Byte},
+            {"Int", compiler::types::SignedInt64},
+            {"Int16", compiler::types::SignedInt16},
+            {"Int32", compiler::types::SignedInt32},
+            {"Int64", compiler::types::SignedInt64},
+            {"Int128", compiler::types::SignedInt128},
+            {"UInt16", compiler::types::UnsignedInt16},
+            {"UInt32", compiler::types::UnsignedInt32},
+            {"UInt64", compiler::types::UnsignedInt64},
+            {"UInt128", compiler::types::UnsignedInt128},
+            {"Float", compiler::types::Float64},
+            {"Float32", compiler::types::Float32},
+            {"Float64", compiler::types::Float64},
+            {"Float128", compiler::types::Float128},
+            {"Char", compiler::types::Char},
+            {"String", compiler::types::String},
+            {"Symbol", compiler::types::Symbol},
+            {"Unit", compiler::types::Unit}
+        };
+
+        auto it = builtin_types.find(type_name);
+        if (it != builtin_types.end()) {
+            return make_unique<compiler::types::Type>(it->second);
+        }
+
+        auto named_type = make_shared<compiler::types::NamedType>();
+        named_type->name = type_name;
+        named_type->type = nullptr;
+        return make_unique<compiler::types::Type>(named_type);
+    }
+
+    error(ParseError::Type::INVALID_SYNTAX, "Expected type");
+    return nullptr;
+}
+
+unique_ptr<TypeNameNode> ParserImpl::parse_type_name_node() {
+    SourceLocation loc = current_location();
+
+    if (!check(TokenType::YIDENTIFIER)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected type name");
+        return nullptr;
+    }
+
+    string type_name(peek().lexeme);
+    advance();
+
+    static const unordered_map<string, compiler::types::BuiltinType> builtin_types = {
+        {"Bool", compiler::types::Bool},
+        {"Byte", compiler::types::Byte},
+        {"Int", compiler::types::SignedInt64},
+        {"Int16", compiler::types::SignedInt16},
+        {"Int32", compiler::types::SignedInt32},
+        {"Int64", compiler::types::SignedInt64},
+        {"Int128", compiler::types::SignedInt128},
+        {"UInt16", compiler::types::UnsignedInt16},
+        {"UInt32", compiler::types::UnsignedInt32},
+        {"UInt64", compiler::types::UnsignedInt64},
+        {"UInt128", compiler::types::UnsignedInt128},
+        {"Float", compiler::types::Float64},
+        {"Float32", compiler::types::Float32},
+        {"Float64", compiler::types::Float64},
+        {"Float128", compiler::types::Float128},
+        {"Char", compiler::types::Char},
+        {"String", compiler::types::String},
+        {"Symbol", compiler::types::Symbol},
+        {"Unit", compiler::types::Unit}
+    };
+
+    auto it = builtin_types.find(type_name);
+    if (it != builtin_types.end()) {
+        return make_unique<BuiltinTypeNode>(loc, it->second);
+    }
+
+    auto name_expr = new NameExpr(loc, type_name);
+    return make_unique<UserDefinedTypeNode>(loc, name_expr);
+}
+
+unique_ptr<TypeDefinition> ParserImpl::parse_type_definition() {
+    if (!match(TokenType::YTYPE)) {
+        return nullptr;
+    }
+
+    SourceLocation loc = previous_location();
+
+    if (!check(TokenType::YIDENTIFIER)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected type name after 'type'");
+        return nullptr;
+    }
+
+    string type_name(current().lexeme);
+    advance();
+
+    vector<string> type_params;
+    while (check(TokenType::YIDENTIFIER) && !check_ahead(TokenType::YASSIGN)) {
+        type_params.push_back(string(current().lexeme));
+        advance();
+    }
+
+    if (!expect(TokenType::YASSIGN, "Expected '=' in type definition")) {
+        return nullptr;
+    }
+
+    auto name_node = new UserDefinedTypeNode(loc, new NameExpr(loc, type_name));
+
+    vector<TypeNameNode*> type_names;
+
+    do {
+        auto type_expr = parse_type_name();
+        if (type_expr) {
+            type_names.push_back(type_expr.release());
+        }
+
+        if (check(TokenType::YPIPE)) {
+            advance();
+        } else {
+            break;
+        }
+    } while (true);
+
+    auto type_def = make_unique<TypeDefinition>(loc, name_node, type_names);
+    return type_def;
+}
+
+unique_ptr<TypeNameNode> ParserImpl::parse_type_name() {
+    SourceLocation loc = current_location();
+
+    if (check(TokenType::YIDENTIFIER)) {
+        string type_name(advance().lexeme);
+
+        static const unordered_map<string, compiler::types::BuiltinType> builtin_types = {
+            {"Bool", compiler::types::Bool},
+            {"Byte", compiler::types::Byte},
+            {"Int", compiler::types::SignedInt64},
+            {"Int16", compiler::types::SignedInt16},
+            {"Int32", compiler::types::SignedInt32},
+            {"Int64", compiler::types::SignedInt64},
+            {"Int128", compiler::types::SignedInt128},
+            {"UInt16", compiler::types::UnsignedInt16},
+            {"UInt32", compiler::types::UnsignedInt32},
+            {"UInt64", compiler::types::UnsignedInt64},
+            {"UInt128", compiler::types::UnsignedInt128},
+            {"Float", compiler::types::Float64},
+            {"Float32", compiler::types::Float32},
+            {"Float64", compiler::types::Float64},
+            {"Float128", compiler::types::Float128},
+            {"Char", compiler::types::Char},
+            {"String", compiler::types::String},
+            {"Symbol", compiler::types::Symbol},
+            {"Unit", compiler::types::Unit}
+        };
+
+        auto it = builtin_types.find(type_name);
+        if (it != builtin_types.end()) {
+            return make_unique<BuiltinTypeNode>(loc, it->second);
+        } else {
+            return make_unique<UserDefinedTypeNode>(loc, new NameExpr(loc, type_name));
+        }
+    }
+
+    error(ParseError::Type::INVALID_SYNTAX, "Expected type name");
+    return nullptr;
+}
+
+} // namespace yona::parser

@@ -1,275 +1,242 @@
-# Yona Module System Documentation
+# Yona Module System
 
 ## Overview
 
-The Yona module system provides a way to organize code into reusable components. Modules are first-class values in Yona, allowing them to be imported, passed as arguments, and manipulated like any other value.
+Modules are top-level compilation units in Yona. They compile to native object files (`.o`) with C-ABI exports, linked together via standard system linkers. Modules are **not** first-class values — they cannot be passed as arguments, returned from functions, or stored in data structures.
+
+Cross-module type safety is ensured via interface files (`.yonai`) that describe exported function signatures and ADT definitions.
 
 ## Module Definition
 
-Modules are defined using the `module` keyword followed by a fully-qualified name (FQN), export list, and module body:
-
 ```yona
-module Package\ModuleName exports function1, function2 as
-  # Record definitions
-  record Person(name: String, age: Int)
+module Package\ModuleName
 
-  # Function definitions
-  function1(x) -> x + 1
-  function2(a, b) -> a * b
+export function1, function2
+export type MyType
 
-  # Private functions (not exported)
-  helper(x) -> x * 2
-end
+type MyType a = Constructor1 a | Constructor2
+
+function1 x = x + 1
+
+function2 a b = a * b
+
+# Private helper (not exported)
+helper x = x * 2
 ```
 
-### Module Structure
+### Structure
 
-- **Module Name**: Uses backslashes to separate package components (e.g., `Data\List`, `Utils\String`)
-- **Exports**: Explicitly lists which functions are available to importers
-- **Body**: Contains record definitions, type definitions, and function implementations
+- **Module name**: FQN with backslash-separated packages (`Std\List`, `Data\Collections\Map`)
+- **Exports**: `export` statements listing public functions; `export type Name` exports a type and all its constructors
+- **Body**: ADT type declarations and function definitions
+- **Terminator**: EOF (no `end` keyword needed)
+
+### Name Mangling
+
+Exported functions use C-ABI name mangling for cross-language linking:
+
+| Yona | Mangled symbol |
+|------|---------------|
+| `Std\List::map` | `yona_Std_List__map` |
+| `Test\Math::add` | `yona_Test_Math__add` |
+
+This enables linking Yona modules with C, Rust, and Go code.
+
+## Re-exports
+
+A module can re-export functions from other modules. Re-exported symbols appear as if they were defined in the re-exporting module — importers only need to depend on the re-exporting module.
+
+```yona
+module Std\Prelude
+
+export add, mul from Std\Arith
+export map, filter from Std\List
+export double
+
+double x = add x x   # can use re-exported functions in own definitions
+```
+
+Syntax: `export name1, name2 from Module\Name` for re-exports. Each `export` statement handles one group of exports or re-exports. The `from` keyword distinguishes re-exports from direct exports.
+
+Re-exported functions are compiled as thin forwarding wrappers that call through to the source module. Both the re-exporting module's object file AND the source module's object file must be linked.
 
 ## Import Expressions
 
-The `import` expression brings functions from other modules into scope:
+Imports are expressions — they bring names into scope for a body expression.
+
+### Selective Import
 
 ```yona
-import function1, function2 from Package\ModuleName in
-  # Use imported functions
-  function1(10) + function2(5, 6)
+import map, filter from Std\List in
+  map (\x -> x + 1) (filter (\x -> x > 0) xs)
 ```
 
-### Import Syntax Options
+### Import with Aliases
 
-1. **Import specific functions**:
-   ```yona
-   import add, multiply from Math\Basic in
-     add(1, 2)
-   ```
+```yona
+import map as listMap from Std\List in
+  listMap (\x -> x * 2) [1, 2, 3]
+```
 
-2. **Import with aliases**:
-   ```yona
-   import
-     add as plus,
-     multiply as mult
-   from Math\Basic in
-     plus(1, 2) + mult(3, 4)
-   ```
+### Wildcard Import
 
-3. **Import entire module** (imports all exported functions):
-   ```yona
-   import Math\Basic in
-     # All exported functions are available
-     add(1, 2)
-   ```
+Imports all exported names from a module:
 
-4. **Import module with alias**:
-   ```yona
-   import Math\Basic as M in
-     # Functions accessed via module alias
-     M.add(1, 2)
-   ```
+```yona
+import Std\List in
+  map (\x -> x + 1) [1, 2, 3]
+```
 
-5. **Multiple import clauses**:
-   ```yona
-   import
-     add from Math\Basic,
-     concat from Data\String
-   in
-     concat(toString(add(1, 2)), "!")
-   ```
+### FQN Calls (No Import Needed)
 
-## Module Resolution
+Call a module function directly using `Module::function` syntax:
 
-### Search Paths
+```yona
+Std\List::map (\x -> x + 1) [1, 2, 3]
+```
 
-Modules are resolved using the `YONA_PATH` environment variable, which contains a colon-separated list of directories (semicolon-separated on Windows):
+This auto-loads the module interface without an explicit import.
+
+### Multiple Import Clauses
+
+```yona
+import
+  map from Std\List,
+  trim from Std\String
+in
+  map trim ["  hello ", " world  "]
+```
+
+## Compilation Pipeline
+
+### Module Compilation
+
+```
+Source (.yona)
+    |
+    v
+Parser.parse_module() --> ModuleDecl AST
+    |
+    v
+Codegen.compile_module()
+    |-- Register ADT constructors
+    |-- Compile exported functions (with inferred types)
+    |-- Non-exported functions: deferred (compile at call site)
+    |
+    +-- emit_object_file() --> .o (native object, C-ABI exports)
+    +-- emit_interface_file() --> .yonai (type metadata)
+```
+
+### Expression Compilation
+
+```
+Source (.yona)
+    |
+    v
+Parser.parse_input() --> Expression AST
+    |
+    v
+Codegen.compile() --> wraps in main(), links with runtime
+    |
+    v
+Executable
+```
+
+### CLI
 
 ```bash
-export YONA_PATH=/usr/local/lib/yona:/home/user/mylibs
+# Compile a module (produces .o + .yonai)
+yonac -o MyModule.o MyModule.yona
+
+# Compile an expression (produces executable)
+yonac -o program MyProgram.yona
+
+# Specify module search paths
+yonac -I ./lib -I /usr/local/lib/yona -o program main.yona
+
+# Print LLVM IR
+yonac --emit-ir MyModule.yona
+
+# Compile with DWARF debug info (for GDB/LLDB)
+yonac -g -o program main.yona
+
+# Warning flags
+yonac --Wall -o program main.yona        # enable common warnings
+yonac --Wextra --Werror -o program main.yona  # all warnings, treat as errors
 ```
 
-The module loader searches for modules in the following order:
-1. Current directory
-2. Directories listed in `YONA_PATH`
+## Interface Files (.yonai)
 
-### File Naming Convention
+Text-based format describing module exports:
 
-Module names map to file paths by:
-1. Replacing backslashes with directory separators
-2. Appending `.yona` extension
+```
+ADT TypeName variant_count max_arity [recursive]
+CTOR ConstructorName tag arity [fields name:TYPE ...]
+FN yona_Pkg_Mod__func param_count TYPE1 TYPE2 -> RETURN_TYPE
+TRAIT TraitName type_param method_count
+  METHOD method_name
+INSTANCE TraitName TypeName
+  IMPL method_name mangled_name
+GENFN_BEGIN mangled_name local_name
+  ... function source text ...
+GENFN_END
+```
 
-Examples:
-- `Math\Basic` → `Math\Basic.yona`
-- `Data\Collections\List` → `Data\Collections\List.yona`
+Types: `INT`, `FLOAT`, `BOOL`, `STRING`, `SEQ`, `TUPLE`, `SET`, `DICT`, `ADT`, `FUNCTION`, `SYMBOL`
 
-## Implementation Details
+### Cross-module Generics (GENFN)
 
-### Module Caching
+Exported functions include their source text in `.yonai` files via `GENFN_BEGIN`/`GENFN_END` blocks. When an importing module calls a function with argument types that differ from the pre-compiled signature, the source is re-parsed and compiled locally with the actual call-site types (on-demand monomorphization).
 
-Modules are cached after first load to improve performance:
-- Each module is loaded and evaluated only once per compilation
-- Subsequent imports reuse the cached module
-- Cache key is the fully-qualified module name
+This enables generic functions to work correctly across module boundaries — the importing module gets a type-specialized copy rather than being forced to use the module's single pre-compiled version.
 
-### Export Mechanism
+Trait instance methods are compiled with external linkage so that re-parsed GENFN bodies can call them via normal trait dispatch. The `.yonai` file includes `FN` metadata for trait methods alongside `INSTANCE`/`IMPL` entries.
 
-Only functions listed in the `exports` clause are accessible to importers:
-- Exported functions are stored in the module's export table
-- Non-exported functions remain private to the module
-- Attempting to import a non-exported function raises a runtime error
+### Module Search
 
-### Runtime Representation
+When resolving `import Std\List`, the compiler searches:
+1. Paths from `-I` CLI flags
+2. Directory containing the input file
+3. Current working directory
 
-Modules are represented as runtime values with:
-- **FQN**: Fully-qualified name
-- **Exports**: Map of exported function names to function values
-- **Records**: List of record types defined in the module
-- **Source Path**: File path for debugging
+Looks for `Std/List.yonai` in each search path.
 
-## Best Practices
+## Standard Library Modules
 
-1. **Module Organization**:
-   - Group related functionality into modules
-   - Use meaningful package hierarchies (e.g., `Data\`, `Utils\`, `IO\`)
-   - Keep modules focused on a single responsibility
+| Module | Functions | Description |
+|--------|-----------|-------------|
+| `Std\Option` | 7 | `Some`, `None`, `map`, `flatMap`, `unwrapOr`, etc. |
+| `Std\Result` | 8 | `Ok`, `Err`, `map`, `flatMap`, `unwrapOr`, etc. |
+| `Std\List` | 17 | `map`, `filter`, `foldl`, `take`, `zip`, `flatten`, etc. |
+| `Std\Tuple` | 4 | `first`, `second`, `swap`, `fromList` |
+| `Std\Range` | 6 | `range`, `map`, `toList`, `contains`, etc. |
+| `Std\Test` | 3 | `assertEqual`, `assertNotEqual`, `assertTrue` |
+| `Std\Math` | 7 | `abs`, `max`, `min`, `factorial`, `sqrt`, `sin`, `cos` |
+| `Std\String` | 6 | `length`, `toUpperCase`, `toLowerCase`, `trim`, `indexOf`, `contains` |
 
-2. **Export Design**:
-   - Export only the public API
-   - Use helper functions internally without exporting
-   - Consider providing a clean, minimal interface
+## C FFI
 
-3. **Import Style**:
-   - Import only what you need
-   - Use aliases to avoid naming conflicts
-   - Group related imports together
-
-## Examples
-
-### Basic Math Module
+Import C functions using `extern` declarations:
 
 ```yona
-# File: Math/Basic.yona
-module Math\Basic exports add, subtract, multiply, divide as
-  add(a, b) -> a + b
-  subtract(a, b) -> a - b
-  multiply(a, b) -> a * b
-  divide(a, b) -> if b != 0 then a / b else raise :division_by_zero
-end
+module MyModule
+
+export wrapper
+
+extern puts : String -> Int
+extern usleep : Int -> Int
+
+wrapper msg = puts msg
 ```
 
-### Using the Math Module
+Async C functions (run in thread pool):
 
 ```yona
-# Import specific functions
-import add, multiply from Math\Basic in
-  let result = add(10, multiply(5, 6)) in
-    result  # Returns 40
-
-# Import with aliases
-import
-  add as plus,
-  subtract as minus
-from Math\Basic in
-  plus(10, minus(20, 5))  # Returns 25
+extern async slowCompute : Int -> Int
 ```
 
-## Native Modules
+## Current Limitations
 
-Native modules are implemented in C++ and registered via `NativeModuleRegistry`. They provide the standard library.
-
-### Available Native Modules (19)
-
-| Module | Purpose |
-|--------|---------|
-| `Std\IO` | Console I/O, file read/write |
-| `Std\Math` | Trigonometry, arithmetic, constants |
-| `Std\System` | Environment variables, process control |
-| `Std\List` | map, filter, fold, take, drop, flatten, zip, etc. |
-| `Std\String` | String manipulation, split, join, trim, etc. |
-| `Std\Dict` | Dictionary operations, get, put, merge, etc. |
-| `Std\Set` | Set operations, union, intersection, etc. |
-| `Std\Option` | Option type (some/none), unwrapOr, map |
-| `Std\Result` | Result type (ok/err), unwrapOr, map, mapErr |
-| `Std\Tuple` | Tuple operations, fst, snd, swap, zip/unzip |
-| `Std\Range` | Range creation and operations |
-| `Std\Json` | JSON parse/stringify |
-| `Std\Regexp` | Regular expressions (match, replace, split) |
-| `Std\File` | Filesystem operations (exists, listDir, mkdir) |
-| `Std\Random` | Random number generation |
-| `Std\Time` | Timestamps, formatting, parsing |
-| `Std\Timer` | Sleep (async), measurement, millis/nanos |
-| `Std\Http` | HTTP GET/POST (async) |
-| `Std\Types` | Runtime type checking and conversion |
-
-### Host-Registered Modules (C API)
-
-Host applications can register custom native modules via the C API:
-
-```c
-yona_register_function(interp, "App\\Handlers", "notify", 2, my_notify_fn, context);
-```
-
-These modules are importable from Yona code like any other module:
-
-```yona
-import notify from App\Handlers in
-  notify "channel" "message"
-```
-
-See [C Embedding API](c-embedding-api.md) for details.
-
-### Data Structure Module
-
-```yona
-# File: Data/Stack.yona
-module Data\Stack exports empty, push, pop, peek, isEmpty as
-  # Stack is represented as a list
-
-  empty() -> []
-
-  push(stack, item) -> [item | stack]
-
-  pop(stack) ->
-    case stack of
-      [] -> raise :empty_stack
-      [head | tail] -> (head, tail)  # Returns (item, new_stack)
-    end
-
-  peek(stack) ->
-    case stack of
-      [] -> raise :empty_stack
-      [head | _] -> head
-    end
-
-  isEmpty(stack) -> stack == []
-end
-```
-
-## Error Handling
-
-Common module-related errors:
-
-1. **Module not found**: Module file doesn't exist in any search path
-   ```
-   Runtime error: Module not found: Math\Advanced.yona
-   ```
-
-2. **Function not exported**: Attempting to import a private function
-   ```
-   Runtime error: Function 'helper' not exported from module
-   ```
-
-3. **Parse error in module**: Module file contains syntax errors
-   ```
-   Syntax error at Math\Basic.yona:5:10: Expected '->' after function parameters
-   ```
-
-## Future Enhancements
-
-The following features are planned for future releases:
-
-1. **Module Compilation**: Compile modules to LLVM IR for improved performance
-2. **Foreign Function Interface (FFI)**: Import functions from C/C++ libraries
-3. **Module Versioning**: Support for multiple versions of the same module
-4. **Hot Reloading**: Reload modules during development without restarting
-5. **Package Manager**: Automated module installation and dependency management
+- **No circular dependencies**: Modules must be compiled in dependency order
+- **No package manager**: Manual compilation and path management
+- **Cross-module generics**: GENFN re-parse only triggers when call-site arg types differ from the pre-compiled signature; functions referencing module-private names (closures over local variables) fall back to the extern path

@@ -23,6 +23,50 @@
 #define YONA_HAS_BACKTRACE 1
 #endif
 
+/* ===== Reference Counting Memory Management ===== */
+/*
+ * RC Header Layout (hidden before the returned payload pointer):
+ *   [refcount: int64_t][type_tag: int64_t][...payload...]
+ *                                         ^-- returned pointer
+ *
+ * refcount is at ptr[-2], type_tag is at ptr[-1].
+ */
+
+#define RC_TYPE_SEQ     1
+#define RC_TYPE_SET     2
+#define RC_TYPE_DICT    3
+#define RC_TYPE_ADT     4
+#define RC_TYPE_CLOSURE 5
+#define RC_TYPE_STRING  6
+
+/* Internal: allocate with RC header, returns pointer to payload */
+static void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
+    int64_t* raw = (int64_t*)malloc(2 * sizeof(int64_t) + payload_bytes);
+    raw[0] = 1;         /* refcount = 1 */
+    raw[1] = type_tag;  /* type tag */
+    return (void*)(raw + 2);  /* return pointer past header */
+}
+
+/* Public: increment refcount */
+void yona_rt_rc_inc(void* ptr) {
+    if (!ptr) return;
+    int64_t* header = ((int64_t*)ptr) - 2;
+    header[0]++;
+}
+
+/* Public: decrement refcount; free when it reaches 0 */
+/* Children are NOT recursively decremented here — the codegen is
+ * responsible for decrementing pointer-typed children before the
+ * container, since element types are only known at compile time. */
+void yona_rt_rc_dec(void* ptr) {
+    if (!ptr) return;
+    int64_t* header = ((int64_t*)ptr) - 2;
+    header[0]--;
+    if (header[0] <= 0) {
+        free(header);  /* free from the real allocation start */
+    }
+}
+
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
 }
@@ -46,7 +90,7 @@ void yona_rt_print_newline(void) {
 char* yona_rt_string_concat(const char* a, const char* b) {
     size_t len_a = strlen(a);
     size_t len_b = strlen(b);
-    char* result = (char*)malloc(len_a + len_b + 1);
+    char* result = (char*)rc_alloc(RC_TYPE_STRING, len_a + len_b + 1);
     memcpy(result, a, len_a);
     memcpy(result + len_a, b, len_b + 1);
     return result;
@@ -58,7 +102,7 @@ char* yona_rt_string_concat(const char* a, const char* b) {
 // Stored as a heap-allocated array of i64 where index 0 is the length.
 
 int64_t* yona_rt_seq_alloc(int64_t count) {
-    int64_t* seq = (int64_t*)malloc((count + 1) * sizeof(int64_t));
+    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ, (count + 1) * sizeof(int64_t));
     seq[0] = count;
     return seq;
 }
@@ -118,7 +162,7 @@ void yona_rt_print_symbol(const char* name) {
 /* Deduplication is the caller's responsibility at construction time.  */
 
 int64_t* yona_rt_set_alloc(int64_t count) {
-    int64_t* set = (int64_t*)malloc((count + 1) * sizeof(int64_t));
+    int64_t* set = (int64_t*)rc_alloc(RC_TYPE_SET, (count + 1) * sizeof(int64_t));
     set[0] = count;
     return set;
 }
@@ -142,7 +186,7 @@ void yona_rt_print_set(int64_t* set) {
 /* Both keys and values are i64 (their types are known at compile time).     */
 
 int64_t* yona_rt_dict_alloc(int64_t count) {
-    int64_t* dict = (int64_t*)malloc((count * 2 + 1) * sizeof(int64_t));
+    int64_t* dict = (int64_t*)rc_alloc(RC_TYPE_DICT, (count * 2 + 1) * sizeof(int64_t));
     dict[0] = count;
     return dict;
 }
@@ -167,7 +211,7 @@ void yona_rt_print_dict(int64_t* dict) {
 /* Used for recursive types like List a = Cons a (List a) | Nil        */
 
 void* yona_rt_adt_alloc(int64_t tag, int64_t num_fields) {
-    int64_t* node = (int64_t*)malloc((1 + num_fields) * sizeof(int64_t));
+    int64_t* node = (int64_t*)rc_alloc(RC_TYPE_ADT, (1 + num_fields) * sizeof(int64_t));
     node[0] = tag;
     return node;
 }
@@ -295,14 +339,14 @@ int64_t yona_Std_String__length(const char* s) {
 
 const char* yona_Std_String__toUpperCase(const char* s) {
     size_t len = strlen(s);
-    char* r = (char*)malloc(len + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
     for (size_t i = 0; i <= len; i++) r[i] = (char)toupper((unsigned char)s[i]);
     return r;
 }
 
 const char* yona_Std_String__toLowerCase(const char* s) {
     size_t len = strlen(s);
-    char* r = (char*)malloc(len + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
     for (size_t i = 0; i <= len; i++) r[i] = (char)tolower((unsigned char)s[i]);
     return r;
 }
@@ -313,7 +357,7 @@ const char* yona_Std_String__trim(const char* s) {
     const char* end = s + strlen(s) - 1;
     while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) end--;
     size_t len = end - start + 1;
-    char* r = (char*)malloc(len + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
     memcpy(r, start, len);
     r[len] = '\0';
     return r;
@@ -343,9 +387,9 @@ int64_t yona_Std_String__endsWith(const char* suffix, const char* s) {
 const char* yona_Std_String__substring(const char* s, int64_t start, int64_t len) {
     size_t slen = strlen(s);
     if (start < 0) start = 0;
-    if ((size_t)start >= slen) { char* r = (char*)malloc(1); r[0] = '\0'; return r; }
+    if ((size_t)start >= slen) { char* r = (char*)rc_alloc(RC_TYPE_STRING, 1); r[0] = '\0'; return r; }
     if (len < 0 || (size_t)(start + len) > slen) len = slen - start;
-    char* r = (char*)malloc(len + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
     memcpy(r, s + start, len);
     r[len] = '\0';
     return r;
@@ -355,14 +399,19 @@ const char* yona_Std_String__replace(const char* old, const char* new_s, const c
     size_t olen = strlen(old);
     size_t nlen = strlen(new_s);
     size_t slen = strlen(s);
-    if (olen == 0) { char* r = strdup(s); return r; }
+    if (olen == 0) {
+        size_t l = strlen(s);
+        char* r = (char*)rc_alloc(RC_TYPE_STRING, l + 1);
+        memcpy(r, s, l + 1);
+        return r;
+    }
     /* Count occurrences */
     size_t count = 0;
     const char* p = s;
     while ((p = strstr(p, old)) != NULL) { count++; p += olen; }
     /* Build result */
     size_t rlen = slen + count * (nlen - olen);
-    char* r = (char*)malloc(rlen + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, rlen + 1);
     char* w = r;
     p = s;
     while (*p) {
@@ -385,7 +434,7 @@ int64_t* yona_Std_String__split(const char* delim, const char* s) {
         size_t slen = strlen(s);
         int64_t* result = yona_rt_seq_alloc(slen);
         for (size_t i = 0; i < slen; i++) {
-            char* ch = (char*)malloc(2);
+            char* ch = (char*)rc_alloc(RC_TYPE_STRING, 2);
             ch[0] = s[i]; ch[1] = '\0';
             result[i + 1] = (int64_t)ch;
         }
@@ -400,7 +449,7 @@ int64_t* yona_Std_String__split(const char* delim, const char* s) {
     for (size_t i = 0; i < count; i++) {
         const char* next = strstr(p, delim);
         size_t len = next ? (size_t)(next - p) : strlen(p);
-        char* part = (char*)malloc(len + 1);
+        char* part = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
         memcpy(part, p, len);
         part[len] = '\0';
         result[i + 1] = (int64_t)part;
@@ -411,7 +460,7 @@ int64_t* yona_Std_String__split(const char* delim, const char* s) {
 
 const char* yona_Std_String__join(const char* sep, int64_t* seq) {
     int64_t n = seq[0];
-    if (n == 0) { char* r = (char*)malloc(1); r[0] = '\0'; return r; }
+    if (n == 0) { char* r = (char*)rc_alloc(RC_TYPE_STRING, 1); r[0] = '\0'; return r; }
     size_t seplen = strlen(sep);
     /* Calculate total length */
     size_t total = 0;
@@ -420,7 +469,7 @@ const char* yona_Std_String__join(const char* sep, int64_t* seq) {
         total += strlen(part);
         if (i > 0) total += seplen;
     }
-    char* r = (char*)malloc(total + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, total + 1);
     char* w = r;
     for (int64_t i = 0; i < n; i++) {
         if (i > 0) { memcpy(w, sep, seplen); w += seplen; }
@@ -441,10 +490,10 @@ int64_t yona_Std_String__charAt(const char* s, int64_t idx) {
 
 const char* yona_Std_String__padLeft(int64_t width, const char* pad, const char* s) {
     size_t slen = strlen(s);
-    if ((int64_t)slen >= width) return strdup(s);
+    if ((int64_t)slen >= width) { char* r = (char*)rc_alloc(RC_TYPE_STRING, slen + 1); memcpy(r, s, slen + 1); return r; }
     size_t plen = strlen(pad);
-    if (plen == 0) return strdup(s);
-    char* r = (char*)malloc(width + 1);
+    if (plen == 0) { char* r = (char*)rc_alloc(RC_TYPE_STRING, slen + 1); memcpy(r, s, slen + 1); return r; }
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, width + 1);
     size_t fill = width - slen;
     for (size_t i = 0; i < fill; i++) r[i] = pad[i % plen];
     memcpy(r + fill, s, slen + 1);
@@ -453,10 +502,10 @@ const char* yona_Std_String__padLeft(int64_t width, const char* pad, const char*
 
 const char* yona_Std_String__padRight(int64_t width, const char* pad, const char* s) {
     size_t slen = strlen(s);
-    if ((int64_t)slen >= width) return strdup(s);
+    if ((int64_t)slen >= width) { char* r = (char*)rc_alloc(RC_TYPE_STRING, slen + 1); memcpy(r, s, slen + 1); return r; }
     size_t plen = strlen(pad);
-    if (plen == 0) return strdup(s);
-    char* r = (char*)malloc(width + 1);
+    if (plen == 0) { char* r = (char*)rc_alloc(RC_TYPE_STRING, slen + 1); memcpy(r, s, slen + 1); return r; }
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, width + 1);
     memcpy(r, s, slen);
     size_t fill = width - slen;
     for (size_t i = 0; i < fill; i++) r[slen + i] = pad[i % plen];
@@ -466,7 +515,7 @@ const char* yona_Std_String__padRight(int64_t width, const char* pad, const char
 
 const char* yona_Std_String__reverse(const char* s) {
     size_t len = strlen(s);
-    char* r = (char*)malloc(len + 1);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
     for (size_t i = 0; i < len; i++) r[i] = s[len - 1 - i];
     r[len] = '\0';
     return r;
@@ -490,17 +539,21 @@ int64_t* yona_Std_List__reverse(int64_t* seq) {
 int64_t yona_Std_Types__toInt(const char* s) { return (int64_t)atoll(s); }
 double yona_Std_Types__toFloat(const char* s) { return atof(s); }
 const char* yona_Std_Types__intToString(int64_t n) {
-    char* r = (char*)malloc(32);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
     snprintf(r, 32, "%ld", n);
     return r;
 }
 const char* yona_Std_Types__floatToString(double f) {
-    char* r = (char*)malloc(32);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
     snprintf(r, 32, "%g", f);
     return r;
 }
 const char* yona_Std_Types__boolToString(int64_t b) {
-    return strdup(b ? "true" : "false");
+    const char* src = b ? "true" : "false";
+    size_t len = strlen(src);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+    memcpy(r, src, len + 1);
+    return r;
 }
 
 // Head: first element
@@ -718,14 +771,39 @@ typedef struct {
 int64_t yona_rt_closure2_apply(int64_t closure_ptr, int64_t arg) {
     yona_closure2_t* c = (yona_closure2_t*)(void*)closure_ptr;
     int64_t result = c->fn2(c->captured, arg);
-    free(c);
+    yona_rt_rc_dec(c);
     return result;
 }
 
 /* Create a closure from a 2-arg function with 1 captured arg */
 int64_t yona_rt_closure2_create(int64_t (*fn)(int64_t, int64_t), int64_t captured) {
-    yona_closure2_t* c = (yona_closure2_t*)malloc(sizeof(yona_closure2_t));
+    yona_closure2_t* c = (yona_closure2_t*)rc_alloc(RC_TYPE_CLOSURE, sizeof(yona_closure2_t));
     c->fn2 = fn;
     c->captured = captured;
     return (int64_t)(void*)c;
+}
+
+/* ===== General Closures (env-passing) ===== */
+/* Layout: int64_t array [fn_ptr, ret_type_tag, arity, cap0, cap1, ...]
+ * The function takes (void* env, args...) where env is the closure itself.
+ * Slot 0: function pointer (as int64_t)
+ * Slot 1: return CType tag (INT=0, FLOAT=1, ..., ADT=12)
+ * Slot 2: number of user arguments (excluding env)
+ * Captures are stored starting at index 3.
+ */
+
+void* yona_rt_closure_create(void* fn_ptr, int64_t ret_type, int64_t arity, int64_t num_captures) {
+    int64_t* closure = (int64_t*)rc_alloc(RC_TYPE_CLOSURE, (3 + num_captures) * sizeof(int64_t));
+    closure[0] = (int64_t)(intptr_t)fn_ptr;
+    closure[1] = ret_type;
+    closure[2] = arity;
+    return closure;
+}
+
+void yona_rt_closure_set_cap(void* closure, int64_t idx, int64_t val) {
+    ((int64_t*)closure)[3 + idx] = val;
+}
+
+int64_t yona_rt_closure_get_cap(void* closure, int64_t idx) {
+    return ((int64_t*)closure)[3 + idx];
 }

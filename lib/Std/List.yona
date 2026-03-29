@@ -1,4 +1,6 @@
-module Std\List exports map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, any, all, contains, isEmpty, lookup as
+module Std\List
+
+export map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, any, all, contains, isEmpty, lookup
 
 map fn seq = case seq of [] -> []; [h|t] -> (fn h) :: (map fn t) end
 
@@ -33,5 +35,3 @@ contains elem seq = case seq of [] -> false; [h|t] -> if h == elem then true els
 isEmpty seq = case seq of [] -> true; _ -> false end
 
 lookup idx seq = if idx <= 0 then case seq of [h|_] -> h end else case seq of [_|t] -> lookup (idx - 1) t end
-
-end

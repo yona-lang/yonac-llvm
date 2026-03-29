@@ -1,0 +1,372 @@
+//
+// Codegen — Case expression / pattern matching
+//
+
+#include "Codegen.h"
+#include <llvm/IR/CFG.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Type.h>
+#include <iostream>
+
+namespace yona::compiler::codegen {
+using namespace llvm;
+using LType = llvm::Type;
+
+TypedValue Codegen::codegen_case(CaseExpr* node) {
+    set_debug_loc(node->source_context);
+    auto scrutinee = auto_await(codegen(node->expr));
+    if (!scrutinee) return {};
+
+    // If scrutinee is INT but patterns are ADT constructors, the value is
+    // an ADT encoded as i64 (e.g., from a closure returning a heap-allocated ADT).
+    // Convert it to the ADT type for pattern matching.
+    if (scrutinee.type == CType::INT && !node->clauses.empty()) {
+        auto* first_pat = node->clauses[0]->pattern;
+        if (first_pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+            auto* cp = static_cast<ConstructorPattern*>(first_pat);
+            auto ctor_it = adt_constructors_.find(cp->constructor_name);
+            if (ctor_it != adt_constructors_.end() && ctor_it->second.is_recursive) {
+                // Convert i64 → ptr for recursive ADT
+                scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
+                    PointerType::get(*context_, 0));
+                scrutinee.type = CType::ADT;
+            }
+        }
+    }
+
+    // Exhaustiveness check for ADT scrutinees
+    if (scrutinee.type == CType::ADT) {
+        // Find the ADT type name from the first constructor pattern
+        std::string adt_type_name;
+        bool has_wildcard = false;
+        std::unordered_set<std::string> covered_ctors;
+
+        for (auto* clause : node->clauses) {
+            auto* pat = clause->pattern;
+            if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+                auto* cp = static_cast<ConstructorPattern*>(pat);
+                covered_ctors.insert(cp->constructor_name);
+                if (adt_type_name.empty()) {
+                    auto it = adt_constructors_.find(cp->constructor_name);
+                    if (it != adt_constructors_.end())
+                        adt_type_name = it->second.type_name;
+                }
+            } else if (pat->get_type() == AST_UNDERSCORE_PATTERN ||
+                       pat->get_type() == AST_PATTERN_VALUE) {
+                has_wildcard = true;
+            }
+        }
+
+        if (!adt_type_name.empty() && !has_wildcard) {
+            // Check all constructors of this ADT are covered
+            for (auto& [name, info] : adt_constructors_) {
+                if (info.type_name == adt_type_name && covered_ctors.count(name) == 0) {
+                    std::cerr << "Warning: non-exhaustive pattern match on " << adt_type_name
+                              << " — missing constructor " << name << "\n";
+                }
+            }
+        }
+    }
+
+    auto fn = builder_->GetInsertBlock()->getParent();
+    auto merge_bb = BasicBlock::Create(*context_, "case.end");
+    std::vector<std::pair<TypedValue, BasicBlock*>> results;
+
+    for (size_t i = 0; i < node->clauses.size(); i++) {
+        auto* clause = node->clauses[i];
+        auto* pat = clause->pattern;
+        auto body_bb = BasicBlock::Create(*context_, "case.body." + std::to_string(i), fn);
+        auto next_bb = (i + 1 < node->clauses.size())
+            ? BasicBlock::Create(*context_, "case.next." + std::to_string(i+1), fn)
+            : merge_bb;
+
+        bool body_inline = false;
+
+        if (pat->get_type() == AST_UNDERSCORE_PATTERN) {
+            builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(pat);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                named_values_[(*id)->name->value] = scrutinee;
+                builder_->CreateBr(body_bb);
+            } else if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
+                // Symbol comparison: integer equality on interned IDs
+                int64_t sym_id = intern_symbol((*sym)->value);
+                auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
+                auto cmp = builder_->CreateICmpEQ(scrutinee.val, sym_val);
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
+            } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                auto* an = reinterpret_cast<AstNode*>(*lit);
+                if (an->get_type() == AST_INTEGER_EXPR) {
+                    auto* ie = static_cast<IntegerExpr*>(an);
+                    auto mv = ConstantInt::get(LType::getInt64Ty(*context_), ie->value);
+                    auto cmp = builder_->CreateICmpEQ(scrutinee.val, mv);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+                } else builder_->CreateBr(body_bb);
+            } else builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
+            auto* htp = static_cast<HeadTailsPattern*>(pat);
+            auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+            auto min_len = ConstantInt::get(LType::getInt64Ty(*context_), htp->heads.size());
+            builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
+
+            // Determine element type from the sequence's subtypes
+            CType elem_type = (!scrutinee.subtypes.empty()) ? scrutinee.subtypes[0] : CType::INT;
+
+            builder_->SetInsertPoint(body_bb);
+            for (size_t hi = 0; hi < htp->heads.size(); hi++) {
+                auto idx = ConstantInt::get(LType::getInt64Ty(*context_), hi);
+                auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
+                // If element type is pointer-based (SEQ, STRING, FUNCTION, etc.),
+                // cast the i64 from seq_get to ptr
+                Value* elem_val = hv;
+                if (elem_type == CType::SEQ || elem_type == CType::STRING ||
+                    elem_type == CType::FUNCTION || elem_type == CType::ADT ||
+                    elem_type == CType::SET || elem_type == CType::DICT) {
+                    elem_val = builder_->CreateIntToPtr(hv, PointerType::get(*context_, 0));
+                }
+                auto* hp = htp->heads[hi];
+                if (hp->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(hp);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        named_values_[(*id)->name->value] = {elem_val, elem_type};
+                }
+            }
+            if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
+                auto tv = builder_->CreateCall(rt_seq_tail_, {scrutinee.val});
+                auto* pv = static_cast<PatternValue*>(htp->tail);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
+            }
+            body_inline = true;
+        } else if (pat->get_type() == AST_SEQ_PATTERN) {
+            auto* sp = static_cast<SeqPattern*>(pat);
+            if (sp->patterns.empty()) {
+                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+                auto cmp = builder_->CreateICmpEQ(len, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
+            } else builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_TUPLE_PATTERN) {
+            auto* tp = static_cast<TuplePattern*>(pat);
+            for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+                auto elem = builder_->CreateExtractValue(scrutinee.val, {(unsigned)ti});
+                CType et = (ti < scrutinee.subtypes.size()) ? scrutinee.subtypes[ti] : CType::INT;
+                auto* sub = tp->patterns[ti];
+                if (sub->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(sub);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        named_values_[(*id)->name->value] = {elem, et};
+                }
+            }
+            builder_->CreateBr(body_bb);
+        } else if (pat->get_type() == AST_OR_PATTERN) {
+            auto* op = static_cast<OrPattern*>(pat);
+            // For each alternative in the or-pattern, test and branch to body_bb on match
+            for (size_t oi = 0; oi < op->patterns.size(); oi++) {
+                auto* alt = op->patterns[oi].get();
+                auto alt_next = (oi + 1 < op->patterns.size())
+                    ? BasicBlock::Create(*context_, "case.or." + std::to_string(i) + "." + std::to_string(oi+1), fn)
+                    : next_bb;
+
+                if (alt->get_type() == AST_UNDERSCORE_PATTERN) {
+                    builder_->CreateBr(body_bb);
+                } else if (alt->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(alt);
+                    if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
+                        int64_t sym_id = intern_symbol((*sym)->value);
+                        auto sym_val = ConstantInt::get(LType::getInt64Ty(*context_), sym_id);
+                        auto cmp = builder_->CreateICmpEQ(scrutinee.val, sym_val);
+                        builder_->CreateCondBr(cmp, body_bb, alt_next);
+                    } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                        auto* an = reinterpret_cast<AstNode*>(*lit);
+                        if (an->get_type() == AST_INTEGER_EXPR) {
+                            auto* ie = static_cast<IntegerExpr*>(an);
+                            auto mv = ConstantInt::get(LType::getInt64Ty(*context_), ie->value);
+                            auto cmp = builder_->CreateICmpEQ(scrutinee.val, mv);
+                            builder_->CreateCondBr(cmp, body_bb, alt_next);
+                        } else {
+                            builder_->CreateBr(body_bb);
+                        }
+                    } else if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                        named_values_[(*id)->name->value] = scrutinee;
+                        builder_->CreateBr(body_bb);
+                    } else {
+                        builder_->CreateBr(body_bb);
+                    }
+                } else {
+                    builder_->CreateBr(body_bb);
+                }
+
+                if (oi + 1 < op->patterns.size())
+                    builder_->SetInsertPoint(alt_next);
+            }
+        } else if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
+            auto* cp = static_cast<ConstructorPattern*>(pat);
+            auto ctor_it = adt_constructors_.find(cp->constructor_name);
+            if (ctor_it != adt_constructors_.end()) {
+                int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
+                auto tag_ty = LType::getInt64Ty(*context_);
+                auto i64_ty = LType::getInt64Ty(*context_);
+
+                if (ctor_it->second.is_recursive) {
+                    // Recursive ADT: scrutinee is a pointer, use runtime accessors
+                    auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+                    auto tag_val = ConstantInt::get(i64_ty, tag);
+                    auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+                    builder_->SetInsertPoint(body_bb);
+                    for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
+                        auto field_val = builder_->CreateCall(rt_adt_get_field_,
+                            {scrutinee.val, ConstantInt::get(i64_ty, fi)});
+                        auto* sub_pat = cp->sub_patterns[fi];
+                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub_pat);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                // Use field type from ADT definition
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                Value* typed_val = field_val;
+                                // Pointer-based types need inttoptr cast
+                                if (ftype == CType::ADT || ftype == CType::SEQ ||
+                                    ftype == CType::STRING || ftype == CType::FUNCTION ||
+                                    ftype == CType::SET || ftype == CType::DICT)
+                                    typed_val = builder_->CreateIntToPtr(field_val,
+                                        PointerType::get(*context_, 0));
+                                named_values_[(*id)->name->value] = {typed_val, ftype};
+                            }
+                        }
+                    }
+                } else {
+                    // Non-recursive: flat struct, use extractvalue
+                    auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
+                    auto tag_val = ConstantInt::get(tag_ty, tag);
+                    auto cmp = builder_->CreateICmpEQ(scr_tag, tag_val);
+                    builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+                    builder_->SetInsertPoint(body_bb);
+                    for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
+                        auto field_val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
+                        auto* sub_pat = cp->sub_patterns[fi];
+                        if (sub_pat->get_type() == AST_PATTERN_VALUE) {
+                            auto* pv = static_cast<PatternValue*>(sub_pat);
+                            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                Value* typed_val = field_val;
+                                if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
+                                    ftype == CType::STRING || ftype == CType::ADT)
+                                    typed_val = builder_->CreateIntToPtr(field_val,
+                                        PointerType::get(*context_, 0));
+                                named_values_[(*id)->name->value] = {typed_val, ftype};
+                            }
+                        }
+                    }
+                }
+                body_inline = true;
+            } else {
+                builder_->CreateBr(body_bb);
+            }
+        } else if (pat->get_type() == AST_RECORD_PATTERN) {
+            // Named field pattern: Person { name = n, age = a }
+            auto* rp = static_cast<RecordPattern*>(pat);
+            auto ctor_it = adt_constructors_.find(rp->recordType);
+            if (ctor_it != adt_constructors_.end()) {
+                int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
+                auto tag_ty = LType::getInt64Ty(*context_);
+                auto i64_ty = LType::getInt64Ty(*context_);
+
+                if (ctor_it->second.is_recursive) {
+                    auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
+                                           body_bb, next_bb);
+                    builder_->SetInsertPoint(body_bb);
+                    for (auto& [name_expr, pattern] : rp->items) {
+                        if (!name_expr) continue;
+                        for (size_t fi = 0; fi < ctor_it->second.field_names.size(); fi++) {
+                            if (ctor_it->second.field_names[fi] == name_expr->value) {
+                                auto val = builder_->CreateCall(rt_adt_get_field_,
+                                    {scrutinee.val, ConstantInt::get(i64_ty, fi)});
+                                if (pattern->get_type() == AST_PATTERN_VALUE) {
+                                    auto* pv = static_cast<PatternValue*>(pattern);
+                                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                        named_values_[(*id)->name->value] = {val, CType::INT};
+                                }
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    auto scr_tag = builder_->CreateExtractValue(scrutinee.val, {0});
+                    builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
+                                           body_bb, next_bb);
+                    builder_->SetInsertPoint(body_bb);
+                    for (auto& [name_expr, pattern] : rp->items) {
+                        if (!name_expr) continue;
+                        for (size_t fi = 0; fi < ctor_it->second.field_names.size(); fi++) {
+                            if (ctor_it->second.field_names[fi] == name_expr->value) {
+                                CType ftype = (fi < ctor_it->second.field_types.size())
+                                    ? ctor_it->second.field_types[fi] : CType::INT;
+                                auto val = builder_->CreateExtractValue(scrutinee.val, {(unsigned)(fi + 1)});
+                                if (ftype == CType::STRING || ftype == CType::SEQ || ftype == CType::ADT)
+                                    val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
+                                if (pattern->get_type() == AST_PATTERN_VALUE) {
+                                    auto* pv = static_cast<PatternValue*>(pattern);
+                                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                                        named_values_[(*id)->name->value] = {val, ftype};
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                body_inline = true;
+            } else {
+                builder_->CreateBr(body_bb);
+            }
+        } else {
+            builder_->CreateBr(body_bb);
+        }
+
+        if (!body_inline) builder_->SetInsertPoint(body_bb);
+
+        // Guard expression: pattern | guard -> body
+        if (clause->guard) {
+            auto guard_val = codegen(clause->guard);
+            if (!guard_val) return {};
+            Value* cond = guard_val.val;
+            if (guard_val.type == CType::INT)
+                cond = builder_->CreateICmpNE(cond, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+            auto guarded_bb = BasicBlock::Create(*context_, "case.guarded." + std::to_string(i), fn);
+            builder_->CreateCondBr(cond, guarded_bb, next_bb);
+            builder_->SetInsertPoint(guarded_bb);
+        }
+
+        auto body_tv = codegen(clause->body);
+        if (!body_tv) return {};
+        builder_->CreateBr(merge_bb);
+        results.push_back({body_tv, builder_->GetInsertBlock()});
+
+        if (i + 1 < node->clauses.size() && next_bb != merge_bb)
+            builder_->SetInsertPoint(next_bb);
+    }
+
+    fn->insert(fn->end(), merge_bb);
+    builder_->SetInsertPoint(merge_bb);
+    if (results.empty()) return {};
+
+    unsigned pred_count = 0;
+    for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) pred_count++;
+
+    auto phi = builder_->CreatePHI(results[0].first.val->getType(), pred_count);
+    for (auto& [tv, bb] : results) phi->addIncoming(tv.val, bb);
+    for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) {
+        bool found = false;
+        for (auto& [tv, bb] : results) if (bb == *it) { found = true; break; }
+        if (!found) phi->addIncoming(Constant::getNullValue(results[0].first.val->getType()), *it);
+    }
+    return {phi, results[0].first.type, results[0].first.subtypes};
+}
+
+} // namespace yona::compiler::codegen

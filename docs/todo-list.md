@@ -3,7 +3,7 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 222 codegen assertions
+- **Tests**: 652 assertions across 73 test cases
 - **Stdlib**: Option, Result, List, Tuple, Range, Test (45 exported functions)
 
 ## Roadmap
@@ -42,15 +42,16 @@ Phase 6: Concurrency
 - [ ] Std\Collection — sorted map/set, priority queue, iterators
 
 ### Language Features
-- [ ] Generators/comprehensions — parsed but not compiled (needs HOF return type inference for transducers)
+- [x] Generators/comprehensions — loop-based codegen for seq/set/dict generators with guard support ✅
 - [x] Case guard expressions (`if` keyword) ✅
 - [ ] `with` expression (resource management)
 - [x] FQN calls without import (`Std\List::map fn seq`) ✅
 - [x] Wildcard import (`import Std\List in expr`) ✅
 - [x] ADT field names in .yonai (cross-module named field access) ✅
-- [ ] Re-exports (module re-exporting from another module)
-- [ ] Proper closures ({fn_ptr, env_ptr} pairs — needed for functions in data structures)
-- [ ] Lazy sequences / iterators (blocked by closures in ADTs)
+- [x] Re-exports (`exports add, mul from Std\Arith, localFunc as`) ✅
+- [x] Proper closures ({fn_ptr, env_ptr} pairs — needed for functions in data structures) ✅
+- [x] Lazy sequences / iterators (thunk-based lazy cons via closures in ADTs) ✅
+- [x] Closures in HOF parameters (uniform closure calling convention) ✅
 
 ### Codegen Optimizations
 - [ ] Inlining pass (AlwaysInline + function inlining)
@@ -62,12 +63,16 @@ Phase 6: Concurrency
 - [ ] Escape analysis
 
 ### Memory Management
-- [ ] Reference counting GC
-- [ ] Arena allocator
+- [x] Reference counting infrastructure (RC header, rc_inc/rc_dec, type-tagged allocation) ✅
+- [x] Automatic RC at let-binding scope boundaries (inc result, dec bindings) ✅
+- [ ] Automatic RC for function parameter ownership
+- [ ] Escape analysis for stack/arena allocation
+- [ ] Arena allocator for non-escaping values
 
 ### Tooling
-- [ ] LLVM debug info (DWARF)
-- [ ] Richer error messages (source line display)
+- [x] LLVM debug info (DWARF) — `-g` flag, source lines, variable inspection, type info ✅
+- [x] Rich error messages (source line display, caret, color, "did you mean?" suggestions) ✅
+- [x] Warning system (`--Wall`, `--Wextra`, `--Werror`, `-w`) ✅
 - [ ] Package manager / build system
 - [ ] LSP server
 
@@ -81,10 +86,13 @@ Phase 6: Concurrency
 - [ ] CI/CD pipeline for automated releases
 
 ### Type System & Inference
-- [ ] HOF return type inference (a function returning a function — needed for transducers)
-- [ ] Type annotations (optional signatures)
-- [ ] Traits / type classes
-- [ ] Cross-module generics
+- [x] Function type signatures in ADT declarations (`(Int -> Int)`, `(() -> Stream a)`) ✅
+- [x] HOF return type inference / currying (over-application, functions returning functions) ✅
+- [x] Type annotations (`add : Int -> Int -> Int` before definition) ✅
+- [x] Traits Phase 1 — declarations, concrete instances, static monomorphized dispatch ✅
+- [x] Traits Phase 2 — constrained instances (`Show a => Show (Option a)`) ✅
+- [x] Traits Phase 3 — multi-method traits, default methods, superclass constraints ✅
+- [x] Cross-module generics (GENFN source in .yonai, on-demand monomorphization, trait method extern dispatch) ✅
 
 ## Completed
 - Lexer, Parser, AST (newline-aware, juxtaposition, string interpolation)

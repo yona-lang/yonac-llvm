@@ -12,7 +12,7 @@ const std::unordered_map<std::string_view, TokenType>& Lexer::get_keywords() noe
         {"import", TokenType::YIMPORT},
         {"from", TokenType::YFROM},
         {"as", TokenType::YAS},
-        {"exports", TokenType::YEXPORT},
+        {"export", TokenType::YEXPORT},
         {"let", TokenType::YLET},
         {"in", TokenType::YIN},
         {"if", TokenType::YIF},
@@ -27,10 +27,13 @@ const std::unordered_map<std::string_view, TokenType>& Lexer::get_keywords() noe
         {"raise", TokenType::YRAISE},
         {"with", TokenType::YWITH},
         {"extern", TokenType::YEXTERN},
+        {"for", TokenType::YFOR},
         {"fun", TokenType::YFUN},
         {"lambda", TokenType::YLAMBDA},
         {"record", TokenType::YRECORD},
         {"type", TokenType::YTYPE},
+        {"trait", TokenType::YTRAIT},
+        {"instance", TokenType::YINSTANCE},
         {"true", TokenType::YTRUE},
         {"false", TokenType::YFALSE},
     };
@@ -47,7 +50,7 @@ std::string Token::to_string() const {
 }
 
 bool Token::is_keyword() const noexcept {
-    return type >= TokenType::YMODULE && type <= TokenType::YTYPE;
+    return type >= TokenType::YMODULE && type <= TokenType::YINSTANCE;
 }
 
 bool Token::is_operator() const noexcept {
@@ -960,6 +963,8 @@ std::string_view token_type_to_string(TokenType type) noexcept {
         case TokenType::YLAMBDA: return "LAMBDA";
         case TokenType::YRECORD: return "RECORD";
         case TokenType::YTYPE: return "TYPE";
+        case TokenType::YTRAIT: return "TRAIT";
+        case TokenType::YINSTANCE: return "INSTANCE";
         case TokenType::YPLUS: return "PLUS";
         case TokenType::YMINUS: return "MINUS";
         case TokenType::YSTAR: return "STAR";

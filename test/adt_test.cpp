@@ -80,10 +80,12 @@ TEST_SUITE("ADT") {
 TEST_CASE("ADT declaration parses correctly") {
     parser::Parser parser;
     string source = R"(
-module Test\Opt exports unwrap as
+module Test\Opt
+
+export unwrap
+
 type Option a = Some a | None
 unwrap x = x
-end
 )";
     auto result = parser.parse_module(source, "opt.yona");
     REQUIRE(result.has_value());
@@ -103,10 +105,12 @@ end
 TEST_CASE("ADT with no type parameters parses") {
     parser::Parser parser;
     string source = R"(
-module Test\Color exports id as
+module Test\Color
+
+export id
+
 type Color = Red | Green | Blue
 id x = x
-end
 )";
     auto result = parser.parse_module(source, "color.yona");
     REQUIRE(result.has_value());
@@ -123,11 +127,13 @@ end
 TEST_CASE("Multiple ADT declarations in one module") {
     parser::Parser parser;
     string source = R"(
-module Test\Types exports id as
+module Test\Types
+
+export id
+
 type Option a = Some a | None
 type Result a e = Ok a | Err e
 id x = x
-end
 )";
     auto result = parser.parse_module(source, "types.yona");
     REQUIRE(result.has_value());
@@ -146,13 +152,15 @@ end
 TEST_CASE("ADT module compiles to IR") {
     parser::Parser parser;
     string source = R"(
-module Test\Opt exports wrap, unwrap as
+module Test\Opt
+
+export wrap, unwrap
+
 type Option a = Some a | None
 wrap x = Some x
 unwrap opt = case opt of
     Some v -> v
     None -> 0
-end
 end
 )";
     auto result = parser.parse_module(source, "opt.yona");
@@ -166,10 +174,12 @@ end
 TEST_CASE("Zero-arity constructor compiles to constant") {
     parser::Parser parser;
     string source = R"(
-module Test\Color exports red as
+module Test\Color
+
+export red
+
 type Color = Red | Green | Blue
 red = Red
-end
 )";
     auto result = parser.parse_module(source, "color.yona");
     REQUIRE(result.has_value());
@@ -186,12 +196,14 @@ end
 TEST_CASE("Constructor pattern matching compiles") {
     parser::Parser parser;
     string source = R"(
-module Test\Match exports check as
+module Test\Match
+
+export check
+
 type Option a = Some a | None
 check opt = case opt of
     Some v -> v
     None -> 0
-end
 end
 )";
     auto result = parser.parse_module(source, "match.yona");
@@ -200,6 +212,212 @@ end
     Codegen codegen("match_test");
     auto mod = codegen.compile_module(result.value().get());
     CHECK(mod != nullptr);
+}
+
+TEST_CASE("ADT with function type field parses correctly") {
+    parser::Parser parser;
+    string source = R"(
+module Test\Cb
+
+export id
+
+type Callback = MkCallback (Int -> Int)
+id x = x
+)";
+    auto result = parser.parse_module(source, "callback.yona");
+    REQUIRE(result.has_value());
+    auto* mod = result.value().get();
+    REQUIRE(mod->adt_declarations.size() == 1);
+    auto& ft = mod->adt_declarations[0]->variants[0]->field_type_names[0];
+    CHECK(ft.is_function_type == true);
+    CHECK(ft.param_types.size() == 1);
+    CHECK(ft.param_types[0].name == "Int");
+    CHECK(ft.return_types.size() == 1);
+    CHECK(ft.return_types[0].name == "Int");
+}
+
+TEST_CASE("ADT with thunk function type parses correctly") {
+    parser::Parser parser;
+    string source = R"(
+module Test\Str
+
+export id
+
+type Stream a = Next a (() -> Stream a) | End
+id x = x
+)";
+    auto result = parser.parse_module(source, "stream.yona");
+    REQUIRE(result.has_value());
+    auto* mod = result.value().get();
+    auto& next = mod->adt_declarations[0]->variants[0];
+    CHECK(next->name == "Next");
+    CHECK(next->field_type_names.size() == 2);
+    CHECK(next->field_type_names[0].name == "a");
+    CHECK(next->field_type_names[0].is_function_type == false);
+    auto& fn_field = next->field_type_names[1];
+    CHECK(fn_field.is_function_type == true);
+    CHECK(fn_field.param_types.size() == 1);
+    CHECK(fn_field.param_types[0].name == "()");
+    CHECK(fn_field.return_types.size() == 1);
+    CHECK(fn_field.return_types[0].name == "Stream a");
+}
+
+TEST_CASE("ADT with multi-param function type parses") {
+    parser::Parser parser;
+    string source = R"(
+module Test\Red
+
+export id
+
+type Reducer a b = MkReducer (a -> b -> a)
+id x = x
+)";
+    auto result = parser.parse_module(source, "reducer.yona");
+    REQUIRE(result.has_value());
+    auto* mod = result.value().get();
+    auto& ft = mod->adt_declarations[0]->variants[0]->field_type_names[0];
+    CHECK(ft.is_function_type == true);
+    CHECK(ft.param_types.size() == 2);
+    CHECK(ft.param_types[0].name == "a");
+    CHECK(ft.param_types[1].name == "b");
+    CHECK(ft.return_types.size() == 1);
+    CHECK(ft.return_types[0].name == "a");
+}
+
+TEST_CASE("Closure stored in ADT field") {
+    // A thunk (zero-arg closure capturing a value) stored in a recursive ADT field
+    // and extracted via pattern matching, then called
+    string mod_source = R"(
+module Test\Thunk
+
+export MkBox, unbox
+
+type Box = MkBox Fn
+unbox b = case b of
+    MkBox f -> f ()
+end
+)";
+
+    // Step 1: Compile module + emit interface file
+    parser::Parser p1;
+    auto mod_result = p1.parse_module(mod_source, "thunk.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("thunk_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    string mod_obj = "/tmp/thunk_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+
+    // Emit interface so the expression codegen can resolve imports
+    fs::create_directories("/tmp/yona_lib/Test");
+    REQUIRE(mod_codegen.emit_interface_file("/tmp/yona_lib/Test/Thunk.yonai"));
+
+    // Step 2: Compile expression that imports from the module
+    parser::Parser p2;
+    string expr_source = "import Test\\Thunk in let n = 99 in let t = \\-> n in unbox (MkBox t)";
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("thunk_test");
+    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    string expr_obj = "/tmp/thunk_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+
+    // Step 3: Compile runtime if needed, then link and run
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                system(cmd.c_str());
+                break;
+            }
+        }
+    }
+    string exe_path = "/tmp/thunk_test_exe";
+    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
+                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    array<char, 256> buffer;
+    string result;
+    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
+    pclose(pipe);
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+
+    CHECK(result == "99");
+}
+
+TEST_CASE("Lazy stream takeStream") {
+    string mod_source = R"(
+module Test\Stream2
+
+export Next, End, naturals, takeStream
+
+type Stream a = Next a (() -> Stream a) | End
+naturals n = let tail = \-> naturals (n + 1) in Next n tail
+takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (takeStream (n - 1) (t ())) end
+)";
+
+    parser::Parser p1;
+    auto mod_result = p1.parse_module(mod_source, "stream2.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("stream2_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    string mod_obj = "/tmp/stream2_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+
+    fs::create_directories("/tmp/yona_lib/Test");
+    REQUIRE(mod_codegen.emit_interface_file("/tmp/yona_lib/Test/Stream2.yonai"));
+
+    // take 5 naturals starting from 1
+    parser::Parser p2;
+    string expr_source = "import Test\\Stream2 in takeStream 5 (naturals 1)";
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("stream2_test");
+    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    string expr_obj = "/tmp/stream2_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string cmd = "cc -c " + candidate.string() + " -o " + rt_path + " 2>/dev/null";
+                system(cmd.c_str());
+                break;
+            }
+        }
+    }
+    string exe_path = "/tmp/stream2_test_exe";
+    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
+                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    array<char, 256> buffer;
+    string result;
+    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
+    pclose(pipe);
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+
+    CHECK(result == "[1, 2, 3, 4, 5]");
 }
 
 } // ADT

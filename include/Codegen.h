@@ -12,6 +12,7 @@
 #pragma once
 
 #include <filesystem>
+#include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -26,6 +27,7 @@
 
 #include "ast.h"
 #include "types.h"
+#include "Diagnostic.h"
 
 namespace yona::compiler::codegen {
 
@@ -41,6 +43,7 @@ struct TypedValue {
     llvm::Value* val = nullptr;
     CType type = CType::INT;
     std::vector<CType> subtypes; // tuple: element types; SEQ/SET: {elem_type}; DICT: {key_type, val_type}
+    std::string adt_type_name;   // For CType::ADT: the ADT type name (e.g., "Option")
 
     TypedValue() = default;
     TypedValue(llvm::Value* v, CType t) : val(v), type(t) {}
@@ -59,19 +62,23 @@ struct DeferredFunction {
 
 class Codegen {
 public:
-    Codegen(const std::string& module_name = "yona_module");
+    Codegen(const std::string& module_name = "yona_module",
+            compiler::DiagnosticEngine* diag = nullptr);
     ~Codegen();
 
     // Compile a single expression (wraps in main())
     llvm::Module* compile(AstNode* node);
 
     // Compile a module (exports functions with external linkage)
-    llvm::Module* compile_module(ModuleExpr* module);
+    llvm::Module* compile_module(ModuleDecl* module);
 
     bool emit_object_file(const std::string& output_path);
     bool emit_interface_file(const std::string& output_path);
     bool load_interface_file(const std::string& path);
     std::string emit_ir();
+
+    // Enable DWARF debug info emission
+    void set_debug_info(bool enabled, const std::string& filename = "");
 
     // Module search paths for resolving imports
     std::vector<std::string> module_paths_;
@@ -106,6 +113,32 @@ private:
     int lambda_counter_ = 0;
     std::string last_lambda_name_;
 
+    // Trait registry: trait name → info
+    struct TraitInfo {
+        std::string name;
+        std::string type_param;
+        std::vector<std::string> method_names;
+        std::vector<std::pair<std::string, std::string>> superclasses;  // Phase 3: superclass constraints
+        std::unordered_map<std::string, FunctionExpr*> default_impls;   // Phase 3: method → default impl AST
+    };
+    std::unordered_map<std::string, TraitInfo> trait_registry_;
+
+    // Trait instance registry: "TraitName:TypeName" → instance info
+    struct TraitInstanceInfo {
+        std::string trait_name;
+        std::string type_name;
+        std::unordered_map<std::string, std::string> method_mangled_names; // method → mangled fn name
+        std::vector<std::pair<std::string, std::string>> constraints;      // Phase 2: constraints
+    };
+    std::unordered_map<std::string, TraitInstanceInfo> trait_instances_;
+
+    // Resolve a trait method for a concrete type, returns mangled function name (empty if not found)
+    std::string resolve_trait_method(const std::string& method_name, CType arg_type,
+                                     const std::string& adt_type_name = "");
+
+    // Map CType to Yona type name
+    static std::string ctype_to_type_name(CType ct);
+
     // ADT constructor metadata
     struct AdtInfo {
         std::string type_name;
@@ -124,6 +157,19 @@ private:
 
     // External module function mapping: local name → mangled symbol name
     std::unordered_map<std::string, std::string> extern_functions_;
+
+    // Cross-module generic function source: mangled name → source text
+    std::unordered_map<std::string, std::string> module_function_source_;
+
+    // Imported generic function source from .yonai files
+    struct ImportedFunctionSource {
+        std::string source_text;
+        std::string local_name;
+    };
+    std::unordered_map<std::string, ImportedFunctionSource> imported_function_sources_;
+
+    // Ownership of re-parsed imported function AST nodes
+    std::vector<std::unique_ptr<ast::FunctionExpr>> imported_ast_nodes_;
 
     // C FFI function info: symbol name → {return type, param types}
     struct CFFISignature {
@@ -183,6 +229,29 @@ private:
     llvm::Function* rt_closure2_create_ = nullptr;
     llvm::Function* rt_closure2_apply_ = nullptr;
 
+    // General closures: {fn_ptr, cap0, cap1, ...} with env-passing convention
+    llvm::Function* rt_closure_create_ = nullptr;
+    llvm::Function* rt_closure_set_cap_ = nullptr;
+    llvm::Function* rt_closure_get_cap_ = nullptr;
+
+    // Reference counting
+    llvm::Function* rt_rc_inc_ = nullptr;
+    llvm::Function* rt_rc_dec_ = nullptr;
+
+    // DWARF debug info
+    std::unique_ptr<llvm::DIBuilder> di_builder_;
+    llvm::DICompileUnit* di_cu_ = nullptr;
+    llvm::DIFile* di_file_ = nullptr;
+    llvm::DIScope* di_scope_ = nullptr;  // current scope (function or lexical block)
+    bool debug_info_ = false;
+
+    // Debug info helpers
+    void init_debug_info(const std::string& filename);
+    void finalize_debug_info();
+    void set_debug_loc(const SourceLocation& loc);
+    llvm::DIType* di_type_for(CType ct);
+    llvm::DISubroutineType* di_func_type(const std::vector<CType>& param_types, CType ret_type);
+
     void init_target();
     void declare_runtime();
 
@@ -239,6 +308,9 @@ private:
     void load_module_interface(const std::filesystem::path& mod_path);
     void register_import(const std::string& mod_fqn, const std::string& func_name, const std::string& import_name);
     void register_all_imports(const std::string& mod_fqn);
+    void register_trait_externs();
+    llvm::Type* adt_llvm_type(const std::string& type_name);
+    std::unique_ptr<ast::ModuleDecl> reparse_genfn(const std::string& local_name, const std::string& source_text);
 
     // Collections
     TypedValue codegen_tuple(TupleExpr* node);
@@ -248,8 +320,17 @@ private:
     TypedValue codegen_cons(ConsLeftExpr* node);
     TypedValue codegen_join(JoinExpr* node);
 
+    // Generators / comprehensions
+    TypedValue codegen_seq_generator(SeqGeneratorExpr* node);
+    TypedValue codegen_set_generator(SetGeneratorExpr* node);
+    TypedValue codegen_dict_generator(DictGeneratorExpr* node);
+
     // Auto-await: if a TypedValue is PROMISE, insert yona_rt_async_await
     TypedValue auto_await(TypedValue tv);
+
+    // Wrap a Function* in a closure for uniform calling convention.
+    // Generates an env-passing wrapper and creates a trivial closure {wrapper, ret_tag}.
+    llvm::Value* wrap_in_closure(llvm::Function* fn, CType ret_type);
 
     // Free variable analysis
     static void collect_free_vars(AstNode* node,
@@ -268,12 +349,23 @@ private:
     // Infer parameter types for a module function by analyzing patterns and body
     std::vector<InferredParamType> infer_param_types(FunctionExpr* func);
 
+    // Reference counting helpers — emit rc_inc/rc_dec for heap-typed values
+    static bool is_heap_type(CType ct);
+    void emit_rc_inc(llvm::Value* val, CType type);
+    void emit_rc_dec(llvm::Value* val, CType type);
+
     // Print a typed value (with newline) / value only (no newline)
     void codegen_print(const TypedValue& tv);
     void codegen_print_value(const TypedValue& tv);
 
     // Compile error reporting with source location
     void report_error(const SourceLocation& loc, const std::string& message);
+
+    // "Did you mean?" suggestion for undefined names
+    std::string suggest_similar(const std::string& name) const;
+
+    compiler::DiagnosticEngine* diag_ = nullptr;        // external, not owned
+    std::unique_ptr<compiler::DiagnosticEngine> owned_diag_; // fallback if none provided
 
 public:
     int error_count_ = 0;

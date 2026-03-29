@@ -6,7 +6,7 @@
 Before diving into individual modules, I need to establish cross-cutting conventions derived from the existing codebase.
 
 **Conventions observed from the existing code:**
-- Module declaration: `module Std\Foo exports f1, f2, TypeCtor1, TypeCtor2 as ... end`
+- Module declaration: `module Std\Foo` with `export f1, f2` and `export type TypeName` statements
 - ADT syntax: `type Result a e = Ok a | Err e`
 - Named fields: `type Person = Person { name : String, age : Int }`
 - Functions use juxtaposition application: `f x y` not `f(x, y)` (both work but juxtaposition is idiomatic)

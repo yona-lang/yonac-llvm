@@ -1,0 +1,1 @@
+let inc x = x + 1 in let apply f x = f x in apply inc 41

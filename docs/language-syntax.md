@@ -110,6 +110,25 @@ false
 {}  # Empty dict
 ```
 
+### Generators (Comprehensions)
+
+```yona
+# List generator: [expr for var = source]
+[x * 2 for x = [1, 2, 3]]           # => [2, 4, 6]
+[x + 10 for x = [5, 15, 25]]        # => [15, 25, 35]
+
+# With guard: [expr for var = source, if condition]
+[x for x = [1, 2, 3, 4, 5, 6], if x > 3]  # => [4, 5, 6]
+
+# Set generator
+{x * 2 for x = [1, 2, 3]}           # => {2, 4, 6}
+
+# Dict generator
+{x : x * 10 for x = [1, 2, 3]}      # => {1: 10, 2: 20, 3: 30}
+```
+
+Generators compile to efficient counted loops (not closures). With guards, a two-pass approach counts matches first, then fills the result.
+
 ## Variables and Bindings
 
 ### Let Expressions
@@ -123,6 +142,11 @@ let x = 10, y = 20 in x + y
 
 # Function-style binding (desugars to lambda)
 let add x y = x + y in add 3 4
+
+# With type annotation (signature on preceding line)
+let add : Int -> Int -> Int
+    add x y = x + y
+in add 3 4
 
 # Pattern matching in let
 let (a, b) = (1, 2) in a + b
@@ -147,6 +171,13 @@ factorial(n) -> n * factorial(n - 1)
 # Guards
 abs x if x >= 0 = x
 abs x if x < 0  = -x
+
+# Type annotations (optional, Haskell-style)
+scale : Float -> Float -> Float
+scale factor x = factor * x
+
+greet : String -> String
+greet name = "Hello " ++ name
 
 # Anonymous functions (lambdas)
 \x -> x * 2
@@ -216,6 +247,25 @@ map (\(x) -> x * 2) [1, 2, 3]
 # Partial application (automatic currying)
 let add5 = add 5 in
   add5 10  # Returns 15
+
+# Closures capture free variables from enclosing scope
+let n = 10 in
+  let add_n x = x + n in  # add_n captures n
+    add_n 5  # Returns 15
+
+# Closures work with higher-order functions
+let n = 10 in
+  let add_n x = x + n in
+    let apply f x = f x in
+      apply add_n 5  # Returns 15
+
+# Functions returning functions (currying / HOF return type)
+let adder n = \x -> x + n in
+  adder 10 32  # Returns 42 (calls adder(10), then result(32))
+
+# Multi-level currying
+let f a = \b -> \c -> a + b + c in
+  f 1 2 3  # Returns 6
 
 # Pipe operators
 value |> function1 |> function2  # Left-to-right
@@ -442,6 +492,23 @@ type Color = Red | Green | Blue
 type List a = Cons a (List a) | Nil
 ```
 
+### Function Type Fields
+
+Fields can have function type signatures using arrow syntax in parentheses:
+
+```yona
+type Stream a = Next a (() -> Stream a) | End    # thunk returning Stream
+type Callback = MkCallback (Int -> Int)           # function Int → Int
+type Reducer a b = MkReducer (a -> b -> a)        # multi-param function
+```
+
+ADTs with function-typed fields are heap-allocated (like recursive ADTs), since closures stored in them may return values of the same type (lazy data structures).
+
+The bare `Fn` keyword is still supported for backward compatibility:
+```yona
+type Box = MkBox Fn     # equivalent to (... -> ...)
+```
+
 ### Named Fields
 
 ```yona
@@ -476,36 +543,125 @@ case p of
 end
 ```
 
+## Traits (Type Classes)
+
+### Trait Declaration
+
+```yona
+trait Show a
+    show : a -> String
+end
+
+# Multi-method trait with default implementation
+trait Eq a
+    eq : a -> a -> Bool
+    neq : a -> a -> Bool
+    neq x y = if eq x y then false else true
+end
+
+# Superclass constraint
+trait Eq a => Ord a
+    compare : a -> a -> Int
+end
+```
+
+### Instance Declaration
+
+```yona
+# Concrete instance
+instance Show Int
+    show x = Std\String::fromInt x
+end
+
+# Constrained instance (requires Show for inner type)
+instance Show a => Show (Option a)
+    show opt = case opt of
+        Some x -> "Some(" ++ show x ++ ")"
+        None -> "None"
+    end
+end
+```
+
+### Using Traits
+
+```yona
+show 42           # resolves to Show Int instance at compile time
+show (Some true)  # resolves through Show (Option a) + Show Bool
+```
+
+Traits are resolved statically via monomorphization — zero runtime overhead. Each call site compiles the concrete implementation directly.
+
+### Exporting Traits
+
+```yona
+module Std\Show
+
+export trait Show
+
+trait Show a
+    show : a -> String
+end
+
+instance Show Int
+    show x = Std\String::fromInt x
+end
+```
+
+Instances are always public. `export trait Show` exports the trait declaration.
+
 ## Module Syntax
 
 ### Module Definition
 
 ```yona
-module Package\ModuleName exports func1, func2, Active, Inactive as
-  type Status = Active | Inactive
+module Package\ModuleName
 
-  func1 x = x + 1
-  func2 a b = a * b
-end
+export func1, func2
+export type Status
+
+type Status = Active | Inactive
+
+func1 x = x + 1
+func2 a b = a * b
 ```
+
+Modules end at EOF (no `end` keyword). The `export` keyword is a standalone statement that can appear multiple times. `export type Name` exports a type and all its constructors.
+
+### Re-exports
+
+A module can re-export functions from other modules:
+
+```yona
+module Std\Prelude
+
+export add, mul from Std\Arith
+export map, filter from Std\List
+export double
+
+double x = add x x
+```
+
+Re-export groups use `from Module\Name`. Each `export` statement handles one group of exports.
 
 ### Import Expressions
 
 ```yona
 # Import specific functions
 import func1, func2 from Package\Module in
-  func1(10)
+  func1 10
 
 # Import with aliases
 import
-  longFunctionName as short,
-  anotherFunction as af
+  longFunctionName as short
 from Package\Module in
-  short(5)
+  short 5
 
-# Import entire module
-import Package\Module as M in
-  M.function1(42)
+# Import entire module (all exports)
+import Package\Module in
+  func1 42
+
+# FQN call (no import needed)
+Package\Module::func1 42
 ```
 
 ### Extern Declarations (C FFI)

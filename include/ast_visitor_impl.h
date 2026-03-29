@@ -90,7 +90,7 @@ ResultType AstVisitor<ResultType>::dispatchVisit(AstNode *node) const {
     if (auto* n = dynamic_cast<FieldUpdateExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<RecordNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<RecordInstanceExpr*>(node)) return visit(n);
-    if (auto* n = dynamic_cast<ModuleExpr*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<ModuleDecl*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ExternDeclExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ImportExpr*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ImportClauseExpr*>(node)) return visit(n);
@@ -102,11 +102,12 @@ ResultType AstVisitor<ResultType>::dispatchVisit(AstNode *node) const {
     if (auto* n = dynamic_cast<AdtConstructor*>(node)) return visit(n);
     if (auto* n = dynamic_cast<AdtDeclNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ConstructorPattern*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<TraitDeclNode*>(node)) return visit(n);
+    if (auto* n = dynamic_cast<InstanceDeclNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<MainNode*>(node)) return visit(n);
     if (auto* n = dynamic_cast<FunctionAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<PatternAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<ValueAlias*>(node)) return visit(n);
-    if (auto* n = dynamic_cast<ModuleAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<LambdaAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<FqnAlias*>(node)) return visit(n);
     if (auto* n = dynamic_cast<AliasCall*>(node)) return visit(n);
