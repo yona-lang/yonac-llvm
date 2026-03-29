@@ -1,7 +1,7 @@
 module Std\Option
 
 export type Option
-export isSome, isNone, unwrapOr, map
+export isSome, isNone, unwrapOr, map, flatMap, filter, orElse, toResult, zip, fold
 
 type Option a = Some a | None
 
@@ -27,4 +27,43 @@ map fn opt =
     case opt of
         Some value -> Some (fn value)
         None       -> None
+    end
+
+flatMap fn opt =
+    case opt of
+        Some value -> fn value
+        None       -> None
+    end
+
+filter pred opt =
+    case opt of
+        Some value -> if pred value then Some value else None
+        None       -> None
+    end
+
+orElse alternative opt =
+    case opt of
+        Some value -> Some value
+        None       -> alternative
+    end
+
+toResult err opt =
+    case opt of
+        Some value -> (:ok, value)
+        None       -> (:err, err)
+    end
+
+zip optA optB =
+    case optA of
+        Some a -> case optB of
+            Some b -> Some (a, b)
+            None   -> None
+        end
+        None -> None
+    end
+
+fold onNone onSome opt =
+    case opt of
+        Some value -> onSome value
+        None       -> onNone
     end

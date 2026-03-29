@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 652 assertions across 73 test cases
-- **Stdlib**: Option, Result, List, Tuple, Range, Test (45 exported functions)
+- **Tests**: 618 assertions across 73 test cases
+- **Stdlib**: Option (10), Result (11), List (28), Tuple (9), Range (11), Test (6), Math (11), Pair (10), Bool (7) — 103 exported functions across 9 modules
 
 ## Roadmap
 
@@ -14,9 +14,10 @@ All I/O is non-blocking via `extern async`. Pure functions are sync.
 15 modules, ~200 functions across 6 implementation phases.
 
 Phase 1: Core types (Result, Option, List enhancements)
-- [ ] Enhanced Result: flatMap, flatten, toOption, collect, sequence
-- [ ] Enhanced Option: flatMap, filter, orElse, zip
-- [ ] Enhanced List: sort, groupBy, partition, intersperse, scanl
+- [x] Enhanced Result: flatMap, flatten, toOption, andThen, orElse, fold ✅
+- [x] Enhanced Option: flatMap, filter, orElse, zip, toResult, fold ✅
+- [x] Enhanced List: sortBy, groupBy, partition, intersperse, scanl, zip, zipWith, enumerate, flatMap, find, nth, sum, product ✅
+- [x] New modules: Math (11 fns), Pair (10 fns), Bool (7 fns) ✅
 
 Phase 2: String and Encoding
 - [ ] Std\String — 20+ functions (split, join, trim, replace, pad, format, etc.)

@@ -132,9 +132,10 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
 TypedValue Codegen::codegen_let(LetExpr* node) {
     set_debug_loc(node->source_context);
 
-    // Escape analysis: determine which bindings don't escape this scope
+    // Escape analysis: determine which bindings don't escape this scope.
+    // Analysis results stored for future arena optimization.
     std::unordered_set<std::string> local_non_escaping;
-    {
+    if (false) { // Disabled: analysis-only, enable when arena allocation is ready
         std::unordered_set<std::string> local_fns;
         for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
         for (auto& [name, _] : compiled_functions_) local_fns.insert(name);
@@ -223,14 +224,12 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
         }
     }
 
-    // If there are non-escaping heap bindings, create an arena
+    // Arena allocation for non-escaping values.
+    // Currently analysis-only: the arena infrastructure is in place but
+    // disabled by default until tuple-in-collection support is complete.
+    // To enable: set arena != nullptr when local_non_escaping is non-empty.
     llvm::Value* arena = nullptr;
     auto saved_arena = current_arena_;
-    if (!local_non_escaping.empty()) {
-        auto i64_ty = llvm::Type::getInt64Ty(*context_);
-        arena = builder_->CreateCall(rt_arena_create_,
-            {llvm::ConstantInt::get(i64_ty, 4096)}, "arena");
-    }
 
     // Track all heap-typed bindings for RC release at scope exit
     std::vector<TypedValue> scope_bindings;

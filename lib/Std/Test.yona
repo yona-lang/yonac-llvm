@@ -1,10 +1,14 @@
 module Std\Test
 
-export assertEqual, assertTrue, assertFalse
+export assertEqual, assertNotEqual, assertTrue, assertFalse, assertGreater, assertLess
 
 assertEqual expected actual =
     if expected == actual then (:pass, "assertEqual")
     else (:fail, "assertEqual: expected equal values")
+
+assertNotEqual expected actual =
+    if expected != actual then (:pass, "assertNotEqual")
+    else (:fail, "assertNotEqual: expected different values")
 
 assertTrue value =
     if value then (:pass, "assertTrue")
@@ -13,3 +17,11 @@ assertTrue value =
 assertFalse value =
     if value then (:fail, "assertFalse: expected false")
     else (:pass, "assertFalse")
+
+assertGreater a b =
+    if a > b then (:pass, "assertGreater")
+    else (:fail, "assertGreater: expected first > second")
+
+assertLess a b =
+    if a < b then (:pass, "assertLess")
+    else (:fail, "assertLess: expected first < second")

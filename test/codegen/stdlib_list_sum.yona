@@ -1,0 +1,1 @@
+let foldl = \fn acc seq -> case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in foldl (\a b -> a + b) 0 [1, 2, 3, 4, 5]

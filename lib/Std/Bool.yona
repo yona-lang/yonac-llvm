@@ -1,0 +1,17 @@
+module Std\Bool
+
+export not, and, or, xor, implies, when, unless
+
+not x = if x then false else true
+
+and a b = if a then b else false
+
+or a b = if a then true else b
+
+xor a b = if a then not b else b
+
+implies a b = if a then b else true
+
+when cond fn = if cond then fn () else :ok
+
+unless cond fn = if cond then :ok else fn ()

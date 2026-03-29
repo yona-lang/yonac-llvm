@@ -1,0 +1,1 @@
+let scanl = \fn acc seq -> acc :: (case seq of [] -> []; [h|t] -> scanl fn (fn acc h) t end) in scanl (\a b -> a + b) 0 [1, 2, 3]

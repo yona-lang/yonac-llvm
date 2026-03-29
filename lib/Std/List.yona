@@ -1,6 +1,9 @@
 module Std\List
 
-export map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, any, all, contains, isEmpty, lookup
+export map, filter, fold, foldl, foldr, length, head, tail, reverse
+export take, drop, flatten, any, all, contains, isEmpty, nth
+export zip, zipWith, enumerate, partition, intersperse, scanl
+export flatMap, find, sortBy, groupBy, sum, product
 
 map fn seq = case seq of [] -> []; [h|t] -> (fn h) :: (map fn t) end
 
@@ -18,7 +21,7 @@ head seq = case seq of [h|_] -> h end
 
 tail seq = case seq of [_|t] -> t end
 
-reverse seq = case seq of [] -> []; [h|t] -> (reverse t) ++ [h] end
+reverse seq = foldl (\acc x -> x :: acc) [] seq
 
 take n seq = if n <= 0 then [] else case seq of [] -> []; [h|t] -> h :: (take (n - 1) t) end
 
@@ -34,4 +37,85 @@ contains elem seq = case seq of [] -> false; [h|t] -> if h == elem then true els
 
 isEmpty seq = case seq of [] -> true; _ -> false end
 
-lookup idx seq = if idx <= 0 then case seq of [h|_] -> h end else case seq of [_|t] -> lookup (idx - 1) t end
+nth idx seq =
+    if idx <= 0 then case seq of [h|_] -> h end
+    else case seq of [_|t] -> nth (idx - 1) t end
+
+flatMap fn seq = flatten (map fn seq)
+
+find pred seq =
+    case seq of
+        [] -> :none
+        [h|t] -> if pred h then (:some, h) else find pred t
+    end
+
+zip seqA seqB =
+    case seqA of
+        [] -> []
+        [a|ta] -> case seqB of
+            [] -> []
+            [b|tb] -> (a, b) :: (zip ta tb)
+        end
+    end
+
+zipWith fn seqA seqB =
+    case seqA of
+        [] -> []
+        [a|ta] -> case seqB of
+            [] -> []
+            [b|tb] -> (fn a b) :: (zipWith fn ta tb)
+        end
+    end
+
+enumerate seq =
+    let go idx s = case s of
+        [] -> []
+        [h|t] -> (idx, h) :: (go (idx + 1) t)
+    end
+    in go 0 seq
+
+partition pred seq =
+    foldl (\acc x ->
+        case acc of
+            (yes, no) -> if pred x then (yes ++ [x], no) else (yes, no ++ [x])
+        end
+    ) ([], []) seq
+
+intersperse sep seq =
+    case seq of
+        [] -> []
+        [h|t] -> case t of
+            [] -> [h]
+            _ -> h :: sep :: (intersperse sep t)
+        end
+    end
+
+scanl fn acc seq =
+    acc :: (case seq of
+        [] -> []
+        [h|t] -> scanl fn (fn acc h) t
+    end)
+
+sortBy cmp seq =
+    case seq of
+        [] -> []
+        [pivot|rest] ->
+            let lt = filter (\x -> cmp x pivot < 0) rest in
+            let gt = filter (\x -> cmp x pivot >= 0) rest in
+            (sortBy cmp lt) ++ [pivot] ++ (sortBy cmp gt)
+    end
+
+groupBy fn seq =
+    foldl (\acc x ->
+        let key = fn x in
+        let existing = case acc of
+            [] -> []
+            [(k, vs)|t] -> if k == key then vs else []
+        end in
+        if isEmpty existing then acc ++ [(key, [x])]
+        else map (\pair -> case pair of (k, vs) -> if k == key then (k, vs ++ [x]) else (k, vs) end) acc
+    ) [] seq
+
+sum seq = foldl (\a b -> a + b) 0 seq
+
+product seq = foldl (\a b -> a * b) 1 seq

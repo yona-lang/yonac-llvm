@@ -1,0 +1,39 @@
+module Std\Pair
+
+export type Pair
+export pair, first, second, mapFirst, mapSecond, mapPair, swap, toTuple, fromTuple
+
+type Pair a b = Pair { fst : a, snd : b }
+
+pair a b = Pair { fst = a, snd = b }
+
+first p = case p of Pair { fst = a } -> a end
+
+second p = case p of Pair { snd = b } -> b end
+
+mapFirst fn p =
+    case p of
+        Pair { fst = a, snd = b } -> Pair { fst = fn a, snd = b }
+    end
+
+mapSecond fn p =
+    case p of
+        Pair { fst = a, snd = b } -> Pair { fst = a, snd = fn b }
+    end
+
+mapPair fn gn p =
+    case p of
+        Pair { fst = a, snd = b } -> Pair { fst = fn a, snd = gn b }
+    end
+
+swap p =
+    case p of
+        Pair { fst = a, snd = b } -> Pair { fst = b, snd = a }
+    end
+
+toTuple p =
+    case p of
+        Pair { fst = a, snd = b } -> (a, b)
+    end
+
+fromTuple (a, b) = Pair { fst = a, snd = b }

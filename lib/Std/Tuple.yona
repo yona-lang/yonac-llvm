@@ -1,6 +1,6 @@
 module Std\Tuple
 
-export fst, snd, swap, mapBoth
+export fst, snd, swap, mapBoth, mapFst, mapSnd, toList, curry, uncurry
 
 fst (a, _) = a
 
@@ -9,3 +9,13 @@ snd (_, b) = b
 swap (a, b) = (b, a)
 
 mapBoth f g (a, b) = (f a, g b)
+
+mapFst f (a, b) = (f a, b)
+
+mapSnd f (a, b) = (a, f b)
+
+toList (a, b) = [a, b]
+
+curry f a b = f (a, b)
+
+uncurry f (a, b) = f a b

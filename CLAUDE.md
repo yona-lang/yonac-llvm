@@ -81,3 +81,5 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 - AST modifications must update the header (`ast.h`), visitor (`ast_visitor.h`), and codegen
 - Tests are in `test/` — codegen E2E fixtures in `test/codegen/*.yona` + `*.expected`
 - ADT tests in `test/adt_test.cpp`, trait/cross-module tests in `test/trait_test.cpp`
+- Stdlib in `lib/Std/` — 9 pure Yona modules (Option, Result, List, Tuple, Range, Test, Math, Pair, Bool) + 2 C-implemented modules (String, Types via `.yonai` + runtime)
+- Stdlib fixture tests in `test/codegen/stdlib_*.yona` + `*.expected`

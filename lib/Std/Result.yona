@@ -1,7 +1,7 @@
 module Std\Result
 
 export type Result
-export isOk, isErr, unwrapOr, map, mapErr
+export isOk, isErr, unwrapOr, map, mapErr, flatMap, flatten, toOption, andThen, orElse, fold
 
 type Result a e = Ok a | Err e
 
@@ -31,6 +31,45 @@ map fn r =
 
 mapErr fn r =
     case r of
-        Err e  -> Err (fn e)
-        Ok v   -> Ok v
+        Err e -> Err (fn e)
+        Ok v  -> Ok v
+    end
+
+flatMap fn r =
+    case r of
+        Ok value -> fn value
+        Err e    -> Err e
+    end
+
+flatten r =
+    case r of
+        Ok inner -> case inner of
+            Ok v  -> Ok v
+            Err e -> Err e
+        end
+        Err e -> Err e
+    end
+
+toOption r =
+    case r of
+        Ok value -> (:some, value)
+        Err _    -> :none
+    end
+
+andThen fn r =
+    case r of
+        Ok value -> fn value
+        Err e    -> Err e
+    end
+
+orElse fn r =
+    case r of
+        Ok v  -> Ok v
+        Err e -> fn e
+    end
+
+fold onErr onOk r =
+    case r of
+        Ok v  -> onOk v
+        Err e -> onErr e
     end

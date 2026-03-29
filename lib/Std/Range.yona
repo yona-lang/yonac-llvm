@@ -1,40 +1,107 @@
 module Std\Range
 
-export range, toList, contains, length, take, drop
+export range, rangeStep, toList, contains, length, take, drop, map, filter, fold, forEach
 
-range start stop = (:range, start, stop)
+range start stop = (:range, start, stop, 1)
+
+rangeStep start stop step = (:range, start, stop, step)
 
 toList r =
     case r of
-        (:range, start, stop) ->
-            if start > stop then []
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if start > stop then []
+                else start :: (toList (:range, start + step, stop, step))
             else
-                let next = (:range, start + 1, stop) in
-                start :: (toList next)
+                if start < stop then []
+                else start :: (toList (:range, start + step, stop, step))
     end
 
 contains value r =
     case r of
-        (:range, start, stop) -> value >= start && value <= stop
+        (:range, start, stop, step) ->
+            if step > 0 then value >= start && value <= stop && (value - start) % step == 0
+            else value <= start && value >= stop && (start - value) % (0 - step) == 0
     end
 
 length r =
     case r of
-        (:range, start, stop) ->
-            if stop >= start then stop - start + 1
-            else 0
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if stop >= start then (stop - start) / step + 1
+                else 0
+            else
+                if start >= stop then (start - stop) / (0 - step) + 1
+                else 0
     end
 
 take n r =
     case r of
-        (:range, start, stop) ->
-            if start + n - 1 > stop then (:range, start, stop)
-            else (:range, start, start + n - 1)
+        (:range, start, stop, step) ->
+            let newStop = start + step * (n - 1) in
+            if step > 0 then
+                if newStop > stop then (:range, start, stop, step)
+                else (:range, start, newStop, step)
+            else
+                if newStop < stop then (:range, start, stop, step)
+                else (:range, start, newStop, step)
     end
 
 drop n r =
     case r of
-        (:range, start, stop) ->
-            if start + n > stop then (:range, stop + 1, stop)
-            else (:range, start + n, stop)
+        (:range, start, stop, step) ->
+            let newStart = start + step * n in
+            (:range, newStart, stop, step)
+    end
+
+map fn r =
+    case r of
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if start > stop then []
+                else (fn start) :: (map fn (:range, start + step, stop, step))
+            else
+                if start < stop then []
+                else (fn start) :: (map fn (:range, start + step, stop, step))
+    end
+
+filter pred r =
+    case r of
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if start > stop then []
+                else if pred start then start :: (filter pred (:range, start + step, stop, step))
+                     else filter pred (:range, start + step, stop, step)
+            else
+                if start < stop then []
+                else if pred start then start :: (filter pred (:range, start + step, stop, step))
+                     else filter pred (:range, start + step, stop, step)
+    end
+
+fold fn acc r =
+    case r of
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if start > stop then acc
+                else fold fn (fn acc start) (:range, start + step, stop, step)
+            else
+                if start < stop then acc
+                else fold fn (fn acc start) (:range, start + step, stop, step)
+    end
+
+forEach fn r =
+    case r of
+        (:range, start, stop, step) ->
+            if step > 0 then
+                if start > stop then :ok
+                else do
+                    fn start
+                    forEach fn (:range, start + step, stop, step)
+                end
+            else
+                if start < stop then :ok
+                else do
+                    fn start
+                    forEach fn (:range, start + step, stop, step)
+                end
     end

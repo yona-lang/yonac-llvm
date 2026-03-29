@@ -1,0 +1,1 @@
+let intersperse = \sep seq -> case seq of [] -> []; [h|t] -> case t of [] -> [h]; _ -> h :: sep :: (intersperse sep t) end end in intersperse 0 [1, 2, 3]
