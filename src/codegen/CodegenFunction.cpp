@@ -290,7 +290,16 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         // Coerce body result to match the function's declared return type
         if (body_tv && body_tv.val) {
-            Value* ret_val = coerce_value(body_tv.val, ret_ctype);
+            Value* ret_val = body_tv.val;
+            // Match declared return type
+            if (ret_val->getType() != ret_llvm) {
+                if (ret_val->getType()->isIntegerTy() && ret_llvm->isPointerTy())
+                    ret_val = builder_->CreateIntToPtr(ret_val, ret_llvm);
+                else if (ret_val->getType()->isPointerTy() && ret_llvm->isIntegerTy())
+                    ret_val = builder_->CreatePtrToInt(ret_val, ret_llvm);
+                else if (ret_val->getType()->isIntegerTy() && ret_llvm->isIntegerTy())
+                    ret_val = builder_->CreateZExtOrTrunc(ret_val, ret_llvm);
+            }
             if (!builder_->GetInsertBlock()->getTerminator())
                 builder_->CreateRet(ret_val);
         } else {

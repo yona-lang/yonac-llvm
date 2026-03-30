@@ -391,7 +391,6 @@ private:
     static bool is_heap_type(CType ct);
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
-    llvm::Value* coerce_value(llvm::Value* val, CType ct);
     std::pair<llvm::Type*, CType> infer_return_type(ast::AstNode* body_expr);
     llvm::Value* emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes);
 

@@ -111,7 +111,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto ptr_ty = PointerType::get(*context_, 0);
 
             // Coerce scrutinee to pointer for seq runtime calls
-            Value* seq_ptr = coerce_value(scrutinee.val, CType::SEQ);
+            Value* seq_ptr = scrutinee.val;
 
             if (htp->heads.size() == 1) {
                 auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_ptr});
@@ -154,7 +154,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
             auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
-                Value* seq_val = coerce_value(scrutinee.val, CType::SEQ);
+                Value* seq_val = scrutinee.val;
                 auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_val});
                 auto cmp = builder_->CreateICmpNE(is_empty, ConstantInt::get(LType::getInt64Ty(*context_), 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);

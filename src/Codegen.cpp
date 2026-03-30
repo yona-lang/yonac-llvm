@@ -973,8 +973,7 @@ Function* Codegen::codegen_main(AstNode* node) {
 
 void Codegen::codegen_print_value(const TypedValue& tv) {
     if (!tv.val) return;
-    // Coerce value to the expected LLVM type for its CType
-    Value* v = coerce_value(tv.val, tv.type);
+    Value* v = tv.val;
     switch (tv.type) {
         case CType::INT:    builder_->CreateCall(rt_print_int_, {v}); break;
         case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {v}); break;
