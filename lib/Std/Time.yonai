@@ -1,0 +1,6 @@
+FN yona_Std_Time__now 0 -> INT
+FN yona_Std_Time__nowMicros 0 -> INT
+FN yona_Std_Time__epoch 0 -> INT
+FN yona_Std_Time__sleep 1 INT -> UNIT
+FN yona_Std_Time__format 1 INT -> STRING
+FN yona_Std_Time__elapsed 2 INT INT -> INT

@@ -1,0 +1,10 @@
+FN yona_Std_FloatMath__sqrt 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__sin 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__cos 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__tan 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__log 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__exp 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__floor 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__ceil 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__round 1 FLOAT -> FLOAT
+FN yona_Std_FloatMath__pi 0 -> FLOAT

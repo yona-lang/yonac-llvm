@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 657 assertions across 74 test cases
-- **Stdlib**: 23 modules, ~230 exported functions (11 pure Yona + 12 C runtime)
+- **Tests**: 669 assertions across 74 test cases
+- **Stdlib**: 27 modules, ~260 exported functions (12 pure Yona + 15 C runtime)
 
 ## Remaining Work
 

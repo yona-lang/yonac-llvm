@@ -1,0 +1,1 @@
+import basename, extension, dirname from Std\Path in basename "/home/user/file.txt" + " " + extension "/home/user/file.txt" + " " + dirname "/home/user/file.txt"

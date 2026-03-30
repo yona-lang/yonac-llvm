@@ -1,0 +1,6 @@
+FN yona_Std_Path__join 2 STRING STRING -> STRING
+FN yona_Std_Path__dirname 1 STRING -> STRING
+FN yona_Std_Path__basename 1 STRING -> STRING
+FN yona_Std_Path__extension 1 STRING -> STRING
+FN yona_Std_Path__withExtension 2 STRING STRING -> STRING
+FN yona_Std_Path__isAbsolute 1 STRING -> BOOL

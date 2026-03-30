@@ -1,0 +1,1 @@
+import join from Std\Path in join "/home/user" "documents/file.txt"

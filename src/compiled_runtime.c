@@ -1218,6 +1218,176 @@ int64_t* yona_Std_Random__shuffle(int64_t* seq) {
     return result;
 }
 
+/* ===== Std\Time — time measurement and utilities ===== */
+
+#include <sys/time.h>
+
+/* Current time as epoch milliseconds */
+int64_t yona_Std_Time__now(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
+}
+
+/* Current time as epoch microseconds */
+int64_t yona_Std_Time__nowMicros(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)tv.tv_sec * 1000000 + (int64_t)tv.tv_usec;
+}
+
+/* Current time as epoch seconds */
+int64_t yona_Std_Time__epoch(void) {
+    return (int64_t)time(NULL);
+}
+
+/* Sleep for N milliseconds */
+void yona_Std_Time__sleep(int64_t ms) {
+    usleep((useconds_t)(ms * 1000));
+}
+
+/* Format epoch seconds as ISO 8601 string (YYYY-MM-DD HH:MM:SS) */
+const char* yona_Std_Time__format(int64_t epoch_secs) {
+    time_t t = (time_t)epoch_secs;
+    struct tm* tm = localtime(&t);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 20);
+    strftime(r, 20, "%Y-%m-%d %H:%M:%S", tm);
+    return r;
+}
+
+/* Elapsed milliseconds between two now() timestamps */
+int64_t yona_Std_Time__elapsed(int64_t start, int64_t end) {
+    return end - start;
+}
+
+/* ===== Std\Path — file path manipulation ===== */
+
+const char* yona_Std_Path__join(const char* a, const char* b) {
+    size_t la = strlen(a), lb = strlen(b);
+    /* Skip trailing slash on a */
+    if (la > 0 && a[la-1] == '/') la--;
+    /* Skip leading slash on b */
+    const char* bs = b;
+    if (lb > 0 && b[0] == '/') { bs++; lb--; }
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, la + 1 + lb + 1);
+    memcpy(r, a, la);
+    r[la] = '/';
+    memcpy(r + la + 1, bs, lb);
+    r[la + 1 + lb] = '\0';
+    return r;
+}
+
+const char* yona_Std_Path__dirname(const char* path) {
+    size_t len = strlen(path);
+    /* Find last slash */
+    const char* last = NULL;
+    for (size_t i = 0; i < len; i++) if (path[i] == '/') last = path + i;
+    if (!last) { char* r = (char*)rc_alloc(RC_TYPE_STRING, 2); r[0] = '.'; r[1] = '\0'; return r; }
+    size_t dlen = (size_t)(last - path);
+    if (dlen == 0) dlen = 1; /* root "/" */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, dlen + 1);
+    memcpy(r, path, dlen);
+    r[dlen] = '\0';
+    return r;
+}
+
+const char* yona_Std_Path__basename(const char* path) {
+    size_t len = strlen(path);
+    const char* last = path;
+    for (size_t i = 0; i < len; i++) if (path[i] == '/') last = path + i + 1;
+    size_t blen = strlen(last);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, blen + 1);
+    memcpy(r, last, blen + 1);
+    return r;
+}
+
+const char* yona_Std_Path__extension(const char* path) {
+    const char* base = path;
+    size_t len = strlen(path);
+    for (size_t i = 0; i < len; i++) if (path[i] == '/') base = path + i + 1;
+    const char* dot = NULL;
+    for (const char* p = base; *p; p++) if (*p == '.') dot = p;
+    if (!dot || dot == base) { char* r = (char*)rc_alloc(RC_TYPE_STRING, 1); r[0] = '\0'; return r; }
+    size_t elen = strlen(dot);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, elen + 1);
+    memcpy(r, dot, elen + 1);
+    return r;
+}
+
+const char* yona_Std_Path__withExtension(const char* path, const char* ext) {
+    /* Find last dot in basename */
+    const char* base = path;
+    size_t len = strlen(path);
+    for (size_t i = 0; i < len; i++) if (path[i] == '/') base = path + i + 1;
+    const char* dot = NULL;
+    for (const char* p = base; *p; p++) if (*p == '.') dot = p;
+    size_t stem_len = dot ? (size_t)(dot - path) : len;
+    size_t elen = strlen(ext);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, stem_len + elen + 1);
+    memcpy(r, path, stem_len);
+    memcpy(r + stem_len, ext, elen + 1);
+    return r;
+}
+
+int64_t yona_Std_Path__isAbsolute(const char* path) {
+    return path[0] == '/' ? 1 : 0;
+}
+
+/* ===== Std\FloatMath — floating-point math (wrappers for math.h) ===== */
+
+double yona_Std_FloatMath__sqrt(double x)  { return sqrt(x); }
+double yona_Std_FloatMath__sin(double x)   { return sin(x); }
+double yona_Std_FloatMath__cos(double x)   { return cos(x); }
+double yona_Std_FloatMath__tan(double x)   { return tan(x); }
+double yona_Std_FloatMath__log(double x)   { return log(x); }
+double yona_Std_FloatMath__exp(double x)   { return exp(x); }
+double yona_Std_FloatMath__floor(double x) { return floor(x); }
+double yona_Std_FloatMath__ceil(double x)  { return ceil(x); }
+double yona_Std_FloatMath__round(double x) { return round(x); }
+double yona_Std_FloatMath__pi(void)        { return 3.14159265358979323846; }
+
+/* ===== Std\Format — string formatting ===== */
+
+/* Simple placeholder format: replace {} with arguments in order.
+ * Takes a format string and a sequence of string arguments. */
+const char* yona_Std_Format__format(const char* fmt, int64_t* args) {
+    int64_t argc = args[0];
+    int64_t argi = 0;
+    size_t flen = strlen(fmt);
+
+    /* First pass: calculate output size */
+    size_t out_size = 0;
+    for (size_t i = 0; i < flen; i++) {
+        if (fmt[i] == '{' && i + 1 < flen && fmt[i+1] == '}' && argi < argc) {
+            const char* arg = (const char*)(intptr_t)args[argi + 1];
+            out_size += strlen(arg);
+            argi++;
+            i++; /* skip } */
+        } else {
+            out_size++;
+        }
+    }
+
+    /* Second pass: build output */
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, out_size + 1);
+    argi = 0;
+    size_t j = 0;
+    for (size_t i = 0; i < flen; i++) {
+        if (fmt[i] == '{' && i + 1 < flen && fmt[i+1] == '}' && argi < argc) {
+            const char* arg = (const char*)(intptr_t)args[argi + 1];
+            size_t alen = strlen(arg);
+            memcpy(r + j, arg, alen);
+            j += alen;
+            argi++;
+            i++;
+        } else {
+            r[j++] = fmt[i];
+        }
+    }
+    r[j] = '\0';
+    return r;
+}
+
 /* ===== Std\Json — minimal JSON parser/stringifier ===== */
 
 /* JSON value types as tagged tuples:
