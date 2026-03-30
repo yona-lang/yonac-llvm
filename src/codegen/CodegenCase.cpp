@@ -108,15 +108,19 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
             auto* htp = static_cast<HeadTailsPattern*>(pat);
             auto i64_ty = LType::getInt64Ty(*context_);
+            auto ptr_ty = PointerType::get(*context_, 0);
+
+            // Ensure scrutinee is a pointer for seq runtime calls
+            Value* seq_ptr = scrutinee.val;
+            if (seq_ptr->getType()->isIntegerTy())
+                seq_ptr = builder_->CreateIntToPtr(seq_ptr, ptr_ty);
 
             if (htp->heads.size() == 1) {
-                // Common case [h|t]: O(1) non-empty check
-                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {scrutinee.val});
+                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_ptr});
                 auto cmp = builder_->CreateICmpEQ(is_empty, ConstantInt::get(i64_ty, 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else {
-                // Multi-head [a, b|t]: need length >= N
-                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+                auto len = builder_->CreateCall(rt_seq_length_, {seq_ptr});
                 auto min_len = ConstantInt::get(i64_ty, htp->heads.size());
                 builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
             }
@@ -127,7 +131,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             builder_->SetInsertPoint(body_bb);
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
                 auto idx = ConstantInt::get(i64_ty, hi);
-                auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
+                auto hv = builder_->CreateCall(rt_seq_get_, {seq_ptr, idx});
                 // Cast i64 from seq_get to the correct type
                 Value* elem_val = hv;
                 if (elem_type == CType::SEQ || elem_type == CType::STRING ||
@@ -143,7 +147,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 }
             }
             if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
-                auto tv = builder_->CreateCall(rt_seq_tail_, {scrutinee.val});
+                auto tv = builder_->CreateCall(rt_seq_tail_, {seq_ptr});
                 auto* pv = static_cast<PatternValue*>(htp->tail);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
                     named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
@@ -152,8 +156,10 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
             auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
-                // O(1) empty check
-                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {scrutinee.val});
+                Value* seq_val = scrutinee.val;
+                if (seq_val->getType()->isIntegerTy())
+                    seq_val = builder_->CreateIntToPtr(seq_val, PointerType::get(*context_, 0));
+                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_val});
                 auto cmp = builder_->CreateICmpNE(is_empty, ConstantInt::get(LType::getInt64Ty(*context_), 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else builder_->CreateBr(body_bb);

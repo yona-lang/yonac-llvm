@@ -978,7 +978,13 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
         case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {tv.val}); break;
         case CType::BOOL:   builder_->CreateCall(rt_print_bool_, {tv.val}); break;
         case CType::STRING: builder_->CreateCall(rt_print_string_, {tv.val}); break;
-        case CType::SEQ:    builder_->CreateCall(rt_print_seq_, {tv.val}); break;
+        case CType::SEQ: {
+            Value* sp = tv.val;
+            if (sp->getType()->isIntegerTy())
+                sp = builder_->CreateIntToPtr(sp, PointerType::get(*context_, 0));
+            builder_->CreateCall(rt_print_seq_, {sp});
+            break;
+        }
         case CType::TUPLE: {
             builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("(")});
             if (tv.val->getType()->isStructTy()) {

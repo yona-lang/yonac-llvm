@@ -58,6 +58,7 @@ static seq_node_t trie_set(seq_node_t node, int shift, int64_t index, int64_t va
 }
 
 static int64_t trie_get(seq_node_t node, int shift, int64_t index) {
+    if (!node) return 0;
     if (shift == 0) return node[index & SEQ_MASK];
     int child = (int)((index >> shift) & SEQ_MASK);
     return trie_get((seq_node_t)(intptr_t)node[child], shift - SEQ_BITS, index);
@@ -150,37 +151,10 @@ int64_t yona_rt_seq_head(int64_t* seq) {
 int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
     int64_t len = yona_rt_seq_length(seq);
 
-    if (is_pseq(seq)) {
-        yona_pseq_t* old = (yona_pseq_t*)seq;
-        yona_pseq_t* ps = pseq_new();
-        ps->length = len + 1;
-        ps->suffix_len = old->suffix_len;
-        memcpy(ps->suffix, old->suffix, (size_t)old->suffix_len * sizeof(int64_t));
-        ps->root = old->root;
-        ps->shift = old->shift;
-        ps->trie_len = old->trie_len;
-
-        if (old->prefix_len < SEQ_WIDTH) {
-            /* Room in prefix — insert at front */
-            ps->prefix[0] = elem;
-            memcpy(ps->prefix + 1, old->prefix, (size_t)old->prefix_len * sizeof(int64_t));
-            ps->prefix_len = old->prefix_len + 1;
-        } else {
-            /* Prefix full — push old prefix elements into trie, new prefix = [elem] */
-            for (int64_t i = 0; i < SEQ_WIDTH; i++) {
-                if (ps->trie_len >= (1LL << (ps->shift + SEQ_BITS)))
-                    ps->shift += SEQ_BITS;
-                ps->root = trie_push(ps->root, ps->shift, ps->trie_len, old->prefix[i]);
-                ps->trie_len++;
-            }
-            ps->prefix[0] = elem;
-            ps->prefix_len = 1;
-        }
-        return (int64_t*)ps;
-    }
-
-    /* Small seq */
-    if (len < SEQ_WIDTH) {
+    /* Persistent trie disabled — needs proper RC for trie nodes.
+     * TODO: implement structural sharing with reference-counted nodes.
+     * For now, always use flat array with unique-owner realloc. */
+    {
         /* Stay flat — realloc or copy */
         int64_t* header = seq - 2;
         if (header[0] == 1) {
@@ -197,28 +171,6 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         memcpy(result + 2, seq + 1, (size_t)len * sizeof(int64_t));
         return result;
     }
-
-    /* Upgrade to pseq: prefix = [elem], suffix = old flat elements */
-    yona_pseq_t* ps = pseq_new();
-    ps->length = len + 1;
-    ps->prefix[0] = elem;
-    ps->prefix_len = 1;
-    /* Put old elements into suffix (up to 32) and trie (rest) */
-    if (len <= SEQ_WIDTH) {
-        memcpy(ps->suffix, seq + 1, (size_t)len * sizeof(int64_t));
-        ps->suffix_len = len;
-    } else {
-        /* First SEQ_WIDTH elements go to trie, rest to suffix */
-        ps->shift = shift_for(len - SEQ_WIDTH);
-        for (int64_t i = 0; i < len - SEQ_WIDTH; i++) {
-            ps->root = trie_push(ps->root, ps->shift, ps->trie_len, seq[i + 1]);
-            ps->trie_len++;
-        }
-        int64_t suf_start = len - SEQ_WIDTH;
-        memcpy(ps->suffix, seq + 1 + suf_start, SEQ_WIDTH * sizeof(int64_t));
-        ps->suffix_len = SEQ_WIDTH;
-    }
-    return (int64_t*)ps;
 }
 
 /* Tail — O(1) amortized */
@@ -302,12 +254,36 @@ int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
     return result;
 }
 
+/* Debug: verify trie structure */
+static void trie_verify(seq_node_t node, int shift, int64_t count) {
+    if (!node || count == 0) return;
+    if (shift == 0) return; /* leaf — elements, not pointers */
+    for (int i = 0; i < SEQ_WIDTH; i++) {
+        if (node[i] != 0) {
+            seq_node_t child = (seq_node_t)(intptr_t)node[i];
+            /* Basic sanity: pointer should be in a reasonable range */
+            if ((intptr_t)child < 0x1000 || (intptr_t)child > 0x7fffffffffff) {
+                fprintf(stderr, "TRIE CORRUPT: shift=%d child[%d]=%p\n", shift, i, (void*)child);
+                return;
+            }
+            trie_verify(child, shift - SEQ_BITS, count);
+        }
+    }
+}
+
 /* Print */
 void yona_rt_print_seq(int64_t* seq) {
     int64_t len = yona_rt_seq_length(seq);
+    if (is_pseq(seq)) {
+        yona_pseq_t* ps = (yona_pseq_t*)seq;
+        fprintf(stderr, "[PSEQ len=%ld plen=%ld tlen=%ld slen=%ld shift=%d]\n",
+            ps->length, ps->prefix_len, ps->trie_len, ps->suffix_len, ps->shift);
+        fflush(stderr);
+    }
     printf("[");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
+        fprintf(stderr, "[get %ld/%ld]", i, len); fflush(stderr);
         printf("%ld", yona_rt_seq_get(seq, i));
     }
     printf("]");
