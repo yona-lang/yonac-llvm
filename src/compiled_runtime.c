@@ -350,9 +350,26 @@ void yona_rt_print_seq(int64_t* seq) {
 // Cons: prepend element to sequence
 int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
     int64_t old_len = seq[0];
+    int64_t* header = seq - 2; /* RC header is at [-2]=refcount, [-1]=type_tag */
+
+    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
+        /* Uniquely owned — realloc in place, avoid full copy.
+         * Layout: [refcount][type_tag][length][elem0][elem1]...
+         * We need room for one more element. */
+        size_t new_payload = ((size_t)(old_len + 1) + 1) * sizeof(int64_t);
+        int64_t* new_header = (int64_t*)realloc(header, 2 * sizeof(int64_t) + new_payload);
+        int64_t* new_seq = new_header + 2;
+        /* Shift existing elements right by one to make room at front */
+        memmove(new_seq + 2, new_seq + 1, (size_t)old_len * sizeof(int64_t));
+        new_seq[0] = old_len + 1;
+        new_seq[1] = elem;
+        return new_seq;
+    }
+
+    /* Shared or arena-allocated — allocate new array and copy */
     int64_t* result = yona_rt_seq_alloc(old_len + 1);
     result[1] = elem;
-    memcpy(result + 2, seq + 1, old_len * sizeof(int64_t));
+    memcpy(result + 2, seq + 1, (size_t)old_len * sizeof(int64_t));
     return result;
 }
 
@@ -360,9 +377,21 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
 int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
     int64_t len_a = a[0];
     int64_t len_b = b[0];
+    int64_t* header_a = a - 2;
+
+    if (header_a[0] == 1 && header_a[0] != RC_ARENA_SENTINEL) {
+        /* Uniquely owned 'a' — extend in place */
+        size_t new_payload = ((size_t)(len_a + len_b) + 1) * sizeof(int64_t);
+        int64_t* new_header = (int64_t*)realloc(header_a, 2 * sizeof(int64_t) + new_payload);
+        int64_t* new_a = new_header + 2;
+        memcpy(new_a + 1 + len_a, b + 1, (size_t)len_b * sizeof(int64_t));
+        new_a[0] = len_a + len_b;
+        return new_a;
+    }
+
     int64_t* result = yona_rt_seq_alloc(len_a + len_b);
-    memcpy(result + 1, a + 1, len_a * sizeof(int64_t));
-    memcpy(result + 1 + len_a, b + 1, len_b * sizeof(int64_t));
+    memcpy(result + 1, a + 1, (size_t)len_a * sizeof(int64_t));
+    memcpy(result + 1 + len_a, b + 1, (size_t)len_b * sizeof(int64_t));
     return result;
 }
 
