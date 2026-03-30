@@ -143,7 +143,14 @@ TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     auto elem = codegen(node->left);
     auto seq = codegen(node->right);
     if (!elem || !seq) return {};
-    return {builder_->CreateCall(rt_seq_cons_, {elem.val, seq.val}, "cons"), CType::SEQ, {elem.type}};
+    // Coerce seq to pointer if needed (closures return i64 for all types)
+    Value* seq_ptr = seq.val;
+    if (seq_ptr->getType()->isIntegerTy())
+        seq_ptr = builder_->CreateIntToPtr(seq_ptr, PointerType::get(*context_, 0));
+    Value* elem_val = elem.val;
+    if (elem_val->getType()->isPointerTy())
+        elem_val = builder_->CreatePtrToInt(elem_val, LType::getInt64Ty(*context_));
+    return {builder_->CreateCall(rt_seq_cons_, {elem_val, seq_ptr}, "cons"), CType::SEQ, {elem.type}};
 }
 
 TypedValue Codegen::codegen_join(JoinExpr* node) {

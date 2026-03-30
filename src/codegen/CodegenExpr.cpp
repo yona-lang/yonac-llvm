@@ -326,8 +326,15 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
     set_debug_loc(node->source_context);
     auto cond = auto_await(codegen(node->condition));
     if (!cond) return {};
-    if (cond.type == CType::INT)
-        cond.val = builder_->CreateICmpNE(cond.val, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+    // Ensure condition is i1 for branch — closures return i64 even for bool results
+    if (cond.val->getType() != LType::getInt1Ty(*context_)) {
+        if (cond.val->getType()->isIntegerTy())
+            cond.val = builder_->CreateICmpNE(cond.val, ConstantInt::get(cond.val->getType(), 0));
+        else if (cond.val->getType()->isPointerTy())
+            cond.val = builder_->CreateICmpNE(
+                builder_->CreatePtrToInt(cond.val, LType::getInt64Ty(*context_)),
+                ConstantInt::get(LType::getInt64Ty(*context_), 0));
+    }
 
     auto fn = builder_->GetInsertBlock()->getParent();
     auto then_bb = BasicBlock::Create(*context_, "then", fn);
