@@ -15,10 +15,53 @@
 #include <dirent.h>
 #include <fcntl.h>
 
-#ifndef YONA_PLATFORM_INCLUDED
 extern void* yona_rt_rc_alloc_string(size_t bytes);
 extern int64_t* yona_rt_seq_alloc(int64_t count);
-#endif
+
+/* ===== Generic io_uring completer ===== */
+
+int64_t yona_rt_io_await(int64_t uring_id) {
+    if (uring_id <= 0) return 0;
+    int32_t res = ring_await((uint64_t)uring_id);
+    io_context_t* ctx = io_ctx_take((uint64_t)uring_id);
+    if (!ctx) return (int64_t)res;
+
+    int64_t result;
+    switch (ctx->type) {
+        case IO_OP_READ_FILE:
+            if (res >= 0) ctx->buf[res] = '\0';
+            else ctx->buf[0] = '\0';
+            if (ctx->close_fd) close(ctx->fd);
+            result = (int64_t)(intptr_t)ctx->buf;
+            break;
+        case IO_OP_WRITE_FILE:
+            if (ctx->close_fd) close(ctx->fd);
+            result = (res == (int32_t)ctx->buf_size) ? 1 : 0;
+            break;
+        case IO_OP_ACCEPT:
+            free(ctx->buf);
+            result = (res >= 0) ? (int64_t)res : -1;
+            break;
+        case IO_OP_CONNECT:
+            free(ctx->buf);
+            result = (res >= 0) ? (int64_t)ctx->fd : -1;
+            if (res < 0) close(ctx->fd);
+            break;
+        case IO_OP_SEND:
+            result = (int64_t)res;
+            break;
+        case IO_OP_RECV:
+            if (res > 0) ctx->buf[res] = '\0';
+            else ctx->buf[0] = '\0';
+            result = (int64_t)(intptr_t)ctx->buf;
+            break;
+        default:
+            result = (int64_t)res;
+            break;
+    }
+    free(ctx);
+    return result;
+}
 
 /* ===== Submit-and-return functions ===== */
 

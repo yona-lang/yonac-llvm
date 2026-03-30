@@ -13,12 +13,14 @@
 - [ ] STM (Software Transactional Memory) — for shared mutable state
 
 ### Codegen Optimizations
-- [ ] Inlining pass (AlwaysInline + function inlining)
-- [ ] SROA (decompose ADT structs to registers)
-- [ ] Loop optimizations (LICM, unrolling, vectorization)
-- [ ] Dead argument elimination
-- [ ] LTO (link-time optimization)
-- [ ] Mutual tail call optimization
+- [x] Optimization levels (-O0 to -O3) via LLVM new PassManager ✅
+- [x] Inlining (cost-based at O2+, AlwaysInliner at O0) ✅
+- [x] SROA (scalar replacement of aggregates — decomposes structs) ✅
+- [x] Loop optimizations (LICM, unrolling at O2+, vectorization at O3) ✅
+- [x] Dead argument elimination ✅
+- [x] Tail call marking (self-recursive calls marked `tail`) ✅
+- [ ] LTO (link-time optimization across translation units)
+- [ ] Mutual tail call optimization (between different functions)
 
 ### Tooling
 - [ ] Package manager / build system

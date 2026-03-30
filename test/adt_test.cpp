@@ -47,8 +47,17 @@ static string compile_and_run_adt(const string& mod_source, const string& expr_s
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }
@@ -333,8 +342,17 @@ end
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }
@@ -398,8 +416,17 @@ takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (t
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }

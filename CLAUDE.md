@@ -17,6 +17,14 @@ cmake --build --preset build-debug-linux
 ```
 Replace `linux` with `macos` or omit the suffix for Windows. Replace `debug` with `release` for release builds.
 
+### Compiler flags
+- `-O0` to `-O3` — optimization level (default O2)
+- `-g` — emit DWARF debug info
+- `--Wall`, `--Wextra`, `--Werror`, `-w` — warning control
+- `--emit-ir` — print LLVM IR instead of compiling
+- `--emit-obj` — emit object file only (don't link)
+- `-I path` — module search paths for `.yonai` files
+
 ### Run tests
 ```bash
 # Via CTest

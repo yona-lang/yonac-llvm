@@ -17,13 +17,14 @@ namespace fs = std::filesystem;
 
 // ===== Helpers =====
 
-static string compile_to_ir(const string& code) {
+static string compile_to_ir(const string& code, int opt_level = 0) {
     parser::Parser parser;
     istringstream stream(code);
     auto parse_result = parser.parse_input(stream);
     if (!parse_result.node) return "PARSE_ERROR";
 
     Codegen codegen("yona_program");
+    codegen.set_opt_level(opt_level);
     auto module = codegen.compile(parse_result.node.get());
     if (!module) return "CODEGEN_ERROR";
 
@@ -57,8 +58,18 @@ static string compile_and_run(const string& code) {
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                // Compile platform layer files and merge via partial link
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }
@@ -103,14 +114,14 @@ TEST_CASE("Integer addition uses native add") {
 }
 
 TEST_CASE("If expression with constant condition is optimized away") {
-    auto ir = compile_to_ir("if true then 1 else 0");
-    // Optimizer constant-folds: if true → 1, eliminates branch
+    auto ir = compile_to_ir("if true then 1 else 0", 2);
+    // O2 constant-folds: if true → 1, eliminates branch
     CHECK(ir_contains(ir, "yona_rt_print_int(i64 1)"));
 }
 
 TEST_CASE("If expression with variable generates branch") {
-    auto ir = compile_to_ir("let x = 5 in if x > 3 then 1 else 0");
-    // Optimizer may constant-fold this too (5 > 3 = true → 1)
+    auto ir = compile_to_ir("let x = 5 in if x > 3 then 1 else 0", 2);
+    // O2 constant-folds this (5 > 3 = true → 1)
     CHECK(ir_contains(ir, "yona_rt_print_int(i64 1)"));
 }
 
@@ -320,8 +331,18 @@ TEST_CASE("Re-exports") {
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                // Compile platform layer files and merge via partial link
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }
@@ -408,8 +429,18 @@ TEST_CASE("Type-annotated module functions") {
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + string(dir) + " -o " + rt_path + " 2>/dev/null";
+                string src_dir = string(dir);
+                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
                 system(cmd.c_str());
+                // Compile platform layer files and merge via partial link
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
                 break;
             }
         }

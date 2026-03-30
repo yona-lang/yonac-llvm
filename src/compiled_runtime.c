@@ -41,7 +41,7 @@
 #define RC_TYPE_STRING  6
 
 /* Internal: allocate with RC header, returns pointer to payload */
-static void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
+void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
     int64_t* raw = (int64_t*)malloc(2 * sizeof(int64_t) + payload_bytes);
     raw[0] = 1;         /* refcount = 1 */
     raw[1] = type_tag;  /* type tag */
@@ -797,68 +797,11 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
 }
 
 /* ===== Platform I/O wrappers ===== */
-/* Platform implementations are included directly for single-file compilation.
- * When the build system compiles platform files separately, remove this include. */
-#define YONA_PLATFORM_INCLUDED
-#if defined(__linux__) || defined(__APPLE__)
-#include "runtime/platform/linux.c"
-#elif defined(_WIN32)
-/* #include "runtime/platform/windows.c" */
-#endif
-#undef YONA_PLATFORM_INCLUDED
+/* Platform-specific implementations are in src/runtime/platform/ and
+ * compiled as separate translation units. See CMakeLists.txt. */
+#include "runtime/platform.h"
 
-/* ===== Generic io_uring completer ===== */
-/*
- * Called by auto_await when a promise is an io_uring ID.
- * Waits for the specific completion, does type-specific post-processing
- * (close fd, null-terminate buffer, free context), returns the result.
- */
-int64_t yona_rt_io_await(int64_t uring_id) {
-    if (uring_id <= 0) return 0;
-#if defined(__linux__)
-    int32_t res = ring_await((uint64_t)uring_id);
-    io_context_t* ctx = io_ctx_take((uint64_t)uring_id);
-    if (!ctx) return (int64_t)res; /* no context = raw result */
-
-    int64_t result;
-    switch (ctx->type) {
-        case IO_OP_READ_FILE:
-            if (res >= 0) ctx->buf[res] = '\0';
-            else ctx->buf[0] = '\0';
-            if (ctx->close_fd) close(ctx->fd);
-            result = (int64_t)(intptr_t)ctx->buf;
-            break;
-        case IO_OP_WRITE_FILE:
-            if (ctx->close_fd) close(ctx->fd);
-            result = (res == (int32_t)ctx->buf_size) ? 1 : 0;
-            break;
-        case IO_OP_ACCEPT:
-            free(ctx->buf); /* free the sockaddr buffer */
-            result = (res >= 0) ? (int64_t)res : -1;
-            break;
-        case IO_OP_CONNECT:
-            free(ctx->buf); /* free the copied sockaddr */
-            result = (res >= 0) ? (int64_t)ctx->fd : -1;
-            if (res < 0) close(ctx->fd);
-            break;
-        case IO_OP_SEND:
-            result = (int64_t)res;
-            break;
-        case IO_OP_RECV:
-            if (res > 0) ctx->buf[res] = '\0';
-            else ctx->buf[0] = '\0';
-            result = (int64_t)(intptr_t)ctx->buf;
-            break;
-        default:
-            result = (int64_t)res;
-            break;
-    }
-    free(ctx);
-    return result;
-#else
-    return 0;
-#endif
-}
+/* yona_rt_io_await is implemented in platform/file_linux.c (uses io_uring) */
 
 /* Std\IO */
 void yona_Std_IO__print(const char* s)   { printf("%s", s); fflush(stdout); }
@@ -1050,92 +993,7 @@ int64_t* yona_Std_Http__parseUrl(const char* url) {
     return result;
 }
 
-/* High-level: HTTP GET via io_uring — connect, send, recv through the ring.
- * Returns uring ID (IO promise). Completion returns the full response string. */
-int64_t yona_Std_Http__httpGet(const char* url) {
-#if defined(__linux__)
-    int64_t* parsed = yona_Std_Http__parseUrl(url);
-    const char* host = (const char*)(intptr_t)parsed[1];
-    int64_t port = parsed[2];
-    const char* path = (const char*)(intptr_t)parsed[3];
-
-    /* Resolve + create socket (fast, no I/O) */
-    struct addrinfo hints, *ai;
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    char port_str[8]; snprintf(port_str, sizeof(port_str), "%ld", port);
-    if (getaddrinfo(host, port_str, &hints, &ai) != 0) return 0;
-    int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-    if (fd < 0) { freeaddrinfo(ai); return 0; }
-
-    /* io_uring CONNECT */
-    struct sockaddr_storage addr_buf;
-    memcpy(&addr_buf, ai->ai_addr, ai->ai_addrlen);
-    socklen_t addr_len = ai->ai_addrlen;
-    freeaddrinfo(ai);
-    {
-        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
-        sqe.opcode = IORING_OP_CONNECT;
-        sqe.fd = fd;
-        sqe.addr = (unsigned long)&addr_buf;
-        sqe.off = (uint64_t)addr_len;
-        uint64_t id = ring_submit_sqe(&sqe);
-        if (ring_await(id) < 0) { close(fd); return 0; }
-    }
-
-    /* Build + io_uring SEND request */
-    const char* req = yona_Std_Http__buildRequest("GET", host, path, NULL);
-    {
-        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
-        sqe.opcode = IORING_OP_SEND;
-        sqe.fd = fd;
-        sqe.addr = (unsigned long)req;
-        sqe.len = (unsigned)strlen(req);
-        uint64_t id = ring_submit_sqe(&sqe);
-        ring_await(id);
-    }
-
-    /* io_uring RECV loop — read full response */
-    size_t buf_size = 16384;
-    size_t total = 0;
-    char* buf = (char*)rc_alloc(RC_TYPE_STRING, buf_size);
-    for (;;) {
-        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
-        sqe.opcode = IORING_OP_RECV;
-        sqe.fd = fd;
-        sqe.addr = (unsigned long)(buf + total);
-        sqe.len = (unsigned)(buf_size - total - 1);
-        uint64_t id = ring_submit_sqe(&sqe);
-        int32_t n = ring_await(id);
-        if (n <= 0) break;
-        total += (size_t)n;
-        if (total >= buf_size - 256) {
-            size_t new_size = buf_size * 2;
-            char* new_buf = (char*)rc_alloc(RC_TYPE_STRING, new_size);
-            memcpy(new_buf, buf, total);
-            buf = new_buf; buf_size = new_size;
-        }
-    }
-    buf[total] = '\0';
-    close(fd);
-
-    /* Return as IO promise via NOP + context */
-    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
-    ctx->type = IO_OP_READ_FILE;
-    ctx->fd = -1;
-    ctx->buf = buf;
-    ctx->buf_size = total;
-    ctx->close_fd = 0;
-    struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
-    sqe.opcode = IORING_OP_NOP;
-    uint64_t nop_id = ring_submit_sqe(&sqe);
-    io_ctx_put(nop_id, ctx);
-    return (int64_t)nop_id;
-#else
-    return 0;
-#endif
-}
+/* yona_Std_Http__httpGet is implemented in platform/net_linux.c (uses io_uring) */
 
 /* Std\Random — pseudo-random number generation */
 

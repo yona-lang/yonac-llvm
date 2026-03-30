@@ -80,6 +80,7 @@ public:
 
     // Enable DWARF debug info emission
     void set_debug_info(bool enabled, const std::string& filename = "");
+    void set_opt_level(int level) { opt_level_ = (level < 0) ? 0 : (level > 3) ? 3 : level; }
 
     // Module search paths for resolving imports
     std::vector<std::string> module_paths_;
@@ -259,6 +260,7 @@ private:
     llvm::DIFile* di_file_ = nullptr;
     llvm::DIScope* di_scope_ = nullptr;  // current scope (function or lexical block)
     bool debug_info_ = false;
+    int opt_level_ = 2; // 0=O0, 1=O1, 2=O2 (default), 3=O3
 
     // Debug info helpers
     void init_debug_info(const std::string& filename);

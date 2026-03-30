@@ -26,6 +26,10 @@
 #include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Scalar/GVN.h>
 #include <llvm/Transforms/Utils.h>
+#include <llvm/Transforms/IPO.h>
+#include <llvm/Transforms/IPO/AlwaysInliner.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 
 #include <iostream>
@@ -832,26 +836,44 @@ std::string Codegen::emit_ir() {
 void Codegen::optimize() {
     if (!module_) return;
 
-    legacy::FunctionPassManager fpm(module_.get());
+    // Use the new PassManager for all optimization levels
+    llvm::LoopAnalysisManager LAM;
+    llvm::FunctionAnalysisManager FAM;
+    llvm::CGSCCAnalysisManager CGAM;
+    llvm::ModuleAnalysisManager MAM;
 
-    // Promote allocas to registers (mem2reg)
-    fpm.add(createPromoteMemoryToRegisterPass());
-    // Combine redundant instructions
-    fpm.add(createInstructionCombiningPass());
-    // Reassociate expressions for better constant folding
-    fpm.add(createReassociatePass());
-    // Eliminate common subexpressions
-    fpm.add(createGVNPass());
-    // Simplify control flow (remove unreachable blocks, etc.)
-    fpm.add(createCFGSimplificationPass());
-    // Tail call elimination
-    fpm.add(createTailCallEliminationPass());
+    llvm::PassBuilder PB;
+    PB.registerModuleAnalyses(MAM);
+    PB.registerCGSCCAnalyses(CGAM);
+    PB.registerFunctionAnalyses(FAM);
+    PB.registerLoopAnalyses(LAM);
+    PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-    fpm.doInitialization();
-    for (auto& fn : *module_) {
-        fpm.run(fn);
+    // Select optimization level
+    llvm::OptimizationLevel level;
+    switch (opt_level_) {
+        case 0: level = llvm::OptimizationLevel::O0; break;
+        case 1: level = llvm::OptimizationLevel::O1; break;
+        case 3: level = llvm::OptimizationLevel::O3; break;
+        default: level = llvm::OptimizationLevel::O2; break;
     }
-    fpm.doFinalization();
+
+    llvm::ModulePassManager MPM;
+    if (opt_level_ == 0) {
+        // O0: only run AlwaysInliner for marked functions
+        MPM = PB.buildO0DefaultPipeline(level);
+    } else {
+        // O1-O3: full pipeline including:
+        // - Function inlining (cost-based at O2+)
+        // - SROA (scalar replacement of aggregates — decomposes structs to registers)
+        // - Loop optimizations (LICM, unrolling at O2+, vectorization at O3)
+        // - Dead argument elimination
+        // - Tail call elimination
+        // - GVN, instcombine, CFG simplification, mem2reg
+        MPM = PB.buildPerModuleDefaultPipeline(level);
+    }
+
+    MPM.run(*module_, MAM);
 }
 
 // ===== Entry Point =====

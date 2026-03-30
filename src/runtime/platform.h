@@ -17,6 +17,20 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* ===== io_uring I/O await ===== */
+
+/* Generic io_uring completer — blocks until the specified operation completes,
+ * then does type-specific post-processing (close fd, null-terminate, etc). */
+int64_t yona_rt_io_await(int64_t uring_id);
+
+/* ===== Async File I/O (submit-and-return) ===== */
+
+/* Submit a file read to io_uring. Returns uring ID (0 on failure). */
+int64_t yona_platform_read_file_submit(const char* path);
+
+/* Submit a file write to io_uring. Returns uring ID (0 on failure). */
+int64_t yona_platform_write_file_submit(const char* path, const char* content);
+
 /* ===== Filesystem ===== */
 
 /* Read entire file into a malloc'd string. Returns NULL on error. */

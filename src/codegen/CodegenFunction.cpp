@@ -1362,7 +1362,12 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         return {promise, CType::PROMISE, {inner_ret}};
     }
 
-    return {builder_->CreateCall(cf.fn, call_args, "calltmp"), cf.return_type};
+    auto* call_inst = builder_->CreateCall(cf.fn, call_args, "calltmp");
+    // Mark self-recursive calls as tail calls for TailCallElimination pass
+    auto* current_fn = builder_->GetInsertBlock()->getParent();
+    if (cf.fn == current_fn)
+        call_inst->setTailCall(true);
+    return {call_inst, cf.return_type};
 }
 
 // ===== Closure wrapping =====

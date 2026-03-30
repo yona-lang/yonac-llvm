@@ -43,7 +43,7 @@ void EscapeAnalysis::collect_escaping(
         for (auto* alias : le->aliases) {
             if (alias->get_type() == AST_VALUE_ALIAS) {
                 auto* va = static_cast<ValueAlias*>(alias);
-                collect_escaping(va->body, escaping, let_bound, known_local_functions, false);
+                collect_escaping(va->expr, escaping, let_bound, known_local_functions, false);
             } else if (alias->get_type() == AST_LAMBDA_ALIAS) {
                 auto* la = static_cast<LambdaAlias*>(alias);
                 // Lambda body captures — mark free vars as escaping
@@ -76,9 +76,9 @@ void EscapeAnalysis::collect_escaping(
     // Do expression: last expression is in return position
     if (ty == AST_DO_EXPR) {
         auto* de = static_cast<DoExpr*>(node);
-        for (size_t i = 0; i < de->expressions.size(); i++) {
-            bool is_last = (i == de->expressions.size() - 1);
-            collect_escaping(de->expressions[i], escaping, let_bound, known_local_functions,
+        for (size_t i = 0; i < de->steps.size(); i++) {
+            bool is_last = (i == de->steps.size() - 1);
+            collect_escaping(de->steps[i], escaping, let_bound, known_local_functions,
                            is_last && in_return_position);
         }
         return;
@@ -173,7 +173,7 @@ static void collect_lambda_captures(
             auto* le = static_cast<LetExpr*>(node);
             for (auto* alias : le->aliases) {
                 if (alias->get_type() == AST_VALUE_ALIAS) {
-                    walk(static_cast<ValueAlias*>(alias)->body);
+                    walk(static_cast<ValueAlias*>(alias)->expr);
                 } else if (alias->get_type() == AST_LAMBDA_ALIAS) {
                     walk(static_cast<LambdaAlias*>(alias)->lambda);
                 }
@@ -206,7 +206,7 @@ static void collect_lambda_captures(
         }
         if (node->get_type() == AST_DO_EXPR) {
             auto* de = static_cast<DoExpr*>(node);
-            for (auto* e : de->expressions) walk(e);
+            for (auto* e : de->steps) walk(e);
             return;
         }
         if (node->get_type() == AST_FUNCTION_EXPR) {
@@ -222,7 +222,7 @@ static void collect_lambda_captures(
             walk(bwg->expr);
         else if (auto* bwg2 = dynamic_cast<BodyWithGuards*>(body)) {
             walk(bwg2->guard);
-            walk(bwg2->body);
+            walk(bwg2->expr);
         }
     }
 }
@@ -239,7 +239,7 @@ std::unordered_set<std::string> EscapeAnalysis::analyze(
             auto* le = static_cast<LetExpr*>(node);
             for (auto* alias : le->aliases) {
                 if (alias->get_type() == AST_VALUE_ALIAS)
-                    let_bound.insert(static_cast<ValueAlias*>(alias)->name->value);
+                    let_bound.insert(static_cast<ValueAlias*>(alias)->identifier->name->value);
                 else if (alias->get_type() == AST_LAMBDA_ALIAS)
                     let_bound.insert(static_cast<LambdaAlias*>(alias)->name->value);
             }
@@ -255,7 +255,7 @@ std::unordered_set<std::string> EscapeAnalysis::analyze(
         }
         if (node->get_type() == AST_DO_EXPR) {
             auto* de = static_cast<DoExpr*>(node);
-            for (auto* e : de->expressions) collect_lets(e);
+            for (auto* e : de->steps) collect_lets(e);
         }
     };
 
@@ -295,7 +295,7 @@ std::unordered_set<std::string> EscapeAnalysis::analyze_expr(
             auto* le = static_cast<LetExpr*>(node);
             for (auto* alias : le->aliases) {
                 if (alias->get_type() == AST_VALUE_ALIAS)
-                    let_bound.insert(static_cast<ValueAlias*>(alias)->name->value);
+                    let_bound.insert(static_cast<ValueAlias*>(alias)->identifier->name->value);
                 else if (alias->get_type() == AST_LAMBDA_ALIAS)
                     let_bound.insert(static_cast<LambdaAlias*>(alias)->name->value);
             }

@@ -8,9 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifndef YONA_PLATFORM_INCLUDED
 extern void* yona_rt_rc_alloc_string(size_t bytes);
-#endif
 
 char* yona_platform_read_line(void) {
     char buf[4096];

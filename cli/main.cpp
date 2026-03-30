@@ -51,12 +51,15 @@ int main(int argc, char* argv[]) {
     bool flag_werror = false;
     bool flag_w = false;
     bool flag_debug = false;
+    int opt_level = 2;
     vector<string> include_paths;
 
     app.add_option("input", input_file, "Input .yona file");
     app.add_option("-e,--expression", expression, "Compile expression");
     app.add_option("-o,--output", output_file, "Output file");
     app.add_option("-I,--include", include_paths, "Module search paths (for .yonai files)");
+    app.add_option("-O", opt_level, "Optimization level (0-3, default 2)")
+       ->check(CLI::Range(0, 3));
     app.add_flag("--emit-ir", emit_ir, "Print LLVM IR instead of compiling");
     app.add_flag("--emit-obj", emit_obj, "Emit object file only (don't link)");
     app.add_flag("--Wall", flag_wall, "Enable common warnings");
@@ -115,6 +118,7 @@ int main(int argc, char* argv[]) {
     Codegen codegen(module_name, &diag);
 
     if (flag_debug) codegen.set_debug_info(true, filename);
+    codegen.set_opt_level(opt_level);
 
     // Set module search paths for import resolution
     codegen.module_paths_ = include_paths;
@@ -197,6 +201,16 @@ int main(int argc, char* argv[]) {
                 string src_dir = (filesystem::path(dir) / "src").string();
                 string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_obj;
                 system(cmd.c_str());
+                // Compile platform layer
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = filesystem::path(dir) / "src" / "runtime" / "platform" / pf;
+                    if (filesystem::exists(plat_src)) {
+                        string plat_obj = rt_obj + "." + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj).c_str());
+                        system(("ld -r " + rt_obj + " " + plat_obj + " -o " + rt_obj + ".merged && mv " + rt_obj + ".merged " + rt_obj).c_str());
+                        filesystem::remove(plat_obj);
+                    }
+                }
                 break;
             }
         }

@@ -19,9 +19,7 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-#ifndef YONA_PLATFORM_INCLUDED
 extern void* yona_rt_rc_alloc_string(size_t bytes);
-#endif
 
 /* ===== TCP ===== */
 
@@ -149,6 +147,90 @@ int64_t yona_Std_Net__recv(int64_t fd, int64_t max_bytes) {
 }
 
 int64_t yona_Std_Net__close(int64_t fd) { close((int)fd); return 0; }
+
+/* ===== HTTP GET via io_uring ===== */
+
+extern const char* yona_Std_Http__buildRequest(const char* method, const char* host,
+                                                const char* path, const char* body);
+extern int64_t* yona_Std_Http__parseUrl(const char* url);
+extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+#define RC_TYPE_STRING 6
+
+int64_t yona_Std_Http__httpGet(const char* url) {
+    int64_t* parsed = yona_Std_Http__parseUrl(url);
+    const char* host = (const char*)(intptr_t)parsed[1];
+    int64_t port = parsed[2];
+    const char* path = (const char*)(intptr_t)parsed[3];
+
+    struct addrinfo hints, *ai;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[8]; snprintf(port_str, sizeof(port_str), "%ld", port);
+    if (getaddrinfo(host, port_str, &hints, &ai) != 0) return 0;
+    int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+    if (fd < 0) { freeaddrinfo(ai); return 0; }
+
+    struct sockaddr_storage addr_buf;
+    memcpy(&addr_buf, ai->ai_addr, ai->ai_addrlen);
+    socklen_t addr_len = ai->ai_addrlen;
+    freeaddrinfo(ai);
+    {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_CONNECT;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)&addr_buf;
+        sqe.off = (uint64_t)addr_len;
+        uint64_t id = ring_submit_sqe(&sqe);
+        if (ring_await(id) < 0) { close(fd); return 0; }
+    }
+
+    const char* req = yona_Std_Http__buildRequest("GET", host, path, NULL);
+    {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_SEND;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)req;
+        sqe.len = (unsigned)strlen(req);
+        uint64_t id = ring_submit_sqe(&sqe);
+        ring_await(id);
+    }
+
+    size_t buf_size = 16384;
+    size_t total = 0;
+    char* buf = (char*)rc_alloc(RC_TYPE_STRING, buf_size);
+    for (;;) {
+        struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+        sqe.opcode = IORING_OP_RECV;
+        sqe.fd = fd;
+        sqe.addr = (unsigned long)(buf + total);
+        sqe.len = (unsigned)(buf_size - total - 1);
+        uint64_t id = ring_submit_sqe(&sqe);
+        int32_t n = ring_await(id);
+        if (n <= 0) break;
+        total += (size_t)n;
+        if (total >= buf_size - 256) {
+            size_t new_size = buf_size * 2;
+            char* new_buf = (char*)rc_alloc(RC_TYPE_STRING, new_size);
+            memcpy(new_buf, buf, total);
+            buf = new_buf; buf_size = new_size;
+        }
+    }
+    buf[total] = '\0';
+    close(fd);
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_READ_FILE;
+    ctx->fd = -1;
+    ctx->buf = buf;
+    ctx->buf_size = total;
+    ctx->close_fd = 0;
+    struct io_uring_sqe sqe; memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_NOP;
+    uint64_t nop_id = ring_submit_sqe(&sqe);
+    io_ctx_put(nop_id, ctx);
+    return (int64_t)nop_id;
+}
 
 /* ===== UDP (sync — datagram ops are fast) ===== */
 
