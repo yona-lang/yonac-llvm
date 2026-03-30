@@ -980,7 +980,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                         // More args remain: result is a closure, continue
                         current_closure = builder_->CreateIntToPtr(result, ptr_ty);
                     } else {
-                        return {result, ret_ctype};
+                        return {coerce_value(result, ret_ctype), ret_ctype};
                     }
                 }
 
@@ -989,7 +989,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                 auto* fn_ptr = builder_->CreateIntToPtr(fn_i64, ptr_ty, "closure_fn_ptr");
                 auto* call_type = llvm::FunctionType::get(i64_ty, {ptr_ty}, false);
                 auto* result = builder_->CreateCall(call_type, fn_ptr, {current_closure}, "closure_call");
-                return {result, ret_ctype};
+                return {coerce_value(result, ret_ctype), ret_ctype};
             }
         }
 
@@ -1067,7 +1067,8 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
 
             std::vector<Value*> vals;
             for (auto& a : all_args) vals.push_back(a.val);
-            return {builder_->CreateCall(ext_fn, vals, "extern_call"), ret_ctype};
+            auto* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
+            return {coerce_value(ext_result, ret_ctype), ret_ctype};
         }
 
         // Try as an LLVM function in the module
@@ -1367,7 +1368,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     auto* current_fn = builder_->GetInsertBlock()->getParent();
     if (cf.fn == current_fn)
         call_inst->setTailCall(true);
-    return {call_inst, cf.return_type};
+    return {coerce_value(call_inst, cf.return_type), cf.return_type};
 }
 
 // ===== Closure wrapping =====

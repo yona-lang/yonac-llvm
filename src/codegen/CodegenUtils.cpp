@@ -223,6 +223,56 @@ void Codegen::emit_rc_dec(Value* val, CType type) {
     builder_->CreateCall(rt_rc_dec_, {ptr_val});
 }
 
+// ===== Type coercion =====
+// Ensures an LLVM value matches the expected type for its CType.
+// Called at every boundary between Yona-compiled code and runtime functions:
+// - After closure calls (which return i64 universally)
+// - After deferred function returns
+// - Before passing to runtime functions that expect ptr
+
+llvm::Value* Codegen::coerce_value(llvm::Value* val, CType ct) {
+    if (!val) return val;
+    auto* expected = llvm_type(ct);
+    if (val->getType() == expected) return val;
+
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto ptr_ty = PointerType::get(*context_, 0);
+
+    // i64 → ptr (pointer-typed values returned from closures as i64)
+    if (val->getType() == i64_ty && expected->isPointerTy())
+        return builder_->CreateIntToPtr(val, ptr_ty);
+
+    // ptr → i64 (pointer values passed to functions expecting i64)
+    if (val->getType()->isPointerTy() && expected == i64_ty)
+        return builder_->CreatePtrToInt(val, i64_ty);
+
+    // i64 → i1 (bool returned as i64)
+    if (val->getType() == i64_ty && expected == LType::getInt1Ty(*context_))
+        return builder_->CreateTrunc(val, expected);
+
+    // i1 → i64 (bool promoted to i64 for storage)
+    if (val->getType() == LType::getInt1Ty(*context_) && expected == i64_ty)
+        return builder_->CreateZExt(val, i64_ty);
+
+    // i64 → double (float returned as i64 from closure)
+    if (val->getType() == i64_ty && expected->isDoubleTy())
+        return builder_->CreateBitCast(val, expected);
+
+    // double → i64 (float stored as i64 in closure)
+    if (val->getType()->isDoubleTy() && expected == i64_ty)
+        return builder_->CreateBitCast(val, i64_ty);
+
+    // ptr → ptr (already correct, just different pointer types)
+    if (val->getType()->isPointerTy() && expected->isPointerTy())
+        return val; // opaque pointers — all ptrs are compatible
+
+    // Integer width mismatches
+    if (val->getType()->isIntegerTy() && expected->isIntegerTy())
+        return builder_->CreateZExtOrTrunc(val, expected);
+
+    return val; // fallback: no coercion needed
+}
+
 // ===== Arena allocation helpers =====
 
 llvm::Value* Codegen::emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes) {

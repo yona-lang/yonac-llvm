@@ -143,13 +143,8 @@ TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     auto elem = codegen(node->left);
     auto seq = codegen(node->right);
     if (!elem || !seq) return {};
-    // Coerce types for rt_seq_cons
-    Value* seq_ptr = seq.val;
-    if (seq_ptr->getType()->isIntegerTy())
-        seq_ptr = builder_->CreateIntToPtr(seq_ptr, PointerType::get(*context_, 0));
-    Value* elem_val = elem.val;
-    if (elem_val->getType()->isPointerTy())
-        elem_val = builder_->CreatePtrToInt(elem_val, LType::getInt64Ty(*context_));
+    Value* seq_ptr = coerce_value(seq.val, CType::SEQ);
+    Value* elem_val = coerce_value(elem.val, CType::INT); // elements stored as i64
     return {builder_->CreateCall(rt_seq_cons_, {elem_val, seq_ptr}, "cons"), CType::SEQ, {elem.type}};
 }
 

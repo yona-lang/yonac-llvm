@@ -973,18 +973,14 @@ Function* Codegen::codegen_main(AstNode* node) {
 
 void Codegen::codegen_print_value(const TypedValue& tv) {
     if (!tv.val) return;
+    // Coerce value to the expected LLVM type for its CType
+    Value* v = coerce_value(tv.val, tv.type);
     switch (tv.type) {
-        case CType::INT:    builder_->CreateCall(rt_print_int_, {tv.val}); break;
-        case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {tv.val}); break;
-        case CType::BOOL:   builder_->CreateCall(rt_print_bool_, {tv.val}); break;
-        case CType::STRING: builder_->CreateCall(rt_print_string_, {tv.val}); break;
-        case CType::SEQ: {
-            Value* sp = tv.val;
-            if (sp->getType()->isIntegerTy())
-                sp = builder_->CreateIntToPtr(sp, PointerType::get(*context_, 0));
-            builder_->CreateCall(rt_print_seq_, {sp});
-            break;
-        }
+        case CType::INT:    builder_->CreateCall(rt_print_int_, {v}); break;
+        case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {v}); break;
+        case CType::BOOL:   builder_->CreateCall(rt_print_bool_, {v}); break;
+        case CType::STRING: builder_->CreateCall(rt_print_string_, {v}); break;
+        case CType::SEQ:    builder_->CreateCall(rt_print_seq_, {v}); break;
         case CType::TUPLE: {
             builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("(")});
             if (tv.val->getType()->isStructTy()) {

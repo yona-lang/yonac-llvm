@@ -110,10 +110,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             auto i64_ty = LType::getInt64Ty(*context_);
             auto ptr_ty = PointerType::get(*context_, 0);
 
-            // Ensure scrutinee is a pointer for seq runtime calls
-            Value* seq_ptr = scrutinee.val;
-            if (seq_ptr->getType()->isIntegerTy())
-                seq_ptr = builder_->CreateIntToPtr(seq_ptr, ptr_ty);
+            // Coerce scrutinee to pointer for seq runtime calls
+            Value* seq_ptr = coerce_value(scrutinee.val, CType::SEQ);
 
             if (htp->heads.size() == 1) {
                 auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_ptr});
@@ -156,9 +154,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
             auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
-                Value* seq_val = scrutinee.val;
-                if (seq_val->getType()->isIntegerTy())
-                    seq_val = builder_->CreateIntToPtr(seq_val, PointerType::get(*context_, 0));
+                Value* seq_val = coerce_value(scrutinee.val, CType::SEQ);
                 auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_val});
                 auto cmp = builder_->CreateICmpNE(is_empty, ConstantInt::get(LType::getInt64Ty(*context_), 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
