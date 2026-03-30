@@ -963,6 +963,53 @@ unique_ptr<ExprNode> ParserImpl::parse_do_expr() {
     while (!check(TokenType::YEND) && !is_at_end()) {
         skip_newlines();
         if (check(TokenType::YEND)) break;
+
+        // Check for binding: identifier = expr (or pattern = expr)
+        // Look ahead: if we see IDENTIFIER followed by ASSIGN, it's a do-binding
+        if (check(TokenType::YIDENTIFIER) && peek(1).type == TokenType::YASSIGN) {
+            // Do-binding: name = expr — desugar to sequential let
+            SourceLocation bind_loc = current_location();
+            string name(advance().lexeme);
+            advance(); // consume '='
+            auto value = parse_expr();
+            skip_newlines();
+
+            // Parse remaining expressions as the body
+            vector<ExprNode*> rest;
+            while (!check(TokenType::YEND) && !is_at_end()) {
+                skip_newlines();
+                if (check(TokenType::YEND)) break;
+                if (check(TokenType::YIDENTIFIER) && peek(1).type == TokenType::YASSIGN) {
+                    // Another binding — recurse by building a nested do
+                    auto inner_do = parse_do_remaining(rest);
+                    if (inner_do) rest.push_back(inner_do.release());
+                    break;
+                }
+                size_t pos_before = current_;
+                auto expr = parse_expr();
+                if (expr) rest.push_back(expr.release());
+                else if (current_ == pos_before) { advance(); break; }
+                skip_newlines();
+            }
+
+            // Build: let name = value in <rest as do body>
+            auto* id = new IdentifierExpr(bind_loc, new NameExpr(bind_loc, name));
+            auto* alias = new ValueAlias(bind_loc, id, value.release());
+            ExprNode* body;
+            if (rest.size() == 1) {
+                body = rest[0];
+            } else if (rest.empty()) {
+                body = new UnitExpr(bind_loc);
+            } else {
+                body = new DoExpr(bind_loc, rest);
+            }
+            auto* let_expr = new LetExpr(bind_loc, {alias}, body);
+            expressions.push_back(let_expr);
+
+            // The let wraps the rest, so we're done with the do body
+            break;
+        }
+
         size_t pos_before = current_;
         auto expr = parse_expr();
         if (expr) {
@@ -977,6 +1024,41 @@ unique_ptr<ExprNode> ParserImpl::parse_do_expr() {
     expect(TokenType::YEND, "Expected 'end' after do block");
 
     return make_unique<DoExpr>(loc, expressions);
+}
+
+// Helper: parse remaining do-block entries when a binding is encountered mid-block
+unique_ptr<ExprNode> ParserImpl::parse_do_remaining(vector<ExprNode*>& exprs) {
+    while (!check(TokenType::YEND) && !is_at_end()) {
+        skip_newlines();
+        if (check(TokenType::YEND)) break;
+
+        if (check(TokenType::YIDENTIFIER) && peek(1).type == TokenType::YASSIGN) {
+            SourceLocation bind_loc = current_location();
+            string name(advance().lexeme);
+            advance(); // consume '='
+            auto value = parse_expr();
+            skip_newlines();
+
+            vector<ExprNode*> rest;
+            auto inner = parse_do_remaining(rest);
+            if (inner) rest.push_back(inner.release());
+
+            auto* id = new IdentifierExpr(bind_loc, new NameExpr(bind_loc, name));
+            auto* alias = new ValueAlias(bind_loc, id, value.release());
+            ExprNode* body;
+            if (rest.size() == 1) body = rest[0];
+            else if (rest.empty()) body = new UnitExpr(bind_loc);
+            else body = new DoExpr(bind_loc, rest);
+            return unique_ptr<ExprNode>(new LetExpr(bind_loc, {alias}, body));
+        }
+
+        size_t pos_before = current_;
+        auto expr = parse_expr();
+        if (expr) exprs.push_back(expr.release());
+        else if (current_ == pos_before) { advance(); break; }
+        skip_newlines();
+    }
+    return nullptr;
 }
 
 unique_ptr<ExprNode> ParserImpl::parse_try_expr() {

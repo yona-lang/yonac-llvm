@@ -73,11 +73,12 @@ parseResponse raw =
 ## ```
 send host port req =
     import tcpConnect, Std\Net\send as netSend, recv, close from Std\Net in
-    let fd = tcpConnect host port, reqStr = formatRequest host req in
     do
-        netSend fd reqStr
-        let raw = recv fd 65536 in
-        do close fd; parseResponse raw end
+        fd = tcpConnect host port
+        netSend fd (formatRequest host req)
+        raw = recv fd 65536
+        close fd
+        parseResponse raw
     end
 
 ## HTTP GET shorthand.
@@ -129,22 +130,23 @@ response status body = Response { status = status, rawHeaders = "", body = body 
 serve host port handler =
     import tcpListen, tcpAccept, Std\Net\send as netSend, recv, close from Std\Net in
     import split, indexOf, drop from Std\String in
-    let listener = tcpListen host port,
-        loop = \->
-            let client = tcpAccept listener,
-                raw = recv client 65536,
-                firstLine = case split "\r\n" raw of [h|_] -> h; _ -> "GET / HTTP/1.1" end,
-                parts = split " " firstLine,
-                method = case parts of [m|_] -> m; _ -> "GET" end,
-                path = case parts of [_|[p|_]] -> p; _ -> "/" end,
-                bodyStart = indexOf "\r\n\r\n" raw,
-                body = if bodyStart >= 0 then drop (bodyStart + 4) raw else "",
-                methodVal = case method of "GET" -> GET; "POST" -> POST; "PUT" -> PUT; "DELETE" -> DELETE; _ -> GET end,
-                req = Request { method = methodVal, path = path, headers = 0, body = body },
-                resp = handler req in
-            do
-                netSend client (formatResponse resp)
-                close client
-                loop ()
-            end
-    in loop ()
+    do
+        listener = tcpListen host port
+        loop = \-> do
+            client = tcpAccept listener
+            raw = recv client 65536
+            firstLine = case split "\r\n" raw of [h|_] -> h; _ -> "GET / HTTP/1.1" end
+            parts = split " " firstLine
+            method = case parts of [m|_] -> m; _ -> "GET" end
+            path = case parts of [_|[p|_]] -> p; _ -> "/" end
+            bodyStart = indexOf "\r\n\r\n" raw
+            body = if bodyStart >= 0 then drop (bodyStart + 4) raw else ""
+            methodVal = case method of "GET" -> GET; "POST" -> POST; "PUT" -> PUT; "DELETE" -> DELETE; _ -> GET end
+            req = Request { method = methodVal, path = path, headers = 0, body = body }
+            resp = handler req
+            netSend client (formatResponse resp)
+            close client
+            loop ()
+        end
+        loop ()
+    end

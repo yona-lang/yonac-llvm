@@ -372,13 +372,40 @@ else
 
 ### Do Expressions
 
+Sequential execution with guaranteed ordering. Unlike `let`, expressions in `do` blocks execute strictly in order. The last expression is the return value.
+
 ```yona
 do
-  expr1
-  expr2
-  expr3
+    expr1
+    expr2
+    expr3   # returned
 end
 ```
+
+Do blocks support **variable bindings** using `name = expr`:
+
+```yona
+do
+    x = computeA ()
+    y = computeB x
+    z = x + y
+    z   # returned
+end
+```
+
+This is the idiomatic way to write sequential I/O code:
+
+```yona
+do
+    fd = tcpConnect "localhost" 8080
+    send fd "hello"
+    response = recv fd 4096
+    close fd
+    response
+end
+```
+
+Unlike `let` (where independent bindings may execute in parallel), `do` bindings always execute top-to-bottom. Use `let` for pure computations, `do` for side effects.
 
 ## Exception Handling
 
