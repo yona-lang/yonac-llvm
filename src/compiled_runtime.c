@@ -133,6 +133,18 @@ void yona_rt_arena_destroy(void* arena_ptr) {
     }
 }
 
+#define RC_TYPE_BOX     7
+
+/* Box: heap-allocate arbitrary data (for tuples in collections) */
+void* yona_rt_box(const void* data, int64_t size) {
+    void* box = rc_alloc(RC_TYPE_BOX, (size_t)size);
+    memcpy(box, data, (size_t)size);
+    return box;
+}
+
+/* Unbox: just returns the pointer (data is at the payload position) */
+/* No runtime function needed — codegen does inttoptr + load directly */
+
 /* Public: allocate an RC-managed string buffer (for platform layer) */
 void* yona_rt_rc_alloc_string(size_t bytes) {
     return rc_alloc(RC_TYPE_STRING, bytes);

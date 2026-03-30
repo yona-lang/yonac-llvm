@@ -250,6 +250,7 @@ void Codegen::declare_runtime() {
     rt_io_await_ = decl("yona_rt_io_await", i64, {i64});
 
     // Resource cleanup (with expression)
+    rt_box_ = decl("yona_rt_box", ptr, {ptr, i64});
     rt_close_ = decl("yona_rt_close", vd, {i64});
 
     // Exception handling (setjmp/longjmp)

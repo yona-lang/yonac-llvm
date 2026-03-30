@@ -3,14 +3,31 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 653 assertions across 74 test cases
+- **Tests**: 655 assertions across 74 test cases
 - **Stdlib**: 22 modules, ~220 exported functions (11 pure Yona + 11 C runtime)
 
 ## Remaining Work
 
 ### Language Features
 - [x] `with` expression — deterministic resource cleanup via Closeable trait dispatch ✅
+- [x] Tuples in collections — boxing/unboxing for struct-typed elements in sequences ✅
 - [ ] STM (Software Transactional Memory) — for shared mutable state
+
+### Type System
+- [ ] Bytes type — length-prefixed byte buffer (not null-terminated), CType::BYTES,
+  RC_TYPE_BYTES, needed for binary I/O, networking, crypto
+- [ ] Bytes ↔ String conversion functions
+- [ ] Binary file I/O (readFileBytes, writeFileBytes)
+- [ ] Binary network send/recv (Bytes instead of String)
+
+### Stdlib
+- [ ] Std\Http rewrite — pure Yona on top of Std\Net + Std\String:
+  - Request/Response ADTs with Method, headers as [(String, String)], body as String/Bytes
+  - Client: get, post, put, delete, send (full control)
+  - Server: serve handler (Request → Response)
+  - URL parsing, header formatting/parsing in Yona
+  - Remove C-level HTTP functions (buildRequest, parseStatus, etc.)
+  - Streaming support via chunked transfer encoding
 
 ### Codegen Optimizations
 - [x] Optimization levels (-O0 to -O3) via LLVM new PassManager ✅

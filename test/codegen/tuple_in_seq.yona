@@ -1,0 +1,1 @@
+let pairs = [(1, 10), (2, 20), (3, 30)] in case pairs of [h|_] -> case h of (a, b) -> a + b end end

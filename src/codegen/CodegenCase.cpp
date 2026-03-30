@@ -118,8 +118,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
                 auto idx = ConstantInt::get(LType::getInt64Ty(*context_), hi);
                 auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
-                // If element type is pointer-based (SEQ, STRING, FUNCTION, etc.),
-                // cast the i64 from seq_get to ptr
+                // Cast i64 from seq_get to the correct type
                 Value* elem_val = hv;
                 if (elem_type == CType::SEQ || elem_type == CType::STRING ||
                     elem_type == CType::FUNCTION || elem_type == CType::ADT ||
@@ -149,8 +148,21 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             } else builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_TUPLE_PATTERN) {
             auto* tp = static_cast<TuplePattern*>(pat);
+            // Unbox if the tuple was stored in a collection (value is i64, not struct)
+            Value* tuple_val = scrutinee.val;
+            if (tuple_val->getType()->isIntegerTy() && scrutinee.type == CType::TUPLE) {
+                // Build the struct type from subtypes or pattern size
+                std::vector<LType*> fields;
+                for (size_t fi = 0; fi < tp->patterns.size(); fi++) {
+                    CType ft = (fi < scrutinee.subtypes.size()) ? scrutinee.subtypes[fi] : CType::INT;
+                    fields.push_back(llvm_type(ft));
+                }
+                auto* struct_ty = StructType::get(*context_, fields);
+                auto* ptr = builder_->CreateIntToPtr(tuple_val, PointerType::get(*context_, 0));
+                tuple_val = builder_->CreateLoad(struct_ty, ptr, "unbox_tuple");
+            }
             for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
-                auto elem = builder_->CreateExtractValue(scrutinee.val, {(unsigned)ti});
+                auto elem = builder_->CreateExtractValue(tuple_val, {(unsigned)ti});
                 CType et = (ti < scrutinee.subtypes.size()) ? scrutinee.subtypes[ti] : CType::INT;
                 auto* sub = tp->patterns[ti];
                 if (sub->get_type() == AST_PATTERN_VALUE) {

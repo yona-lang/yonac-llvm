@@ -249,6 +249,9 @@ private:
     // io_uring await
     llvm::Function* rt_io_await_ = nullptr;
 
+    // Boxing (tuples in collections)
+    llvm::Function* rt_box_ = nullptr;
+
     // Resource cleanup (with expression)
     llvm::Function* rt_close_ = nullptr;
 

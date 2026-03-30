@@ -81,8 +81,23 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
             report_error(node->values[i]->source_context,
                 "type error: heterogeneous sequence — expected " + ctype_to_string(elem_type)
                 + " but got " + ctype_to_string(tv.type));
-        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
-        builder_->CreateCall(rt_seq_set_, {seq, idx, tv.val});
+        auto idx = ConstantInt::get(i64_ty, i);
+        Value* store_val = tv.val;
+        if (store_val->getType()->isStructTy()) {
+            // Box: heap-allocate the struct, store pointer as i64
+            auto* alloca = builder_->CreateAlloca(store_val->getType());
+            builder_->CreateStore(store_val, alloca);
+            uint64_t sz = module_->getDataLayout().getTypeAllocSize(store_val->getType());
+            store_val = builder_->CreateCall(rt_box_, {alloca, ConstantInt::get(i64_ty, sz)});
+            store_val = builder_->CreatePtrToInt(store_val, i64_ty);
+        } else if (store_val->getType()->isPointerTy()) {
+            store_val = builder_->CreatePtrToInt(store_val, i64_ty);
+        } else if (store_val->getType()->isDoubleTy()) {
+            store_val = builder_->CreateBitCast(store_val, i64_ty);
+        } else if (store_val->getType() != i64_ty) {
+            store_val = builder_->CreateZExtOrTrunc(store_val, i64_ty);
+        }
+        builder_->CreateCall(rt_seq_set_, {seq, idx, store_val});
     }
     return {seq, CType::SEQ, {elem_type}};
 }
