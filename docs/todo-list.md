@@ -33,8 +33,13 @@
 - [ ] macOS platform layer (kqueue-based I/O)
 - [ ] Windows platform layer (IOCP-based I/O)
 
-### Stdlib Gaps
+### Data Structures
+- [ ] Persistent Seq (finger tree / RRB-tree like original Yona's Seq.java):
+  O(1) amortized cons/snoc/head/tail, O(log32 n) indexed access,
+  O(log n) concat. Replace current flat array implementation.
 - [ ] Hash-based Dict/Set (current is O(n) flat array)
+
+### Stdlib Gaps
 - [ ] Regex (string pattern matching)
 - [ ] Buffered I/O / readLines
 - [ ] Process.exec (run shell commands, capture output)
