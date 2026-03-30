@@ -107,16 +107,26 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             } else builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
             auto* htp = static_cast<HeadTailsPattern*>(pat);
-            auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
-            auto min_len = ConstantInt::get(LType::getInt64Ty(*context_), htp->heads.size());
-            builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
+            auto i64_ty = LType::getInt64Ty(*context_);
+
+            if (htp->heads.size() == 1) {
+                // Common case [h|t]: O(1) non-empty check
+                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {scrutinee.val});
+                auto cmp = builder_->CreateICmpEQ(is_empty, ConstantInt::get(i64_ty, 0));
+                builder_->CreateCondBr(cmp, body_bb, next_bb);
+            } else {
+                // Multi-head [a, b|t]: need length >= N
+                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
+                auto min_len = ConstantInt::get(i64_ty, htp->heads.size());
+                builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
+            }
 
             // Determine element type from the sequence's subtypes
             CType elem_type = (!scrutinee.subtypes.empty()) ? scrutinee.subtypes[0] : CType::INT;
 
             builder_->SetInsertPoint(body_bb);
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
-                auto idx = ConstantInt::get(LType::getInt64Ty(*context_), hi);
+                auto idx = ConstantInt::get(i64_ty, hi);
                 auto hv = builder_->CreateCall(rt_seq_get_, {scrutinee.val, idx});
                 // Cast i64 from seq_get to the correct type
                 Value* elem_val = hv;
@@ -142,8 +152,9 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
             auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
-                auto len = builder_->CreateCall(rt_seq_length_, {scrutinee.val});
-                auto cmp = builder_->CreateICmpEQ(len, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+                // O(1) empty check
+                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {scrutinee.val});
+                auto cmp = builder_->CreateICmpNE(is_empty, ConstantInt::get(LType::getInt64Ty(*context_), 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_TUPLE_PATTERN) {

@@ -239,6 +239,13 @@ int64_t yona_rt_list_length(void* list) {
     return cons_length(list);
 }
 
+/* Fast empty check — O(1) for both cons and flat */
+int64_t yona_rt_seq_is_empty(int64_t* seq) {
+    if (!seq) return 1;
+    if (is_cons_cell((void*)seq)) return 0;  /* cons cell = non-empty */
+    return seq[0] == 0;  /* flat: check length */
+}
+
 /* Forward declaration */
 int64_t* yona_rt_seq_alloc(int64_t count);
 
