@@ -273,6 +273,75 @@ llvm::Value* Codegen::coerce_value(llvm::Value* val, CType ct) {
     return val; // fallback: no coercion needed
 }
 
+// ===== Return type inference =====
+// Infers the LLVM type and CType of an expression without compiling it.
+// Used to determine function return types before creating the LLVM function.
+
+std::pair<llvm::Type*, CType> Codegen::infer_return_type(AstNode* node) {
+    using namespace ast;
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    if (!node) return {i64_ty, CType::INT};
+    auto ct = node->get_type();
+
+    if (ct == AST_VALUES_SEQUENCE_EXPR || ct == AST_CONS_LEFT_EXPR ||
+        ct == AST_CONS_RIGHT_EXPR || ct == AST_JOIN_EXPR)
+        return {llvm_type(CType::SEQ), CType::SEQ};
+    if (ct == AST_SET_EXPR) return {llvm_type(CType::SET), CType::SET};
+    if (ct == AST_DICT_EXPR) return {llvm_type(CType::DICT), CType::DICT};
+    if (ct == AST_SYMBOL_EXPR) return {i64_ty, CType::SYMBOL};
+    if (ct == AST_STRING_EXPR) return {llvm_type(CType::STRING), CType::STRING};
+    if (ct == AST_INTEGER_EXPR) return {i64_ty, CType::INT};
+    if (ct == AST_FLOAT_EXPR) return {llvm_type(CType::FLOAT), CType::FLOAT};
+    if (ct == AST_TRUE_LITERAL_EXPR || ct == AST_FALSE_LITERAL_EXPR)
+        return {llvm_type(CType::BOOL), CType::BOOL};
+    if (ct == AST_FUNCTION_EXPR)
+        return {PointerType::get(*context_, 0), CType::FUNCTION};
+    if (ct == AST_TUPLE_EXPR) {
+        auto* te = static_cast<TupleExpr*>(node);
+        std::vector<LType*> fields;
+        for (auto* v : te->values) {
+            auto [lt, _] = infer_return_type(v);
+            fields.push_back(lt);
+        }
+        return {StructType::get(*context_, fields), CType::TUPLE};
+    }
+    if (ct == AST_APPLY_EXPR) {
+        auto* app = static_cast<ApplyExpr*>(node);
+        ApplyExpr* a = app;
+        std::string root_name;
+        while (a) {
+            if (auto* nc = dynamic_cast<NameCall*>(a->call)) { root_name = nc->name->value; break; }
+            else if (auto* ec = dynamic_cast<ExprCall*>(a->call)) {
+                if (auto* inner = dynamic_cast<ApplyExpr*>(ec->expr)) a = inner;
+                else break;
+            } else break;
+        }
+        if (!root_name.empty()) {
+            auto adt_it = adt_constructors_.find(root_name);
+            if (adt_it != adt_constructors_.end()) {
+                if (adt_it->second.is_recursive)
+                    return {PointerType::get(*context_, 0), CType::ADT};
+                auto tag_ty = i64_ty;
+                std::vector<LType*> fields = {tag_ty};
+                for (int f = 0; f < adt_it->second.max_arity; f++) fields.push_back(i64_ty);
+                return {StructType::get(*context_, fields), CType::ADT};
+            }
+        }
+    }
+    if (ct == AST_CASE_EXPR) {
+        auto* ce = static_cast<CaseExpr*>(node);
+        if (!ce->clauses.empty()) return infer_return_type(ce->clauses[0]->body);
+    }
+    if (ct == AST_LET_EXPR) return infer_return_type(static_cast<LetExpr*>(node)->expr);
+    if (ct == AST_IF_EXPR) return infer_return_type(static_cast<IfExpr*>(node)->thenExpr);
+    if (ct == AST_DO_EXPR) {
+        auto* de = static_cast<DoExpr*>(node);
+        if (!de->steps.empty()) return infer_return_type(de->steps.back());
+    }
+    return {i64_ty, CType::INT};
+}
+
 // ===== Arena allocation helpers =====
 
 llvm::Value* Codegen::emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes) {

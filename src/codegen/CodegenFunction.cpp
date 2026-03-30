@@ -199,14 +199,24 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         for (size_t pi = 0; pi < def.param_names.size(); pi++)
             param_types.push_back(i64_ty);
 
-        auto ret_llvm = i64_ty; // default return type
+        // Infer return type from body
+        CType ret_ctype = CType::INT;
+        LType* ret_llvm = i64_ty;
+        if (!node->bodies.empty()) {
+            auto* body = node->bodies[0];
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+                auto [lt, ct] = infer_return_type(bwg->expr);
+                ret_llvm = lt;
+                ret_ctype = ct;
+            }
+        }
         auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
         auto* fn = Function::Create(fn_type, Function::InternalLinkage, fn_name, module_.get());
 
         // Register preliminary for recursive calls
         CompiledFunction cf_pre;
         cf_pre.fn = fn;
-        cf_pre.return_type = CType::INT;
+        cf_pre.return_type = ret_ctype;
         compiled_functions_[fn_name] = cf_pre;
         named_values_[fn_name] = {fn, CType::FUNCTION};
 
@@ -278,30 +288,16 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
                 body_tv = codegen(bwg->expr);
         }
 
-        CType ret_ctype = body_tv ? body_tv.type : CType::INT;
-
-        // All closure functions return i64 (universal value type).
-        // Coerce the body result to i64 before returning.
+        // Coerce body result to match the function's declared return type
         if (body_tv && body_tv.val) {
-            Value* ret_val = body_tv.val;
-            if (ret_val->getType() != i64_ty) {
-                if (ret_val->getType()->isPointerTy())
-                    ret_val = builder_->CreatePtrToInt(ret_val, i64_ty);
-                else if (ret_val->getType()->isDoubleTy())
-                    ret_val = builder_->CreateBitCast(ret_val, i64_ty);
-                else if (ret_val->getType()->isIntegerTy())
-                    ret_val = builder_->CreateZExtOrTrunc(ret_val, i64_ty);
-                else if (ret_val->getType()->isStructTy()) {
-                    auto* alloca = builder_->CreateAlloca(ret_val->getType());
-                    builder_->CreateStore(ret_val, alloca);
-                    ret_val = builder_->CreateLoad(i64_ty, alloca);
-                }
-            }
+            Value* ret_val = coerce_value(body_tv.val, ret_ctype);
             if (!builder_->GetInsertBlock()->getTerminator())
                 builder_->CreateRet(ret_val);
         } else {
-            if (!builder_->GetInsertBlock()->getTerminator())
-                builder_->CreateRet(ConstantInt::get(i64_ty, 0));
+            if (!builder_->GetInsertBlock()->getTerminator()) {
+                auto* default_ret = Constant::getNullValue(ret_llvm);
+                builder_->CreateRet(default_ret);
+            }
         }
 
         // Restore state
@@ -971,25 +967,29 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                         call_vals.push_back(vals[args_consumed + ai]);
                     }
 
-                    auto* call_type = llvm::FunctionType::get(i64_ty, call_arg_types, false);
+                    // Use the actual return type for the closure call
+                    auto* closure_ret_ty = (args_consumed + n_args_this_call < vals.size())
+                        ? (LType*)ptr_ty  // intermediate result is a closure (pointer)
+                        : llvm_type(ret_ctype);  // final result uses inferred type
+                    auto* call_type = llvm::FunctionType::get(closure_ret_ty, call_arg_types, false);
                     auto* result = builder_->CreateCall(call_type, fn_ptr, call_vals, "closure_call");
 
                     args_consumed += n_args_this_call;
 
                     if (args_consumed < vals.size()) {
-                        // More args remain: result is a closure, continue
-                        current_closure = builder_->CreateIntToPtr(result, ptr_ty);
+                        current_closure = result; // already ptr type
                     } else {
-                        return {coerce_value(result, ret_ctype), ret_ctype};
+                        return {result, ret_ctype};
                     }
                 }
 
                 // No args case (thunk: t ())
                 auto* fn_i64 = builder_->CreateLoad(i64_ty, current_closure, "closure_fn_i64");
-                auto* fn_ptr = builder_->CreateIntToPtr(fn_i64, ptr_ty, "closure_fn_ptr");
-                auto* call_type = llvm::FunctionType::get(i64_ty, {ptr_ty}, false);
-                auto* result = builder_->CreateCall(call_type, fn_ptr, {current_closure}, "closure_call");
-                return {coerce_value(result, ret_ctype), ret_ctype};
+                auto* fn_ptr_val = builder_->CreateIntToPtr(fn_i64, ptr_ty, "closure_fn_ptr");
+                auto* thunk_ret_ty = llvm_type(ret_ctype);
+                auto* call_type = llvm::FunctionType::get(thunk_ret_ty, {ptr_ty}, false);
+                auto* result = builder_->CreateCall(call_type, fn_ptr_val, {current_closure}, "closure_call");
+                return {result, ret_ctype};
             }
         }
 
@@ -1068,7 +1068,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             std::vector<Value*> vals;
             for (auto& a : all_args) vals.push_back(a.val);
             auto* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
-            return {coerce_value(ext_result, ret_ctype), ret_ctype};
+            return {ext_result, ret_ctype};
         }
 
         // Try as an LLVM function in the module
@@ -1368,7 +1368,7 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     auto* current_fn = builder_->GetInsertBlock()->getParent();
     if (cf.fn == current_fn)
         call_inst->setTailCall(true);
-    return {coerce_value(call_inst, cf.return_type), cf.return_type};
+    return {call_inst, cf.return_type};
 }
 
 // ===== Closure wrapping =====
