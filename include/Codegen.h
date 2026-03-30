@@ -36,7 +36,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTES };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -248,6 +248,19 @@ private:
 
     // io_uring await
     llvm::Function* rt_io_await_ = nullptr;
+
+    // Bytes
+    llvm::Function* rt_bytes_alloc_ = nullptr;
+    llvm::Function* rt_bytes_length_ = nullptr;
+    llvm::Function* rt_bytes_get_ = nullptr;
+    llvm::Function* rt_bytes_set_ = nullptr;
+    llvm::Function* rt_bytes_concat_ = nullptr;
+    llvm::Function* rt_bytes_slice_ = nullptr;
+    llvm::Function* rt_bytes_from_string_ = nullptr;
+    llvm::Function* rt_bytes_to_string_ = nullptr;
+    llvm::Function* rt_bytes_from_seq_ = nullptr;
+    llvm::Function* rt_bytes_to_seq_ = nullptr;
+    llvm::Function* rt_print_bytes_ = nullptr;
 
     // Boxing (tuples in collections)
     llvm::Function* rt_box_ = nullptr;

@@ -1,0 +1,1 @@
+import fromString, concat, toString from Std\Bytes in toString (concat (fromString "hello ") (fromString "world"))

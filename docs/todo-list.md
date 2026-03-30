@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 655 assertions across 74 test cases
-- **Stdlib**: 22 modules, ~220 exported functions (11 pure Yona + 11 C runtime)
+- **Tests**: 663 assertions across 74 test cases
+- **Stdlib**: 23 modules, ~230 exported functions (11 pure Yona + 12 C runtime)
 
 ## Remaining Work
 
@@ -14,9 +14,9 @@
 - [ ] STM (Software Transactional Memory) — for shared mutable state
 
 ### Type System
-- [ ] Bytes type — length-prefixed byte buffer (not null-terminated), CType::BYTES,
-  RC_TYPE_BYTES, needed for binary I/O, networking, crypto
-- [ ] Bytes ↔ String conversion functions
+- [x] Bytes type — length-prefixed byte buffer, CType::BYTES, 10 runtime functions ✅
+- [x] Bytes ↔ String conversion (fromString, toString) ✅
+- [x] Bytes ↔ Seq conversion (fromSeq, toSeq) ✅
 - [ ] Binary file I/O (readFileBytes, writeFileBytes)
 - [ ] Binary network send/recv (Bytes instead of String)
 

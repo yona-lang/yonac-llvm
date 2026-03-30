@@ -38,6 +38,7 @@ std::string Codegen::ctype_to_type_name(CType ct) {
         case CType::FUNCTION: return "Function";
         case CType::PROMISE: return "Promise";
         case CType::ADT: return "ADT";
+        case CType::BYTES: return "Bytes";
     }
     return "Int";
 }
@@ -113,6 +114,7 @@ static CType string_to_ctype(const std::string& s) {
     if (s == "SET") return CType::SET;
     if (s == "DICT") return CType::DICT;
     if (s == "ADT") return CType::ADT;
+    if (s == "BYTES") return CType::BYTES;
     return CType::INT;
 }
 

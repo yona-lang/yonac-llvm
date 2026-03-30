@@ -172,6 +172,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::DICT:   return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::ADT:    return LType::getInt64Ty(*context_); // overridden per-ADT
+        case CType::BYTES:  return PointerType::get(LType::getInt8Ty(*context_), 0);
     }
     return LType::getInt64Ty(*context_);
 }
@@ -250,6 +251,19 @@ void Codegen::declare_runtime() {
     rt_io_await_ = decl("yona_rt_io_await", i64, {i64});
 
     // Resource cleanup (with expression)
+    // Bytes
+    rt_bytes_alloc_       = decl("yona_rt_bytes_alloc", ptr, {i64});
+    rt_bytes_length_      = decl("yona_rt_bytes_length", i64, {ptr});
+    rt_bytes_get_         = decl("yona_rt_bytes_get", i64, {ptr, i64});
+    rt_bytes_set_         = decl("yona_rt_bytes_set", vd, {ptr, i64, i64});
+    rt_bytes_concat_      = decl("yona_rt_bytes_concat", ptr, {ptr, ptr});
+    rt_bytes_slice_       = decl("yona_rt_bytes_slice", ptr, {ptr, i64, i64});
+    rt_bytes_from_string_ = decl("yona_rt_bytes_from_string", ptr, {ptr});
+    rt_bytes_to_string_   = decl("yona_rt_bytes_to_string", ptr, {ptr});
+    rt_bytes_from_seq_    = decl("yona_rt_bytes_from_seq", ptr, {ptr});
+    rt_bytes_to_seq_      = decl("yona_rt_bytes_to_seq", ptr, {ptr});
+    rt_print_bytes_       = decl("yona_rt_print_bytes", vd, {ptr});
+
     rt_box_ = decl("yona_rt_box", ptr, {ptr, i64});
     rt_close_ = decl("yona_rt_close", vd, {i64});
 
@@ -974,6 +988,11 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
             builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<adt>")});
             break;
         }
+        case CType::BYTES: {
+            builder_->CreateCall(rt_print_bytes_, {tv.val});
+            break;
+        }
+        default: break;
     }
 }
 

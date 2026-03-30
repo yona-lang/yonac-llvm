@@ -134,6 +134,141 @@ void yona_rt_arena_destroy(void* arena_ptr) {
 }
 
 #define RC_TYPE_BOX     7
+#define RC_TYPE_BYTES   8
+
+/* Forward declaration */
+int64_t* yona_rt_seq_alloc(int64_t count);
+
+/* ===== Bytes — length-prefixed byte buffer ===== */
+/*
+ * Layout: [rc_header][length: i64][byte0, byte1, ...]
+ *                                  ^-- returned pointer
+ * Unlike strings, Bytes can contain \0 and arbitrary binary data.
+ * Length is stored at ptr[-1] (the i64 before the data pointer... no,
+ * actually we store length at index 0 of the payload, same as SEQ).
+ *
+ * Actual layout: rc_alloc returns payload pointer.
+ *   payload[0] = length (as i64)
+ *   payload[1..] = bytes (packed as uint8_t, but stored after the i64 length)
+ *
+ * We use the same pattern as sequences: first i64 is length, then data.
+ */
+
+/* Allocate a Bytes buffer of the given size (uninitialized) */
+void* yona_rt_bytes_alloc(int64_t size) {
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)size);
+    buf[0] = size;
+    return buf;
+}
+
+/* Get length of a Bytes buffer */
+int64_t yona_rt_bytes_length(void* bytes) {
+    return ((int64_t*)bytes)[0];
+}
+
+/* Get byte at index (returns 0-255) */
+int64_t yona_rt_bytes_get(void* bytes, int64_t index) {
+    int64_t len = ((int64_t*)bytes)[0];
+    if (index < 0 || index >= len) return 0;
+    uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
+    return (int64_t)data[index];
+}
+
+/* Set byte at index */
+void yona_rt_bytes_set(void* bytes, int64_t index, int64_t value) {
+    int64_t len = ((int64_t*)bytes)[0];
+    if (index < 0 || index >= len) return;
+    uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
+    data[index] = (uint8_t)(value & 0xFF);
+}
+
+/* Concatenate two Bytes buffers */
+void* yona_rt_bytes_concat(void* a, void* b) {
+    int64_t len_a = ((int64_t*)a)[0];
+    int64_t len_b = ((int64_t*)b)[0];
+    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)(len_a + len_b));
+    result[0] = len_a + len_b;
+    uint8_t* dest = (uint8_t*)(result + 1);
+    memcpy(dest, (uint8_t*)((int64_t*)a + 1), (size_t)len_a);
+    memcpy(dest + len_a, (uint8_t*)((int64_t*)b + 1), (size_t)len_b);
+    return result;
+}
+
+/* Slice: bytes[start..start+len] */
+void* yona_rt_bytes_slice(void* bytes, int64_t start, int64_t len) {
+    int64_t total = ((int64_t*)bytes)[0];
+    if (start < 0) start = 0;
+    if (start + len > total) len = total - start;
+    if (len <= 0) return yona_rt_bytes_alloc(0);
+    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)len);
+    result[0] = len;
+    uint8_t* src = (uint8_t*)((int64_t*)bytes + 1) + start;
+    memcpy((uint8_t*)(result + 1), src, (size_t)len);
+    return result;
+}
+
+/* Convert String to Bytes (copies, no null terminator in output) */
+void* yona_rt_bytes_from_string(const char* s) {
+    size_t len = strlen(s);
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + len);
+    buf[0] = (int64_t)len;
+    memcpy((uint8_t*)(buf + 1), s, len);
+    return buf;
+}
+
+/* Convert Bytes to String (adds null terminator) */
+const char* yona_rt_bytes_to_string(void* bytes) {
+    int64_t len = ((int64_t*)bytes)[0];
+    char* s = (char*)rc_alloc(RC_TYPE_STRING, (size_t)len + 1);
+    memcpy(s, (uint8_t*)((int64_t*)bytes + 1), (size_t)len);
+    s[len] = '\0';
+    return s;
+}
+
+/* Create Bytes from a list of integers (each 0-255) */
+void* yona_rt_bytes_from_seq(int64_t* seq) {
+    int64_t len = seq[0];
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)len);
+    buf[0] = len;
+    uint8_t* data = (uint8_t*)(buf + 1);
+    for (int64_t i = 0; i < len; i++)
+        data[i] = (uint8_t)(seq[i + 1] & 0xFF);
+    return buf;
+}
+
+/* Convert Bytes to a list of integers (each 0-255) */
+int64_t* yona_rt_bytes_to_seq(void* bytes) {
+    int64_t len = ((int64_t*)bytes)[0];
+    int64_t* seq = yona_rt_seq_alloc(len);
+    uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
+    for (int64_t i = 0; i < len; i++)
+        seq[i + 1] = (int64_t)data[i];
+    return seq;
+}
+
+/* Print Bytes as hex for debugging */
+void yona_rt_print_bytes(void* bytes) {
+    int64_t len = ((int64_t*)bytes)[0];
+    uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
+    printf("<<");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%d", data[i]);
+    }
+    printf(">>");
+}
+
+/* Std\Bytes module aliases */
+void* yona_Std_Bytes__alloc(int64_t s)          { return yona_rt_bytes_alloc(s); }
+int64_t yona_Std_Bytes__length(void* b)         { return yona_rt_bytes_length(b); }
+int64_t yona_Std_Bytes__get(void* b, int64_t i) { return yona_rt_bytes_get(b, i); }
+void yona_Std_Bytes__set(void* b, int64_t i, int64_t v) { yona_rt_bytes_set(b, i, v); }
+void* yona_Std_Bytes__concat(void* a, void* b)  { return yona_rt_bytes_concat(a, b); }
+void* yona_Std_Bytes__slice(void* b, int64_t s, int64_t l) { return yona_rt_bytes_slice(b, s, l); }
+void* yona_Std_Bytes__fromString(const char* s) { return yona_rt_bytes_from_string(s); }
+const char* yona_Std_Bytes__toString(void* b)   { return yona_rt_bytes_to_string(b); }
+void* yona_Std_Bytes__fromSeq(int64_t* s)       { return yona_rt_bytes_from_seq(s); }
+int64_t* yona_Std_Bytes__toSeq(void* b)         { return yona_rt_bytes_to_seq(b); }
 
 /* Box: heap-allocate arbitrary data (for tuples in collections) */
 void* yona_rt_box(const void* data, int64_t size) {

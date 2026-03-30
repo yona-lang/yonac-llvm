@@ -1,0 +1,1 @@
+import fromString, get from Std\Bytes in get (fromString "ABC") 1

@@ -1,0 +1,10 @@
+FN yona_Std_Bytes__alloc 1 INT -> BYTES
+FN yona_Std_Bytes__length 1 BYTES -> INT
+FN yona_Std_Bytes__get 2 BYTES INT -> INT
+FN yona_Std_Bytes__set 3 BYTES INT INT -> UNIT
+FN yona_Std_Bytes__concat 2 BYTES BYTES -> BYTES
+FN yona_Std_Bytes__slice 3 BYTES INT INT -> BYTES
+FN yona_Std_Bytes__fromString 1 STRING -> BYTES
+FN yona_Std_Bytes__toString 1 BYTES -> STRING
+FN yona_Std_Bytes__fromSeq 1 SEQ -> BYTES
+FN yona_Std_Bytes__toSeq 1 BYTES -> SEQ
