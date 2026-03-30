@@ -3,13 +3,13 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 650 assertions across 73 test cases
+- **Tests**: 653 assertions across 74 test cases
 - **Stdlib**: 22 modules, ~220 exported functions (11 pure Yona + 11 C runtime)
 
 ## Remaining Work
 
 ### Language Features
-- [ ] `with` expression (resource management / RAII-style cleanup)
+- [x] `with` expression — deterministic resource cleanup via Closeable trait dispatch ✅
 - [ ] STM (Software Transactional Memory) — for shared mutable state
 
 ### Codegen Optimizations

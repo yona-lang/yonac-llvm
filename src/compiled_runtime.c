@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <setjmp.h>
 #include <time.h>
+#include <unistd.h>
 #if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
 #define YONA_HAS_BACKTRACE 1
@@ -802,6 +803,15 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
 #include "runtime/platform.h"
 
 /* yona_rt_io_await is implemented in platform/file_linux.c (uses io_uring) */
+
+/* Resource cleanup for `with` expression. Closes file descriptors,
+ * sockets, or other resources based on the value type. */
+void yona_rt_close(int64_t handle) {
+    /* Only close valid-looking file descriptors (small positive integers).
+     * Arbitrary i64 values (pointers, large ints) are not fds. */
+    if (handle > 2 && handle < 65536)
+        close((int)handle);
+}
 
 /* Std\IO */
 void yona_Std_IO__print(const char* s)   { printf("%s", s); fflush(stdout); }

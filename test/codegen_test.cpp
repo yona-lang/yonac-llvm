@@ -125,6 +125,13 @@ TEST_CASE("If expression with variable generates branch") {
     CHECK(ir_contains(ir, "yona_rt_print_int(i64 1)"));
 }
 
+TEST_CASE("With expression generates close call") {
+    auto ir = compile_to_ir("with fd = 0 in 42");
+    CHECK(ir_contains(ir, "yona_rt_close"));
+}
+
+// with expression E2E test is in test/codegen/with_value.yona fixture
+
 TEST_CASE("Function generates internal LLVM function") {
     auto ir = compile_to_ir("let f x = x + 1 in f(5)");
     CHECK(ir_contains(ir, "define internal i64 @f(i64 %x)"));

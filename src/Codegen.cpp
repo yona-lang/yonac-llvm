@@ -57,6 +57,22 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     builder_ = std::make_unique<IRBuilder<>>(*context_);
     init_target();
     declare_runtime();
+
+    // Built-in Closeable trait (prelude) — enables `with` expression
+    TraitInfo closeable;
+    closeable.name = "Closeable";
+    closeable.type_param = "a";
+    closeable.method_names.push_back("close");
+    trait_registry_["Closeable"] = closeable;
+
+    // Closeable Int — for file descriptors and socket handles
+    TraitInstanceInfo closeable_int;
+    closeable_int.trait_name = "Closeable";
+    closeable_int.type_name = "Int";
+    closeable_int.method_mangled_names["close"] = "Closeable_Int__close";
+    trait_instances_["Closeable:Int"] = closeable_int;
+    // Register rt_close as the implementation
+    compiled_functions_["Closeable_Int__close"] = {rt_close_, CType::UNIT, {CType::INT}};
 }
 Codegen::~Codegen() = default;
 
@@ -232,6 +248,9 @@ void Codegen::declare_runtime() {
 
     // io_uring await
     rt_io_await_ = decl("yona_rt_io_await", i64, {i64});
+
+    // Resource cleanup (with expression)
+    rt_close_ = decl("yona_rt_close", vd, {i64});
 
     // Exception handling (setjmp/longjmp)
     auto i32 = LType::getInt32Ty(*context_);
@@ -1077,6 +1096,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_DO_EXPR:         return codegen_do(static_cast<DoExpr*>(node));
         case AST_RAISE_EXPR:      return codegen_raise(static_cast<RaiseExpr*>(node));
         case AST_TRY_CATCH_EXPR:  return codegen_try_catch(static_cast<TryCatchExpr*>(node));
+        case AST_WITH_EXPR:      return codegen_with(static_cast<WithExpr*>(node));
         case AST_IDENTIFIER_EXPR: return codegen_identifier(static_cast<IdentifierExpr*>(node));
         case AST_FUNCTION_EXPR:   return codegen_function_def(static_cast<FunctionExpr*>(node), "");
         case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));

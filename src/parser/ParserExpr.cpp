@@ -1022,26 +1022,25 @@ unique_ptr<ExprNode> ParserImpl::parse_with_expr() {
     SourceLocation loc = current_location();
     advance(); // consume 'with'
 
-    auto context = parse_expr();
-    expect(TokenType::YAS, "Expected 'as' in with expression");
-
+    // Syntax: with <name> = <resource> in <body>
     if (!check(TokenType::YIDENTIFIER)) {
         error(ParseError::Type::INVALID_SYNTAX,
-              "Expected identifier after 'as' in with expression");
+              "Expected identifier after 'with'");
         return nullptr;
     }
 
     string name(advance().lexeme);
 
-    if (!check(TokenType::YDO)) {
-        error(ParseError::Type::MISSING_TOKEN, "Expected 'do' in with expression", TokenType::YDO);
-        return nullptr;
-    }
+    expect(TokenType::YASSIGN, "Expected '=' after identifier in with expression");
 
-    auto body = parse_do_expr();
+    auto resource = parse_expr();
+
+    expect(TokenType::YIN, "Expected 'in' after resource expression in with");
+
+    auto body = parse_expr();
 
     auto name_expr = new NameExpr(loc, name);
-    return make_unique<WithExpr>(loc, false, context.release(), name_expr, body.release());
+    return make_unique<WithExpr>(loc, false, resource.release(), name_expr, body.release());
 }
 
 unique_ptr<ExprNode> ParserImpl::parse_record_expr() {

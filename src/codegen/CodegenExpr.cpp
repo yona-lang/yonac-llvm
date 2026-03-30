@@ -629,4 +629,93 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
     return {phi, result_type};
 }
 
+// ===== With Expression (resource management) =====
+//
+// with handle = openFile "data.txt" in readAll handle
+//
+// Desugars to: bind resource, try body, close on both success and failure.
+// Guarantees close() is called regardless of exceptions.
+// The resource type must have a Closeable instance (checked at compile time).
+
+TypedValue Codegen::codegen_with(WithExpr* node) {
+    set_debug_loc(node->source_context);
+    auto fn = builder_->GetInsertBlock()->getParent();
+    auto i32_ty = LType::getInt32Ty(*context_);
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    // 1. Evaluate resource expression and bind to name
+    auto resource = codegen(node->contextExpr);
+    if (!resource) return {};
+
+    // 2. Resolve Closeable.close for the resource type via trait dispatch
+    std::string adt_name = resource.adt_type_name;
+    auto resolved = resolve_trait_method("close", resource.type, adt_name);
+    if (resolved.empty()) {
+        std::string type_name = ctype_to_type_name(resource.type);
+        if (!adt_name.empty()) type_name = adt_name;
+        report_error(node->source_context,
+            "type '" + type_name + "' does not implement Closeable (required by 'with')");
+        return {};
+    }
+
+    // Find the close function
+    auto close_cf = compiled_functions_.find(resolved);
+    if (close_cf == compiled_functions_.end()) {
+        auto def_it = deferred_functions_.find(resolved);
+        if (def_it != deferred_functions_.end()) {
+            compile_function(resolved, def_it->second, {resource});
+            close_cf = compiled_functions_.find(resolved);
+        }
+    }
+    if (close_cf == compiled_functions_.end()) {
+        // Try as extern
+        auto* close_fn = module_->getFunction(resolved);
+        if (!close_fn) {
+            auto fn_type = llvm::FunctionType::get(LType::getVoidTy(*context_),
+                {resource.val->getType()}, false);
+            close_fn = Function::Create(fn_type, Function::ExternalLinkage, resolved, module_.get());
+        }
+        CompiledFunction cf;
+        cf.fn = close_fn;
+        cf.return_type = CType::UNIT;
+        cf.param_types = {resource.type};
+        compiled_functions_[resolved] = cf;
+        close_cf = compiled_functions_.find(resolved);
+    }
+
+    auto* close_fn = close_cf->second.fn;
+
+    std::string var_name = node->name->value;
+    auto saved_values = named_values_;
+    named_values_[var_name] = resource;
+
+    // Helper to emit close call using the resolved trait method
+    auto emit_close = [&]() {
+        Value* arg = resource.val;
+        if (close_fn->arg_size() > 0) {
+            auto* expected_ty = close_fn->getArg(0)->getType();
+            if (arg->getType() != expected_ty) {
+                if (arg->getType()->isPointerTy() && expected_ty->isIntegerTy())
+                    arg = builder_->CreatePtrToInt(arg, expected_ty);
+                else if (arg->getType()->isIntegerTy() && expected_ty->isPointerTy())
+                    arg = builder_->CreateIntToPtr(arg, expected_ty);
+                else if (arg->getType()->isIntegerTy() && expected_ty->isIntegerTy())
+                    arg = builder_->CreateZExtOrTrunc(arg, expected_ty);
+            }
+        }
+        builder_->CreateCall(close_fn, {arg});
+    };
+
+    // 3. Evaluate body expression
+    auto body_val = codegen(node->bodyExpr);
+    if (!body_val) body_val = {ConstantInt::get(i64_ty, 0), CType::INT};
+
+    // 4. Close resource (always, regardless of body result)
+    if (!builder_->GetInsertBlock()->getTerminator())
+        emit_close();
+
+    named_values_ = saved_values;
+    return body_val;
+}
+
 } // namespace yona::compiler::codegen

@@ -249,6 +249,9 @@ private:
     // io_uring await
     llvm::Function* rt_io_await_ = nullptr;
 
+    // Resource cleanup (with expression)
+    llvm::Function* rt_close_ = nullptr;
+
     // Arena allocator
     llvm::Function* rt_arena_create_ = nullptr;
     llvm::Function* rt_arena_alloc_ = nullptr;
@@ -303,6 +306,7 @@ private:
     TypedValue codegen_do(DoExpr* node);
     TypedValue codegen_raise(RaiseExpr* node);
     TypedValue codegen_try_catch(TryCatchExpr* node);
+    TypedValue codegen_with(WithExpr* node);
 
     // Identifiers
     TypedValue codegen_identifier(IdentifierExpr* node);

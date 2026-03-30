@@ -129,6 +129,21 @@ false
 
 Generators compile to efficient counted loops (not closures). With guards, a two-pass approach counts matches first, then fills the result.
 
+### Resource Management (`with`)
+
+```yona
+# Deterministic cleanup — close called automatically when scope exits
+with handle = tcpConnect "localhost" 8080 in
+    send handle "hello"
+
+# Nested resources
+with server = tcpListen "0.0.0.0" 9000 in
+with client = tcpAccept server in
+    recv client 1024
+```
+
+The resource type must implement `Closeable` (checked at compile time). The built-in `Closeable Int` instance handles file descriptors and sockets. Types without a `Closeable` instance produce a compiler error.
+
 ## Variables and Bindings
 
 ### Let Expressions
