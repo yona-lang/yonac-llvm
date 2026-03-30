@@ -209,6 +209,7 @@ private:
     llvm::Function* rt_seq_head_ = nullptr;
     llvm::Function* rt_seq_tail_ = nullptr;
     llvm::Function* rt_seq_is_empty_ = nullptr;
+    llvm::Function* rt_seq_lazy_cons_ = nullptr;
     llvm::Function* rt_print_symbol_ = nullptr;
     llvm::Function* rt_set_alloc_ = nullptr;
     llvm::Function* rt_set_put_ = nullptr;
