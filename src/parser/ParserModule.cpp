@@ -24,6 +24,7 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
     vector<ReExport> re_exports;
     vector<FunctionDeclaration*> function_declarations;
     vector<FunctionExpr*> functions;
+    vector<ExternDeclExpr*> extern_declarations;
     vector<AdtDeclNode*> adt_declarations;
     vector<TraitDeclNode*> trait_declarations;
     vector<InstanceDeclNode*> instance_declarations;
@@ -68,6 +69,26 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
                 }
                 adt_declarations.push_back(adt.release());
             }
+        } else if (match(TokenType::YEXTERN)) {
+            // Module-level extern: extern name : Type
+            bool is_async = false;
+            if (check(TokenType::YIDENTIFIER) && current().lexeme == "async") {
+                is_async = true;
+                advance();
+            }
+            skip_newlines();
+            if (!check(TokenType::YIDENTIFIER)) {
+                error(ParseError::Type::INVALID_SYNTAX, "Expected function name after 'extern'");
+            } else {
+                SourceLocation eloc = current_location();
+                string ename(advance().lexeme);
+                expect(TokenType::YCOLON, "Expected ':' after extern function name");
+                skip_newlines();
+                auto etype = parse_type();
+                if (etype) {
+                    extern_declarations.push_back(new ExternDeclExpr(eloc, ename, *etype, nullptr, is_async));
+                }
+            }
         } else if (check(TokenType::YIDENTIFIER)) {
             if (auto func = parse_function()) {
                 functions.push_back(func.release());
@@ -107,7 +128,8 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
             function_declarations,
             adt_declarations,
             trait_declarations,
-            instance_declarations
+            instance_declarations,
+            extern_declarations
         );
     }
 

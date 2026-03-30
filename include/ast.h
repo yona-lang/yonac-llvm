@@ -756,6 +756,7 @@ public:
   vector<ReExport> re_exports;       // re-exported symbols from other modules
   vector<FunctionExpr *> functions;
   vector<FunctionDeclaration *> functionDeclarations;
+  vector<ExternDeclExpr *> extern_declarations;  // module-level extern bindings
   vector<AdtDeclNode *> adt_declarations;
   vector<TraitDeclNode *> trait_declarations;
   vector<InstanceDeclNode *> instance_declarations;
@@ -767,7 +768,8 @@ public:
                       const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
                       const vector<AdtDeclNode *> &adt_declarations = {},
                       const vector<TraitDeclNode *> &trait_declarations = {},
-                      const vector<InstanceDeclNode *> &instance_declarations = {});
+                      const vector<InstanceDeclNode *> &instance_declarations = {},
+                      const vector<ExternDeclExpr *> &extern_declarations = {});
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

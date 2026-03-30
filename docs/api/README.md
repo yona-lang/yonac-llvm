@@ -1,6 +1,6 @@
 # Yona Standard Library API Reference
 
-**132 functions** across **12 modules**
+**142 functions** across **12 modules**
 
 | Module | Functions | Types | Description |
 |--------|-----------|-------|-------------|
@@ -9,7 +9,7 @@
 | [Std.Function](Function.md) | 8 | 0 | Function combinators — identity, composition, application, flipping. |
 | [Std.Http](Http.md) | 13 | 3 | HTTP client and server — built on Std\Net and Std\String. |
 | [Std.List](List.md) | 29 | 0 | Sequence (list) operations — map, filter, fold, sort, and more. |
-| [Std.Math](Math.md) | 10 | 0 | Integer math operations — arithmetic helpers and number theory. |
+| [Std.Math](Math.md) | 20 | 0 | Math — polymorphic numeric operations and float math. |
 | [Std.Option](Option.md) | 10 | 1 | Optional values — represents a value that may or may not exist. |
 | [Std.Pair](Pair.md) | 9 | 1 | ADT-based pairs with named fields — an alternative to tuples. |
 | [Std.Range](Range.md) | 11 | 0 | Integer ranges with optional step — lazy representation, materialized on demand. |

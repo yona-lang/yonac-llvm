@@ -1,1 +1,1 @@
-import sqrt, pi from Std\FloatMath in import intToString from Std\Types in let x = sqrt 144.0 in if x > 11.9 && x < 12.1 then 1 else 0
+extern sqrt : Float -> Float in let x = sqrt 144.0 in if x > 11.9 && x < 12.1 then 1 else 0

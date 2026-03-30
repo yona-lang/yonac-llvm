@@ -319,10 +319,12 @@ ModuleDecl::ModuleDecl(SourceContext token, FqnExpr *fqn, const vector<string> &
                        const vector<FunctionExpr *> &functions, const vector<FunctionDeclaration *> &function_declarations,
                        const vector<AdtDeclNode *> &adt_declarations,
                        const vector<TraitDeclNode *> &trait_declarations,
-                       const vector<InstanceDeclNode *> &instance_declarations)
+                       const vector<InstanceDeclNode *> &instance_declarations,
+                       const vector<ExternDeclExpr *> &extern_declarations)
     : AstNode(token), fqn(fqn->with_parent<FqnExpr>(this)), exports(exports), exported_types(exported_types),
       exported_traits(exported_traits), re_exports(re_exports),
       functions(nodes_with_parent(std::move(functions), this)), functionDeclarations(nodes_with_parent(std::move(function_declarations), this)),
+      extern_declarations(extern_declarations),
       adt_declarations(nodes_with_parent(std::move(adt_declarations), this)),
       trait_declarations(nodes_with_parent(std::move(trait_declarations), this)),
       instance_declarations(nodes_with_parent(std::move(instance_declarations), this)) {}
@@ -338,6 +340,8 @@ ModuleDecl::~ModuleDecl() {
   for (const auto p : trait_declarations)
     delete p;
   for (const auto p : instance_declarations)
+    delete p;
+  for (const auto p : extern_declarations)
     delete p;
 }
 

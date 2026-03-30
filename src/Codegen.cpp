@@ -501,6 +501,34 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         trait_instances_[key] = tii;
     }
 
+    // Process module-level extern declarations
+    for (auto* ext : mod->extern_declarations) {
+        codegen_extern_decl(ext);
+        // Add to export set if exported
+        if (export_set.count(ext->name)) {
+            std::string mangled = mangle_name(fqn, ext->name);
+            // The extern is already declared; create a wrapper with the mangled name
+            auto cf_it = compiled_functions_.find(ext->name);
+            if (cf_it != compiled_functions_.end()) {
+                auto& cf = cf_it->second;
+                module_meta_[mangled] = {cf.param_types, cf.return_type};
+                // Create a forwarding wrapper
+                if (cf.fn->getName() != mangled) {
+                    auto* wrapper = Function::Create(
+                        cf.fn->getFunctionType(),
+                        Function::ExternalLinkage,
+                        mangled, module_.get());
+                    auto* bb = BasicBlock::Create(*context_, "entry", wrapper);
+                    builder_->SetInsertPoint(bb);
+                    std::vector<Value*> args;
+                    for (auto& arg : wrapper->args()) args.push_back(&arg);
+                    auto* result = builder_->CreateCall(cf.fn, args);
+                    builder_->CreateRet(result);
+                }
+            }
+        }
+    }
+
     // First pass: register all functions as deferred
     for (auto* func : mod->functions) {
         std::string fn_name = func->name;

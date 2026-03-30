@@ -592,8 +592,9 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
     named_values_[node->name] = {fn, CType::FUNCTION,
                                   node->is_async ? std::vector<CType>{ret_ctype} : std::vector<CType>{}};
 
-    // Compile the body
-    return codegen(node->body);
+    // Compile the body (nullptr for module-level externs)
+    if (node->body) return codegen(node->body);
+    return {};
 }
 
 // ===== Local static helpers for type annotations =====

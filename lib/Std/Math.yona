@@ -1,72 +1,63 @@
-## Integer math operations — arithmetic helpers and number theory.
+## Math — polymorphic numeric operations and float math.
 ##
-## All operations work on integers. For floating-point math, use
-## extern C functions via the FFI.
+## The `Num` trait provides polymorphic `abs`, `max`, `min` for both
+## Int and Float. Float-specific functions (sqrt, sin, cos, etc.) are
+## bound from the C math library via extern declarations.
 module Std\Math
 
-export abs, max, min, clamp, sign, isEven, isOdd, gcd, pow, factorial
+export trait Num
+export abs, max, min, negate
+export clamp, sign, isEven, isOdd, gcd, pow, factorial
+export sqrt, sin, cos, tan, log, exp, floor, ceil, round, pi
 
-## Returns the absolute value.
-##
-## ```
-## abs 5       # => 5
-## abs (0 - 3) # => 3
-## ```
-abs x = if x < 0 then 0 - x else x
+## Numeric trait — polymorphic over Int and Float.
+trait Num a
+    abs : a -> a
+    max : a -> a -> a
+    min : a -> a -> a
+    negate : a -> a
+end
 
-## Returns the larger of two values.
-##
-## ```
-## max 3 7   # => 7
-## ```
-max a b = if a > b then a else b
+## Num instance for Int.
+instance Num Int
+    abs x = if x < 0 then 0 - x else x
+    max a b = if a > b then a else b
+    min a b = if a < b then a else b
+    negate x = 0 - x
+end
 
-## Returns the smaller of two values.
-##
-## ```
-## min 3 7   # => 3
-## ```
-min a b = if a < b then a else b
+## Num instance for Float.
+instance Num Float
+    abs x = if x < 0.0 then 0.0 - x else x
+    max a b = if a > b then a else b
+    min a b = if a < b then a else b
+    negate x = 0.0 - x
+end
 
 ## Restricts a value to the range `[lo, hi]`.
 ##
 ## ```
-## clamp 0 10 15    # => 10
-## clamp 0 10 5     # => 5
-## clamp 0 10 (0-3) # => 0
+## clamp 0 10 15   # => 10
 ## ```
 clamp lo hi x = if x < lo then lo else if x > hi then hi else x
 
 ## Returns 1 for positive, -1 for negative, 0 for zero.
 ##
 ## ```
-## sign 42      # => 1
-## sign (0 - 5) # => -1
-## sign 0       # => 0
+## sign 42   # => 1
 ## ```
 sign x = if x > 0 then 1 else if x < 0 then 0 - 1 else 0
 
 ## Returns `true` if the integer is even.
-##
-## ```
-## isEven 4   # => true
-## isEven 3   # => false
-## ```
 isEven x = x % 2 == 0
 
 ## Returns `true` if the integer is odd.
-##
-## ```
-## isOdd 3   # => true
-## isOdd 4   # => false
-## ```
 isOdd x = x % 2 != 0
 
 ## Greatest common divisor (Euclidean algorithm).
 ##
 ## ```
 ## gcd 12 8   # => 4
-## gcd 15 5   # => 5
 ## ```
 gcd a b =
     let a2 = abs a in
@@ -74,11 +65,10 @@ gcd a b =
     if b2 == 0 then a2
     else gcd b2 (a2 % b2)
 
-## Integer exponentiation. Uses fast exponentiation (squaring).
+## Integer exponentiation. Uses fast squaring.
 ##
 ## ```
 ## pow 2 10   # => 1024
-## pow 3 4    # => 81
 ## ```
 pow base exp =
     if exp <= 0 then 1
@@ -89,9 +79,42 @@ pow base exp =
 ## Factorial: `n! = 1 * 2 * ... * n`.
 ##
 ## ```
-## factorial 5    # => 120
-## factorial 0    # => 1
+## factorial 5   # => 120
 ## ```
 factorial n =
     if n <= 1 then 1
     else n * (factorial (n - 1))
+
+## Square root (Float -> Float).
+extern sqrt : Float -> Float
+
+## Sine (Float -> Float, radians).
+extern sin : Float -> Float
+
+## Cosine (Float -> Float, radians).
+extern cos : Float -> Float
+
+## Tangent (Float -> Float, radians).
+extern tan : Float -> Float
+
+## Natural logarithm (Float -> Float).
+extern log : Float -> Float
+
+## Exponential e^x (Float -> Float).
+extern exp : Float -> Float
+
+## Floor (Float -> Float).
+extern floor : Float -> Float
+
+## Ceiling (Float -> Float).
+extern ceil : Float -> Float
+
+## Round to nearest integer (Float -> Float).
+extern round : Float -> Float
+
+## Pi constant.
+##
+## ```
+## pi   # => 3.14159265358979
+## ```
+pi = 3.14159265358979323846

@@ -1,48 +1,36 @@
 # Std.Math
 
-Integer math operations — arithmetic helpers and number theory.
+Math — polymorphic numeric operations and float math.
 
-All operations work on integers. For floating-point math, use
-extern C functions via the FFI.
+The `Num` trait provides polymorphic `abs`, `max`, `min` for both
+Int and Float. Float-specific functions (sqrt, sin, cos, etc.) are
+bound from the C math library via extern declarations.
 
 ## Functions
 
-### `abs`
+### `trait`
 
 ```yona
-abs x = if x < 0 then 0 - x else x
+trait Num a
 ```
 
-Returns the absolute value.
+Numeric trait — polymorphic over Int and Float.
 
-```
-abs 5       # => 5
-abs (0 - 3) # => 3
-```
-
-### `max`
+### `instance`
 
 ```yona
-max a b = if a > b then a else b
+instance Num Int
 ```
 
-Returns the larger of two values.
+Num instance for Int.
 
-```
-max 3 7   # => 7
-```
-
-### `min`
+### `instance`
 
 ```yona
-min a b = if a < b then a else b
+instance Num Float
 ```
 
-Returns the smaller of two values.
-
-```
-min 3 7   # => 3
-```
+Num instance for Float.
 
 ### `clamp`
 
@@ -53,9 +41,7 @@ clamp lo hi x = if x < lo then lo else if x > hi then hi else x
 Restricts a value to the range `[lo, hi]`.
 
 ```
-clamp 0 10 15    # => 10
-clamp 0 10 5     # => 5
-clamp 0 10 (0-3) # => 0
+clamp 0 10 15   # => 10
 ```
 
 ### `sign`
@@ -67,9 +53,7 @@ sign x = if x > 0 then 1 else if x < 0 then 0 - 1 else 0
 Returns 1 for positive, -1 for negative, 0 for zero.
 
 ```
-sign 42      # => 1
-sign (0 - 5) # => -1
-sign 0       # => 0
+sign 42   # => 1
 ```
 
 ### `isEven`
@@ -80,11 +64,6 @@ isEven x = x % 2 == 0
 
 Returns `true` if the integer is even.
 
-```
-isEven 4   # => true
-isEven 3   # => false
-```
-
 ### `isOdd`
 
 ```yona
@@ -92,11 +71,6 @@ isOdd x = x % 2 != 0
 ```
 
 Returns `true` if the integer is odd.
-
-```
-isOdd 3   # => true
-isOdd 4   # => false
-```
 
 ### `gcd`
 
@@ -108,7 +82,6 @@ Greatest common divisor (Euclidean algorithm).
 
 ```
 gcd 12 8   # => 4
-gcd 15 5   # => 5
 ```
 
 ### `pow`
@@ -117,11 +90,10 @@ gcd 15 5   # => 5
 pow base exp =
 ```
 
-Integer exponentiation. Uses fast exponentiation (squaring).
+Integer exponentiation. Uses fast squaring.
 
 ```
 pow 2 10   # => 1024
-pow 3 4    # => 81
 ```
 
 ### `factorial`
@@ -133,7 +105,90 @@ factorial n =
 Factorial: `n! = 1 * 2 * ... * n`.
 
 ```
-factorial 5    # => 120
-factorial 0    # => 1
+factorial 5   # => 120
+```
+
+### `extern`
+
+```yona
+extern sqrt : Float -> Float
+```
+
+Square root (Float -> Float).
+
+### `extern`
+
+```yona
+extern sin : Float -> Float
+```
+
+Sine (Float -> Float, radians).
+
+### `extern`
+
+```yona
+extern cos : Float -> Float
+```
+
+Cosine (Float -> Float, radians).
+
+### `extern`
+
+```yona
+extern tan : Float -> Float
+```
+
+Tangent (Float -> Float, radians).
+
+### `extern`
+
+```yona
+extern log : Float -> Float
+```
+
+Natural logarithm (Float -> Float).
+
+### `extern`
+
+```yona
+extern exp : Float -> Float
+```
+
+Exponential e^x (Float -> Float).
+
+### `extern`
+
+```yona
+extern floor : Float -> Float
+```
+
+Floor (Float -> Float).
+
+### `extern`
+
+```yona
+extern ceil : Float -> Float
+```
+
+Ceiling (Float -> Float).
+
+### `extern`
+
+```yona
+extern round : Float -> Float
+```
+
+Round to nearest integer (Float -> Float).
+
+### `pi`
+
+```yona
+pi = 3.14159265358979323846
+```
+
+Pi constant.
+
+```
+pi   # => 3.14159265358979
 ```
 
