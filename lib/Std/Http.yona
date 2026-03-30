@@ -1,0 +1,150 @@
+## HTTP client and server — built on Std\Net and Std\String.
+##
+## Provides Request/Response types, high-level client (get, post),
+## and a simple server (serve). All networking via io_uring.
+module Std\Http
+
+export type Method
+export type Request
+export type Response
+export get, post, request, send, parseResponse, formatRequest
+export serve, response, ok, notFound, serverError
+
+## HTTP method.
+type Method = GET | POST | PUT | DELETE | PATCH | HEAD | OPTIONS
+
+## HTTP request with method, path, headers, and body.
+type Request = Request {
+    method : Method,
+    path : String,
+    headers : Int,
+    body : String
+}
+
+## HTTP response with status code, raw headers string, and body.
+type Response = Response {
+    status : Int,
+    rawHeaders : String,
+    body : String
+}
+
+## Create a request with defaults.
+request method path headers body = Request { method = method, path = path, headers = headers, body = body }
+
+## Format a Method as a string.
+methodString m = case m of
+    GET -> "GET"
+    POST -> "POST"
+    PUT -> "PUT"
+    DELETE -> "DELETE"
+    PATCH -> "PATCH"
+    HEAD -> "HEAD"
+    OPTIONS -> "OPTIONS"
+end
+
+## Format a Request into an HTTP/1.1 request string.
+formatRequest host req =
+    case req of
+        Request { method = m, path = p, body = b } ->
+            import length from Std\String in
+            import intToString from Std\Types in
+            let method = methodString m, bodyLen = length b in
+            if bodyLen > 0 then
+                method + " " + p + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Yona\r\nConnection: close\r\nContent-Length: " + (intToString bodyLen) + "\r\n\r\n" + b
+            else
+                method + " " + p + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Yona\r\nConnection: close\r\n\r\n"
+    end
+
+## Parse an HTTP response string into a Response.
+parseResponse raw =
+    import substring, indexOf, drop from Std\String in
+    import toInt from Std\String in
+    let status = toInt (substring raw 9 3),
+        bodyStart = indexOf "\r\n\r\n" raw in
+    if bodyStart >= 0 then
+        Response { status = status, rawHeaders = substring raw 0 bodyStart, body = drop (bodyStart + 4) raw }
+    else
+        Response { status = status, rawHeaders = "", body = "" }
+
+## Send an HTTP request to host:port and return the Response.
+##
+## ```
+## send "example.com" 80 (request GET "/" 0 "")
+## ```
+send host port req =
+    import tcpConnect, Std\Net\send as netSend, recv, close from Std\Net in
+    let fd = tcpConnect host port, reqStr = formatRequest host req in
+    do
+        netSend fd reqStr
+        let raw = recv fd 65536 in
+        do close fd; parseResponse raw end
+    end
+
+## HTTP GET shorthand.
+##
+## ```
+## get "example.com" 80 "/api"
+## ```
+get host port path = send host port (request GET path 0 "")
+
+## HTTP POST shorthand.
+##
+## ```
+## post "example.com" 80 "/submit" "key=value"
+## ```
+post host port path body = send host port (request POST path 0 body)
+
+## Create a simple 200 OK response.
+##
+## ```
+## ok "Hello, World!"
+## ```
+ok body = Response { status = 200, rawHeaders = "", body = body }
+
+## Create a 404 Not Found response.
+notFound = Response { status = 404, rawHeaders = "", body = "Not Found" }
+
+## Create a 500 Internal Server Error response.
+serverError = Response { status = 500, rawHeaders = "", body = "Internal Server Error" }
+
+## Format a Response into an HTTP/1.1 response string.
+formatResponse resp =
+    case resp of
+        Response { status = s, body = b } ->
+            import intToString from Std\Types in
+            import length from Std\String in
+            "HTTP/1.1 " + (intToString s) + " OK\r\nContent-Length: " + (intToString (length b)) + "\r\nConnection: close\r\n\r\n" + b
+    end
+
+## Create a Response with custom status and body.
+response status body = Response { status = status, rawHeaders = "", body = body }
+
+## Start an HTTP server. Calls `handler request` for each incoming connection.
+## The handler receives a Request and returns a Response.
+## Runs forever (blocking).
+##
+## ```
+## serve "0.0.0.0" 8080 (\req -> ok "Hello!")
+## ```
+serve host port handler =
+    import tcpListen, tcpAccept, Std\Net\send as netSend, recv, close from Std\Net in
+    import split, indexOf, drop from Std\String in
+    let listener = tcpListen host port,
+        loop = \->
+            let client = tcpAccept listener,
+                raw = recv client 65536,
+                firstLine = case split "\r\n" raw of [h|_] -> h; _ -> "GET / HTTP/1.1" end,
+                parts = split " " firstLine,
+                method = case parts of [m|_] -> m; _ -> "GET" end,
+                path = case parts of [_|[p|_]] -> p; _ -> "/" end,
+                bodyStart = indexOf "\r\n\r\n" raw,
+                body = if bodyStart >= 0 then drop (bodyStart + 4) raw else "",
+                methodVal = case method of "GET" -> GET; "POST" -> POST; "PUT" -> PUT; "DELETE" -> DELETE; _ -> GET end,
+                req = Request { method = methodVal, path = path, headers = 0, body = body },
+                resp = handler req in
+            do
+                netSend client (formatResponse resp)
+                close client
+                loop ()
+            end
+    in loop ()

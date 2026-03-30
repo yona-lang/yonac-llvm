@@ -55,6 +55,20 @@ int64_t yona_rt_io_await(int64_t uring_id) {
             else ctx->buf[0] = '\0';
             result = (int64_t)(intptr_t)ctx->buf;
             break;
+        case IO_OP_RECV_BYTES: {
+            /* Bytes: set length field, return the Bytes buffer */
+            int64_t* bytes_buf = (int64_t*)(intptr_t)ctx->buf;
+            bytes_buf[0] = (res > 0) ? (int64_t)res : 0;
+            result = (int64_t)(intptr_t)bytes_buf;
+            break;
+        }
+        case IO_OP_READ_FILE_BYTES: {
+            int64_t* bytes_buf = (int64_t*)(intptr_t)ctx->buf;
+            bytes_buf[0] = (res > 0) ? (int64_t)res : 0;
+            if (ctx->close_fd) close(ctx->fd);
+            result = (int64_t)(intptr_t)bytes_buf;
+            break;
+        }
         default:
             result = (int64_t)res;
             break;
@@ -114,6 +128,39 @@ int64_t yona_platform_write_file_submit(const char* path, const char* content) {
     sqe.fd = fd;
     sqe.addr = (unsigned long)content;
     sqe.len = (unsigned)len;
+    sqe.off = 0;
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) { close(fd); free(ctx); return 0; }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+/* readFileBytes: like readFile but returns Bytes instead of String */
+int64_t yona_platform_read_file_bytes_submit(const char* path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+    struct stat st;
+    if (fstat(fd, &st) < 0) { close(fd); return 0; }
+    size_t size = (size_t)st.st_size;
+
+    extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + size);
+    buf[0] = 0; /* length set by completer */
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_READ_FILE_BYTES;
+    ctx->fd = fd;
+    ctx->buf = (char*)buf;
+    ctx->buf_size = size;
+    ctx->close_fd = 1;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_READ;
+    sqe.fd = fd;
+    sqe.addr = (unsigned long)(uint8_t*)(buf + 1);
+    sqe.len = (unsigned)size;
     sqe.off = 0;
 
     uint64_t id = ring_submit_sqe(&sqe);

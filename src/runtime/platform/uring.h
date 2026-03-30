@@ -157,6 +157,8 @@ enum io_op_type {
     IO_OP_CONNECT,
     IO_OP_SEND,
     IO_OP_RECV,
+    IO_OP_RECV_BYTES,   /* returns Bytes instead of String */
+    IO_OP_READ_FILE_BYTES, /* returns Bytes instead of String */
 };
 
 typedef struct {

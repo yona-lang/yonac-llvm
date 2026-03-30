@@ -146,6 +146,60 @@ int64_t yona_Std_Net__recv(int64_t fd, int64_t max_bytes) {
     return (int64_t)id;
 }
 
+/* sendBytes: send Bytes buffer via io_uring */
+int64_t yona_Std_Net__sendBytes(int64_t fd, void* bytes) {
+    int64_t* b = (int64_t*)bytes;
+    int64_t len = b[0];
+    uint8_t* data = (uint8_t*)(b + 1);
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_SEND;
+    ctx->fd = (int)fd;
+    ctx->buf = NULL;
+    ctx->buf_size = (size_t)len;
+    ctx->close_fd = 0;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_SEND;
+    sqe.fd = (int)fd;
+    sqe.addr = (unsigned long)data;
+    sqe.len = (unsigned)len;
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) { free(ctx); return 0; }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+/* recvBytes: receive into Bytes buffer via io_uring */
+int64_t yona_Std_Net__recvBytes(int64_t fd, int64_t max_bytes) {
+    if (max_bytes <= 0) max_bytes = 4096;
+    /* Allocate Bytes buffer: [length][data...] with RC header */
+    extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + (size_t)max_bytes);
+    buf[0] = 0; /* length set by completer */
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_RECV_BYTES;
+    ctx->fd = (int)fd;
+    ctx->buf = (char*)buf;
+    ctx->buf_size = (size_t)max_bytes;
+    ctx->close_fd = 0;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_RECV;
+    sqe.fd = (int)fd;
+    sqe.addr = (unsigned long)(uint8_t*)(buf + 1); /* data starts after length */
+    sqe.len = (unsigned)max_bytes;
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) { free(ctx); return 0; }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
 int64_t yona_Std_Net__close(int64_t fd) { close((int)fd); return 0; }
 
 /* ===== HTTP GET via io_uring ===== */

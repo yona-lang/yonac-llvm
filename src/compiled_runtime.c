@@ -997,6 +997,28 @@ int64_t* yona_Std_File__listDir(const char* path) {
     return yona_platform_list_dir(path);
 }
 
+/* Binary file I/O */
+int64_t yona_Std_File__readFileBytes(const char* path) {
+    extern int64_t yona_platform_read_file_bytes_submit(const char* path);
+    int64_t id = yona_platform_read_file_bytes_submit(path);
+    if (id > 0) return id;
+    /* Fallback: sync read to Bytes */
+    extern void* yona_rt_bytes_from_string(const char* s);
+    return (int64_t)(intptr_t)yona_rt_bytes_from_string(yona_platform_read_file(path));
+}
+
+int64_t yona_Std_File__writeFileBytes(const char* path, void* bytes) {
+    int64_t* b = (int64_t*)bytes;
+    int64_t len = b[0];
+    uint8_t* data = (uint8_t*)(b + 1);
+    /* Sync write for binary data */
+    FILE* f = fopen(path, "wb");
+    if (!f) return 0;
+    size_t w = fwrite(data, 1, (size_t)len, f);
+    fclose(f);
+    return (w == (size_t)len) ? 1 : 0;
+}
+
 /* Std\Process */
 const char* yona_Std_Process__getenv(const char* name) {
     return yona_platform_getenv(name);

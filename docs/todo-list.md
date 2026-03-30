@@ -3,7 +3,7 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 663 assertions across 74 test cases
+- **Tests**: 657 assertions across 74 test cases
 - **Stdlib**: 23 modules, ~230 exported functions (11 pure Yona + 12 C runtime)
 
 ## Remaining Work
@@ -17,17 +17,15 @@
 - [x] Bytes type — length-prefixed byte buffer, CType::BYTES, 10 runtime functions ✅
 - [x] Bytes ↔ String conversion (fromString, toString) ✅
 - [x] Bytes ↔ Seq conversion (fromSeq, toSeq) ✅
-- [ ] Binary file I/O (readFileBytes, writeFileBytes)
-- [ ] Binary network send/recv (Bytes instead of String)
+- [x] Binary file I/O (readFileBytes, writeFileBytes) ✅
+- [x] Binary network send/recv (sendBytes, recvBytes) ✅
 
 ### Stdlib
-- [ ] Std\Http rewrite — pure Yona on top of Std\Net + Std\String:
-  - Request/Response ADTs with Method, headers as [(String, String)], body as String/Bytes
-  - Client: get, post, put, delete, send (full control)
-  - Server: serve handler (Request → Response)
-  - URL parsing, header formatting/parsing in Yona
-  - Remove C-level HTTP functions (buildRequest, parseStatus, etc.)
-  - Streaming support via chunked transfer encoding
+- [x] Std\Http rewrite — pure Yona on Std\Net + Std\String ✅
+  - Method ADT (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+  - Request/Response ADTs with named fields
+  - Client: get, post, send (full control), formatRequest, parseResponse
+  - Server: serve handler (Request → Response), ok, notFound, serverError
 
 ### Codegen Optimizations
 - [x] Optimization levels (-O0 to -O3) via LLVM new PassManager ✅

@@ -3,6 +3,8 @@ FN yona_Std_Net__tcpListen 2 STRING INT -> INT
 IO yona_Std_Net__tcpAccept 1 INT -> INT
 IO yona_Std_Net__send 2 INT STRING -> INT
 IO yona_Std_Net__recv 2 INT INT -> STRING
+IO yona_Std_Net__sendBytes 2 INT BYTES -> INT
+IO yona_Std_Net__recvBytes 2 INT INT -> BYTES
 FN yona_Std_Net__close 1 INT -> INT
 FN yona_Std_Net__udpBind 2 STRING INT -> INT
 FN yona_Std_Net__udpSendTo 4 INT STRING INT STRING -> INT
