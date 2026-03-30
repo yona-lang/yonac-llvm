@@ -2,19 +2,42 @@
 
 ## Module Overview
 
-| Module | Type | Functions | Description |
-|--------|------|-----------|-------------|
-| `Std\Option` | Pure Yona | 10 | Optional values (`Some a \| None`) |
-| `Std\Result` | Pure Yona | 11 | Error handling (`Ok a \| Err e`) |
-| `Std\List` | Pure Yona | 28 | Sequence operations |
-| `Std\Tuple` | Pure Yona | 9 | 2-tuple operations |
-| `Std\Range` | Pure Yona | 11 | Lazy integer ranges |
-| `Std\Math` | Pure Yona | 11 | Integer arithmetic |
-| `Std\Pair` | Pure Yona | 10 | ADT-based pairs with named fields |
-| `Std\Bool` | Pure Yona | 7 | Boolean combinators |
-| `Std\Test` | Pure Yona | 6 | Test assertions |
-| `Std\String` | C runtime | 18 | String operations (via compiled_runtime.c) |
-| `Std\Types` | C runtime | 5 | Type conversions (via compiled_runtime.c) |
+### Pure Yona modules (12)
+
+| Module | Functions | Description |
+|--------|-----------|-------------|
+| `Std\Option` | 10 | Optional values (`Some a \| None`) |
+| `Std\Result` | 11 | Error handling (`Ok a \| Err e`) |
+| `Std\List` | 28 | Sequence operations (map, filter, fold, sort, zip) |
+| `Std\Tuple` | 9 | 2-tuple operations (fst, snd, swap, curry) |
+| `Std\Range` | 11 | Lazy integer ranges with step |
+| `Std\Math` | 20 | Num trait (polymorphic abs/max/min), int math, extern float math (sqrt, sin, cos) |
+| `Std\Pair` | 10 | ADT-based pairs with named fields |
+| `Std\Bool` | 7 | Boolean combinators (not, xor, implies, when) |
+| `Std\Test` | 6 | Test assertions |
+| `Std\Collection` | 9 | iterate, unfold, window, chunks, dedup, frequencies |
+| `Std\Function` | 8 | identity, compose, flip, pipe, fix |
+| `Std\Http` | 13 | HTTP client/server — Method/Request/Response ADTs, get, post, serve |
+
+### C runtime modules (14)
+
+| Module | Functions | Description |
+|--------|-----------|-------------|
+| `Std\String` | 27 | String operations (split, join, trim, replace, repeat) |
+| `Std\Encoding` | 7 | base64, hex, URL, HTML escape |
+| `Std\Types` | 5 | Type conversions (intToString, toFloat) |
+| `Std\IO` | 7 | Console I/O (print, println, readLine) |
+| `Std\File` | 9 | File I/O via io_uring (readFile, writeFile, readFileBytes) |
+| `Std\Process` | 3 | getenv, getcwd, exit |
+| `Std\Random` | 4 | int, float, choice, shuffle |
+| `Std\Json` | 7 | JSON stringify/parse |
+| `Std\Crypto` | 4 | sha256, randomBytes, uuid4 |
+| `Std\Log` | 6 | Structured logging with levels |
+| `Std\Net` | 12 | TCP/UDP via io_uring |
+| `Std\Bytes` | 10 | Length-prefixed binary buffers |
+| `Std\Time` | 6 | Timestamps, elapsed, sleep, format |
+| `Std\Path` | 6 | Path manipulation (join, dirname, basename, extension) |
+| `Std\Format` | 1 | String formatting with `{}` placeholders |
 
 ## Documentation
 
@@ -24,26 +47,26 @@ to generate markdown API reference in `docs/api/`.
 ## Architecture
 
 ### Pure Yona modules (`.yona`)
-Written entirely in Yona. Compiled to `.o` + `.yonai` like user modules.
-No platform-specific code.
+Written in Yona. Can include `extern` declarations for C bindings
+(e.g., `extern sqrt : Float -> Float` in Std\Math binds to libm).
+Compiled to `.o` + `.yonai` like user modules.
 
 ### C runtime modules (`.yonai` only)
-Interface files point to C functions in `src/compiled_runtime.c`.
-These handle string operations, type conversions, and will handle I/O.
+Interface files pointing to C functions in `src/compiled_runtime.c`.
+Handle string operations, type conversions, I/O, crypto, etc.
 
-### Platform-specific code (future)
-I/O modules (`Std\IO`, `Std\File`, `Std\Net`) will need platform-specific
-implementations. These should be separated into:
+### Platform-specific runtime
+I/O modules use platform-specific implementations:
 
 ```
 src/runtime/
-  compiled_runtime.c      # Platform-independent runtime
+  platform.h              # Portable interface
   platform/
-    linux.c               # Linux: epoll, io_uring
-    macos.c               # macOS: kqueue
-    windows.c             # Windows: IOCP
-  io_common.c             # Shared I/O abstractions
+    uring.h               # Shared io_uring infrastructure (Linux)
+    file_linux.c          # File I/O via io_uring
+    net_linux.c           # TCP/UDP networking via io_uring
+    os_linux.c            # Console I/O, process, environment
 ```
 
-The build system selects the appropriate platform file. The `.yonai` interface
-is identical across platforms — only the C implementation differs.
+Future: macOS (kqueue), Windows (IOCP) implementations providing
+the same `platform.h` interface.
