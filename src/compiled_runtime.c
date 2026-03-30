@@ -135,26 +135,8 @@ void yona_rt_arena_destroy(void* arena_ptr) {
 
 #define RC_TYPE_BOX     7
 #define RC_TYPE_BYTES   8
-/* Forward declarations */
-int64_t* yona_rt_seq_alloc(int64_t count);
-
-/* ===== Seq — flat immutable array ===== */
-/*
- * Seq is the only sequence representation. Layout: [length, elem0, elem1, ...]
- * All operations work directly on flat arrays. No cons cells, no linked lists.
- *
- * For O(1) cons/head/tail linked lists, use the List ADT (Std\LinkedList).
- * For array transformations, use generators: [f x for x = seq]
- */
-
-/* Empty check — O(1) */
-int64_t yona_rt_seq_is_empty(int64_t* seq) {
-    if (!seq) return 1;
-    return seq[0] == 0;
-}
-
-/* Forward declaration */
-int64_t* yona_rt_seq_alloc(int64_t count);
+/* ===== Persistent Seq ===== */
+#include "runtime/seq.c"
 
 /* ===== Bytes — length-prefixed byte buffer ===== */
 /*
@@ -333,80 +315,7 @@ char* yona_rt_string_concat(const char* a, const char* b) {
 
 /* ===== Sequence (list) runtime ===== */
 
-// Sequence: [length, elem0, elem1, ...]
-// Stored as a heap-allocated array of i64 where index 0 is the length.
-
-int64_t* yona_rt_seq_alloc(int64_t count) {
-    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ, (count + 1) * sizeof(int64_t));
-    seq[0] = count;
-    return seq;
-}
-
-int64_t yona_rt_seq_length(int64_t* seq) {
-    return seq[0];
-}
-
-int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    return seq[index + 1];
-}
-
-void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
-    seq[index + 1] = value;
-}
-
-void yona_rt_print_seq(int64_t* seq) {
-    int64_t len = seq[0];
-    printf("[");
-    for (int64_t i = 0; i < len; i++) {
-        if (i > 0) printf(", ");
-        printf("%ld", seq[i + 1]);
-    }
-    printf("]");
-}
-
-// Cons: prepend element to sequence
-int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
-    int64_t old_len = seq[0];
-    int64_t* header = seq - 2;
-
-    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
-        /* Uniquely owned — realloc in place */
-        size_t new_payload = ((size_t)(old_len + 1) + 1) * sizeof(int64_t);
-        int64_t* new_header = (int64_t*)realloc(header, 2 * sizeof(int64_t) + new_payload);
-        int64_t* new_seq = new_header + 2;
-        memmove(new_seq + 2, new_seq + 1, (size_t)old_len * sizeof(int64_t));
-        new_seq[0] = old_len + 1;
-        new_seq[1] = elem;
-        return new_seq;
-    }
-
-    /* Shared — allocate new array and copy */
-    int64_t* result = yona_rt_seq_alloc(old_len + 1);
-    result[1] = elem;
-    memcpy(result + 2, seq + 1, (size_t)old_len * sizeof(int64_t));
-    return result;
-}
-
-// Join: concatenate two sequences
-int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
-    int64_t len_a = a[0];
-    int64_t len_b = b[0];
-    int64_t* header_a = a - 2;
-
-    if (header_a[0] == 1 && header_a[0] != RC_ARENA_SENTINEL) {
-        size_t new_payload = ((size_t)(len_a + len_b) + 1) * sizeof(int64_t);
-        int64_t* new_header = (int64_t*)realloc(header_a, 2 * sizeof(int64_t) + new_payload);
-        int64_t* new_a = new_header + 2;
-        memcpy(new_a + 1 + len_a, b + 1, (size_t)len_b * sizeof(int64_t));
-        new_a[0] = len_a + len_b;
-        return new_a;
-    }
-
-    int64_t* result = yona_rt_seq_alloc(len_a + len_b);
-    memcpy(result + 1, a + 1, (size_t)len_a * sizeof(int64_t));
-    memcpy(result + 1 + len_a, b + 1, (size_t)len_b * sizeof(int64_t));
-    return result;
-}
+/* Seq functions are in runtime/seq.c (included above) */
 
 /* ===== Symbol runtime ===== */
 /* Symbols are interned to i64 IDs at compile time. Comparison is icmp eq. */
@@ -1624,13 +1533,13 @@ void yona_Std_Log__warn(const char* msg)  { yona_log_emit(2, msg); }
 void yona_Std_Log__error(const char* msg) { yona_log_emit(3, msg); }
 
 /* Std\List */
-int64_t yona_Std_List__length(int64_t* seq) { return seq[0]; }
-int64_t yona_Std_List__head(int64_t* seq) { return seq[1]; }
+int64_t yona_Std_List__length(int64_t* seq) { return yona_rt_seq_length(seq); }
+int64_t yona_Std_List__head(int64_t* seq) { return yona_rt_seq_head(seq); }
 int64_t* yona_Std_List__tail(int64_t* seq) { return yona_rt_seq_tail(seq); }
 int64_t* yona_Std_List__reverse(int64_t* seq) {
-    int64_t len = seq[0];
+    int64_t len = yona_rt_seq_length(seq);
     int64_t* r = yona_rt_seq_alloc(len);
-    for (int64_t i = 0; i < len; i++) r[i + 1] = seq[len - i];
+    for (int64_t i = 0; i < len; i++) r[i + 1] = yona_rt_seq_get(seq, len - 1 - i);
     return r;
 }
 
@@ -1655,31 +1564,7 @@ const char* yona_Std_Types__boolToString(int64_t b) {
     return r;
 }
 
-// Head: first element
-// Head: first element (handles both cons cells and flat sequences)
-// Head: first element — O(1)
-int64_t yona_rt_seq_head(int64_t* seq) {
-    return seq[1];
-}
-
-// Tail: all elements except first — O(n) copy (or O(n) in-place shift if unique)
-int64_t* yona_rt_seq_tail(int64_t* seq) {
-    int64_t old_len = seq[0];
-    if (old_len <= 1) return yona_rt_seq_alloc(0);
-    int64_t* header = seq - 2;
-
-    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
-        /* Unique owner — shift left in place */
-        memmove(seq + 1, seq + 2, (size_t)(old_len - 1) * sizeof(int64_t));
-        seq[0] = old_len - 1;
-        return seq;
-    }
-
-    /* Shared — copy */
-    int64_t* result = yona_rt_seq_alloc(old_len - 1);
-    memcpy(result + 1, seq + 2, (size_t)(old_len - 1) * sizeof(int64_t));
-    return result;
-}
+/* seq_head and seq_tail are in runtime/seq.c */
 
 /* ===== Async Runtime =====
  *

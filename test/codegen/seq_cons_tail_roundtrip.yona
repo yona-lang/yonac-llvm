@@ -1,0 +1,1 @@
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in let sum seq = case seq of [] -> 0; [h|t] -> h + (sum t) end in sum (build 50 [])

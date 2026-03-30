@@ -1,0 +1,1 @@
+let nth n seq = if n <= 0 then case seq of [h|_] -> h end else nth (n - 1) (case seq of [_|t] -> t end) in nth 4 [10, 20, 30, 40, 50]
