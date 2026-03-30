@@ -135,166 +135,21 @@ void yona_rt_arena_destroy(void* arena_ptr) {
 
 #define RC_TYPE_BOX     7
 #define RC_TYPE_BYTES   8
-#define RC_TYPE_CONS    9   /* Cons cell: {head: i64, tail: ptr} */
-
 /* Forward declarations */
 int64_t* yona_rt_seq_alloc(int64_t count);
-void yona_rt_rc_inc(void* ptr);
 
-/* ===== Cons Cells — O(1) linked list nodes ===== */
+/* ===== Seq — flat immutable array ===== */
 /*
- * Layout: [rc_header][head: i64][tail: ptr (cons cell or flat seq or NULL)]
+ * Seq is the only sequence representation. Layout: [length, elem0, elem1, ...]
+ * All operations work directly on flat arrays. No cons cells, no linked lists.
  *
- * A cons cell is a linked list node. The tail points to either:
- *   - Another cons cell (RC_TYPE_CONS)
- *   - A flat sequence (RC_TYPE_SEQ) — for when cons is applied to a literal
- *   - NULL — empty list
- *
- * Functions that need flat arrays (length, get, print) convert cons chains
- * to flat arrays via yona_rt_cons_to_seq.
+ * For O(1) cons/head/tail linked lists, use the List ADT (Std\LinkedList).
+ * For array transformations, use generators: [f x for x = seq]
  */
 
-typedef struct {
-    int64_t head;
-    void* tail;   /* cons cell, flat seq, or NULL */
-} yona_cons_t;
-
-#define RC_TYPE_LAZY_CONS 10  /* Lazy cons: {head, thunk_fn, env, cached_tail, evaluated} */
-
-typedef struct {
-    int64_t head;
-    void* thunk_fn;     /* function pointer: (env) -> i64 or () -> i64 */
-    void* env;          /* environment for thunk (NULL if no captures) */
-    void* cached_tail;  /* cached result after forcing (NULL = not yet forced) */
-    int64_t evaluated;  /* 0 = thunk not yet forced, 1 = cached_tail valid */
-} yona_lazy_cons_t;
-
-/* Create a lazy cons cell */
-void* yona_rt_seq_lazy_cons(int64_t head, void* thunk_fn, void* env) {
-    yona_lazy_cons_t* cell = (yona_lazy_cons_t*)rc_alloc(RC_TYPE_LAZY_CONS, sizeof(yona_lazy_cons_t));
-    cell->head = head;
-    cell->thunk_fn = thunk_fn;
-    cell->env = env;
-    cell->cached_tail = NULL;
-    cell->evaluated = 0;
-    return cell;
-}
-
-/* Force a lazy cons tail — evaluate thunk if needed, return cached tail */
-static void* force_lazy_tail(yona_lazy_cons_t* cell) {
-    if (cell->evaluated) return cell->cached_tail;
-    /* Call thunk to produce the tail */
-    if (cell->env) {
-        typedef int64_t (*thunk_env_fn)(void*);
-        int64_t result = ((thunk_env_fn)cell->thunk_fn)(cell->env);
-        cell->cached_tail = (void*)(intptr_t)result;
-    } else {
-        typedef int64_t (*thunk_fn)(void);
-        int64_t result = ((thunk_fn)cell->thunk_fn)();
-        cell->cached_tail = (void*)(intptr_t)result;
-    }
-    cell->evaluated = 1;
-    return cell->cached_tail;
-}
-
-static int is_lazy_cons(void* ptr) {
-    if (!ptr) return 0;
-    int64_t* header = ((int64_t*)ptr) - 2;
-    return header[1] == RC_TYPE_LAZY_CONS;
-}
-
-/* Check if a pointer is a cons cell by examining its RC type tag */
-static int is_cons_cell(void* ptr) {
-    if (!ptr) return 0;
-    int64_t* header = ((int64_t*)ptr) - 2;
-    return header[1] == RC_TYPE_CONS;
-}
-
-/* Check if a pointer is a flat sequence */
-static int is_flat_seq(void* ptr) {
-    if (!ptr) return 0;
-    int64_t* header = ((int64_t*)ptr) - 2;
-    return header[1] == RC_TYPE_SEQ;
-}
-
-/* Count elements in a cons/lazy chain */
-static int64_t cons_length(void* list) {
-    int64_t len = 0;
-    void* p = list;
-    while (p) {
-        if (is_cons_cell(p)) {
-            len++;
-            p = ((yona_cons_t*)p)->tail;
-        } else if (is_lazy_cons(p)) {
-            len++;
-            p = force_lazy_tail((yona_lazy_cons_t*)p);
-        } else if (is_flat_seq(p)) {
-            len += ((int64_t*)p)[0];
-            break;
-        } else break;
-    }
-    return len;
-}
-
-/* Convert a cons/lazy chain to a flat sequence */
-int64_t* yona_rt_cons_to_seq(void* list) {
-    int64_t len = cons_length(list);
-    int64_t* seq = yona_rt_seq_alloc(len);
-    int64_t i = 1;
-    void* p = list;
-    while (p) {
-        if (is_cons_cell(p)) {
-            seq[i++] = ((yona_cons_t*)p)->head;
-            p = ((yona_cons_t*)p)->tail;
-        } else if (is_lazy_cons(p)) {
-            seq[i++] = ((yona_lazy_cons_t*)p)->head;
-            p = force_lazy_tail((yona_lazy_cons_t*)p);
-        } else if (is_flat_seq(p)) {
-            int64_t* flat = (int64_t*)p;
-            int64_t flat_len = flat[0];
-            memcpy(seq + i, flat + 1, (size_t)flat_len * sizeof(int64_t));
-            i += flat_len;
-            break;
-        } else break;
-    }
-    return seq;
-}
-
-/* Get head of a list (cons, lazy cons, or flat seq) */
-int64_t yona_rt_list_head(void* list) {
-    if (is_cons_cell(list)) return ((yona_cons_t*)list)->head;
-    if (is_lazy_cons(list)) return ((yona_lazy_cons_t*)list)->head;
-    if (is_flat_seq(list)) return ((int64_t*)list)[1];
-    return 0;
-}
-
-/* Get tail of a list — returns a list pointer */
-void* yona_rt_list_tail(void* list) {
-    if (is_cons_cell(list)) return ((yona_cons_t*)list)->tail;
-    if (is_lazy_cons(list)) return force_lazy_tail((yona_lazy_cons_t*)list);
-    if (is_flat_seq(list)) {
-        int64_t* flat = (int64_t*)list;
-        int64_t len = flat[0];
-        if (len <= 1) return NULL;
-        int64_t* result = yona_rt_seq_alloc(len - 1);
-        memcpy(result + 1, flat + 2, (size_t)(len - 1) * sizeof(int64_t));
-        return result;
-    }
-    return NULL;
-}
-
-/* Get length of a list (cons or flat) */
-int64_t yona_rt_list_length(void* list) {
-    if (!list) return 0;
-    if (is_flat_seq(list)) return ((int64_t*)list)[0];
-    return cons_length(list);
-}
-
-/* Fast empty check — O(1) for cons, lazy cons, and flat */
+/* Empty check — O(1) */
 int64_t yona_rt_seq_is_empty(int64_t* seq) {
     if (!seq) return 1;
-    if (is_cons_cell((void*)seq)) return 0;
-    if (is_lazy_cons((void*)seq)) return 0;
     return seq[0] == 0;
 }
 
@@ -488,20 +343,11 @@ int64_t* yona_rt_seq_alloc(int64_t count) {
 }
 
 int64_t yona_rt_seq_length(int64_t* seq) {
-    return yona_rt_list_length((void*)seq);
+    return seq[0];
 }
 
 int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    if (is_flat_seq((void*)seq)) return seq[index + 1];
-    /* Cons chain: walk to the index-th element */
-    void* p = (void*)seq;
-    int64_t i = 0;
-    while (p && i < index) {
-        if (is_cons_cell(p)) { p = ((yona_cons_t*)p)->tail; i++; }
-        else if (is_flat_seq(p)) { return ((int64_t*)p)[index - i + 1]; }
-        else return 0;
-    }
-    return yona_rt_list_head(p);
+    return seq[index + 1];
 }
 
 void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
@@ -509,11 +355,6 @@ void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
 }
 
 void yona_rt_print_seq(int64_t* seq) {
-    if (is_cons_cell((void*)seq) || is_lazy_cons((void*)seq)) {
-        int64_t* flat = yona_rt_cons_to_seq((void*)seq);
-        yona_rt_print_seq(flat);
-        return;
-    }
     int64_t len = seq[0];
     printf("[");
     for (int64_t i = 0; i < len; i++) {
@@ -525,21 +366,29 @@ void yona_rt_print_seq(int64_t* seq) {
 
 // Cons: prepend element to sequence
 int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
-    /* O(1) cons: allocate a cons cell pointing to the existing list */
-    yona_cons_t* cell = (yona_cons_t*)rc_alloc(RC_TYPE_CONS, sizeof(yona_cons_t));
-    cell->head = elem;
-    cell->tail = (void*)seq;
-    /* rc_inc the tail since the cons cell now holds a reference */
-    if (seq) yona_rt_rc_inc((void*)seq);
-    return (int64_t*)cell;
+    int64_t old_len = seq[0];
+    int64_t* header = seq - 2;
+
+    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
+        /* Uniquely owned — realloc in place */
+        size_t new_payload = ((size_t)(old_len + 1) + 1) * sizeof(int64_t);
+        int64_t* new_header = (int64_t*)realloc(header, 2 * sizeof(int64_t) + new_payload);
+        int64_t* new_seq = new_header + 2;
+        memmove(new_seq + 2, new_seq + 1, (size_t)old_len * sizeof(int64_t));
+        new_seq[0] = old_len + 1;
+        new_seq[1] = elem;
+        return new_seq;
+    }
+
+    /* Shared — allocate new array and copy */
+    int64_t* result = yona_rt_seq_alloc(old_len + 1);
+    result[1] = elem;
+    memcpy(result + 2, seq + 1, (size_t)old_len * sizeof(int64_t));
+    return result;
 }
 
 // Join: concatenate two sequences
 int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
-    /* Materialize cons chains to flat arrays */
-    if (is_cons_cell((void*)a)) a = yona_rt_cons_to_seq((void*)a);
-    if (is_cons_cell((void*)b)) b = yona_rt_cons_to_seq((void*)b);
-
     int64_t len_a = a[0];
     int64_t len_b = b[0];
     int64_t* header_a = a - 2;
@@ -1808,13 +1657,28 @@ const char* yona_Std_Types__boolToString(int64_t b) {
 
 // Head: first element
 // Head: first element (handles both cons cells and flat sequences)
+// Head: first element — O(1)
 int64_t yona_rt_seq_head(int64_t* seq) {
-    return yona_rt_list_head((void*)seq);
+    return seq[1];
 }
 
-// Tail: all elements except first (handles both cons cells and flat sequences)
+// Tail: all elements except first — O(n) copy (or O(n) in-place shift if unique)
 int64_t* yona_rt_seq_tail(int64_t* seq) {
-    return (int64_t*)yona_rt_list_tail((void*)seq);
+    int64_t old_len = seq[0];
+    if (old_len <= 1) return yona_rt_seq_alloc(0);
+    int64_t* header = seq - 2;
+
+    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
+        /* Unique owner — shift left in place */
+        memmove(seq + 1, seq + 2, (size_t)(old_len - 1) * sizeof(int64_t));
+        seq[0] = old_len - 1;
+        return seq;
+    }
+
+    /* Shared — copy */
+    int64_t* result = yona_rt_seq_alloc(old_len - 1);
+    memcpy(result + 1, seq + 2, (size_t)(old_len - 1) * sizeof(int64_t));
+    return result;
 }
 
 /* ===== Async Runtime =====

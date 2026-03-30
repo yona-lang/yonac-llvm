@@ -206,7 +206,6 @@ void Codegen::declare_runtime() {
     rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
     rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
     rt_seq_is_empty_  = decl("yona_rt_seq_is_empty", i64, {i64p});
-    rt_seq_lazy_cons_ = decl("yona_rt_seq_lazy_cons", ptr, {i64, ptr, ptr});
     rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
 
     // Set runtime

@@ -1,0 +1,135 @@
+## Linked list — O(1) cons, head, tail for functional recursive algorithms.
+##
+## Use LinkedList when you need efficient recursive decomposition:
+## - cons (prepend): O(1)
+## - head (first element): O(1)
+## - tail (rest): O(1)
+## - length: O(n)
+##
+## Use Seq (`[1, 2, 3]`) when you need indexed access:
+## - get(i): O(1)
+## - length: O(1)
+## - cons: O(n)
+module Std\LinkedList
+
+export type LinkedList
+export nil, cons, head, tail, isEmpty, length, toSeq, fromSeq
+export map, filter, foldl, foldr, reverse, append
+
+## A linked list: either `Cons head tail` or `Nil`.
+type LinkedList a = Cons a (LinkedList a) | Nil
+
+## Empty list.
+##
+## ```
+## nil   # => Nil
+## ```
+nil = Nil
+
+## Prepend an element — O(1).
+##
+## ```
+## cons 1 (cons 2 (cons 3 Nil))   # => Cons 1 (Cons 2 (Cons 3 Nil))
+## ```
+cons x xs = Cons x xs
+
+## First element — O(1). Raises on empty list.
+##
+## ```
+## head (cons 1 (cons 2 Nil))   # => 1
+## ```
+head xs = case xs of Cons h _ -> h end
+
+## Rest of list — O(1).
+##
+## ```
+## tail (cons 1 (cons 2 Nil))   # => Cons 2 Nil
+## ```
+tail xs = case xs of Cons _ t -> t end
+
+## Check if empty — O(1).
+##
+## ```
+## isEmpty Nil            # => true
+## isEmpty (cons 1 Nil)   # => false
+## ```
+isEmpty xs = case xs of Nil -> true; Cons _ _ -> false end
+
+## Count elements — O(n).
+##
+## ```
+## length (cons 1 (cons 2 (cons 3 Nil)))   # => 3
+## ```
+length xs = case xs of Nil -> 0; Cons _ t -> 1 + (length t) end
+
+## Convert to Seq (flat array) — O(n).
+##
+## ```
+## toSeq (cons 1 (cons 2 (cons 3 Nil)))   # => [1, 2, 3]
+## ```
+toSeq xs =
+    let go acc list = case list of
+        Nil -> acc
+        Cons h t -> go (acc ++ [h]) t
+    end
+    in go [] xs
+
+## Convert from Seq (flat array) — O(n).
+##
+## ```
+## fromSeq [1, 2, 3]   # => Cons 1 (Cons 2 (Cons 3 Nil))
+## ```
+fromSeq seq =
+    let go acc s = case s of
+        [] -> acc
+        [h|t] -> go (Cons h acc) t
+    end
+    in go Nil (let rev s = case s of [] -> []; [h|t] -> (rev t) ++ [h] end in rev seq)
+
+## Apply a function to every element — O(n).
+##
+## ```
+## map (\x -> x * 2) (cons 1 (cons 2 (cons 3 Nil)))
+## # => Cons 2 (Cons 4 (Cons 6 Nil))
+## ```
+map f xs = case xs of Nil -> Nil; Cons h t -> Cons (f h) (map f t) end
+
+## Keep only elements satisfying a predicate — O(n).
+##
+## ```
+## filter (\x -> x > 1) (cons 1 (cons 2 (cons 3 Nil)))
+## # => Cons 2 (Cons 3 Nil)
+## ```
+filter p xs = case xs of
+    Nil -> Nil
+    Cons h t -> if p h then Cons h (filter p t) else filter p t
+end
+
+## Left fold — O(n).
+##
+## ```
+## foldl (\acc x -> acc + x) 0 (cons 1 (cons 2 (cons 3 Nil)))   # => 6
+## ```
+foldl f acc xs = case xs of Nil -> acc; Cons h t -> foldl f (f acc h) t end
+
+## Right fold — O(n).
+##
+## ```
+## foldr (\x acc -> x :: acc) [] (cons 1 (cons 2 (cons 3 Nil)))   # => [1, 2, 3]
+## ```
+foldr f acc xs = case xs of Nil -> acc; Cons h t -> f h (foldr f acc t) end
+
+## Reverse — O(n).
+##
+## ```
+## reverse (cons 1 (cons 2 (cons 3 Nil)))   # => Cons 3 (Cons 2 (Cons 1 Nil))
+## ```
+reverse xs = foldl (\acc x -> Cons x acc) Nil xs
+
+## Append two lists — O(n) in first list.
+##
+## ```
+## append (cons 1 (cons 2 Nil)) (cons 3 (cons 4 Nil))
+## # => Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil)))
+## ```
+append xs ys = case xs of Nil -> ys; Cons h t -> Cons h (append t ys) end
