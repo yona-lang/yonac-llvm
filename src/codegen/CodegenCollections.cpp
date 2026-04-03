@@ -236,28 +236,34 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
     auto* func = builder_->GetInsertBlock()->getParent();
 
     if (!has_guard) {
-        // Simple case: no guard, result has same length as source
+        // Simple case: no guard, result has same length as source.
+        // Use head/tail iteration instead of indexed get for O(1) per
+        // element (indexed get is O(n/32) for chunked seqs).
         auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "gen_result");
+        auto ptr_ty = PointerType::get(*context_, 0);
 
-        // Loop: for i = 0 .. src_len
         auto* loop_bb = BasicBlock::Create(*context_, "gen.loop", func);
         auto* body_bb = BasicBlock::Create(*context_, "gen.body", func);
         auto* done_bb = BasicBlock::Create(*context_, "gen.done", func);
 
-        // Entry: i = 0
         auto* zero = ConstantInt::get(i64_ty, 0);
         builder_->CreateBr(loop_bb);
 
-        // Loop header: phi for i
+        // Loop header: phi for index (i) and current seq cursor
         builder_->SetInsertPoint(loop_bb);
         auto* i_phi = builder_->CreatePHI(i64_ty, 2, "i");
         i_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
-        auto* cond = builder_->CreateICmpSLT(i_phi, src_len, "gen.cond");
+        auto* cur_phi = builder_->CreatePHI(ptr_ty, 2, "cur");
+        cur_phi->addIncoming(src_ptr, loop_bb->getSinglePredecessor());
+
+        auto* is_empty = builder_->CreateCall(rt_seq_is_empty_, {cur_phi}, "gen.empty");
+        auto* cond = builder_->CreateICmpEQ(is_empty, zero, "gen.cond");
         builder_->CreateCondBr(cond, body_bb, done_bb);
 
-        // Body: x = src[i]; result[i] = reducer(x)
+        // Body: x = head(cur); cur = tail(cur); result[i] = reducer(x)
         builder_->SetInsertPoint(body_bb);
-        auto* elem = builder_->CreateCall(rt_seq_get_, {src_ptr, i_phi}, "elem");
+        auto* elem = builder_->CreateCall(rt_seq_head_, {cur_phi}, "elem");
+        auto* next_cur = builder_->CreateCall(rt_seq_tail_, {cur_phi}, "cur.next");
 
         auto saved = named_values_;
         named_values_[var_name] = {elem, CType::INT};
@@ -274,6 +280,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
 
         auto* i_next = builder_->CreateAdd(i_phi, ConstantInt::get(i64_ty, 1), "i.next");
         i_phi->addIncoming(i_next, builder_->GetInsertBlock());
+        cur_phi->addIncoming(next_cur, builder_->GetInsertBlock());
         builder_->CreateBr(loop_bb);
 
         named_values_ = saved;

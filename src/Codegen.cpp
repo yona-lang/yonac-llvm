@@ -901,21 +901,22 @@ std::string Codegen::emit_ir() {
 void Codegen::apply_fastcc() {
     if (!module_) return;
 
-    // Apply fastcc to internal functions whose address is never taken.
-    // These functions are only called directly, so we can safely use the
-    // fast calling convention for better register usage and tail calls.
     for (auto& fn : *module_) {
         if (fn.isDeclaration()) continue;
         if (fn.getLinkage() != Function::InternalLinkage) continue;
         if (fn.hasAddressTaken()) continue;
 
+        // fastcc for internal functions not used as HOF values
         fn.setCallingConv(llvm::CallingConv::Fast);
-
-        // Update all direct call sites to match
         for (auto* user : fn.users()) {
             if (auto* call = dyn_cast<CallInst>(user))
                 call->setCallingConv(llvm::CallingConv::Fast);
         }
+
+        // Inlining hints for small functions (≤20 basic blocks).
+        // Helps LLVM inline recursive functions more aggressively.
+        if (fn.size() <= 20)
+            fn.addFnAttr(llvm::Attribute::InlineHint);
     }
 }
 
