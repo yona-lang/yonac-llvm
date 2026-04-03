@@ -145,8 +145,11 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             Value* seq_ptr = scrutinee.val;
 
             if (htp->heads.size() == 1) {
-                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_ptr});
-                auto cmp = builder_->CreateICmpEQ(is_empty, ConstantInt::get(i64_ty, 0));
+                // Inline is_empty: load count from seq[0], check == 0
+                auto* count_ptr = builder_->CreateGEP(i64_ty, seq_ptr,
+                    {ConstantInt::get(i64_ty, 0)});
+                auto* count = builder_->CreateLoad(i64_ty, count_ptr, "seq_count");
+                auto* cmp = builder_->CreateICmpSGT(count, ConstantInt::get(i64_ty, 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else {
                 auto len = builder_->CreateCall(rt_seq_length_, {seq_ptr});
@@ -159,8 +162,14 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
             builder_->SetInsertPoint(body_bb);
             for (size_t hi = 0; hi < htp->heads.size(); hi++) {
-                auto idx = ConstantInt::get(i64_ty, hi);
-                auto hv = builder_->CreateCall(rt_seq_get_, {seq_ptr, idx});
+                Value* hv;
+                if (hi == 0 && htp->heads.size() == 1) {
+                    // Use seq_head (handles both flat and chunked)
+                    hv = builder_->CreateCall(rt_seq_head_, {seq_ptr}, "head");
+                } else {
+                    auto idx = ConstantInt::get(i64_ty, hi);
+                    hv = builder_->CreateCall(rt_seq_get_, {seq_ptr, idx});
+                }
                 // Cast i64 from seq_get to the correct type
                 Value* elem_val = hv;
                 if (elem_type == CType::SEQ || elem_type == CType::STRING ||
