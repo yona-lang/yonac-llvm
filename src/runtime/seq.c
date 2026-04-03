@@ -248,6 +248,25 @@ int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
     return result;
 }
 
+/* Snoc (append) — O(n) general, O(1) for flat unique owner */
+int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem) {
+    int64_t len = yona_rt_seq_length(seq);
+
+    if (!is_chunked(seq) && len < CHUNK_SIZE) {
+        /* Flat seq with room: allocate new with one more element */
+        int64_t* result = yona_rt_seq_alloc(len + 1);
+        memcpy(result + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
+        result[SEQ_HDR_SIZE + len] = elem;
+        result[1] = seq[1]; /* copy heap_flag */
+        return result;
+    }
+
+    /* General case: join seq with [elem] */
+    int64_t* single = yona_rt_seq_alloc(1);
+    single[SEQ_HDR_SIZE] = elem;
+    return yona_rt_seq_join(seq, single);
+}
+
 /* Print */
 void yona_rt_print_seq(int64_t* seq) {
     int64_t len = yona_rt_seq_length(seq);

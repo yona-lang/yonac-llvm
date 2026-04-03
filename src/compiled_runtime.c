@@ -1176,6 +1176,45 @@ int64_t* yona_Std_File__listDir(const char* path) {
     return yona_platform_list_dir(path);
 }
 
+/* readLines: read file, split by newlines, return seq of strings */
+int64_t* yona_Std_File__readLines(const char* path) {
+    extern char* yona_platform_read_file(const char* path);
+    char* content = yona_platform_read_file(path);
+    if (!content || content[0] == '\0') {
+        return yona_rt_seq_alloc(0);
+    }
+
+    /* Count lines */
+    int64_t count = 1;
+    for (char* p = content; *p; p++)
+        if (*p == '\n') count++;
+    /* Remove trailing empty line if file ends with \n */
+    size_t len = strlen(content);
+    if (len > 0 && content[len-1] == '\n') count--;
+
+    int64_t* seq = yona_rt_seq_alloc(count);
+    /* Set heap_flag: elements are strings (heap-typed) */
+    seq[1] = 1;
+
+    char* line_start = content;
+    int64_t idx = 0;
+    for (char* p = content; ; p++) {
+        if (*p == '\n' || *p == '\0') {
+            size_t line_len = (size_t)(p - line_start);
+            char* line = (char*)yona_rt_rc_alloc_string(line_len + 1);
+            memcpy(line, line_start, line_len);
+            line[line_len] = '\0';
+            seq[2 + idx] = (int64_t)(intptr_t)line; /* SEQ_HDR_SIZE=2 */
+            idx++;
+            if (*p == '\0') break;
+            line_start = p + 1;
+        }
+    }
+    seq[0] = idx; /* actual line count (may differ from initial count) */
+    yona_rt_rc_dec(content); /* free the file content */
+    return seq;
+}
+
 /* Binary file I/O */
 int64_t yona_Std_File__readFileBytes(const char* path) {
     extern int64_t yona_platform_read_file_bytes_submit(const char* path);
