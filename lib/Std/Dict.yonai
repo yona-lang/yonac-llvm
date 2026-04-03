@@ -1,0 +1,5 @@
+FN yona_Std_Dict__put 3 DICT INT INT -> DICT
+FN yona_Std_Dict__get 3 DICT INT INT -> INT
+FN yona_Std_Dict__contains 2 DICT INT -> BOOL
+FN yona_Std_Dict__size 1 DICT -> INT
+FN yona_Std_Dict__keys 1 DICT -> SEQ

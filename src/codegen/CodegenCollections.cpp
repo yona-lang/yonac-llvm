@@ -142,8 +142,9 @@ TypedValue Codegen::codegen_set(SetExpr* node) {
 TypedValue Codegen::codegen_dict(DictExpr* node) {
     set_debug_loc(node->source_context);
     size_t n = node->values.size();
-    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
-    auto dict = builder_->CreateCall(rt_dict_alloc_, {count}, "dict");
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto zero = ConstantInt::get(i64_ty, 0);
+    Value* dict = builder_->CreateCall(rt_dict_alloc_, {zero}, "dict");
 
     CType key_type = CType::INT, val_type = CType::INT;
     for (size_t i = 0; i < n; i++) {
@@ -151,8 +152,14 @@ TypedValue Codegen::codegen_dict(DictExpr* node) {
         auto val_tv = codegen(node->values[i].second);
         if (!key_tv || !val_tv) return {};
         if (i == 0) { key_type = key_tv.type; val_type = val_tv.type; }
-        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
-        builder_->CreateCall(rt_dict_set_, {dict, idx, key_tv.val, val_tv.val});
+        // Persistent put: dict = dict_put(dict, key, val)
+        Value* key_val = key_tv.val;
+        Value* val_val = val_tv.val;
+        if (key_val->getType()->isPointerTy())
+            key_val = builder_->CreatePtrToInt(key_val, i64_ty);
+        if (val_val->getType()->isPointerTy())
+            val_val = builder_->CreatePtrToInt(val_val, i64_ty);
+        dict = builder_->CreateCall(rt_dict_put_, {dict, key_val, val_val}, "dict");
     }
     return {dict, CType::DICT, {key_type, val_type}};
 }

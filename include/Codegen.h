@@ -229,6 +229,11 @@ private:
     llvm::Function* rt_print_set_ = nullptr;
     llvm::Function* rt_dict_alloc_ = nullptr;
     llvm::Function* rt_dict_set_ = nullptr;
+    llvm::Function* rt_dict_put_ = nullptr;
+    llvm::Function* rt_dict_get_ = nullptr;
+    llvm::Function* rt_dict_size_ = nullptr;
+    llvm::Function* rt_dict_contains_ = nullptr;
+    llvm::Function* rt_dict_keys_ = nullptr;
     llvm::Function* rt_print_dict_ = nullptr;
     llvm::Function* rt_adt_alloc_ = nullptr;
     llvm::Function* rt_adt_get_tag_ = nullptr;

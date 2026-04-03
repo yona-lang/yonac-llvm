@@ -220,6 +220,11 @@ void Codegen::declare_runtime() {
     // Dict runtime
     rt_dict_alloc_    = decl("yona_rt_dict_alloc", i64p, {i64});
     rt_dict_set_      = decl("yona_rt_dict_set", vd, {i64p, i64, i64, i64});
+    rt_dict_put_      = decl("yona_rt_dict_put", i64p, {i64p, i64, i64});
+    rt_dict_get_      = decl("yona_rt_dict_get", i64, {i64p, i64, i64});
+    rt_dict_size_     = decl("yona_rt_dict_size", i64, {i64p});
+    rt_dict_contains_ = decl("yona_rt_dict_contains", i64, {i64p, i64});
+    rt_dict_keys_     = decl("yona_rt_dict_keys", i64p, {i64p});
     rt_print_dict_    = decl("yona_rt_print_dict", vd, {i64p});
 
     // Async runtime: promise = async_call(fn_ptr, arg), result = async_await(promise)
