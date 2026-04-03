@@ -23,7 +23,7 @@
 - [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
 - [ ] **LTO** — cross-module inlining of C runtime seq functions.
 - [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup.
-- [ ] **Seq snoc** — O(1) append via tail-end offset.
+- [x] **Seq snoc** — yona_rt_seq_snoc for flat/chunked append.
 - [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
 - [ ] **Persistent Seq trie** — O(log n) indexed access/concat.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
@@ -33,7 +33,6 @@
 
 ## Stdlib Gaps
 - [ ] Regex (string pattern matching) — consider PCRE2 C binding
-- [ ] Buffered I/O / readLines
 - [ ] Process.exec non-blocking — current exec/execStatus are blocking.
   Should use io_uring or thread pool for async subprocess execution.
 
