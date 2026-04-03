@@ -8,6 +8,10 @@
 //
 
 #include "Codegen.h"
+#include <llvm/Linker/Linker.h>
+#include <llvm/IRReader/IRReader.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Support/SourceMgr.h>
 
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Constants.h>
@@ -896,6 +900,20 @@ std::string Codegen::emit_ir() {
     raw_string_ostream os(ir);
     module_->print(os, nullptr);
     return ir;
+}
+
+bool Codegen::link_runtime_bitcode(const std::string& bc_path) {
+    if (!module_) return false;
+
+    llvm::SMDiagnostic err;
+    auto rt_module = llvm::parseIRFile(bc_path, err, *context_);
+    if (!rt_module) return false;
+
+    // Link the runtime module into our module.
+    // OverrideFromSrc: if both modules define a function, keep the
+    // runtime's definition (it has the body, ours has just a declaration).
+    return !llvm::Linker::linkModules(*module_, std::move(rt_module),
+                                       llvm::Linker::OverrideFromSrc);
 }
 
 void Codegen::apply_fastcc() {

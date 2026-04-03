@@ -88,6 +88,11 @@ public:
     // Run LLVM optimization passes
     void optimize();
 
+    // Link runtime bitcode for cross-module inlining (LTO).
+    // If the bitcode file exists, loads and merges it into the module
+    // before optimization, enabling LLVM to inline runtime functions.
+    bool link_runtime_bitcode(const std::string& bc_path);
+
     // Apply fastcc to internal functions whose address is never taken
     void apply_fastcc();
 
@@ -406,13 +411,10 @@ private:
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
 
-    // Perceus last-use set: AST nodes that are the last use of their variable.
-    // Non-last uses emit DUP (rc_inc). Set by analyze_last_uses before compiling a scope.
+    // Reserved for future full Perceus: last-use analysis results.
+    // Currently populated but not consumed (hybrid Perceus skips seq DUP).
     std::unordered_set<ast::AstNode*> last_use_set_;
-    // Variables tracked by Perceus analysis. Only DUP non-last uses of tracked vars.
     std::unordered_set<std::string> perceus_tracked_;
-    // Params consumed by seq_tail/seq_cons during body compilation — skip DROP at exit.
-    std::unordered_set<llvm::Value*> consumed_params_;
     std::pair<llvm::Type*, CType> infer_return_type(ast::AstNode* body_expr);
     llvm::Value* emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes);
 

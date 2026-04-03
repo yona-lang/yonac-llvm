@@ -65,3 +65,4 @@ debug_*
 !lib/**/*.yona
 !bench/**/*.yona
 a.out
+bench/history.jsonl

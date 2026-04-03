@@ -193,12 +193,15 @@ int main(int argc, char* argv[]) {
     // Link expression into executable
     auto exe_dir = filesystem::path(argv[0]).parent_path();
     string rt_obj = (exe_dir / "compiled_runtime.o").string();
+    string rt_bc = (exe_dir / "compiled_runtime.bc").string();
 
-    if (!filesystem::exists(rt_obj)) {
-        for (auto& dir : {".", "..", "../.."}) {
-            auto candidate = filesystem::path(dir) / "src" / "compiled_runtime.c";
-            if (filesystem::exists(candidate)) {
-                string src_dir = (filesystem::path(dir) / "src").string();
+    // Find runtime source and compile to both .o (for linking) and .bc (for LTO)
+    for (auto& dir : {".", "..", "../.."}) {
+        auto candidate = filesystem::path(dir) / "src" / "compiled_runtime.c";
+        if (filesystem::exists(candidate)) {
+            string src_dir = (filesystem::path(dir) / "src").string();
+
+            if (!filesystem::exists(rt_obj)) {
                 string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_obj;
                 system(cmd.c_str());
                 // Compile platform layer
@@ -211,13 +214,58 @@ int main(int argc, char* argv[]) {
                         filesystem::remove(plat_obj);
                     }
                 }
-                break;
+            }
+
+            // Compile to LLVM bitcode for LTO (enables runtime function inlining).
+            // Merge all runtime sources (main + platform) into one bitcode.
+            if (!filesystem::exists(rt_bc)) {
+                string bc_main = rt_bc + ".main";
+                string bc_cmd = "clang -emit-llvm -O2 -c " + candidate.string() +
+                    " -I" + src_dir + " -o " + bc_main + " 2>/dev/null";
+                system(bc_cmd.c_str());
+
+                // Compile platform files and link with llvm-link
+                vector<string> bc_files = {bc_main};
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = filesystem::path(dir) / "src" / "runtime" / "platform" / pf;
+                    if (filesystem::exists(plat_src)) {
+                        string plat_bc = rt_bc + "." + string(pf) + ".bc";
+                        system(("clang -emit-llvm -O2 -c " + plat_src.string() +
+                            " -I" + src_dir + " -o " + plat_bc + " 2>/dev/null").c_str());
+                        bc_files.push_back(plat_bc);
+                    }
+                }
+                // Link all bitcode files into one
+                string link_bc = "llvm-link";
+                for (auto& f : bc_files) link_bc += " " + f;
+                link_bc += " -o " + rt_bc + " 2>/dev/null";
+                system(link_bc.c_str());
+                // Clean up intermediate files
+                for (auto& f : bc_files) filesystem::remove(f);
+            }
+            break;
+        }
+    }
+
+    // LTO: link runtime bitcode into the module before emitting object code.
+    // This enables LLVM to inline seq_head, seq_tail, etc.
+    bool lto_active = false;
+    if (filesystem::exists(rt_bc)) {
+        lto_active = codegen.link_runtime_bitcode(rt_bc);
+        if (lto_active) {
+            codegen.optimize();
+            if (!codegen.emit_object_file(obj_file)) {
+                diag.error(SourceLocation::unknown(), "failed to emit LTO object file");
+                return 1;
             }
         }
     }
 
-    // -rdynamic exports symbols for backtrace_symbols() stack traces
-    string link_cmd = "cc " + obj_file + " " + rt_obj + " -lm -lpthread -rdynamic -o " + output_file;
+    // When LTO merged the runtime, don't link rt_obj separately (avoid dups).
+    // -rdynamic exports symbols for backtrace_symbols() stack traces.
+    string link_cmd = lto_active
+        ? "cc " + obj_file + " -lm -lpthread -rdynamic -o " + output_file
+        : "cc " + obj_file + " " + rt_obj + " -lm -lpthread -rdynamic -o " + output_file;
     int link_result = system(link_cmd.c_str());
     filesystem::remove(obj_file);
 

@@ -558,8 +558,6 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto saved_values = named_values_;
     auto saved_di_scope = di_scope_;
     auto saved_debug_loc = builder_->getCurrentDebugLocation();
-    auto saved_consumed = consumed_params_;
-    consumed_params_.clear();
 
     // Create debug info for this function
     if (debug_info_ && di_builder_ && di_file_) {
@@ -790,7 +788,6 @@ Codegen::CompiledFunction Codegen::compile_function(
                     if (pi >= fn->arg_size()) continue;
                     auto* param = fn->getArg(pi);
                     if (param->getType()->isStructTy()) continue;
-                    if (consumed_params_.count(param)) continue;
 
                     Value* param_ptr = param;
                     Value* ret_ptr = body_tv.val;
@@ -821,7 +818,6 @@ Codegen::CompiledFunction Codegen::compile_function(
 
     // Restore
     named_values_ = saved_values;
-    consumed_params_ = saved_consumed;
     di_scope_ = saved_di_scope;
     if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
     if (debug_info_) builder_->SetCurrentDebugLocation(saved_debug_loc);
