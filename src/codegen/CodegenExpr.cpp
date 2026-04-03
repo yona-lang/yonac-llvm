@@ -6,7 +6,6 @@
 //
 
 #include "Codegen.h"
-#include "LastUseAnalysis.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Type.h>
@@ -369,23 +368,9 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
         }
     }
 
-    // Perceus: run last-use analysis on the body to determine DUP/DROP points.
-    // Build the "owned" set = names of heap-typed let-bound variables.
-    {
-        std::unordered_set<std::string> owned_names;
-        for (auto* alias : node->aliases) {
-            if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
-                auto it = named_values_.find(va->identifier->name->value);
-                if (it != named_values_.end() && is_heap_type(it->second.type))
-                    owned_names.insert(va->identifier->name->value);
-            }
-        }
-        if (!owned_names.empty()) {
-            auto lu = analyze_last_uses(node->expr, owned_names);
-            last_use_set_.insert(lu.begin(), lu.end());
-            perceus_tracked_.insert(owned_names.begin(), owned_names.end());
-        }
-    }
+    // Note: Last-use analysis framework (LastUseAnalysis.h/cpp) is built
+    // and ready for full Perceus seq DUP/DROP. Currently not wired in
+    // because hybrid Perceus skips seq DUP (callee-borrows for seqs).
 
     auto result = codegen(node->expr);
 

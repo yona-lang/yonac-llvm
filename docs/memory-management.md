@@ -96,12 +96,18 @@ Every heap-allocated value has a 2-word header before the payload:
 ```
 - Elements at `payload[2 + index]`
 
-### Dict (`RC_TYPE_DICT`)
+### Dict — HAMT (`RC_TYPE_DICT`)
 ```
-[count: i64] [key_heap: i64] [val_heap: i64] [k0: i64] [v0: i64] ...
+[datamap: i64] [nodemap: i64] [size: i64] [k0: i64] [v0: i64] ... [child0: ptr] ...
 ```
-- `DICT_HDR_SIZE = 3`
-- Key-value pairs at `payload[DICT_HDR_SIZE + i*2]` / `payload[DICT_HDR_SIZE + i*2 + 1]`
+- Hash Array Mapped Trie: 32-way bitmap-compressed persistent hash map
+- `datamap`: bitmap of slots with inline key-value entries
+- `nodemap`: bitmap of slots with child sub-nodes
+- `size`: total entries in this subtree
+- Inline entries (popcount(datamap) pairs) followed by child pointers (popcount(nodemap))
+- Hash function: splitmix64 for i64 keys
+- O(1) amortized lookup/insert (max 7 levels)
+- Persistent: insert creates new path-copy nodes, shares structure with old
 
 ## Atomic Reference Counting
 
@@ -144,7 +150,7 @@ based on the type tag:
 | ADT | Each field per `heap_mask` |
 | Tuple | Each element per `heap_mask` |
 | Set | Each element if `heap_flag` set |
-| Dict | Keys and/or values per `key_heap`/`val_heap` flags |
+| Dict (HAMT) | All child sub-nodes (nodemap entries) |
 
 The `heap_mask` is a 64-bit bitmask set by the codegen at allocation time.
 It encodes which children are heap-typed (pointers that need `rc_dec`).

@@ -416,10 +416,10 @@ private:
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
 
-    // Reserved for future full Perceus: last-use analysis results.
-    // Currently populated but not consumed (hybrid Perceus skips seq DUP).
-    std::unordered_set<ast::AstNode*> last_use_set_;
-    std::unordered_set<std::string> perceus_tracked_;
+    // Last-use analysis: framework built (LastUseAnalysis.h/cpp) but not
+    // yet wired into codegen_identifier for seq DUP. Kept for future use.
+    // std::unordered_set<ast::AstNode*> last_use_set_;
+    // std::unordered_set<std::string> perceus_tracked_;
     std::pair<llvm::Type*, CType> infer_return_type(ast::AstNode* body_expr);
     llvm::Value* emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes);
 
