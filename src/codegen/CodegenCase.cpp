@@ -194,9 +194,12 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_SEQ_PATTERN) {
             auto* sp = static_cast<SeqPattern*>(pat);
             if (sp->patterns.empty()) {
+                // Inline is_empty: count/total_length at index 0
                 Value* seq_val = scrutinee.val;
-                auto is_empty = builder_->CreateCall(rt_seq_is_empty_, {seq_val});
-                auto cmp = builder_->CreateICmpNE(is_empty, ConstantInt::get(LType::getInt64Ty(*context_), 0));
+                auto* count_ptr = builder_->CreateGEP(LType::getInt64Ty(*context_),
+                    seq_val, {ConstantInt::get(LType::getInt64Ty(*context_), 0)});
+                auto* count = builder_->CreateLoad(LType::getInt64Ty(*context_), count_ptr, "seq_count");
+                auto* cmp = builder_->CreateICmpEQ(count, ConstantInt::get(LType::getInt64Ty(*context_), 0));
                 builder_->CreateCondBr(cmp, body_bb, next_bb);
             } else builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_TUPLE_PATTERN) {
