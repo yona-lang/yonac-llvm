@@ -23,7 +23,8 @@
 - [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
 - [x] **LTO** — cross-module inlining via clang bitcode + llvm::Linker.
   Queens: 16x→10.8x C, list_map_filter: 1.4x→1.2x C.
-- [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup.
+- [x] **Hash-based Dict** — HAMT with splitmix64 hash, O(1) amortized.
+  Std\Dict module (put/get/contains/size/keys). 10K build in 7.2ms.
 - [x] **Seq snoc** — yona_rt_seq_snoc for flat/chunked append.
 - [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
 - [ ] **Persistent Seq trie** — O(log n) indexed access/concat.
