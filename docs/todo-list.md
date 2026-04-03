@@ -5,7 +5,7 @@
 - **REPL**: `yona` — compile-and-run interactive mode
 - **Tests**: 685 assertions across 74 test cases (all passing)
 - **Stdlib**: 25 modules, ~260 exported functions (12 pure Yona + 13 C runtime)
-- **Benchmarks**: 9/9 passing (7 of 9 within 1.5x C, queens 17x due to search tree)
+- **Benchmarks**: 9/9 passing (5 within 1.4x C, queens 11x with LTO)
 
 ## Performance Optimization
 
@@ -21,7 +21,8 @@
 
 ### Remaining
 - [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
-- [ ] **LTO** — cross-module inlining of C runtime seq functions.
+- [x] **LTO** — cross-module inlining via clang bitcode + llvm::Linker.
+  Queens: 16x→10.8x C, list_map_filter: 1.4x→1.2x C.
 - [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup.
 - [x] **Seq snoc** — yona_rt_seq_snoc for flat/chunked append.
 - [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
