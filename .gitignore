@@ -63,4 +63,5 @@ debug_*
 !test/code/**/*.yona
 !test/codegen/*.yona
 !lib/**/*.yona
+!bench/**/*.yona
 a.out

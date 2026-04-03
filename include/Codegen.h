@@ -88,6 +88,9 @@ public:
     // Run LLVM optimization passes
     void optimize();
 
+    // Apply fastcc to internal functions whose address is never taken
+    void apply_fastcc();
+
     // Mangle a module function name for export
     static std::string mangle_name(const std::string& module_fqn, const std::string& func_name);
 
@@ -110,6 +113,7 @@ private:
         std::vector<CType> param_types;
         std::vector<std::string> capture_names;
         bool is_io_async = false;  // true for AFN: call directly, await via yona_rt_io_await
+        llvm::Value* closure_env = nullptr;  // for recursive closure calls: prepend this env arg
     };
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
@@ -220,6 +224,7 @@ private:
     llvm::Function* rt_adt_get_tag_ = nullptr;
     llvm::Function* rt_adt_get_field_ = nullptr;
     llvm::Function* rt_adt_set_field_ = nullptr;
+    llvm::Function* rt_adt_set_heap_mask_ = nullptr;
     llvm::Function* rt_async_call_thunk_ = nullptr;
     llvm::Function* rt_try_begin_ = nullptr;
     llvm::Function* rt_try_end_ = nullptr;
@@ -242,6 +247,10 @@ private:
     llvm::Function* rt_closure_create_ = nullptr;
     llvm::Function* rt_closure_set_cap_ = nullptr;
     llvm::Function* rt_closure_get_cap_ = nullptr;
+    llvm::Function* rt_closure_set_heap_mask_ = nullptr;
+    llvm::Function* rt_tuple_alloc_ = nullptr;
+    llvm::Function* rt_tuple_set_ = nullptr;
+    llvm::Function* rt_tuple_set_heap_mask_ = nullptr;
 
     // Reference counting
     llvm::Function* rt_rc_inc_ = nullptr;
@@ -391,6 +400,14 @@ private:
     static bool is_heap_type(CType ct);
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
+
+    // Perceus last-use set: AST nodes that are the last use of their variable.
+    // Non-last uses emit DUP (rc_inc). Set by analyze_last_uses before compiling a scope.
+    std::unordered_set<ast::AstNode*> last_use_set_;
+    // Variables tracked by Perceus analysis. Only DUP non-last uses of tracked vars.
+    std::unordered_set<std::string> perceus_tracked_;
+    // Params consumed by seq_tail/seq_cons during body compilation — skip DROP at exit.
+    std::unordered_set<llvm::Value*> consumed_params_;
     std::pair<llvm::Type*, CType> infer_return_type(ast::AstNode* body_expr);
     llvm::Value* emit_arena_alloc(int64_t type_tag, llvm::Value* payload_bytes);
 

@@ -1,3 +1,7 @@
 FN yona_Std_Process__getenv 1 STRING -> STRING
 FN yona_Std_Process__getcwd 0 -> STRING
 FN yona_Std_Process__exit 1 INT -> INT
+FN yona_Std_Process__exec 1 STRING -> STRING
+FN yona_Std_Process__execStatus 1 STRING -> INT
+FN yona_Std_Process__setenv 2 STRING STRING -> INT
+FN yona_Std_Process__hostname 0 -> STRING

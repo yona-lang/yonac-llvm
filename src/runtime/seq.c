@@ -28,6 +28,7 @@ extern void yona_rt_rc_dec(void* ptr);
 #define RC_TYPE_CHUNKED 11
 #define CHUNK_SIZE 32
 #define RC_ARENA_SENTINEL INT64_MAX
+#define SEQ_HDR_SIZE 2
 
 /* ===== Chunked Seq ===== */
 /*
@@ -57,16 +58,21 @@ static yona_chunk_t* chunk_alloc(int64_t count, int64_t total) {
 
 static int is_chunked(int64_t* seq) {
     if (!seq) return 0;
-    int64_t* header = seq - 2;
-    return header[1] == RC_TYPE_CHUNKED;
+    int64_t* header = seq - RC_HEADER_SIZE;
+    return DECODE_TAG(header[1]) == RC_TYPE_CHUNKED;
 }
 
 /* ===== Public API ===== */
 
 int64_t* yona_rt_seq_alloc(int64_t count) {
-    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ, (count + 1) * sizeof(int64_t));
+    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ, (SEQ_HDR_SIZE + count) * sizeof(int64_t));
     seq[0] = count;
+    seq[1] = 0; /* heap_flag */
     return seq;
+}
+
+void yona_rt_seq_set_heap(int64_t* seq, int64_t flag) {
+    seq[1] = flag;
 }
 
 int64_t yona_rt_seq_length(int64_t* seq) {
@@ -75,7 +81,7 @@ int64_t yona_rt_seq_length(int64_t* seq) {
 }
 
 int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    if (!is_chunked(seq)) return seq[index + 1];
+    if (!is_chunked(seq)) return seq[SEQ_HDR_SIZE + index];
     yona_chunk_t* c = (yona_chunk_t*)seq;
     while (c) {
         if (index < c->count) return c->elems[c->offset + index];
@@ -87,7 +93,7 @@ int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
 
 void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
     /* Only for flat seqs during construction */
-    seq[index + 1] = value;
+    seq[SEQ_HDR_SIZE + index] = value;
 }
 
 int64_t yona_rt_seq_is_empty(int64_t* seq) {
@@ -101,7 +107,7 @@ int64_t yona_rt_seq_head(int64_t* seq) {
         yona_chunk_t* c = (yona_chunk_t*)seq;
         return c->elems[c->offset];
     }
-    return seq[1];
+    return seq[SEQ_HDR_SIZE];
 }
 
 /* Cons (prepend) — O(1) */
@@ -113,7 +119,7 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         int64_t* hdr = ((int64_t*)old) - 2;
 
         /* Unique owner with space before offset — write in place */
-        if (hdr[0] == 1 && old->offset > 0) {
+        if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1 && old->offset > 0) {
             old->offset--;
             old->count++;
             old->total_length++;
@@ -143,21 +149,26 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         return (int64_t*)c;
     }
 
-    /* Flat seq: if small, stay flat with unique-owner realloc */
+    /* Flat seq: if small, stay flat. Unique-owner realloc only for
+     * non-pooled blocks (pool blocks can't be realloc'd). */
     if (len < CHUNK_SIZE) {
-        int64_t* header = seq - 2;
-        if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
-            size_t new_payload = ((size_t)(len + 1) + 1) * sizeof(int64_t);
-            int64_t* new_hdr = (int64_t*)realloc(header, 2 * sizeof(int64_t) + new_payload);
-            int64_t* ns = new_hdr + 2;
-            memmove(ns + 2, ns + 1, (size_t)len * sizeof(int64_t));
+        int64_t* header = seq - RC_HEADER_SIZE;
+        int64_t rc_val = __atomic_load_n(&header[0], __ATOMIC_ACQUIRE);
+        int pool_cls = DECODE_POOL_CLASS(header[1]);
+        if (rc_val == 1 && rc_val != RC_ARENA_SENTINEL && pool_cls < 0) {
+            /* Non-pooled unique owner: realloc in place */
+            size_t new_payload = (SEQ_HDR_SIZE + len + 1) * sizeof(int64_t);
+            int64_t* new_hdr = (int64_t*)realloc(header, RC_HEADER_SIZE * sizeof(int64_t) + new_payload);
+            int64_t* ns = new_hdr + RC_HEADER_SIZE;
+            memmove(ns + SEQ_HDR_SIZE + 1, ns + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
             ns[0] = len + 1;
-            ns[1] = elem;
+            ns[SEQ_HDR_SIZE] = elem;
             return ns;
         }
         int64_t* result = yona_rt_seq_alloc(len + 1);
-        result[1] = elem;
-        memcpy(result + 2, seq + 1, (size_t)len * sizeof(int64_t));
+        result[1] = seq[1]; /* copy heap_flag */
+        result[SEQ_HDR_SIZE] = elem;
+        memcpy(result + SEQ_HDR_SIZE + 1, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
         return result;
     }
 
@@ -165,7 +176,7 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
      * Old flat becomes a body chunk, elem goes in a head chunk at high offset
      * (so future cons can prepend without copying). */
     yona_chunk_t* body = chunk_alloc(len, len);
-    memcpy(body->elems, seq + 1, (size_t)len * sizeof(int64_t));
+    memcpy(body->elems, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
 
     yona_chunk_t* head = chunk_alloc(1, len + 1);
     head->offset = CHUNK_SIZE - 1;
@@ -194,7 +205,7 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
         }
 
         /* Unique owner — just bump offset */
-        if (hdr[0] == 1) {
+        if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1) {
             old->offset++;
             old->count--;
             old->total_length--;
@@ -212,13 +223,14 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
 
     /* Flat seq */
     int64_t* header = seq - 2;
-    if (header[0] == 1 && header[0] != RC_ARENA_SENTINEL) {
-        memmove(seq + 1, seq + 2, (size_t)(len - 1) * sizeof(int64_t));
+    if (__atomic_load_n(&header[0], __ATOMIC_ACQUIRE) == 1 && header[0] != RC_ARENA_SENTINEL) {
+        memmove(seq + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1, (size_t)(len - 1) * sizeof(int64_t));
         seq[0] = len - 1;
         return seq;
     }
     int64_t* result = yona_rt_seq_alloc(len - 1);
-    memcpy(result + 1, seq + 2, (size_t)(len - 1) * sizeof(int64_t));
+    result[1] = seq[1]; /* copy heap_flag */
+    memcpy(result + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1, (size_t)(len - 1) * sizeof(int64_t));
     return result;
 }
 
@@ -231,8 +243,8 @@ int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
 
     /* Flatten both to flat array — simplest correct approach */
     int64_t* result = yona_rt_seq_alloc(la + lb);
-    for (int64_t i = 0; i < la; i++) result[i + 1] = yona_rt_seq_get(a, i);
-    for (int64_t i = 0; i < lb; i++) result[la + i + 1] = yona_rt_seq_get(b, i);
+    for (int64_t i = 0; i < la; i++) result[SEQ_HDR_SIZE + i] = yona_rt_seq_get(a, i);
+    for (int64_t i = 0; i < lb; i++) result[SEQ_HDR_SIZE + la + i] = yona_rt_seq_get(b, i);
     return result;
 }
 

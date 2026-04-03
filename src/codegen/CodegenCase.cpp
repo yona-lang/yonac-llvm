@@ -13,6 +13,37 @@ namespace yona::compiler::codegen {
 using namespace llvm;
 using LType = llvm::Type;
 
+// Coerce a value to a target LLVM type for PHI node compatibility.
+static Value* coerce_for_phi(Value* val, LType* target, IRBuilder<>& builder, LLVMContext& ctx) {
+    auto* src = val->getType();
+    if (src == target) return val;
+    if (src->isIntegerTy() && target->isIntegerTy())
+        return builder.CreateZExtOrTrunc(val, target);
+    if (src->isPointerTy() && target->isIntegerTy())
+        return builder.CreatePtrToInt(val, target);
+    if (src->isIntegerTy() && target->isPointerTy())
+        return builder.CreateIntToPtr(val, target);
+    if (src->isStructTy() && target->isPointerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return alloca;
+    }
+    return val;
+}
+
+static LType* common_phi_type(LType* a, LType* b, LLVMContext& ctx) {
+    if (a == b) return a;
+    if (a->isStructTy() || b->isStructTy())
+        return PointerType::get(ctx, 0);
+    if (a->isPointerTy() || b->isPointerTy())
+        return PointerType::get(ctx, 0);
+    if (a->isIntegerTy() && b->isIntegerTy()) {
+        unsigned wa = a->getIntegerBitWidth(), wb = b->getIntegerBitWidth();
+        return wa >= wb ? a : b;
+    }
+    return LType::getInt64Ty(ctx);
+}
+
 TypedValue Codegen::codegen_case(CaseExpr* node) {
     set_debug_loc(node->source_context);
     auto scrutinee = auto_await(codegen(node->expr));
@@ -161,27 +192,70 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             } else builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_TUPLE_PATTERN) {
             auto* tp = static_cast<TuplePattern*>(pat);
-            // Unbox if the tuple was stored in a collection (value is i64, not struct)
+            auto i64_ty = LType::getInt64Ty(*context_);
             Value* tuple_val = scrutinee.val;
-            if (tuple_val->getType()->isIntegerTy() && scrutinee.type == CType::TUPLE) {
-                // Build the struct type from subtypes or pattern size
-                std::vector<LType*> fields;
-                for (size_t fi = 0; fi < tp->patterns.size(); fi++) {
-                    CType ft = (fi < scrutinee.subtypes.size()) ? scrutinee.subtypes[fi] : CType::INT;
-                    fields.push_back(llvm_type(ft));
-                }
-                auto* struct_ty = StructType::get(*context_, fields);
-                auto* ptr = builder_->CreateIntToPtr(tuple_val, PointerType::get(*context_, 0));
-                tuple_val = builder_->CreateLoad(struct_ty, ptr, "unbox_tuple");
+            bool is_ptr = tuple_val->getType()->isPointerTy();
+
+            // Unbox if the tuple is stored as i64 (ptrtoint'd pointer to i64 array)
+            if (tuple_val->getType()->isIntegerTy()) {
+                tuple_val = builder_->CreateIntToPtr(tuple_val, PointerType::get(*context_, 0));
+                is_ptr = true;
             }
+
+            // Load elements and match sub-patterns.
+            // For ptr scrutinees: GEP + load i64 (handles varying-arity tuples).
+            // For struct scrutinees: ExtractValue.
+            // Symbol/literal sub-patterns generate comparisons; mismatch → next_bb.
+            BasicBlock* current_check = builder_->GetInsertBlock();
             for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
-                auto elem = builder_->CreateExtractValue(tuple_val, {(unsigned)ti});
+                Value* elem;
+                if (is_ptr) {
+                    auto* gep = builder_->CreateGEP(i64_ty, tuple_val,
+                        {ConstantInt::get(i64_ty, ti + 2)}, "tuple_gep"); // +2 for tuple header (num_elements, heap_mask)
+                    elem = builder_->CreateLoad(i64_ty, gep, "tuple_elem");
+                } else {
+                    elem = builder_->CreateExtractValue(tuple_val, {(unsigned)ti});
+                }
                 CType et = (ti < scrutinee.subtypes.size()) ? scrutinee.subtypes[ti] : CType::INT;
                 auto* sub = tp->patterns[ti];
                 if (sub->get_type() == AST_PATTERN_VALUE) {
                     auto* pv = static_cast<PatternValue*>(sub);
-                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    if (auto* sym = std::get_if<SymbolExpr*>(&pv->expr)) {
+                        // Symbol comparison — branch to next clause on mismatch
+                        int64_t sym_id = intern_symbol((*sym)->value);
+                        auto* sym_val = ConstantInt::get(i64_ty, sym_id);
+                        Value* cmp_val = elem;
+                        if (cmp_val->getType() != i64_ty) {
+                            if (cmp_val->getType()->isPointerTy())
+                                cmp_val = builder_->CreatePtrToInt(cmp_val, i64_ty);
+                            else if (cmp_val->getType()->isIntegerTy())
+                                cmp_val = builder_->CreateZExtOrTrunc(cmp_val, i64_ty);
+                        }
+                        auto* cmp = builder_->CreateICmpEQ(cmp_val, sym_val);
+                        auto* match_bb = BasicBlock::Create(*context_,
+                            "tuple.sym." + std::to_string(i) + "." + std::to_string(ti), fn);
+                        builder_->CreateCondBr(cmp, match_bb, next_bb);
+                        builder_->SetInsertPoint(match_bb);
+                    } else if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                         named_values_[(*id)->name->value] = {elem, et};
+                    } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                        // Integer literal comparison
+                        auto* an = reinterpret_cast<AstNode*>(*lit);
+                        if (an->get_type() == AST_INTEGER_EXPR) {
+                            auto* ie = static_cast<IntegerExpr*>(an);
+                            auto* mv = ConstantInt::get(i64_ty, ie->value);
+                            Value* cmp_val = elem;
+                            if (cmp_val->getType() != i64_ty)
+                                cmp_val = builder_->CreateZExtOrTrunc(cmp_val, i64_ty);
+                            auto* cmp = builder_->CreateICmpEQ(cmp_val, mv);
+                            auto* match_bb = BasicBlock::Create(*context_,
+                                "tuple.lit." + std::to_string(i) + "." + std::to_string(ti), fn);
+                            builder_->CreateCondBr(cmp, match_bb, next_bb);
+                            builder_->SetInsertPoint(match_bb);
+                        }
+                    }
+                } else if (sub->get_type() == AST_UNDERSCORE_PATTERN) {
+                    // Wildcard — matches anything, no binding needed
                 }
             }
             builder_->CreateBr(body_bb);
@@ -384,12 +458,26 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     unsigned pred_count = 0;
     for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) pred_count++;
 
-    auto phi = builder_->CreatePHI(results[0].first.val->getType(), pred_count);
-    for (auto& [tv, bb] : results) phi->addIncoming(tv.val, bb);
+    // Determine common PHI type across all branches
+    LType* phi_type = results[0].first.val->getType();
+    for (size_t ri = 1; ri < results.size(); ri++)
+        phi_type = common_phi_type(phi_type, results[ri].first.val->getType(), *context_);
+
+    auto phi = builder_->CreatePHI(phi_type, pred_count);
+    for (auto& [tv, bb] : results) {
+        Value* incoming = tv.val;
+        if (incoming->getType() != phi_type) {
+            // Insert coercion before the branch terminator in the source block
+            builder_->SetInsertPoint(bb->getTerminator());
+            incoming = coerce_for_phi(incoming, phi_type, *builder_, *context_);
+            builder_->SetInsertPoint(merge_bb);
+        }
+        phi->addIncoming(incoming, bb);
+    }
     for (auto it = pred_begin(merge_bb); it != pred_end(merge_bb); ++it) {
         bool found = false;
         for (auto& [tv, bb] : results) if (bb == *it) { found = true; break; }
-        if (!found) phi->addIncoming(Constant::getNullValue(results[0].first.val->getType()), *it);
+        if (!found) phi->addIncoming(Constant::getNullValue(phi_type), *it);
     }
     return {phi, results[0].first.type, results[0].first.subtypes};
 }

@@ -35,7 +35,8 @@ void Codegen::collect_free_vars(AstNode* node, const std::unordered_set<std::str
         case AST_DIVIDE_EXPR: case AST_MODULO_EXPR:
         case AST_EQ_EXPR: case AST_NEQ_EXPR:
         case AST_LT_EXPR: case AST_GT_EXPR: case AST_LTE_EXPR: case AST_GTE_EXPR:
-        case AST_LOGICAL_AND_EXPR: case AST_LOGICAL_OR_EXPR: {
+        case AST_LOGICAL_AND_EXPR: case AST_LOGICAL_OR_EXPR:
+        case AST_CONS_LEFT_EXPR: case AST_CONS_RIGHT_EXPR: case AST_JOIN_EXPR: {
             auto* bin = static_cast<AddExpr*>(node);
             collect_free_vars(bin->left, bound, free_vars);
             collect_free_vars(bin->right, bound, free_vars);
@@ -69,8 +70,11 @@ void Codegen::collect_free_vars(AstNode* node, const std::unordered_set<std::str
         }
         case AST_APPLY_EXPR: {
             auto* e = static_cast<ApplyExpr*>(node);
-            if (auto* nc = dynamic_cast<NameCall*>(e->call))
+            if (auto* nc = dynamic_cast<NameCall*>(e->call)) {
                 if (!bound.count(nc->name->value)) free_vars.insert(nc->name->value);
+            } else if (auto* ec = dynamic_cast<ExprCall*>(e->call)) {
+                if (ec->expr) collect_free_vars(ec->expr, bound, free_vars);
+            }
             for (auto& a : e->args) {
                 if (std::holds_alternative<ExprNode*>(a))
                     collect_free_vars(std::get<ExprNode*>(a), bound, free_vars);
@@ -93,6 +97,16 @@ void Codegen::collect_free_vars(AstNode* node, const std::unordered_set<std::str
                 if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
                     collect_free_vars(bwg->expr, nb, free_vars);
             }
+            break;
+        }
+        case AST_TUPLE_EXPR: {
+            auto* e = static_cast<TupleExpr*>(node);
+            for (auto* v : e->values) collect_free_vars(v, bound, free_vars);
+            break;
+        }
+        case AST_VALUES_SEQUENCE_EXPR: {
+            auto* e = static_cast<ValuesSequenceExpr*>(node);
+            for (auto* v : e->values) collect_free_vars(v, bound, free_vars);
             break;
         }
         case AST_DO_EXPR: {
@@ -173,6 +187,12 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
                 // Deferred function: skip (will be compiled later as a global)
                 if (deferred_functions_.count(v) > 0)
                     continue;
+                // Extern/imported function: skip (resolved at link time)
+                if (extern_functions_.count(v) > 0)
+                    continue;
+                // Null-valued function (e.g., not yet compiled): skip
+                if (!it->second.val)
+                    continue;
                 // Runtime function pointer (parameter, closure): capture it
             }
             def.free_vars.push_back(v);
@@ -213,10 +233,12 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
         auto* fn = Function::Create(fn_type, Function::InternalLinkage, fn_name, module_.get());
 
-        // Register preliminary for recursive calls
+        // Register preliminary for recursive calls (closure_env set below after entry block)
         CompiledFunction cf_pre;
         cf_pre.fn = fn;
         cf_pre.return_type = ret_ctype;
+        for (size_t pi = 0; pi < def.param_names.size(); pi++)
+            cf_pre.param_types.push_back(CType::INT);
         compiled_functions_[fn_name] = cf_pre;
         named_values_[fn_name] = {fn, CType::FUNCTION};
 
@@ -255,6 +277,9 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         auto arg_it = fn->arg_begin();
         Value* env = &*arg_it; env->setName("env");
         ++arg_it;
+
+        // Update preliminary entry with env for recursive closure calls
+        compiled_functions_[fn_name].closure_env = env;
 
         // Load captures from env
         for (size_t ci = 0; ci < def.free_vars.size(); ci++) {
@@ -329,9 +354,20 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
              ConstantInt::get(i64_ty, def.free_vars.size())}, fn_name + "_closure");
 
         // Store captured values — rc_inc each heap-typed capture since the
-        // closure now holds an additional reference
+        // closure now holds an additional reference.
+        // Exception: self-capture (recursive closure) uses a weak reference
+        // to break the cycle. Without this, recursive closures leak forever.
+        // Build heap_mask for recursive destruction: bit i is set if capture i
+        // is heap-typed (pointer that needs rc_dec when the closure is freed).
+        int64_t heap_mask = 0;
         for (size_t ci = 0; ci < capture_tvs.size(); ci++) {
-            emit_rc_inc(capture_tvs[ci].val, capture_tvs[ci].type);
+            bool is_self = (ci < def.free_vars.size() && def.free_vars[ci] == fn_name);
+            bool is_heap = is_heap_type(capture_tvs[ci].type) &&
+                           !capture_tvs[ci].val->getType()->isStructTy();
+            if (is_heap && !is_self) {
+                emit_rc_inc(capture_tvs[ci].val, capture_tvs[ci].type);
+                if (ci < 64) heap_mask |= ((int64_t)1 << ci);
+            }
             Value* cap_i64 = capture_tvs[ci].val;
             if (cap_i64->getType()->isPointerTy())
                 cap_i64 = builder_->CreatePtrToInt(cap_i64, i64_ty);
@@ -342,6 +378,10 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
             builder_->CreateCall(rt_closure_set_cap_,
                 {closure, ConstantInt::get(i64_ty, ci), cap_i64});
         }
+        // Store heap_mask so rc_dec can recursively free captures
+        if (heap_mask != 0)
+            builder_->CreateCall(rt_closure_set_heap_mask_,
+                {closure, ConstantInt::get(i64_ty, heap_mask)});
 
         last_lambda_name_ = fn_name;
         named_values_[fn_name] = {closure, CType::FUNCTION, {ret_ctype}};
@@ -423,14 +463,8 @@ Codegen::CompiledFunction Codegen::compile_function(
         if (ct == AST_FUNCTION_EXPR)
             return {PointerType::get(*context_, 0), CType::FUNCTION};
         if (ct == AST_TUPLE_EXPR) {
-            // Determine struct layout from tuple elements
-            auto* te = static_cast<TupleExpr*>(node);
-            std::vector<LType*> fields;
-            for (auto* v : te->values) {
-                auto [lt, _] = infer_ret(v);
-                fields.push_back(lt);
-            }
-            return {StructType::get(*context_, fields), CType::TUPLE};
+            // Tuples are boxed as i64 (ptrtoint'd heap pointer)
+            return {i64_ty, CType::TUPLE};
         }
         if (ct == AST_FIELD_ACCESS_EXPR) {
             auto* fa = static_cast<FieldAccessExpr*>(node);
@@ -524,6 +558,8 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto saved_values = named_values_;
     auto saved_di_scope = di_scope_;
     auto saved_debug_loc = builder_->getCurrentDebugLocation();
+    auto saved_consumed = consumed_params_;
+    consumed_params_.clear();
 
     // Create debug info for this function
     if (debug_info_ && di_builder_ && di_file_) {
@@ -588,17 +624,28 @@ Codegen::CompiledFunction Codegen::compile_function(
             auto* pat = def.ast->patterns[i];
             if (ct == CType::TUPLE && pat->get_type() == AST_TUPLE_PATTERN) {
                 auto* tp = static_cast<TuplePattern*>(pat);
+                auto i64_local = LType::getInt64Ty(*context_);
                 for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
                     auto* elem_pat = tp->patterns[ti];
                     if (elem_pat->get_type() == AST_PATTERN_VALUE) {
                         auto* pv = static_cast<PatternValue*>(elem_pat);
                         if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                             CType et = (ti < st.size()) ? st[ti] : CType::INT;
-                            auto* elem = builder_->CreateExtractValue(&arg, {(unsigned)ti});
+                            Value* elem;
+                            if (arg.getType()->isPointerTy()) {
+                                auto* gep = builder_->CreateGEP(i64_local, &arg,
+                                    {ConstantInt::get(i64_local, ti + 2)}, "param_tuple_gep"); // +2 for tuple header
+                                elem = builder_->CreateLoad(i64_local, gep, "param_tuple_elem");
+                            } else {
+                                // i64 (ptrtoint'd tuple): inttoptr then GEP+load
+                                auto* ptr = builder_->CreateIntToPtr(&arg, PointerType::get(*context_, 0));
+                                auto* gep = builder_->CreateGEP(i64_local, ptr,
+                                    {ConstantInt::get(i64_local, ti + 2)}, "param_tuple_gep"); // +2 for tuple header
+                                elem = builder_->CreateLoad(i64_local, gep, "param_tuple_elem");
+                            }
                             named_values_[(*id)->name->value] = {elem, et};
                         }
                     }
-                    // Underscore patterns are silently ignored
                 }
             }
         }
@@ -688,13 +735,24 @@ Codegen::CompiledFunction Codegen::compile_function(
                     auto* pat = def.ast->patterns[i];
                     if (ct == CType::TUPLE && pat->get_type() == AST_TUPLE_PATTERN) {
                         auto* tp = static_cast<TuplePattern*>(pat);
+                        auto i64_local = LType::getInt64Ty(*context_);
                         for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
                             auto* elem_pat = tp->patterns[ti];
                             if (elem_pat->get_type() == AST_PATTERN_VALUE) {
                                 auto* pv = static_cast<PatternValue*>(elem_pat);
                                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                                     CType et = (ti < st.size()) ? st[ti] : CType::INT;
-                                    auto* elem = builder_->CreateExtractValue(&arg, {(unsigned)ti});
+                                    Value* elem;
+                                    if (arg.getType()->isPointerTy()) {
+                                        auto* gep = builder_->CreateGEP(i64_local, &arg,
+                                            {ConstantInt::get(i64_local, ti + 2)}, "param_tuple_gep"); // +2 for tuple header
+                                        elem = builder_->CreateLoad(i64_local, gep, "param_tuple_elem");
+                                    } else {
+                                        auto* ptr = builder_->CreateIntToPtr(&arg, PointerType::get(*context_, 0));
+                                        auto* gep = builder_->CreateGEP(i64_local, ptr,
+                                            {ConstantInt::get(i64_local, ti + 2)}, "param_tuple_gep"); // +2 for tuple header
+                                        elem = builder_->CreateLoad(i64_local, gep, "param_tuple_elem");
+                                    }
                                     named_values_[(*id)->name->value] = {elem, et};
                                 }
                             }
@@ -713,8 +771,42 @@ Codegen::CompiledFunction Codegen::compile_function(
             }
             ret_ctype = body_tv ? body_tv.type : CType::INT;
         }
-        if (!builder_->GetInsertBlock()->getTerminator())
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            // Perceus callee-owns DROP for non-seq heap params.
+            if (body_tv.val) {
+                auto ptr_ty = PointerType::get(*context_, 0);
+                for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+                    if (pi >= param_ctypes.size()) continue;
+                    CType ct = param_ctypes[pi];
+                    if (ct == CType::SEQ) continue;
+                    if (!is_heap_type(ct)) continue;
+                    if (pi >= fn->arg_size()) continue;
+                    auto* param = fn->getArg(pi);
+                    if (param->getType()->isStructTy()) continue;
+                    if (consumed_params_.count(param)) continue;
+
+                    Value* param_ptr = param;
+                    Value* ret_ptr = body_tv.val;
+                    if (param_ptr->getType()->isIntegerTy())
+                        param_ptr = builder_->CreateIntToPtr(param_ptr, ptr_ty);
+                    if (ret_ptr->getType()->isIntegerTy())
+                        ret_ptr = builder_->CreateIntToPtr(ret_ptr, ptr_ty);
+                    if (param_ptr->getType()->isPointerTy() && ret_ptr->getType()->isPointerTy()) {
+                        auto* is_same = builder_->CreateICmpEQ(param_ptr, ret_ptr, "param_is_ret");
+                        auto* drop_bb = BasicBlock::Create(*context_, "drop_param", fn);
+                        auto* cont_bb = BasicBlock::Create(*context_, "cont", fn);
+                        builder_->CreateCondBr(is_same, cont_bb, drop_bb);
+                        builder_->SetInsertPoint(drop_bb);
+                        emit_rc_dec(param, ct);
+                        builder_->CreateBr(cont_bb);
+                        builder_->SetInsertPoint(cont_bb);
+                    } else {
+                        emit_rc_dec(param, ct);
+                    }
+                }
+            }
             builder_->CreateRet(body_tv.val);
+        }
     } else {
         if (!builder_->GetInsertBlock()->getTerminator())
             builder_->CreateRet(Constant::getNullValue(ret_type));
@@ -722,6 +814,7 @@ Codegen::CompiledFunction Codegen::compile_function(
 
     // Restore
     named_values_ = saved_values;
+    consumed_params_ = saved_consumed;
     di_scope_ = saved_di_scope;
     if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
     if (debug_info_) builder_->SetCurrentDebugLocation(saved_debug_loc);
@@ -843,11 +936,17 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
                 {ConstantInt::get(tag_ty, info.tag),
                  ConstantInt::get(i64_ty, info.arity)}, "adt_node");
+            int64_t adt_heap_mask = 0;
             for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
                 Value* arg_val = to_i64(all_args[ai].val);
                 builder_->CreateCall(rt_adt_set_field_,
                     {node_ptr, ConstantInt::get(i64_ty, ai), arg_val});
+                if (is_heap_type(all_args[ai].type) && ai < 64)
+                    adt_heap_mask |= ((int64_t)1 << ai);
             }
+            if (adt_heap_mask != 0)
+                builder_->CreateCall(rt_adt_set_heap_mask_,
+                    {node_ptr, ConstantInt::get(i64_ty, adt_heap_mask)});
             TypedValue result{node_ptr, CType::ADT};
             result.adt_type_name = info.type_name;
             return result;
@@ -1265,13 +1364,34 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         return {current_fn, CType::INT};
     }
 
+    // Perceus DUP for non-seq heap args. Seqs use callee-borrows because
+    // DUP-induced rc>1 is incompatible with seq unique-owner optimization.
+    for (size_t ai = 0; ai < all_args.size(); ai++) {
+        CType ct = all_args[ai].type;
+        if (ct == CType::SEQ) continue;
+        if (!is_heap_type(ct)) continue;
+        if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
+        if (all_args[ai].val->getType()->isStructTy()) continue;
+        bool is_named = false;
+        for (auto& [k, v] : named_values_)
+            if (v.val == all_args[ai].val) { is_named = true; break; }
+        if (is_named)
+            emit_rc_inc(all_args[ai].val, ct);
+    }
+
     std::vector<Value*> call_args;
+
+    // For recursive closure calls, prepend the env pointer as first argument
+    if (cf.closure_env)
+        call_args.push_back(cf.closure_env);
+
+    size_t fn_arg_offset = cf.closure_env ? 1 : 0;
     for (size_t ai = 0; ai < all_args.size(); ai++) {
         Value* arg_val = all_args[ai].val;
         // Coerce arg type if it doesn't match the function's expected param type.
         // This handles closures returning i64 when the callee expects ptr (ADT).
-        if (ai < cf.fn->arg_size()) {
-            auto* expected_ty = cf.fn->getArg(ai)->getType();
+        if (ai + fn_arg_offset < cf.fn->arg_size()) {
+            auto* expected_ty = cf.fn->getArg(ai + fn_arg_offset)->getType();
             if (arg_val->getType() != expected_ty) {
                 if (arg_val->getType()->isIntegerTy() && expected_ty->isPointerTy())
                     arg_val = builder_->CreateIntToPtr(arg_val, expected_ty);
@@ -1377,6 +1497,20 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     auto* current_fn = builder_->GetInsertBlock()->getParent();
     if (cf.fn == current_fn)
         call_inst->setTailCall(true);
+
+    // Drop seq temps whose type differs from return (callee-borrows for seqs).
+    for (size_t ai = 0; ai < all_args.size(); ai++) {
+        if (all_args[ai].type != CType::SEQ) continue;
+        if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
+        if (all_args[ai].val->getType()->isStructTy()) continue;
+        bool is_named = false;
+        for (auto& [k, v] : named_values_)
+            if (v.val == all_args[ai].val) { is_named = true; break; }
+        if (is_named) continue;
+        if (all_args[ai].type == cf.return_type) continue;
+        emit_rc_dec(all_args[ai].val, all_args[ai].type);
+    }
+
     return {call_inst, cf.return_type};
 }
 

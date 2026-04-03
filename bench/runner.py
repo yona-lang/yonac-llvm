@@ -200,6 +200,39 @@ def run_suite(benchmarks, opt_level, iterations, compare_c=False):
     return results
 
 
+def get_git_info():
+    """Get current git commit hash and subject."""
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=ROOT
+        ).stdout.strip()
+        subject = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            capture_output=True, text=True, cwd=ROOT
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "diff", "--quiet"], cwd=ROOT
+        ).returncode != 0
+        return {"sha": sha, "subject": subject, "dirty": dirty}
+    except Exception:
+        return {"sha": "unknown", "subject": "", "dirty": False}
+
+
+def save_results(all_results, git_info):
+    """Append benchmark results to bench/history.jsonl."""
+    import datetime
+    history_file = BENCH_DIR / "history.jsonl"
+    entry = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "git": git_info,
+        "results": all_results,
+    }
+    with open(history_file, "a") as f:
+        f.write(json.dumps(entry, default=str) + "\n")
+    print(f"\n  Results saved to {history_file.relative_to(ROOT)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Yona Benchmark Runner")
     parser.add_argument("filter", nargs="?", help="Filter by benchmark name")
@@ -208,6 +241,7 @@ def main():
     parser.add_argument("--compare-c", action="store_true")
     parser.add_argument("--all-opt-levels", action="store_true", help="Run O0, O1, O2, O3")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--save", action="store_true", help="Save results to bench/history.jsonl")
     args = parser.parse_args()
 
     if not YONAC.exists():
@@ -242,6 +276,9 @@ def main():
 
     if args.json:
         print("\n" + json.dumps(all_results, indent=2, default=str))
+
+    if args.save:
+        save_results(all_results, get_git_info())
 
 
 if __name__ == "__main__":

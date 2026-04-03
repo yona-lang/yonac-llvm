@@ -1,0 +1,1 @@
+let loop n acc = if n <= 0 then acc else loop (n - 1) (acc + n * n) in loop 1000000 0

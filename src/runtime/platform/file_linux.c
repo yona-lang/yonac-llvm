@@ -16,6 +16,8 @@
 #include <fcntl.h>
 
 extern void* yona_rt_rc_alloc_string(size_t bytes);
+extern void yona_rt_rc_inc(void* ptr);
+extern void yona_rt_rc_dec(void* ptr);
 extern int64_t* yona_rt_seq_alloc(int64_t count);
 
 /* ===== Generic io_uring completer ===== */
@@ -36,6 +38,8 @@ int64_t yona_rt_io_await(int64_t uring_id) {
             break;
         case IO_OP_WRITE_FILE:
             if (ctx->close_fd) close(ctx->fd);
+            /* Unpin the content buffer (was rc_inc'd at submit) */
+            if (ctx->buf) yona_rt_rc_dec(ctx->buf);
             result = (res == (int32_t)ctx->buf_size) ? 1 : 0;
             break;
         case IO_OP_ACCEPT:
@@ -48,6 +52,8 @@ int64_t yona_rt_io_await(int64_t uring_id) {
             if (res < 0) close(ctx->fd);
             break;
         case IO_OP_SEND:
+            /* Unpin the send buffer (was rc_inc'd at submit) */
+            if (ctx->buf) yona_rt_rc_dec(ctx->buf);
             result = (int64_t)res;
             break;
         case IO_OP_RECV:
@@ -115,10 +121,15 @@ int64_t yona_platform_write_file_submit(const char* path, const char* content) {
     if (fd < 0) return 0;
     size_t len = strlen(content);
 
+    /* Copy content to RC-managed buffer so it survives until I/O completes.
+     * Cannot rc_inc the original — it may be a string constant without RC header. */
+    char* pinned = (char*)yona_rt_rc_alloc_string(len + 1);
+    memcpy(pinned, content, len + 1);
+
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
     ctx->type = IO_OP_WRITE_FILE;
     ctx->fd = fd;
-    ctx->buf = NULL;
+    ctx->buf = pinned; /* rc_dec'd in completer */
     ctx->buf_size = len;
     ctx->close_fd = 1;
 
@@ -126,12 +137,12 @@ int64_t yona_platform_write_file_submit(const char* path, const char* content) {
     memset(&sqe, 0, sizeof(sqe));
     sqe.opcode = IORING_OP_WRITE;
     sqe.fd = fd;
-    sqe.addr = (unsigned long)content;
+    sqe.addr = (unsigned long)pinned; /* use RC-managed copy */
     sqe.len = (unsigned)len;
     sqe.off = 0;
 
     uint64_t id = ring_submit_sqe(&sqe);
-    if (id == 0) { close(fd); free(ctx); return 0; }
+    if (id == 0) { close(fd); yona_rt_rc_dec(pinned); free(ctx); return 0; }
     io_ctx_put(id, ctx);
     return (int64_t)id;
 }

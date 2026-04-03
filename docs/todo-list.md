@@ -3,130 +3,138 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 669 assertions across 74 test cases
-- **Stdlib**: 26 modules, ~260 exported functions (12 pure Yona + 14 C runtime)
+- **Tests**: 685 assertions across 74 test cases (all passing)
+- **Stdlib**: 25 modules, ~260 exported functions (12 pure Yona + 13 C runtime)
+- **Benchmarks**: 9/9 passing (1.0-3.0x C typical, queens 21x due to search tree)
 
-## Remaining Work
+## Performance Optimization (by expected impact)
 
-### Language Features
+### High Impact
+- [ ] **Stream fusion** — detect map/filter/fold chains and compile as
+  a single loop. Eliminates intermediate seq allocations. Would improve
+  list_map_filter from 3.0x to ~1.5x C. Approach: when a seq-producing
+  expression is immediately consumed by another seq function (map, filter,
+  fold, etc.), fuse into a single generator loop.
+- [ ] **Seq inline fast paths** — for flat seqs (≤32 elements), inline
+  seq_head/seq_tail instead of calling runtime functions. The flat layout
+  is known: `payload[SEQ_HDR_SIZE + index]`. Eliminates function call
+  overhead for the common case. Would improve list_sum from 1.4x to ~1.1x C.
+- [ ] **Hash-based Dict/Set** — current O(n) flat array. Replace with
+  HAMT (hash array mapped trie) for O(1) amortized lookup/insert.
+  Critical for any real program using dictionaries.
+- [ ] **Function inlining hints** — mark small internal functions with
+  `alwaysinline` or `inlinehint` LLVM attributes. Would help fibonacci
+  (1.9x → ~1.2x C) and ackermann (2.5x → ~1.5x C) by reducing call
+  overhead for simple recursive functions.
+
+### Medium Impact
+- [ ] **Generator source optimization** — iterate chunked seqs via
+  head/tail instead of indexed get (O(1) vs O(n/32) per element).
+  Currently seq generators use `seq_get(i)` which is O(n/32) for
+  chunked seqs.
+- [ ] **Seq snoc optimization** — O(1) append via tail-end offset,
+  analogous to the head-end offset for cons. Currently append is O(n).
+- [ ] **Tail-recursive loop transformation** — convert tail-recursive
+  functions to explicit loops in the codegen (before LLVM's TCE pass).
+  Gives LLVM a better starting point for register allocation.
+- [ ] **Mutual tail call optimization** — detect A→B→A chains and
+  use musttail/trampoline. Currently only self-recursive tails are marked.
+- [ ] **LTO** — link-time optimization across translation units. LLVM
+  has built-in support. Wire up via `EmitBitcodeFile` + `llvm-lto2`.
+- [ ] **Closure elimination** — when a closure is called immediately
+  after creation (e.g., `(\x -> x + 1) 5`), eliminate the closure
+  allocation and inline the body.
+
+### Lower Priority
+- [ ] **Persistent Seq trie** — 32/64-way branching for O(log n) indexed
+  access and O(log n) concat. Current chunked list has O(n/32) get.
+- [ ] **Escape analysis improvements** — detect non-escaping values in
+  more patterns (case bindings, generator intermediates, if/else branches).
+- [ ] **Profile-guided optimization** — use runtime profiling data to
+  guide LLVM's inlining and branch prediction decisions.
+
+## Language Features
 - [ ] STM (Software Transactional Memory) — for shared mutable state
 
-### Codegen Optimizations
-- [ ] LTO (link-time optimization across translation units)
-- [ ] Mutual tail call optimization (between different functions)
+## Stdlib Gaps
+- [ ] Regex (string pattern matching) — consider PCRE2 C binding
+- [ ] Buffered I/O / readLines
+- [ ] Process.exec non-blocking — current exec/execStatus are blocking.
+  Should use io_uring or thread pool for async subprocess execution.
 
-### Tooling
+## Tooling
 - [ ] Package manager / build system
 - [ ] LSP server
-- [ ] Benchmark suite (bench/ — AWFY + Benchmarks Game programs)
 
-### Distribution & Packaging
-- [ ] RPM package (Fedora/RHEL/CentOS)
-- [ ] DEB package (Debian/Ubuntu)
-- [ ] Homebrew formula (macOS)
-- [ ] Windows installer (MSI or NSIS)
-- [ ] Static binary releases (Linux/macOS/Windows) via GitHub Releases
-- [ ] Docker image
-- [ ] CI/CD pipeline for automated releases
+## Distribution & Packaging
+- [ ] RPM/DEB/Homebrew/Windows packages
+- [ ] Static binary releases via GitHub Releases
+- [ ] Docker image, CI/CD pipeline
 
-### Platform Support
+## Platform Support
+- [ ] Multi-arch build setup — CMake cross-compilation presets for
+  aarch64/arm64 (Linux, macOS), x86_64 (Linux, macOS, Windows).
+  Compiler and codegen are arch-independent (LLVM handles target triple).
+  Only runtime platform layer (src/runtime/platform/) has OS-specific code.
 - [ ] macOS platform layer (kqueue-based I/O)
 - [ ] Windows platform layer (IOCP-based I/O)
-
-### Data Structures
-- [ ] Persistent Seq (finger tree / RRB-tree like original Yona's Seq.java):
-  O(1) amortized cons/snoc/head/tail, O(log32 n) indexed access,
-  O(log n) concat. Replace current flat array implementation.
-- [ ] Hash-based Dict/Set (current is O(n) flat array)
-
-### Stdlib Gaps
-- [ ] Regex (string pattern matching)
-- [ ] Buffered I/O / readLines
-- [ ] Process.exec (run shell commands, capture output)
 
 ## Completed
 
 ### Compiler
 - Lexer, Parser, AST (newline-aware, juxtaposition, string interpolation)
 - LLVM codegen with TypedValue (type-directed, CType tags, monomorphization)
-- Lambda lifting, higher-order functions, partial application, currying
-- Pipe operators (`|>`, `<|`)
+- Proper typed returns (closures return natural types: i1/double/ptr)
+- Lambda lifting, HOFs, partial application, currying, pipe operators
 - Case expressions (integer, symbol, wildcard, head-tail, tuple, constructor, or-pattern, guards)
 - Symbol interning (i64 IDs, icmp eq comparison)
-- Dict/Set construction with typed elements
-- Generators/comprehensions (loop-based codegen for seq/set/dict with guard support)
-- ADTs: non-recursive (flat struct) and recursive (heap nodes), named fields, constructors as first-class functions, exhaustiveness checking
-- Proper closures ({fn_ptr, env_ptr} pairs, uniform HOF calling convention)
-- Lazy sequences / iterators (thunk-based lazy cons via closures in ADTs)
-- Tuples in collections (boxing/unboxing for struct-typed elements)
-- Interface files (.yonai) for cross-module type-safe linking (FN, AFN, IO keywords)
-- Module compilation with C-ABI exports, re-exports, module-level extern declarations
+- Generators/comprehensions (loop-based codegen for seq/set/dict)
+- ADTs: non-recursive (flat struct), recursive (heap nodes), named fields
+- Closures: env-passing convention {fn_ptr, ret_tag, arity, num_caps, heap_mask, ...}
+- Branch PHI type normalization (coerce_for_phi/common_phi_type)
+- Tuple representation: heap-allocated i64 arrays with RC_TYPE_TUPLE
+- Nested closure capture: ExprCall chain recursion in collect_free_vars
+- fastcc calling convention (post-compilation pass, HOF-safe)
+- Interface files (.yonai), modules, re-exports, extern declarations
 - Cross-module generics (GENFN source in .yonai, on-demand monomorphization)
-- Exception handling (raise/try/catch via setjmp/longjmp, ADT exceptions, stack traces)
-- `with` expression (deterministic resource cleanup via Closeable trait)
-- `do` block bindings (`name = expr` syntax for sequential I/O)
-- Async codegen (CType::PROMISE, thread pool for CPU, io_uring for I/O, auto-await, parallel let)
-- Optimization levels (-O0 to -O3) via LLVM new PassManager (inlining, SROA, loop opts, DCE, TCE)
-- Tail call marking (self-recursive calls)
-
-### Type System
-- Function type signatures in ADT declarations
-- HOF return type inference / currying (over-application)
-- Type annotations (`add : Int -> Int -> Int`)
-- Traits: declarations, concrete instances, constrained instances, multi-method, default methods, superclass constraints
-- Num trait (polymorphic abs/max/min over Int and Float)
-- Cross-module trait dispatch (ExternalLinkage trait methods, ADT struct types in externs)
-- Bytes type (length-prefixed binary buffer, CType::BYTES)
+- Exception handling (raise/try/catch via setjmp/longjmp)
+- `with` expression, `do` blocks, async codegen (PROMISE, thread pool, io_uring)
+- Optimization levels (O0-O3) via LLVM new PassManager
+- Persistent Seq (flat ≤32, chunked list >32, O(1) cons/head/tail)
 
 ### Memory Management
-- Reference counting infrastructure (RC header, rc_inc/rc_dec, type-tagged allocation)
-- Automatic RC at let-binding scope boundaries
-- Function parameter ownership (callee-borrows convention)
-- Escape analysis (AST-level per-let-scope)
-- Arena allocator (bump-allocated arenas for non-escaping values)
+- Atomic RC: `__atomic_fetch_add` (RELAXED) / `__atomic_fetch_sub` (ACQ_REL)
+- Recursive destructors for all 7 container types (heap_mask bitmasks)
+- Weak closure self-references (break RC cycles)
+- Hybrid Perceus DUP/DROP (callee-owns for non-seq, callee-borrows for seq)
+- Slab-based pool allocator (4 size classes, ENCODE_TAG/DECODE_TAG)
+- Arena allocation for non-escaping let-bound values
+- io_uring buffer pinning (copy-on-submit for write/send)
+- Seq unique-owner optimization (in-place cons/tail when rc==1)
+- Scope-exit RC for let-bound values
+- Temp arg cleanup for seq args with different return type
+- Last-use analysis framework (ready for future Perceus extensions)
+- See `docs/memory-management.md` for full details.
+
+### Type System
+- Function type signatures, HOF return type inference, type annotations
+- Traits: concrete/constrained instances, multi-method, default methods, superclass
+- Num trait, cross-module trait dispatch, Bytes type
+- infer_return_type for proper closure return types
 
 ### I/O Architecture
-- io_uring backend (Linux): raw syscalls, no liburing dependency
-- Submit-and-return pattern: I/O functions submit to ring, return uring ID as promise
-- Generic yona_rt_io_await() completer with io_context registry
+- io_uring backend (Linux): raw syscalls, submit-and-return, io_context registry
 - Platform abstraction: uring.h, file_linux.c, net_linux.c, os_linux.c
 
 ### Tooling
-- LLVM debug info (DWARF) — `-g` flag, source lines, variable inspection
-- Rich error messages (source line display, caret, color, "did you mean?" suggestions)
-- Warning system (`--Wall`, `--Wextra`, `--Werror`, `-w`)
-- DiagnosticEngine with GCC-compatible flags
-- Documentation system: `##` doc comments, `scripts/gendocs.py` extractor
+- DWARF debug info, rich error messages, warning system, DiagnosticEngine
+- Documentation system (`##` doc comments, gendocs.py)
+- Benchmark suite: 9 benchmarks, C references, history tracking
 
-### Standard Library (26 modules)
+### Standard Library (25 modules)
+Pure Yona (12): Option, Result, List, Tuple, Range, Math, Pair, Bool, Test,
+Collection, Function, Http
 
-Pure Yona modules (12):
-- Std\Option (10) — Some/None ADT, flatMap, filter, orElse, fold, zip, toResult
-- Std\Result (11) — Ok/Err ADT, flatMap, flatten, toOption, andThen, orElse, fold
-- Std\List (28) — map, filter, fold, zip, sortBy, groupBy, partition, intersperse, scanl, flatMap, find
-- Std\Tuple (9) — fst, snd, swap, mapBoth, mapFst, mapSnd, curry, uncurry
-- Std\Range (11) — lazy ranges with step, map, filter, fold, forEach
-- Std\Math (20) — Num trait (polymorphic abs/max/min), gcd, pow, factorial, extern sqrt/sin/cos/tan/log/exp/floor/ceil/round, pi
-- Std\Pair (10) — ADT pair with named fields
-- Std\Bool (7) — not, xor, implies, when, unless
-- Std\Test (6) — assertEqual, assertNotEqual, assertTrue, assertGreater
-- Std\Collection (9) — iterate, unfold, replicate, tabulate, window, chunks, dedup, frequencies
-- Std\Function (8) — identity, const, compose, flip, on, apply, pipe, fix
-- Std\Http (13) — Method/Request/Response ADTs, get, post, send, serve, parseResponse, formatRequest
-
-C runtime modules (14):
-- Std\String (27) — split, join, trim, replace, repeat, take, drop, count, lines, chars
-- Std\Encoding (7) — base64, hex, URL encode/decode, HTML escape
-- Std\Types (5) — intToString, floatToString, toInt, toFloat, boolToString
-- Std\IO (7) — print, println, eprint, eprintln, readLine (IO), printInt, printFloat
-- Std\File (9) — readFile (IO), writeFile (IO), readFileBytes, writeFileBytes, appendFile, exists, remove, size, listDir
-- Std\Process (3) — getenv, getcwd, exit
-- Std\Random (4) — int, float, choice, shuffle
-- Std\Json (7) — stringify (int/string/bool/float/null), parseInt, parseFloat
-- Std\Crypto (4) — sha256, randomBytes, randomHex, uuid4
-- Std\Log (6) — debug/info/warn/error with timestamps, setLevel/getLevel
-- Std\Net (12) — TCP/UDP via io_uring: tcpConnect, tcpListen, tcpAccept, send, recv, sendBytes, recvBytes, close
-- Std\Bytes (10) — alloc, length, get, set, concat, slice, fromString, toString, fromSeq, toSeq
-- Std\Time (6) — now, nowMicros, epoch, sleep, format, elapsed
-- Std\Path (6) — join, dirname, basename, extension, withExtension, isAbsolute
-- Std\Format (1) — format (placeholder substitution)
+C runtime (13): String, Encoding, Types, IO, File, Process (exec, execStatus,
+setenv, hostname, getenv, getcwd, exit), Random, Json, Crypto, Log, Net,
+Bytes, Time, Path, Format

@@ -41,35 +41,205 @@
 #define RC_TYPE_CLOSURE 5
 #define RC_TYPE_STRING  6
 
-/* Internal: allocate with RC header, returns pointer to payload */
-void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
-    int64_t* raw = (int64_t*)malloc(2 * sizeof(int64_t) + payload_bytes);
-    raw[0] = 1;         /* refcount = 1 */
-    raw[1] = type_tag;  /* type tag */
-    return (void*)(raw + 2);  /* return pointer past header */
+/* ===== Size-class pool allocator ===== */
+/* Free-list pools for common allocation sizes. Avoids malloc/free overhead
+ * for frequently allocated objects (closures, seq chunks, small ADTs).
+ * Each pool is a linked list of freed blocks, reused on next alloc. */
+
+#define POOL_CLASSES 4
+static const size_t pool_sizes[POOL_CLASSES] = {
+    32,   /* small closures (5-slot header) */
+    64,   /* small ADTs, tuples, flat seqs */
+    128,  /* medium closures with captures */
+    296,  /* chunked seq nodes (sizeof(yona_chunk_t)) */
+};
+
+typedef struct pool_block {
+    struct pool_block* next;
+} pool_block_t;
+
+static __thread pool_block_t* pool_freelist[POOL_CLASSES] = {0};
+
+static int pool_class_for(size_t total_bytes) {
+    for (int i = 0; i < POOL_CLASSES; i++) {
+        if (total_bytes <= pool_sizes[i]) return i;
+    }
+    return -1; /* too large for pools */
 }
 
-/* Public: increment refcount */
+/* Slab allocator: instead of individual malloc per block, allocate slabs
+ * of many blocks at once. Blocks within a slab never go through glibc's
+ * free/tcache, eliminating the tcache corruption issue. */
+#define SLAB_BLOCKS 256  /* blocks per slab */
+
+typedef struct slab {
+    struct slab* next;
+    char data[];  /* flexible array of SLAB_BLOCKS * block_size bytes */
+} slab_t;
+
+static __thread slab_t* pool_slabs[POOL_CLASSES] = {0};
+
+static void pool_grow(int cls) {
+    size_t block_size = pool_sizes[cls];
+    slab_t* slab = (slab_t*)malloc(sizeof(slab_t) + SLAB_BLOCKS * block_size);
+    slab->next = pool_slabs[cls];
+    pool_slabs[cls] = slab;
+    /* Link all blocks in the slab into the free list */
+    for (int i = 0; i < SLAB_BLOCKS; i++) {
+        pool_block_t* block = (pool_block_t*)(slab->data + i * block_size);
+        block->next = pool_freelist[cls];
+        pool_freelist[cls] = block;
+    }
+}
+
+static void* pool_alloc(size_t total_bytes) {
+    int cls = pool_class_for(total_bytes);
+    if (cls < 0) return malloc(total_bytes);
+    if (!pool_freelist[cls]) pool_grow(cls);
+    pool_block_t* block = pool_freelist[cls];
+    pool_freelist[cls] = block->next;
+    return (void*)block;
+}
+
+static void pool_free(void* ptr, size_t total_bytes) {
+    if (!ptr) return;
+    int cls = pool_class_for(total_bytes);
+    if (cls < 0) { free(ptr); return; }
+    pool_block_t* block = (pool_block_t*)ptr;
+    block->next = pool_freelist[cls];
+    pool_freelist[cls] = block;
+}
+
+/* Internal: allocate with RC header, returns pointer to payload.
+ * Header: [refcount, type_tag_and_pool_class, ...payload...]
+ *                                              ^-- returned pointer
+ * Pool class is encoded in the upper bits of the type_tag word:
+ *   bits 0-7:  type tag (RC_TYPE_SEQ, etc.)
+ *   bits 8-15: pool class index + 1 (0 = not pooled, 1-4 = class 0-3)
+ * This avoids a 3rd header word while supporting pool_free. */
+#define RC_HEADER_SIZE 2
+
+#define ENCODE_TAG(tag, cls) ((tag) | (((int64_t)(cls) + 1) << 8))
+#define DECODE_TAG(encoded) ((encoded) & 0xFF)
+#define DECODE_POOL_CLASS(encoded) ((int)((encoded) >> 8) - 1)
+
+void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
+    size_t total = RC_HEADER_SIZE * sizeof(int64_t) + payload_bytes;
+    int cls = pool_class_for(total);
+    int64_t* raw = (int64_t*)pool_alloc(total);
+    raw[0] = 1;         /* refcount = 1 */
+    raw[1] = ENCODE_TAG(type_tag, cls);  /* type tag + pool class */
+    return (void*)(raw + RC_HEADER_SIZE);
+}
+
+/* Public: increment refcount (atomic for thread safety) */
 void yona_rt_rc_inc(void* ptr) {
     if (!ptr) return;
-    int64_t* header = ((int64_t*)ptr) - 2;
-    header[0]++;
+    int64_t* header = ((int64_t*)ptr) - RC_HEADER_SIZE;
+    __atomic_fetch_add(&header[0], 1, __ATOMIC_RELAXED);
 }
 
 /* Sentinel refcount for arena-allocated objects. rc_dec skips these. */
 #define RC_ARENA_SENTINEL INT64_MAX
 
-/* Public: decrement refcount; free when it reaches 0 */
-/* Children are NOT recursively decremented here — the codegen is
- * responsible for decrementing pointer-typed children before the
- * container, since element types are only known at compile time. */
+/* Forward declarations for recursive RC types */
+#define RC_TYPE_CHUNKED_FWD 11  /* chunked seq — has next pointer */
+
+/* Public: decrement refcount; free when it reaches 0.
+ * Recursively rc_dec pointer-typed children for known container types. */
 void yona_rt_rc_dec(void* ptr) {
     if (!ptr) return;
-    int64_t* header = ((int64_t*)ptr) - 2;
-    if (header[0] == RC_ARENA_SENTINEL) return;  /* arena-allocated, skip */
-    header[0]--;
-    if (header[0] <= 0) {
-        free(header);  /* free from the real allocation start */
+    int64_t* header = ((int64_t*)ptr) - RC_HEADER_SIZE;
+    int64_t rc = __atomic_load_n(&header[0], __ATOMIC_RELAXED);
+    if (rc == RC_ARENA_SENTINEL) return;  /* arena-allocated, skip */
+    int64_t old = __atomic_fetch_sub(&header[0], 1, __ATOMIC_ACQ_REL);
+    if (old <= 1) {
+        int64_t encoded_tag = header[1];
+        int64_t type_tag = DECODE_TAG(encoded_tag);
+        int pool_cls = DECODE_POOL_CLASS(encoded_tag);
+        int64_t* payload = (int64_t*)ptr;
+
+        if (type_tag == RC_TYPE_SEQ) {
+            /* Flat seq: rc_dec elements if heap_flag set.
+             * Layout: [count, heap_flag, elem0, ...] */
+            int64_t count = payload[0];
+            int64_t heap_flag = payload[1];
+            if (heap_flag) {
+                for (int64_t i = 0; i < count; i++) {
+                    int64_t val = payload[2 + i];
+                    if (val) yona_rt_rc_dec((void*)(intptr_t)val);
+                }
+            }
+        } else if (type_tag == RC_TYPE_CHUNKED_FWD) {
+            /* Chunked seq: rc_dec next chunk pointer */
+            typedef struct { int64_t tl, off, cnt; int64_t e[32]; void* next; } chunk_layout_t;
+            chunk_layout_t* chunk = (chunk_layout_t*)ptr;
+            if (chunk->next) yona_rt_rc_dec(chunk->next);
+        } else if (type_tag == RC_TYPE_CLOSURE) {
+            /* Closure: rc_dec heap-typed captures using the heap_mask.
+             * Layout: [fn_ptr, ret_type, arity, num_captures, heap_mask, cap0, ...] */
+            int64_t num_caps = payload[3];
+            int64_t heap_mask = payload[4];
+            for (int64_t ci = 0; ci < num_caps && ci < 64; ci++) {
+                if (heap_mask & ((int64_t)1 << ci)) {
+                    int64_t cap_val = payload[5 + ci];
+                    if (cap_val) yona_rt_rc_dec((void*)(intptr_t)cap_val);
+                }
+            }
+        } else if (type_tag == RC_TYPE_ADT) {
+            /* ADT: rc_dec heap-typed fields using heap_mask.
+             * Layout: [tag, num_fields, heap_mask, field0, ...] */
+            int64_t num_fields = payload[1];
+            int64_t heap_mask = payload[2];
+            for (int64_t fi = 0; fi < num_fields && fi < 64; fi++) {
+                if (heap_mask & ((int64_t)1 << fi)) {
+                    int64_t field_val = payload[3 + fi];
+                    if (field_val) yona_rt_rc_dec((void*)(intptr_t)field_val);
+                }
+            }
+        } else if (type_tag == RC_TYPE_DICT) {
+            /* Dict: rc_dec keys and/or values if heap-flagged.
+             * Layout: [count, key_heap, val_heap, k0, v0, k1, v1, ...] */
+            int64_t count = payload[0];
+            int64_t key_heap = payload[1];
+            int64_t val_heap = payload[2];
+            for (int64_t i = 0; i < count; i++) {
+                if (key_heap) {
+                    int64_t k = payload[3 + i * 2];
+                    if (k) yona_rt_rc_dec((void*)(intptr_t)k);
+                }
+                if (val_heap) {
+                    int64_t v = payload[3 + i * 2 + 1];
+                    if (v) yona_rt_rc_dec((void*)(intptr_t)v);
+                }
+            }
+        } else if (type_tag == RC_TYPE_SET) {
+            /* Set: rc_dec all elements if heap_flag is set.
+             * Layout: [count, heap_flag, elem0, ...] */
+            int64_t count = payload[0];
+            int64_t heap_flag = payload[1];
+            if (heap_flag) {
+                for (int64_t i = 0; i < count; i++) {
+                    int64_t val = payload[2 + i];
+                    if (val) yona_rt_rc_dec((void*)(intptr_t)val);
+                }
+            }
+        } else if (type_tag == 9 /* RC_TYPE_TUPLE */) {
+            /* Tuple: rc_dec heap-typed elements using heap_mask.
+             * Layout: [num_elements, heap_mask, elem0, ...] */
+            int64_t num_elems = payload[0];
+            int64_t heap_mask = payload[1];
+            for (int64_t ei = 0; ei < num_elems && ei < 64; ei++) {
+                if (heap_mask & ((int64_t)1 << ei)) {
+                    int64_t elem_val = payload[2 + ei];
+                    if (elem_val) yona_rt_rc_dec((void*)(intptr_t)elem_val);
+                }
+            }
+        }
+        if (pool_cls >= 0)
+            pool_free(header, pool_sizes[pool_cls]);
+        else
+            free(header);
     }
 }
 
@@ -103,7 +273,7 @@ void* yona_rt_arena_create(int64_t size) {
 
 void* yona_rt_arena_alloc(void* arena_ptr, int64_t type_tag, int64_t payload_bytes) {
     yona_arena_t* arena = (yona_arena_t*)arena_ptr;
-    size_t total = 2 * sizeof(int64_t) + (size_t)payload_bytes;
+    size_t total = RC_HEADER_SIZE * sizeof(int64_t) + (size_t)payload_bytes;
     /* Align to 8 bytes */
     total = (total + 7) & ~7;
 
@@ -121,7 +291,7 @@ void* yona_rt_arena_alloc(void* arena_ptr, int64_t type_tag, int64_t payload_byt
     arena->cursor += total;
     raw[0] = RC_ARENA_SENTINEL;  /* sentinel: rc_dec will skip */
     raw[1] = type_tag;
-    return (void*)(raw + 2);  /* return pointer past header */
+    return (void*)(raw + RC_HEADER_SIZE);  /* return pointer past header */
 }
 
 void yona_rt_arena_destroy(void* arena_ptr) {
@@ -276,6 +446,30 @@ void* yona_rt_box(const void* data, int64_t size) {
     return box;
 }
 
+/* Tuple: heap-allocate i64 array with element metadata.
+ * Layout: [num_elements, heap_mask, elem0, elem1, ...]
+ * Uses RC_TYPE_TUPLE (9) for recursive destruction. */
+#define RC_TYPE_TUPLE 9
+
+void* yona_rt_tuple_alloc(int64_t num_elements) {
+    int64_t* tuple = (int64_t*)rc_alloc(RC_TYPE_TUPLE, (2 + num_elements) * sizeof(int64_t));
+    tuple[0] = num_elements;
+    tuple[1] = 0; /* heap_mask */
+    return tuple;
+}
+
+void yona_rt_tuple_set_heap_mask(void* tuple, int64_t mask) {
+    ((int64_t*)tuple)[1] = mask;
+}
+
+void yona_rt_tuple_set(void* tuple, int64_t index, int64_t value) {
+    ((int64_t*)tuple)[2 + index] = value;
+}
+
+int64_t yona_rt_tuple_get(void* tuple, int64_t index) {
+    return ((int64_t*)tuple)[2 + index];
+}
+
 /* Unbox: just returns the pointer (data is at the payload position) */
 /* No runtime function needed — codegen does inttoptr + load directly */
 
@@ -330,14 +524,21 @@ void yona_rt_print_symbol(const char* name) {
 /* Elements are i64 (the element type is known at compile time).       */
 /* Deduplication is the caller's responsibility at construction time.  */
 
+/* Set layout: [count, heap_flag, elem0, elem1, ...]
+ * heap_flag: 1 if elements are heap-typed, 0 otherwise */
 int64_t* yona_rt_set_alloc(int64_t count) {
-    int64_t* set = (int64_t*)rc_alloc(RC_TYPE_SET, (count + 1) * sizeof(int64_t));
+    int64_t* set = (int64_t*)rc_alloc(RC_TYPE_SET, (count + 2) * sizeof(int64_t));
     set[0] = count;
+    set[1] = 0; /* heap_flag — set by codegen */
     return set;
 }
 
+void yona_rt_set_set_heap(int64_t* set, int64_t flag) {
+    set[1] = flag;
+}
+
 void yona_rt_set_put(int64_t* set, int64_t index, int64_t value) {
-    set[index + 1] = value;
+    set[index + 2] = value;
 }
 
 void yona_rt_print_set(int64_t* set) {
@@ -345,7 +546,7 @@ void yona_rt_print_set(int64_t* set) {
     printf("{");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
-        printf("%ld", set[i + 1]);
+        printf("%ld", set[i + 2]);
     }
     printf("}");
 }
@@ -354,15 +555,27 @@ void yona_rt_print_set(int64_t* set) {
 /* Dict: [count, key0, val0, key1, val1, ...] — interleaved keys and values. */
 /* Both keys and values are i64 (their types are known at compile time).     */
 
+/* Dict layout: [count, key_heap_flag, val_heap_flag, key0, val0, key1, val1, ...]
+ * key_heap_flag: 1 if keys are heap-typed
+ * val_heap_flag: 1 if values are heap-typed */
+#define DICT_HDR_SIZE 3  /* count, key_heap, val_heap */
+
 int64_t* yona_rt_dict_alloc(int64_t count) {
-    int64_t* dict = (int64_t*)rc_alloc(RC_TYPE_DICT, (count * 2 + 1) * sizeof(int64_t));
+    int64_t* dict = (int64_t*)rc_alloc(RC_TYPE_DICT, (DICT_HDR_SIZE + count * 2) * sizeof(int64_t));
     dict[0] = count;
+    dict[1] = 0; /* key_heap_flag */
+    dict[2] = 0; /* val_heap_flag */
     return dict;
 }
 
+void yona_rt_dict_set_heap(int64_t* dict, int64_t key_heap, int64_t val_heap) {
+    dict[1] = key_heap;
+    dict[2] = val_heap;
+}
+
 void yona_rt_dict_set(int64_t* dict, int64_t index, int64_t key, int64_t value) {
-    dict[index * 2 + 1] = key;
-    dict[index * 2 + 2] = value;
+    dict[DICT_HDR_SIZE + index * 2] = key;
+    dict[DICT_HDR_SIZE + index * 2 + 1] = value;
 }
 
 void yona_rt_print_dict(int64_t* dict) {
@@ -370,7 +583,7 @@ void yona_rt_print_dict(int64_t* dict) {
     printf("{");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
-        printf("%ld: %ld", dict[i * 2 + 1], dict[i * 2 + 2]);
+        printf("%ld: %ld", dict[DICT_HDR_SIZE + i * 2], dict[DICT_HDR_SIZE + i * 2 + 1]);
     }
     printf("}");
 }
@@ -379,10 +592,25 @@ void yona_rt_print_dict(int64_t* dict) {
 /* Heap-allocated ADT nodes: [tag (i8), field0 (i64), field1 (i64), ...] */
 /* Used for recursive types like List a = Cons a (List a) | Nil        */
 
+/* ADT layout (recursive, heap-allocated):
+ * [tag, num_fields, heap_mask, field0, field1, ...]
+ * tag: constructor tag (from adt_constructors_)
+ * num_fields: number of fields
+ * heap_mask: bitmask of which fields are heap-typed (for recursive rc_dec)
+ * Fields start at index 3.
+ */
+#define ADT_HDR_SIZE 3  /* tag, num_fields, heap_mask */
+
 void* yona_rt_adt_alloc(int64_t tag, int64_t num_fields) {
-    int64_t* node = (int64_t*)rc_alloc(RC_TYPE_ADT, (1 + num_fields) * sizeof(int64_t));
+    int64_t* node = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + num_fields) * sizeof(int64_t));
     node[0] = tag;
+    node[1] = num_fields;
+    node[2] = 0; /* heap_mask — set by codegen */
     return node;
+}
+
+void yona_rt_adt_set_heap_mask(void* node, int64_t mask) {
+    ((int64_t*)node)[2] = mask;
 }
 
 int64_t yona_rt_adt_get_tag(void* node) {
@@ -390,11 +618,11 @@ int64_t yona_rt_adt_get_tag(void* node) {
 }
 
 int64_t yona_rt_adt_get_field(void* node, int64_t index) {
-    return ((int64_t*)node)[index + 1];
+    return ((int64_t*)node)[ADT_HDR_SIZE + index];
 }
 
 void yona_rt_adt_set_field(void* node, int64_t index, int64_t value) {
-    ((int64_t*)node)[index + 1] = value;
+    ((int64_t*)node)[ADT_HDR_SIZE + index] = value;
 }
 
 /* ===== Exception handling (setjmp/longjmp) ===== */
@@ -980,6 +1208,18 @@ const char* yona_Std_Process__getcwd(void) {
 int64_t yona_Std_Process__exit(int64_t code) {
     exit((int)code);
     return 0; /* unreachable */
+}
+const char* yona_Std_Process__exec(const char* cmd) {
+    return yona_platform_exec(cmd);
+}
+int64_t yona_Std_Process__execStatus(const char* cmd) {
+    return yona_platform_exec_status(cmd);
+}
+int64_t yona_Std_Process__setenv(const char* name, const char* value) {
+    return yona_platform_setenv(name, value);
+}
+const char* yona_Std_Process__hostname(void) {
+    return yona_platform_hostname();
 }
 
 /* ===== Std\Http — HTTP client ===== */
@@ -1780,26 +2020,36 @@ int64_t yona_rt_closure2_create(int64_t (*fn)(int64_t, int64_t), int64_t capture
 }
 
 /* ===== General Closures (env-passing) ===== */
-/* Layout: int64_t array [fn_ptr, ret_type_tag, arity, cap0, cap1, ...]
+/* Layout: int64_t array [fn_ptr, ret_type, arity, num_captures, heap_mask, cap0, cap1, ...]
  * The function takes (void* env, args...) where env is the closure itself.
  * Slot 0: function pointer (as int64_t)
  * Slot 1: return CType tag (INT=0, FLOAT=1, ..., ADT=12)
  * Slot 2: number of user arguments (excluding env)
- * Captures are stored starting at index 3.
+ * Slot 3: number of captures
+ * Slot 4: heap_mask — bitmask of which captures are heap-typed (for recursive rc_dec)
+ * Captures are stored starting at index 5.
  */
 
+#define CLOSURE_HDR_SIZE 5  /* fn_ptr, ret_type, arity, num_captures, heap_mask */
+
 void* yona_rt_closure_create(void* fn_ptr, int64_t ret_type, int64_t arity, int64_t num_captures) {
-    int64_t* closure = (int64_t*)rc_alloc(RC_TYPE_CLOSURE, (3 + num_captures) * sizeof(int64_t));
+    int64_t* closure = (int64_t*)rc_alloc(RC_TYPE_CLOSURE, (CLOSURE_HDR_SIZE + num_captures) * sizeof(int64_t));
     closure[0] = (int64_t)(intptr_t)fn_ptr;
     closure[1] = ret_type;
     closure[2] = arity;
+    closure[3] = num_captures;
+    closure[4] = 0; /* heap_mask — set by codegen via closure_set_heap_mask */
     return closure;
 }
 
+void yona_rt_closure_set_heap_mask(void* closure, int64_t mask) {
+    ((int64_t*)closure)[4] = mask;
+}
+
 void yona_rt_closure_set_cap(void* closure, int64_t idx, int64_t val) {
-    ((int64_t*)closure)[3 + idx] = val;
+    ((int64_t*)closure)[CLOSURE_HDR_SIZE + idx] = val;
 }
 
 int64_t yona_rt_closure_get_cap(void* closure, int64_t idx) {
-    return ((int64_t*)closure)[3 + idx];
+    return ((int64_t*)closure)[CLOSURE_HDR_SIZE + idx];
 }

@@ -1,0 +1,6 @@
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
+let nums = build 10000 [] in
+let doubled = [x * 2 for x = nums] in
+let evens = [x for x = doubled, if x % 4 == 0] in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+foldl (\a b -> a + b) 0 evens

@@ -134,13 +134,13 @@ TEST_CASE("With expression generates close call") {
 
 TEST_CASE("Function generates internal LLVM function") {
     auto ir = compile_to_ir("let f x = x + 1 in f(5)");
-    CHECK(ir_contains(ir, "define internal i64 @f(i64 %x)"));
+    CHECK(ir_contains(ir, "define internal fastcc i64 @f(i64 %x)"));
     CHECK(ir_contains(ir, "add i64 %x, 1"));
 }
 
 TEST_CASE("Multi-arg function generates correct signature") {
     auto ir = compile_to_ir("let add x y = x + y in add(3, 4)");
-    CHECK(ir_contains(ir, "define internal i64 @add(i64 %x, i64 %y)"));
+    CHECK(ir_contains(ir, "define internal fastcc i64 @add(i64 %x, i64 %y)"));
 }
 
 } // Codegen IR

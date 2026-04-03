@@ -68,4 +68,16 @@ char* yona_platform_getenv(const char* name);
 /* Get current working directory. Returns rc_alloc'd string. */
 char* yona_platform_getcwd(void);
 
+/* Execute a shell command, capture stdout. Returns rc_alloc'd string. */
+char* yona_platform_exec(const char* cmd);
+
+/* Execute a shell command, return exit code. */
+int64_t yona_platform_exec_status(const char* cmd);
+
+/* Set environment variable. Returns 1 on success, 0 on failure. */
+int64_t yona_platform_setenv(const char* name, const char* value);
+
+/* Get hostname. Returns rc_alloc'd string. */
+char* yona_platform_hostname(void);
+
 #endif /* YONA_PLATFORM_H */

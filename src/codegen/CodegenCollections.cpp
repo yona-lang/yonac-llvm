@@ -36,24 +36,43 @@ static std::string ctype_to_string(CType ct) {
 
 TypedValue Codegen::codegen_tuple(TupleExpr* node) {
     set_debug_loc(node->source_context);
+    auto i64_ty = LType::getInt64Ty(*context_);
     std::vector<Value*> elems;
     std::vector<CType> subtypes;
-    std::vector<LType*> llvm_types;
 
     for (auto* v : node->values) {
         auto tv = codegen(v);
         if (!tv) return {};
-        elems.push_back(tv.val);
+        // Convert all elements to i64 for uniform layout
+        Value* i64_val = tv.val;
+        if (i64_val->getType() == i64_ty) {
+            // already i64
+        } else if (i64_val->getType()->isPointerTy()) {
+            i64_val = builder_->CreatePtrToInt(i64_val, i64_ty);
+        } else if (i64_val->getType()->isDoubleTy()) {
+            i64_val = builder_->CreateBitCast(i64_val, i64_ty);
+        } else if (i64_val->getType()->isIntegerTy()) {
+            i64_val = builder_->CreateZExtOrTrunc(i64_val, i64_ty);
+        }
+        elems.push_back(i64_val);
         subtypes.push_back(tv.type);
-        llvm_types.push_back(tv.val->getType());
     }
 
-    auto struct_type = StructType::get(*context_, llvm_types);
-    Value* tuple = UndefValue::get(struct_type);
-    for (size_t i = 0; i < elems.size(); i++)
-        tuple = builder_->CreateInsertValue(tuple, elems[i], {(unsigned)i});
-
-    return {tuple, CType::TUPLE, subtypes};
+    // Heap-allocate tuple with metadata for recursive destruction
+    auto* tuple_ptr = builder_->CreateCall(rt_tuple_alloc_,
+        {ConstantInt::get(i64_ty, elems.size())}, "tuple");
+    int64_t tuple_heap_mask = 0;
+    for (size_t i = 0; i < elems.size(); i++) {
+        builder_->CreateCall(rt_tuple_set_,
+            {tuple_ptr, ConstantInt::get(i64_ty, i), elems[i]});
+        if (is_heap_type(subtypes[i]) && i < 64)
+            tuple_heap_mask |= ((int64_t)1 << i);
+    }
+    if (tuple_heap_mask != 0)
+        builder_->CreateCall(rt_tuple_set_heap_mask_,
+            {tuple_ptr, ConstantInt::get(i64_ty, tuple_heap_mask)});
+    auto* tuple_i64 = builder_->CreatePtrToInt(tuple_ptr, i64_ty, "tuple_i64");
+    return {tuple_i64, CType::TUPLE, subtypes};
 }
 
 TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
@@ -65,7 +84,7 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
     Value* seq;
     if (current_arena_) {
         // Arena allocation: allocate payload and set length manually
-        auto payload_bytes = ConstantInt::get(i64_ty, (n + 1) * sizeof(int64_t));
+        auto payload_bytes = ConstantInt::get(i64_ty, (n + 2) * sizeof(int64_t)); // +2 for count+heap_flag
         seq = emit_arena_alloc(1 /* RC_TYPE_SEQ */, payload_bytes);
         // Set length at seq[0]
         builder_->CreateStore(count, seq);

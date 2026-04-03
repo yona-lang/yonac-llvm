@@ -164,7 +164,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::BOOL:   return LType::getInt1Ty(*context_);
         case CType::STRING: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::SEQ:    return PointerType::get(LType::getInt64Ty(*context_), 0);
-        case CType::TUPLE:  return LType::getInt64Ty(*context_); // overridden per-tuple
+        case CType::TUPLE:  return LType::getInt64Ty(*context_); // ptrtoint'd boxed ptr
         case CType::UNIT:   return LType::getInt64Ty(*context_);
         case CType::FUNCTION: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::SYMBOL: return LType::getInt64Ty(*context_); // interned symbol ID
@@ -233,11 +233,18 @@ void Codegen::declare_runtime() {
     rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i64, {ptr});
     rt_adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
     rt_adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
+    rt_adt_set_heap_mask_ = decl("yona_rt_adt_set_heap_mask", vd, {ptr, i64});
 
     // General closures: {fn_ptr, ret_tag, arity, cap0, ...} with env-passing
     rt_closure_create_  = decl("yona_rt_closure_create", ptr, {ptr, i64, i64, i64});
     rt_closure_set_cap_ = decl("yona_rt_closure_set_cap", vd, {ptr, i64, i64});
     rt_closure_get_cap_ = decl("yona_rt_closure_get_cap", i64, {ptr, i64});
+    rt_closure_set_heap_mask_ = decl("yona_rt_closure_set_heap_mask", vd, {ptr, i64});
+
+    // Tuple allocation with metadata
+    rt_tuple_alloc_ = decl("yona_rt_tuple_alloc", ptr, {i64});
+    rt_tuple_set_ = decl("yona_rt_tuple_set", vd, {ptr, i64, i64});
+    rt_tuple_set_heap_mask_ = decl("yona_rt_tuple_set_heap_mask", vd, {ptr, i64});
 
     // Reference counting
     rt_rc_inc_ = decl("yona_rt_rc_inc", vd, {ptr});
@@ -574,19 +581,14 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             auto* dummy_val = ConstantInt::get(LType::getInt64Ty(*context_), 0);
 
             if (ct == CType::TUPLE) {
-                // Find the tuple pattern (from direct pattern or body case pattern)
+                // Tuples are i64 (ptrtoint'd heap pointers). Extract subtypes from pattern.
                 PatternNode* src = (i < inferred.size()) ? inferred[i].source_pattern : nullptr;
                 auto* tp = src ? dynamic_cast<TuplePattern*>(src) : nullptr;
                 if (tp) {
-                    std::vector<LType*> elem_types;
                     std::vector<CType> elem_ctypes;
-                    for (size_t j = 0; j < tp->patterns.size(); j++) {
-                        CType et = infer_type_from_pattern(static_cast<PatternNode*>(tp->patterns[j]));
-                        elem_types.push_back(llvm_type(et));
-                        elem_ctypes.push_back(et);
-                    }
-                    auto* st = StructType::get(*context_, elem_types);
-                    typed_args.push_back({UndefValue::get(st), CType::TUPLE, elem_ctypes});
+                    for (size_t j = 0; j < tp->patterns.size(); j++)
+                        elem_ctypes.push_back(infer_type_from_pattern(static_cast<PatternNode*>(tp->patterns[j])));
+                    typed_args.push_back({dummy_val, CType::TUPLE, elem_ctypes});
                 } else {
                     typed_args.push_back({dummy_val, ct});
                 }
@@ -896,8 +898,32 @@ std::string Codegen::emit_ir() {
     return ir;
 }
 
+void Codegen::apply_fastcc() {
+    if (!module_) return;
+
+    // Apply fastcc to internal functions whose address is never taken.
+    // These functions are only called directly, so we can safely use the
+    // fast calling convention for better register usage and tail calls.
+    for (auto& fn : *module_) {
+        if (fn.isDeclaration()) continue;
+        if (fn.getLinkage() != Function::InternalLinkage) continue;
+        if (fn.hasAddressTaken()) continue;
+
+        fn.setCallingConv(llvm::CallingConv::Fast);
+
+        // Update all direct call sites to match
+        for (auto* user : fn.users()) {
+            if (auto* call = dyn_cast<CallInst>(user))
+                call->setCallingConv(llvm::CallingConv::Fast);
+        }
+    }
+}
+
 void Codegen::optimize() {
     if (!module_) return;
+
+    // Apply fastcc before optimization so LLVM can exploit it
+    apply_fastcc();
 
     // Use the new PassManager for all optimization levels
     llvm::LoopAnalysisManager LAM;
@@ -982,13 +1008,19 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
         case CType::SEQ:    builder_->CreateCall(rt_print_seq_, {v}); break;
         case CType::TUPLE: {
             builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("(")});
-            if (tv.val->getType()->isStructTy()) {
-                auto* st = cast<StructType>(tv.val->getType());
-                for (unsigned i = 0; i < st->getNumElements(); i++) {
+            if (!tv.subtypes.empty()) {
+                // Boxed tuple (i64 = ptrtoint'd ptr to i64 array): GEP + load
+                auto i64_ty_local = LType::getInt64Ty(*context_);
+                Value* tuple_ptr = tv.val;
+                if (tuple_ptr->getType()->isIntegerTy())
+                    tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
+                for (unsigned i = 0; i < tv.subtypes.size(); i++) {
                     if (i > 0)
                         builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(", ")});
-                    auto elem = builder_->CreateExtractValue(tv.val, {i});
-                    CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
+                    auto* gep = builder_->CreateGEP(i64_ty_local, tuple_ptr,
+                        {ConstantInt::get(i64_ty_local, i + 2)}); // +2 for tuple header
+                    auto* elem = builder_->CreateLoad(i64_ty_local, gep);
+                    CType et = tv.subtypes[i];
                     codegen_print_value({elem, et});
                 }
             }

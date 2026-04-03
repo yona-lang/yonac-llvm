@@ -1,0 +1,5 @@
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+let reverse seq = foldl (\acc x -> x :: acc) [] seq in
+let len seq = case seq of [] -> 0; [_|t] -> 1 + (len t) end in
+len (reverse (build 10000 []))

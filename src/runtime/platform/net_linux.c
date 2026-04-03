@@ -12,6 +12,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+
+extern void yona_rt_rc_inc(void* ptr);
+extern void yona_rt_rc_dec(void* ptr);
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -102,10 +105,15 @@ int64_t yona_Std_Net__tcpAccept(int64_t listener_fd) {
 int64_t yona_Std_Net__send(int64_t fd, const char* data) {
     size_t len = strlen(data);
 
+    /* Copy to RC-managed buffer so it survives until I/O completes */
+    extern void* yona_rt_rc_alloc_string(size_t bytes);
+    char* pinned = (char*)yona_rt_rc_alloc_string(len + 1);
+    memcpy(pinned, data, len + 1);
+
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
     ctx->type = IO_OP_SEND;
     ctx->fd = (int)fd;
-    ctx->buf = NULL;
+    ctx->buf = pinned; /* rc_dec'd in completer */
     ctx->buf_size = len;
     ctx->close_fd = 0;
 
@@ -113,11 +121,11 @@ int64_t yona_Std_Net__send(int64_t fd, const char* data) {
     memset(&sqe, 0, sizeof(sqe));
     sqe.opcode = IORING_OP_SEND;
     sqe.fd = (int)fd;
-    sqe.addr = (unsigned long)data;
+    sqe.addr = (unsigned long)pinned;
     sqe.len = (unsigned)len;
 
     uint64_t id = ring_submit_sqe(&sqe);
-    if (id == 0) { free(ctx); return 0; }
+    if (id == 0) { yona_rt_rc_dec(pinned); free(ctx); return 0; }
     io_ctx_put(id, ctx);
     return (int64_t)id;
 }
@@ -151,11 +159,13 @@ int64_t yona_Std_Net__sendBytes(int64_t fd, void* bytes) {
     int64_t* b = (int64_t*)bytes;
     int64_t len = b[0];
     uint8_t* data = (uint8_t*)(b + 1);
+    /* Pin the Bytes buffer until I/O completes */
+    yona_rt_rc_inc(bytes);
 
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
     ctx->type = IO_OP_SEND;
     ctx->fd = (int)fd;
-    ctx->buf = NULL;
+    ctx->buf = (char*)bytes; /* store for rc_dec in completer */
     ctx->buf_size = (size_t)len;
     ctx->close_fd = 0;
 
@@ -167,7 +177,7 @@ int64_t yona_Std_Net__sendBytes(int64_t fd, void* bytes) {
     sqe.len = (unsigned)len;
 
     uint64_t id = ring_submit_sqe(&sqe);
-    if (id == 0) { free(ctx); return 0; }
+    if (id == 0) { yona_rt_rc_dec(bytes); free(ctx); return 0; }
     io_ctx_put(id, ctx);
     return (int64_t)id;
 }

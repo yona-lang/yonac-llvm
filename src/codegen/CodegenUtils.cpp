@@ -200,13 +200,14 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
 bool Codegen::is_heap_type(CType ct) {
     return ct == CType::SEQ || ct == CType::SET || ct == CType::DICT ||
            ct == CType::ADT || ct == CType::FUNCTION || ct == CType::STRING ||
-           ct == CType::BYTES;
+           ct == CType::BYTES || ct == CType::TUPLE;
 }
 
 void Codegen::emit_rc_inc(Value* val, CType type) {
     if (!val || !is_heap_type(type)) return;
-    // String literals (global constants) don't have RC headers — skip them
     if (isa<Constant>(val)) return;
+    // Non-recursive ADTs are struct-typed (no RC header) — skip
+    if (val->getType()->isStructTy()) return;
     Value* ptr_val = val;
     if (val->getType()->isIntegerTy())
         ptr_val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
@@ -215,8 +216,8 @@ void Codegen::emit_rc_inc(Value* val, CType type) {
 
 void Codegen::emit_rc_dec(Value* val, CType type) {
     if (!val || !is_heap_type(type)) return;
-    // String literals (global constants) don't have RC headers — skip them
     if (isa<Constant>(val)) return;
+    if (val->getType()->isStructTy()) return;
     Value* ptr_val = val;
     if (val->getType()->isIntegerTy())
         ptr_val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
@@ -248,13 +249,7 @@ std::pair<llvm::Type*, CType> Codegen::infer_return_type(AstNode* node) {
     if (ct == AST_FUNCTION_EXPR)
         return {PointerType::get(*context_, 0), CType::FUNCTION};
     if (ct == AST_TUPLE_EXPR) {
-        auto* te = static_cast<TupleExpr*>(node);
-        std::vector<LType*> fields;
-        for (auto* v : te->values) {
-            auto [lt, _] = infer_return_type(v);
-            fields.push_back(lt);
-        }
-        return {StructType::get(*context_, fields), CType::TUPLE};
+        return {LType::getInt64Ty(*context_), CType::TUPLE};
     }
     if (ct == AST_APPLY_EXPR) {
         auto* app = static_cast<ApplyExpr*>(node);

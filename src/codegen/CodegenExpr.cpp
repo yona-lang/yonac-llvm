@@ -6,6 +6,7 @@
 //
 
 #include "Codegen.h"
+#include "LastUseAnalysis.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Type.h>
@@ -15,6 +16,58 @@
 namespace yona::compiler::codegen {
 using namespace llvm;
 using LType = llvm::Type;
+
+// Coerce a value to a target LLVM type for PHI node compatibility.
+// Handles: i1→i64, ptr↔i64, struct→ptr (via alloca), different int widths.
+static Value* coerce_for_phi(Value* val, LType* target, IRBuilder<>& builder, LLVMContext& ctx) {
+    auto* src = val->getType();
+    if (src == target) return val;
+
+    // Integer widening (e.g., i1 → i64)
+    if (src->isIntegerTy() && target->isIntegerTy())
+        return builder.CreateZExtOrTrunc(val, target);
+
+    // ptr → i64
+    if (src->isPointerTy() && target->isIntegerTy())
+        return builder.CreatePtrToInt(val, target);
+
+    // i64 → ptr
+    if (src->isIntegerTy() && target->isPointerTy())
+        return builder.CreateIntToPtr(val, target);
+
+    // struct → ptr (box into alloca)
+    if (src->isStructTy() && target->isPointerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return alloca;
+    }
+
+    // ptr → struct: can't safely unbox without knowing layout, return as-is
+    // (this case shouldn't normally happen)
+    return val;
+}
+
+// Determine the widest common LLVM type for PHI merging.
+static LType* common_phi_type(LType* a, LType* b, LLVMContext& ctx) {
+    if (a == b) return a;
+
+    // If either is a struct, use ptr (boxed representation)
+    if (a->isStructTy() || b->isStructTy())
+        return PointerType::get(ctx, 0);
+
+    // ptr wins over integers
+    if (a->isPointerTy() || b->isPointerTy())
+        return PointerType::get(ctx, 0);
+
+    // Wider integer wins
+    if (a->isIntegerTy() && b->isIntegerTy()) {
+        unsigned wa = a->getIntegerBitWidth(), wb = b->getIntegerBitWidth();
+        return wa >= wb ? a : b;
+    }
+
+    // Fallback: i64
+    return LType::getInt64Ty(ctx);
+}
 
 // ===== Literals =====
 
@@ -225,11 +278,17 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     }
 
     // Arena allocation for non-escaping values.
-    // Currently analysis-only: the arena infrastructure is in place but
-    // disabled by default until tuple-in-collection support is complete.
-    // To enable: set arena != nullptr when local_non_escaping is non-empty.
+    // Non-escaping let-bound values are bump-allocated from a per-scope
+    // arena, avoiding individual malloc/free overhead. The arena is freed
+    // in bulk at scope exit. RC sentinel (INT64_MAX) prevents rc_dec
+    // from freeing arena-allocated values individually.
     llvm::Value* arena = nullptr;
     auto saved_arena = current_arena_;
+    if (!local_non_escaping.empty()) {
+        auto i64_ty = LType::getInt64Ty(*context_);
+        arena = builder_->CreateCall(rt_arena_create_,
+            {ConstantInt::get(i64_ty, 4096)}, "arena");
+    }
 
     // Track all heap-typed bindings for RC release at scope exit
     std::vector<TypedValue> scope_bindings;
@@ -276,11 +335,22 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
             }
         } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
             auto tv = codegen(pa->expr);
-            if (tv && tv.type == CType::TUPLE && tv.val->getType()->isStructTy()) {
+            if (tv && tv.type == CType::TUPLE) {
                 auto* tp = dynamic_cast<TuplePattern*>(pa->pattern);
                 if (tp) {
+                    auto i64_local = LType::getInt64Ty(*context_);
+                    Value* tuple_ptr = tv.val;
+                    if (tuple_ptr->getType()->isIntegerTy())
+                        tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
                     for (size_t i = 0; i < tp->patterns.size(); i++) {
-                        auto elem = builder_->CreateExtractValue(tv.val, {(unsigned)i});
+                        Value* elem;
+                        if (tuple_ptr->getType()->isPointerTy()) {
+                            auto* gep = builder_->CreateGEP(i64_local, tuple_ptr,
+                                {ConstantInt::get(i64_local, i + 2)}, "let_tuple_gep"); // +2 for tuple header
+                            elem = builder_->CreateLoad(i64_local, gep, "let_tuple_elem");
+                        } else {
+                            elem = builder_->CreateExtractValue(tuple_ptr, {(unsigned)i});
+                        }
                         CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
                         auto* sub = tp->patterns[i];
                         if (sub->get_type() == AST_PATTERN_VALUE) {
@@ -299,11 +369,32 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
         }
     }
 
+    // Perceus: run last-use analysis on the body to determine DUP/DROP points.
+    // Build the "owned" set = names of heap-typed let-bound variables.
+    {
+        std::unordered_set<std::string> owned_names;
+        for (auto* alias : node->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+                auto it = named_values_.find(va->identifier->name->value);
+                if (it != named_values_.end() && is_heap_type(it->second.type))
+                    owned_names.insert(va->identifier->name->value);
+            }
+        }
+        if (!owned_names.empty()) {
+            auto lu = analyze_last_uses(node->expr, owned_names);
+            last_use_set_.insert(lu.begin(), lu.end());
+            perceus_tracked_.insert(owned_names.begin(), owned_names.end());
+        }
+    }
+
     auto result = codegen(node->expr);
 
-    // RC: release let-bound heap values going out of scope.
-    // Inc the result first in case it references a binding.
+    // Perceus DROP: release let-bound heap values whose last use has already
+    // consumed them (via DUP at non-last uses + callee DROP). Only DROP
+    // bindings that were NEVER used in the body (the last-use analysis
+    // would not have marked any of their uses).
     if (!scope_bindings.empty() && result && result.val) {
+        // Protect result in case it IS a binding (ownership transfer)
         emit_rc_inc(result.val, result.type);
         for (size_t i = 0; i < scope_bindings.size(); i++) {
             if (i < binding_is_arena.size() && binding_is_arena[i])
@@ -370,10 +461,36 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
         // Both branches terminate (e.g., both raise) — merge is dead
         return then_tv;
     }
-    LType* phi_type = then_end ? then_tv.val->getType() : else_tv.val->getType();
+    // Determine common type for PHI — branches may return different LLVM types
+    // (e.g., ADT struct vs symbol i64, or i1 vs i64)
+    LType* then_ty = then_end ? then_tv.val->getType() : nullptr;
+    LType* else_ty = else_end ? else_tv.val->getType() : nullptr;
+    LType* phi_type;
+    if (then_ty && else_ty)
+        phi_type = common_phi_type(then_ty, else_ty, *context_);
+    else
+        phi_type = then_ty ? then_ty : else_ty;
+
     auto phi = builder_->CreatePHI(phi_type, phi_count);
-    if (then_end) phi->addIncoming(then_tv.val, then_end);
-    if (else_end) phi->addIncoming(else_tv.val, else_end);
+    if (then_end) {
+        // Coerce then value if needed — insert before the branch terminator
+        if (then_tv.val->getType() != phi_type) {
+            auto saved = builder_->GetInsertPoint();
+            builder_->SetInsertPoint(then_end->getTerminator());
+            then_tv.val = coerce_for_phi(then_tv.val, phi_type, *builder_, *context_);
+            builder_->SetInsertPoint(merge_bb);
+        }
+        phi->addIncoming(then_tv.val, then_end);
+    }
+    if (else_end) {
+        if (else_tv.val->getType() != phi_type) {
+            auto saved = builder_->GetInsertPoint();
+            builder_->SetInsertPoint(else_end->getTerminator());
+            else_tv.val = coerce_for_phi(else_tv.val, phi_type, *builder_, *context_);
+            builder_->SetInsertPoint(merge_bb);
+        }
+        phi->addIncoming(else_tv.val, else_end);
+    }
     return {phi, then_tv.type, then_tv.subtypes};
 }
 
@@ -387,6 +504,12 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
         if (it->second.type == CType::FUNCTION && !it->second.val) {
             last_lambda_name_ = node->name->value;
         }
+        // Note: Perceus DUP at non-last uses requires matching callee DROP
+        // at function exit. Callee DROP is blocked by the PHI problem:
+        // when a function returns a param via a branch (if/case), the
+        // return Value* is a PHI, not the param, so the DROP check
+        // `param == return` fails and frees the returned value.
+        // Full Perceus needs per-branch DROP insertion.
         return it->second;
     }
     // Check if it's a compiled function
@@ -619,18 +742,32 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
     // Determine result type: use catch type if try body always raises (terminated)
     CType result_type = try_end_bb ? try_val.type
         : (!catch_results.empty() ? catch_results[0].first.type : CType::INT);
+    // Determine common PHI type across try body and all catch handlers
     LType* result_llvm = try_end_bb ? try_val.val->getType()
         : (!catch_results.empty() ? catch_results[0].first.val->getType() : LType::getInt64Ty(*context_));
+    for (auto& [tv, bb] : catch_results)
+        result_llvm = common_phi_type(result_llvm, tv.val->getType(), *context_);
 
     unsigned pred_count = (try_end_bb ? 1 : 0) + catch_results.size();
     if (pred_count == 0) return try_val;
 
     auto phi = builder_->CreatePHI(result_llvm, pred_count, "try.result");
-    if (try_end_bb) phi->addIncoming(try_val.val, try_end_bb);
+    if (try_end_bb) {
+        Value* incoming = try_val.val;
+        if (incoming->getType() != result_llvm) {
+            builder_->SetInsertPoint(try_end_bb->getTerminator());
+            incoming = coerce_for_phi(incoming, result_llvm, *builder_, *context_);
+            builder_->SetInsertPoint(merge_bb);
+        }
+        phi->addIncoming(incoming, try_end_bb);
+    }
     for (auto& [tv, bb] : catch_results) {
         Value* incoming = tv.val;
-        if (incoming->getType() != result_llvm)
-            incoming = Constant::getNullValue(result_llvm);
+        if (incoming->getType() != result_llvm) {
+            builder_->SetInsertPoint(bb->getTerminator());
+            incoming = coerce_for_phi(incoming, result_llvm, *builder_, *context_);
+            builder_->SetInsertPoint(merge_bb);
+        }
         phi->addIncoming(incoming, bb);
     }
     return {phi, result_type};
