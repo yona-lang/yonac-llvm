@@ -5,35 +5,27 @@
 - **REPL**: `yona` — compile-and-run interactive mode
 - **Tests**: 685 assertions across 74 test cases (all passing)
 - **Stdlib**: 25 modules, ~260 exported functions (12 pure Yona + 13 C runtime)
-- **Benchmarks**: 9/9 passing (1.0-3.0x C typical, queens 21x due to search tree)
+- **Benchmarks**: 9/9 passing (7 of 9 within 1.5x C, queens 17x due to search tree)
 
 ## Performance Optimization
 
 ### Completed
-- [x] **Generator head/tail iteration** — generators use seq_head/seq_tail
-  instead of indexed get. O(1) per element vs O(n/32) for chunked seqs.
+- [x] **Generator head/tail iteration** — O(1) per element vs O(n/32).
   list_map_filter: 2.7x → 1.5x C.
-- [x] **Inline seq checks** — seq_is_empty inlined as direct count==0
-  check in case [] and [h|t] patterns. Eliminates function call overhead.
-- [x] **Function inlining hints** — InlineHint on small functions (≤20 BBs).
+- [x] **Closure devirtualization** — direct calls for known lambdas
+  at HOF call sites. list_sum: 1.4x→1.2x, list_reverse: 1.6x→1.5x.
+- [x] **Inline seq checks** — is_empty inlined as count==0 GEP+load.
+- [x] **Function inlining hints** — InlineHint on small functions.
 - [x] **fastcc calling convention** — for internal non-HOF functions.
-- [x] **Tail call marking** — self-recursive calls marked for LLVM TCE.
-  LLVM successfully converts to loops (verified: build function fully
-  inlined, foldl uses tail call).
+- [x] **Tail call marking** — self-recursive calls → LLVM TCE loops.
 
 ### Remaining
 - [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
-  Eliminates intermediate seq allocations.
-- [ ] **LTO** — link-time optimization across modules. Would enable
-  inlining of C runtime seq functions (seq_head/seq_tail/seq_cons).
-  Biggest remaining win for seq-heavy code.
-- [ ] **Closure elimination** — inline known lambdas at HOF call sites.
-  Would help list_reverse (1.6x → ~1.2x C).
-- [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup. Critical for
-  real programs.
+- [ ] **LTO** — cross-module inlining of C runtime seq functions.
+- [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup.
 - [ ] **Seq snoc** — O(1) append via tail-end offset.
 - [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
-- [ ] **Persistent Seq trie** — O(log n) indexed access, O(log n) concat.
+- [ ] **Persistent Seq trie** — O(log n) indexed access/concat.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
 
 ## Language Features
