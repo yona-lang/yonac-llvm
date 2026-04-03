@@ -7,51 +7,34 @@
 - **Stdlib**: 25 modules, ~260 exported functions (12 pure Yona + 13 C runtime)
 - **Benchmarks**: 9/9 passing (1.0-3.0x C typical, queens 21x due to search tree)
 
-## Performance Optimization (by expected impact)
+## Performance Optimization
 
-### High Impact
-- [ ] **Stream fusion** — detect map/filter/fold chains and compile as
-  a single loop. Eliminates intermediate seq allocations. Would improve
-  list_map_filter from 3.0x to ~1.5x C. Approach: when a seq-producing
-  expression is immediately consumed by another seq function (map, filter,
-  fold, etc.), fuse into a single generator loop.
-- [ ] **Seq inline fast paths** — for flat seqs (≤32 elements), inline
-  seq_head/seq_tail instead of calling runtime functions. The flat layout
-  is known: `payload[SEQ_HDR_SIZE + index]`. Eliminates function call
-  overhead for the common case. Would improve list_sum from 1.4x to ~1.1x C.
-- [ ] **Hash-based Dict/Set** — current O(n) flat array. Replace with
-  HAMT (hash array mapped trie) for O(1) amortized lookup/insert.
-  Critical for any real program using dictionaries.
-- [ ] **Function inlining hints** — mark small internal functions with
-  `alwaysinline` or `inlinehint` LLVM attributes. Would help fibonacci
-  (1.9x → ~1.2x C) and ackermann (2.5x → ~1.5x C) by reducing call
-  overhead for simple recursive functions.
+### Completed
+- [x] **Generator head/tail iteration** — generators use seq_head/seq_tail
+  instead of indexed get. O(1) per element vs O(n/32) for chunked seqs.
+  list_map_filter: 2.7x → 1.5x C.
+- [x] **Inline seq checks** — seq_is_empty inlined as direct count==0
+  check in case [] and [h|t] patterns. Eliminates function call overhead.
+- [x] **Function inlining hints** — InlineHint on small functions (≤20 BBs).
+- [x] **fastcc calling convention** — for internal non-HOF functions.
+- [x] **Tail call marking** — self-recursive calls marked for LLVM TCE.
+  LLVM successfully converts to loops (verified: build function fully
+  inlined, foldl uses tail call).
 
-### Medium Impact
-- [ ] **Generator source optimization** — iterate chunked seqs via
-  head/tail instead of indexed get (O(1) vs O(n/32) per element).
-  Currently seq generators use `seq_get(i)` which is O(n/32) for
-  chunked seqs.
-- [ ] **Seq snoc optimization** — O(1) append via tail-end offset,
-  analogous to the head-end offset for cons. Currently append is O(n).
-- [ ] **Tail-recursive loop transformation** — convert tail-recursive
-  functions to explicit loops in the codegen (before LLVM's TCE pass).
-  Gives LLVM a better starting point for register allocation.
-- [ ] **Mutual tail call optimization** — detect A→B→A chains and
-  use musttail/trampoline. Currently only self-recursive tails are marked.
-- [ ] **LTO** — link-time optimization across translation units. LLVM
-  has built-in support. Wire up via `EmitBitcodeFile` + `llvm-lto2`.
-- [ ] **Closure elimination** — when a closure is called immediately
-  after creation (e.g., `(\x -> x + 1) 5`), eliminate the closure
-  allocation and inline the body.
-
-### Lower Priority
-- [ ] **Persistent Seq trie** — 32/64-way branching for O(log n) indexed
-  access and O(log n) concat. Current chunked list has O(n/32) get.
-- [ ] **Escape analysis improvements** — detect non-escaping values in
-  more patterns (case bindings, generator intermediates, if/else branches).
-- [ ] **Profile-guided optimization** — use runtime profiling data to
-  guide LLVM's inlining and branch prediction decisions.
+### Remaining
+- [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
+  Eliminates intermediate seq allocations.
+- [ ] **LTO** — link-time optimization across modules. Would enable
+  inlining of C runtime seq functions (seq_head/seq_tail/seq_cons).
+  Biggest remaining win for seq-heavy code.
+- [ ] **Closure elimination** — inline known lambdas at HOF call sites.
+  Would help list_reverse (1.6x → ~1.2x C).
+- [ ] **Hash-based Dict/Set** — HAMT for O(1) lookup. Critical for
+  real programs.
+- [ ] **Seq snoc** — O(1) append via tail-end offset.
+- [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
+- [ ] **Persistent Seq trie** — O(log n) indexed access, O(log n) concat.
+- [ ] **Profile-guided optimization** — runtime profiling for LLVM.
 
 ## Language Features
 - [ ] STM (Software Transactional Memory) — for shared mutable state
