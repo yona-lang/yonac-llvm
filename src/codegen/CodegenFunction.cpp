@@ -598,13 +598,20 @@ Codegen::CompiledFunction Codegen::compile_function(
             pname = def.param_names[i];
             ct = (i < args.size()) ? args[i].type : CType::INT;
             if (i < args.size()) st = args[i].subtypes;
-            // For FUNCTION args, look up return type from compiled function
-            if (ct == CType::FUNCTION && st.empty() && i < args.size() && args[i].val) {
+            // For FUNCTION args, look up return type and propagate
+            // closure devirtualization info (known Function* for the param).
+            if (ct == CType::FUNCTION && i < args.size() && args[i].val) {
                 if (auto* fn_val = dyn_cast<Function>(args[i].val)) {
-                    auto cf_it = compiled_functions_.find(fn_val->getName().str());
-                    if (cf_it != compiled_functions_.end())
-                        st = {cf_it->second.return_type};
+                    if (st.empty()) {
+                        auto cf_it = compiled_functions_.find(fn_val->getName().str());
+                        if (cf_it != compiled_functions_.end())
+                            st = {cf_it->second.return_type};
+                    }
                 }
+                // Propagate known closure → Function* to the param
+                auto kf_it = closure_known_fn_.find(args[i].val);
+                if (kf_it != closure_known_fn_.end())
+                    closure_known_fn_[&arg] = kf_it->second;
             }
         } else {
             pname = def.free_vars[i - def.param_names.size()];
@@ -903,7 +910,13 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                     all_args[ai].subtypes = {cf_it->second.return_type};
             }
             CType fn_ret = (!all_args[ai].subtypes.empty()) ? all_args[ai].subtypes[0] : CType::INT;
-            all_args[ai].val = wrap_in_closure(cast<Function>(all_args[ai].val), fn_ret);
+            auto* underlying_fn = cast<Function>(all_args[ai].val);
+            all_args[ai].val = wrap_in_closure(underlying_fn, fn_ret);
+            // Remember the closure → wrapper function mapping for devirtualization.
+            // The wrapper has the env-passing signature: (ptr env, user_args...).
+            auto wrapper_name = underlying_fn->getName().str() + "_env";
+            if (auto* wrapper_fn = module_->getFunction(wrapper_name))
+                closure_known_fn_[all_args[ai].val] = wrapper_fn;
         }
     }
 
@@ -1031,7 +1044,35 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                 auto result = builder_->CreateCall(fn_type, var_val, vals, "indirect_call");
                 return {result, ret_ctype};
             } else {
-                // Closure: load fn_ptr from closure[0], call as fn(closure, args...)
+                // Closure call. Check if we know the underlying Function*
+                // (from closure devirtualization) for a direct call.
+                auto kf_it = closure_known_fn_.find(var_val);
+                if (kf_it != closure_known_fn_.end()) {
+                    // Devirtualized: direct call to the known wrapper function.
+                    // Coerce args to match wrapper's expected param types.
+                    auto* known_fn = kf_it->second;
+                    std::vector<Value*> call_vals = {var_val}; // env = closure
+                    size_t param_idx = 1; // skip env param
+                    for (auto& a : all_args) {
+                        if (a.type == CType::UNIT) continue;
+                        Value* arg_val = a.val;
+                        if (param_idx < known_fn->arg_size()) {
+                            auto* expected = known_fn->getArg(param_idx)->getType();
+                            if (arg_val->getType() != expected) {
+                                if (arg_val->getType()->isPointerTy() && expected->isIntegerTy())
+                                    arg_val = builder_->CreatePtrToInt(arg_val, expected);
+                                else if (arg_val->getType()->isIntegerTy() && expected->isPointerTy())
+                                    arg_val = builder_->CreateIntToPtr(arg_val, expected);
+                            }
+                        }
+                        call_vals.push_back(arg_val);
+                        param_idx++;
+                    }
+                    auto* result = builder_->CreateCall(known_fn, call_vals, "devirt_call");
+                    return {result, ret_ctype};
+                }
+
+                // Generic closure: load fn_ptr from closure[0]
                 auto i64_ty = LType::getInt64Ty(*context_);
                 auto ptr_ty = PointerType::get(*context_, 0);
 

@@ -120,6 +120,11 @@ private:
     int lambda_counter_ = 0;
     std::string last_lambda_name_;
 
+    // Closure devirtualization: map closure Value* → underlying Function*
+    // When a known lambda is wrapped in a closure, we remember the mapping
+    // so indirect closure calls can be replaced with direct calls.
+    std::unordered_map<llvm::Value*, llvm::Function*> closure_known_fn_;
+
     // Escape analysis: variables whose values don't escape the current scope
     std::unordered_set<std::string> non_escaping_vars_;
     // Current arena pointer (nullptr if no arena active)
