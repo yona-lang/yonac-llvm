@@ -307,6 +307,13 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
             if (tv) {
                 named_values_[vname] = tv;
 
+                // Seq protection: rc_inc let-bound seqs so that unique-owner
+                // in-place tail mutation doesn't corrupt the binding when the
+                // same variable is used in multiple case expressions.
+                // Function parameters don't need this (consumed once per call).
+                if (tv.type == CType::SEQ && tv.val && !llvm::isa<llvm::Constant>(tv.val))
+                    emit_rc_inc(tv.val, CType::SEQ);
+
                 // Track for RC
                 if (is_heap_type(tv.type) && tv.val) {
                     scope_bindings.push_back(tv);

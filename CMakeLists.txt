@@ -93,6 +93,7 @@ file(GLOB_RECURSE all_lib_SRCS
 )
 # Exclude files #included from compiled_runtime.c
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/seq\\.c$")
+list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/hamt\\.c$")
 
 file(GLOB all_TESTS
 		"${PROJECT_SOURCE_DIR}/test/*.h"

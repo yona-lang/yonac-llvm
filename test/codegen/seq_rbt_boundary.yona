@@ -1,0 +1,9 @@
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
+let s31 = build 31 [] in
+let s32 = build 32 [] in
+let s33 = build 33 [] in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+let sum31 = foldl (\a b -> a + b) 0 s31 in
+let sum32 = foldl (\a b -> a + b) 0 s32 in
+let sum33 = foldl (\a b -> a + b) 0 s33 in
+(sum31, sum32, sum33)

@@ -45,7 +45,11 @@ Every heap-allocated value has a 2-word header before the payload:
 | 7 | `RC_TYPE_BOX` | Boxed value (generic) |
 | 8 | `RC_TYPE_BYTES` | Binary data |
 | 9 | `RC_TYPE_TUPLE` | Tuple |
-| 11 | `RC_TYPE_CHUNKED` | Chunked sequence node |
+| 11 | `RC_TYPE_CHUNKED` | Legacy chunked sequence node (unused) |
+| 12 | `RC_TYPE_RBT` | RBT sequence root (head chain + trie + tail buffer) |
+| 13 | `RC_TYPE_RBT_NODE` | RBT internal trie node (32 child pointers) |
+| 14 | `RC_TYPE_RBT_LEAF` | RBT trie leaf (heap_flag + 32 elements) |
+| 15 | `RC_TYPE_RBT_CHUNK` | RBT head chain chunk (offset + count + 32 elems + next) |
 
 ## Container Layouts
 

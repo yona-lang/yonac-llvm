@@ -3,14 +3,16 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 685 assertions across 74 test cases (all passing)
+- **Tests**: 699 assertions across 74 test cases (all passing)
 - **Stdlib**: 25 modules, ~260 exported functions (12 pure Yona + 13 C runtime)
-- **Benchmarks**: 9/9 passing (5 within 1.4x C, queens 11x with LTO)
+- **Benchmarks**: 10/10 passing (5 within 1.6x C, queens ~10x)
 
 ## Performance Optimization
 
 ### Completed
-- [x] **Generator head/tail iteration** — O(1) per element vs O(n/32).
+- [x] **Generator head/tail iteration** — O(1) per element vs O(n/32)
+  for chunked seqs (cons-built). Guard comprehensions use single-pass
+  indexed with over-allocation (avoids flat-seq O(n²) memmove).
   list_map_filter: 2.7x → 1.5x C.
 - [x] **Closure devirtualization** — direct calls for known lambdas
   at HOF call sites. list_sum: 1.4x→1.2x, list_reverse: 1.6x→1.5x.
@@ -26,8 +28,13 @@
 - [x] **Hash-based Dict** — HAMT with splitmix64 hash, O(1) amortized.
   Std\Dict module (put/get/contains/size/keys). 10K build in 7.2ms.
 - [x] **Seq snoc** — yona_rt_seq_snoc for flat/chunked append.
-- [ ] **Mutual tail call optimization** — musttail for A→B→A chains.
-- [ ] **Persistent Seq trie** — O(log n) indexed access/concat.
+- [x] **Mutual tail call optimization** — LLVM already handles this.
+  Self-recursive and mutual recursive tail calls are converted to loops
+  or constant-folded. Verified: collatz→loop, ping/pong→constant-fold.
+- [x] **Persistent Seq RBT** — radix-balanced trie with head chain +
+  tail buffer. O(1) amortized cons/head/tail via head chain, O(log32 n)
+  indexed get for snoc-built elements, O(1) amortized snoc via tail buffer.
+  Flat seqs (≤32) unchanged for O(1) everything.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
 
 ## Language Features
@@ -76,7 +83,7 @@
 - Exception handling (raise/try/catch via setjmp/longjmp)
 - `with` expression, `do` blocks, async codegen (PROMISE, thread pool, io_uring)
 - Optimization levels (O0-O3) via LLVM new PassManager
-- Persistent Seq (flat ≤32, chunked list >32, O(1) cons/head/tail)
+- Persistent Seq RBT (flat ≤32, RBT with head chain + back trie + tail buffer >32)
 
 ### Memory Management
 - Atomic RC: `__atomic_fetch_add` (RELAXED) / `__atomic_fetch_sub` (ACQ_REL)

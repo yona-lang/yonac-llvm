@@ -2,15 +2,19 @@
  * Seq — persistent immutable sequence.
  *
  * Two representations:
- *   Small (≤32 elements): flat array [length, elem0, elem1, ...]  (RC_TYPE_SEQ)
- *   Large (>32 elements): chunked list of RC-managed 32-element blocks (RC_TYPE_CHUNKED_SEQ)
+ *   Small (≤32 elements): flat array [length, heap_flag, elem0, ...]  (RC_TYPE_SEQ)
+ *   Large (>32 elements):  RBT with head chain + optional trie + tail buffer
+ *
+ * The head chain is a linked list of 32-element buffers for O(1) cons/head/tail.
+ * The trie is a 32-way radix-balanced trie for O(log32 n) indexed access on
+ * snoc-built elements. The tail buffer absorbs snoc for O(1) amortized append.
  *
  * Time complexities:
- *   cons (prepend):  O(1)
+ *   cons (prepend):  O(1) amortized
  *   head:            O(1)
- *   tail:            O(1)
- *   snoc (append):   O(1) amortized (unique owner) / O(n) shared
- *   get(i):          O(1) small / O(n/32) large
+ *   tail:            O(1) amortized
+ *   snoc (append):   O(1) amortized
+ *   get(i):          O(1) small / O(n/32) head chain / O(log32 n) trie
  *   length:          O(1)
  *   concat:          O(n)
  */
@@ -24,250 +28,572 @@ extern void* rc_alloc(int64_t type_tag, size_t bytes);
 extern void yona_rt_rc_inc(void* ptr);
 extern void yona_rt_rc_dec(void* ptr);
 
-#define RC_TYPE_SEQ 1
-#define RC_TYPE_CHUNKED 11
-#define CHUNK_SIZE 32
+#define RC_TYPE_SEQ       1
+#define RC_TYPE_RBT       12
+#define RC_TYPE_RBT_NODE  13
+#define RC_TYPE_RBT_LEAF  14
+#define RC_TYPE_RBT_CHUNK 15
+#define B     32
+#define BITS  5
+#define MASK  (B - 1)
 #define RC_ARENA_SENTINEL INT64_MAX
 #define SEQ_HDR_SIZE 2
 
-/* ===== Chunked Seq ===== */
-/*
- * A chunked seq is a linked list of RC-managed chunks.
- * Each chunk holds up to CHUNK_SIZE elements.
- * Structural sharing: cons creates a new header pointing to existing chunks.
- *
- * Layout: [rc_header][total_length][count][elems...][next_ptr]
- */
+/* ===== Types ===== */
 
-typedef struct yona_chunk {
-    int64_t total_length;   /* total elements in this chunk + all subsequent */
-    int64_t offset;         /* index of first element in elems[] */
-    int64_t count;          /* number of valid elements (from offset) */
-    int64_t elems[CHUNK_SIZE];
-    struct yona_chunk* next; /* next chunk (RC-managed, or NULL) */
-} yona_chunk_t;
+typedef struct { int64_t children[B]; } rbt_node_t;
+typedef struct { int64_t heap_flag; int64_t elems[B]; } rbt_leaf_t;
 
-static yona_chunk_t* chunk_alloc(int64_t count, int64_t total) {
-    yona_chunk_t* c = (yona_chunk_t*)rc_alloc(RC_TYPE_CHUNKED, sizeof(yona_chunk_t));
-    c->total_length = total;
+typedef struct rbt_chunk {
+    int64_t offset;
+    int64_t count;
+    int64_t elems[B];
+    struct rbt_chunk* next;  /* RC-managed */
+} rbt_chunk_t;
+
+/* RBT root — length at offset 0 for codegen's inline seq[0] reads.
+ * back_off tracks how many trie elements have been consumed from the
+ * front (by tail draining into head_buf), avoiding O(n) trie rebuilds. */
+typedef struct {
+    int64_t length;
+    int64_t heap_flag;
+    int64_t head_off;
+    int64_t head_cnt;
+    int64_t head_buf[B];
+    rbt_chunk_t* head_next;
+    int64_t head_chain_len;
+    int64_t tail_cnt;
+    int64_t tail_buf[B];
+    int64_t back_shift;
+    void*   back_root;
+    int64_t back_size;    /* total elements ever pushed into trie */
+    int64_t back_off;     /* consumed from front of trie (logical offset) */
+} rbt_t;
+
+/* Active trie elements = back_size - back_off */
+static inline int64_t trie_active(rbt_t* r) {
+    return r->back_size - r->back_off;
+}
+
+/* ===== Low-level helpers ===== */
+
+static inline __attribute__((always_inline)) int is_rbt(int64_t* seq) {
+    if (!seq) return 0;
+    return (((int64_t*)seq)[-1] & 0xFF) == RC_TYPE_RBT;
+}
+
+static inline __attribute__((always_inline)) int is_unique(void* ptr) {
+    if (!ptr) return 0;
+    return __atomic_load_n(((int64_t*)ptr) - 2, __ATOMIC_ACQUIRE) == 1;
+}
+
+static rbt_node_t* node_alloc(void) {
+    rbt_node_t* n = (rbt_node_t*)rc_alloc(RC_TYPE_RBT_NODE, sizeof(rbt_node_t));
+    memset(n, 0, sizeof(rbt_node_t));
+    return n;
+}
+
+static rbt_leaf_t* leaf_alloc(int64_t hf) {
+    rbt_leaf_t* l = (rbt_leaf_t*)rc_alloc(RC_TYPE_RBT_LEAF, sizeof(rbt_leaf_t));
+    l->heap_flag = hf;
+    memset(l->elems, 0, sizeof(l->elems));
+    return l;
+}
+
+static rbt_chunk_t* chunk_alloc(void) {
+    rbt_chunk_t* c = (rbt_chunk_t*)rc_alloc(RC_TYPE_RBT_CHUNK, sizeof(rbt_chunk_t));
     c->offset = 0;
-    c->count = count;
+    c->count = 0;
     c->next = NULL;
     return c;
 }
 
-static int is_chunked(int64_t* seq) {
-    if (!seq) return 0;
-    int64_t* header = seq - RC_HEADER_SIZE;
-    return DECODE_TAG(header[1]) == RC_TYPE_CHUNKED;
+/* Fast rbt allocation for cons path — zeroes only tail/trie fields. */
+static rbt_t* rbt_alloc_cons(void) {
+    rbt_t* r = (rbt_t*)rc_alloc(RC_TYPE_RBT, sizeof(rbt_t));
+    r->head_next = NULL;
+    r->head_chain_len = 0;
+    r->tail_cnt = 0;
+    r->back_shift = 0;
+    r->back_root = NULL;
+    r->back_size = 0;
+    r->back_off = 0;
+    return r;
+}
+
+static rbt_t* rbt_alloc_zeroed(void) {
+    rbt_t* r = (rbt_t*)rc_alloc(RC_TYPE_RBT, sizeof(rbt_t));
+    memset(r, 0, sizeof(rbt_t));
+    return r;
+}
+
+/* Clone rbt header (shallow: rc_inc trie root + head chain). */
+static rbt_t* rbt_clone(rbt_t* src) {
+    rbt_t* r = (rbt_t*)rc_alloc(RC_TYPE_RBT, sizeof(rbt_t));
+    memcpy(r, src, sizeof(rbt_t));
+    if (r->back_root) yona_rt_rc_inc(r->back_root);
+    if (r->head_next) yona_rt_rc_inc(r->head_next);
+    return r;
+}
+
+/* Copy fields from src rbt into a freshly allocated rbt (for non-unique paths). */
+static rbt_t* rbt_copy_body(rbt_t* src) {
+    rbt_t* nr = (rbt_t*)rc_alloc(RC_TYPE_RBT, sizeof(rbt_t));
+    nr->heap_flag = src->heap_flag;
+    nr->tail_cnt = src->tail_cnt;
+    if (src->tail_cnt)
+        memcpy(nr->tail_buf, src->tail_buf, (size_t)src->tail_cnt * sizeof(int64_t));
+    nr->back_shift = src->back_shift;
+    nr->back_root = src->back_root;
+    if (nr->back_root) yona_rt_rc_inc(nr->back_root);
+    nr->back_size = src->back_size;
+    nr->back_off = src->back_off;
+    return nr;
+}
+
+static rbt_node_t* node_copy(rbt_node_t* src) {
+    rbt_node_t* n = node_alloc();
+    memcpy(n->children, src->children, sizeof(n->children));
+    for (int i = 0; i < B; i++)
+        if (n->children[i]) yona_rt_rc_inc((void*)(intptr_t)n->children[i]);
+    return n;
+}
+
+/* ===== Trie operations (right-side only) ===== */
+
+static int64_t trie_get(void* node, int64_t shift, int64_t index) {
+    while (shift > 0) {
+        node = (void*)(intptr_t)((rbt_node_t*)node)->children[(index >> shift) & MASK];
+        shift -= BITS;
+    }
+    return ((rbt_leaf_t*)node)->elems[index & MASK];
+}
+
+static void* trie_push_leaf(void* node, int64_t shift, int64_t trie_idx,
+                             rbt_leaf_t* leaf) {
+    if (shift == 0) return leaf;
+    int slot = (int)((trie_idx >> shift) & MASK);
+    rbt_node_t* n = is_unique(node) ? (rbt_node_t*)node
+                                     : node_copy((rbt_node_t*)node);
+    void* child = (void*)(intptr_t)n->children[slot];
+    if (shift == BITS) {
+        n->children[slot] = (int64_t)(intptr_t)leaf;
+    } else if (!child) {
+        rbt_node_t* path = node_alloc();
+        void* cur = path;
+        for (int64_t s = shift - BITS; s > BITS; s -= BITS) {
+            rbt_node_t* next = node_alloc();
+            ((rbt_node_t*)cur)->children[(trie_idx >> s) & MASK] =
+                (int64_t)(intptr_t)next;
+            cur = next;
+        }
+        ((rbt_node_t*)cur)->children[(trie_idx >> BITS) & MASK] =
+            (int64_t)(intptr_t)leaf;
+        n->children[slot] = (int64_t)(intptr_t)path;
+    } else {
+        void* new_child = trie_push_leaf(child, shift - BITS, trie_idx, leaf);
+        if (new_child != child && !is_unique(node))
+            yona_rt_rc_dec(child);
+        n->children[slot] = (int64_t)(intptr_t)new_child;
+    }
+    return n;
+}
+
+static void trie_push_buf(rbt_t* r, int64_t* buf) {
+    rbt_leaf_t* leaf = leaf_alloc(r->heap_flag);
+    memcpy(leaf->elems, buf, B * sizeof(int64_t));
+    if (!r->back_root) {
+        r->back_root = leaf;
+        r->back_shift = 0;
+    } else {
+        int64_t cap = 1;
+        for (int64_t s = r->back_shift; s >= 0; s -= BITS) cap *= B;
+        if (r->back_size >= cap) {
+            rbt_node_t* grown = node_alloc();
+            yona_rt_rc_inc(r->back_root);
+            grown->children[0] = (int64_t)(intptr_t)r->back_root;
+            r->back_root = trie_push_leaf(grown, r->back_shift + BITS,
+                                           r->back_size, leaf);
+            r->back_shift += BITS;
+        } else {
+            r->back_root = trie_push_leaf(r->back_root, r->back_shift,
+                                           r->back_size, leaf);
+        }
+    }
+    r->back_size += B;
+}
+
+/* ===== Head chain helpers ===== */
+
+static int64_t chain_get(rbt_chunk_t* chunk, int64_t index) {
+    while (chunk) {
+        if (index < chunk->count)
+            return chunk->elems[chunk->offset + index];
+        index -= chunk->count;
+        chunk = chunk->next;
+    }
+    return 0;
 }
 
 /* ===== Public API ===== */
 
 int64_t* yona_rt_seq_alloc(int64_t count) {
-    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ, (SEQ_HDR_SIZE + count) * sizeof(int64_t));
+    int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ,
+                                       (SEQ_HDR_SIZE + count) * sizeof(int64_t));
     seq[0] = count;
-    seq[1] = 0; /* heap_flag */
+    seq[1] = 0;
     return seq;
 }
 
 void yona_rt_seq_set_heap(int64_t* seq, int64_t flag) {
-    seq[1] = flag;
+    if (is_rbt(seq))
+        ((rbt_t*)seq)->heap_flag = flag;
+    else
+        seq[1] = flag;
 }
 
-int64_t yona_rt_seq_length(int64_t* seq) {
-    if (is_chunked(seq)) return ((yona_chunk_t*)seq)->total_length;
-    return seq[0];
-}
-
-int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    if (!is_chunked(seq)) return seq[SEQ_HDR_SIZE + index];
-    yona_chunk_t* c = (yona_chunk_t*)seq;
-    while (c) {
-        if (index < c->count) return c->elems[c->offset + index];
-        index -= c->count;
-        c = c->next;
-    }
-    return 0;
-}
-
-void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
-    /* Only for flat seqs during construction */
-    seq[SEQ_HDR_SIZE + index] = value;
-}
+int64_t yona_rt_seq_length(int64_t* seq) { return seq[0]; }
 
 int64_t yona_rt_seq_is_empty(int64_t* seq) {
     if (!seq) return 1;
-    if (is_chunked(seq)) return ((yona_chunk_t*)seq)->total_length == 0;
     return seq[0] == 0;
 }
 
+int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
+    if (!is_rbt(seq)) return seq[SEQ_HDR_SIZE + index];
+    rbt_t* r = (rbt_t*)seq;
+    if (index < r->head_cnt)
+        return r->head_buf[r->head_off + index];
+    index -= r->head_cnt;
+    if (index < r->head_chain_len)
+        return chain_get(r->head_next, index);
+    index -= r->head_chain_len;
+    int64_t ta = trie_active(r);
+    if (index < ta)
+        return trie_get(r->back_root, r->back_shift, r->back_off + index);
+    index -= ta;
+    return r->tail_buf[index];
+}
+
+void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
+    seq[SEQ_HDR_SIZE + index] = value;
+}
+
 int64_t yona_rt_seq_head(int64_t* seq) {
-    if (is_chunked(seq)) {
-        yona_chunk_t* c = (yona_chunk_t*)seq;
-        return c->elems[c->offset];
-    }
+    if (is_rbt(seq)) return ((rbt_t*)seq)->head_buf[((rbt_t*)seq)->head_off];
     return seq[SEQ_HDR_SIZE];
 }
 
-/* Cons (prepend) — O(1) */
-int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
-    int64_t len = yona_rt_seq_length(seq);
+/* ===== Flat-to-RBT promotion ===== */
 
-    if (is_chunked(seq)) {
-        yona_chunk_t* old = (yona_chunk_t*)seq;
-        int64_t* hdr = ((int64_t*)old) - 2;
-
-        /* Unique owner with space before offset — write in place */
-        if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1 && old->offset > 0) {
-            old->offset--;
-            old->count++;
-            old->total_length++;
-            old->elems[old->offset] = elem;
-            return (int64_t*)old;
-        }
-
-        /* Room in chunk (offset > 0 or count < CHUNK_SIZE) — path-copy */
-        if (old->offset > 0) {
-            yona_chunk_t* c = chunk_alloc(old->count + 1, len + 1);
-            c->offset = old->offset - 1;
-            c->elems[c->offset] = elem;
-            memcpy(c->elems + old->offset, old->elems + old->offset,
-                   (size_t)old->count * sizeof(int64_t));
-            c->next = old->next;
-            if (c->next) yona_rt_rc_inc(c->next);
-            return (int64_t*)c;
-        }
-
-        /* No room — create new chunk with elem at the END (offset=31) so
-         * future cons operations can prepend without copying */
-        yona_chunk_t* c = chunk_alloc(1, len + 1);
-        c->offset = CHUNK_SIZE - 1;
-        c->elems[CHUNK_SIZE - 1] = elem;
-        c->next = old;
-        yona_rt_rc_inc(old);
-        return (int64_t*)c;
-    }
-
-    /* Flat seq: if small, stay flat. Unique-owner realloc only for
-     * non-pooled blocks (pool blocks can't be realloc'd). */
-    if (len < CHUNK_SIZE) {
-        int64_t* header = seq - RC_HEADER_SIZE;
-        int64_t rc_val = __atomic_load_n(&header[0], __ATOMIC_ACQUIRE);
-        int pool_cls = DECODE_POOL_CLASS(header[1]);
-        if (rc_val == 1 && rc_val != RC_ARENA_SENTINEL && pool_cls < 0) {
-            /* Non-pooled unique owner: realloc in place */
-            size_t new_payload = (SEQ_HDR_SIZE + len + 1) * sizeof(int64_t);
-            int64_t* new_hdr = (int64_t*)realloc(header, RC_HEADER_SIZE * sizeof(int64_t) + new_payload);
-            int64_t* ns = new_hdr + RC_HEADER_SIZE;
-            memmove(ns + SEQ_HDR_SIZE + 1, ns + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
-            ns[0] = len + 1;
-            ns[SEQ_HDR_SIZE] = elem;
-            return ns;
-        }
-        int64_t* result = yona_rt_seq_alloc(len + 1);
-        result[1] = seq[1]; /* copy heap_flag */
-        result[SEQ_HDR_SIZE] = elem;
-        memcpy(result + SEQ_HDR_SIZE + 1, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
-        return result;
-    }
-
-    /* Flat seq at CHUNK_SIZE: convert to chunked.
-     * Old flat becomes a body chunk, elem goes in a head chunk at high offset
-     * (so future cons can prepend without copying). */
-    yona_chunk_t* body = chunk_alloc(len, len);
-    memcpy(body->elems, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
-
-    yona_chunk_t* head = chunk_alloc(1, len + 1);
-    head->offset = CHUNK_SIZE - 1;
-    head->elems[CHUNK_SIZE - 1] = elem;
-    head->next = body;
-
-    return (int64_t*)head;
+static rbt_t* flat_to_rbt_for_cons(int64_t* flat, int64_t elem) {
+    int64_t len = flat[0], hf = flat[1];
+    rbt_t* r = rbt_alloc_cons();
+    r->length = len + 1;
+    r->heap_flag = hf;
+    r->head_off = B - 1;
+    r->head_cnt = 1;
+    r->head_buf[B - 1] = elem;
+    rbt_chunk_t* c = chunk_alloc();
+    c->count = len;
+    memcpy(c->elems, flat + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
+    r->head_next = c;
+    r->head_chain_len = len;
+    return r;
 }
 
-/* Tail — O(1) */
+static rbt_t* flat_to_rbt_for_snoc(int64_t* flat, int64_t elem) {
+    int64_t len = flat[0], hf = flat[1];
+    rbt_t* r = rbt_alloc_zeroed();
+    r->length = len + 1;
+    r->heap_flag = hf;
+    if (len <= B) {
+        r->head_off = 0;
+        r->head_cnt = len;
+        memcpy(r->head_buf, flat + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
+    } else {
+        r->head_off = 0;
+        r->head_cnt = B;
+        memcpy(r->head_buf, flat + SEQ_HDR_SIZE, B * sizeof(int64_t));
+        rbt_chunk_t* c = chunk_alloc();
+        c->count = len - B;
+        memcpy(c->elems, flat + SEQ_HDR_SIZE + B, (size_t)(len - B) * sizeof(int64_t));
+        r->head_next = c;
+        r->head_chain_len = len - B;
+    }
+    r->tail_cnt = 1;
+    r->tail_buf[0] = elem;
+    return r;
+}
+
+/* ===== Cons (prepend) — O(1) amortized ===== */
+
+int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
+    int64_t len = seq[0];
+
+    if (!is_rbt(seq)) {
+        if (len < B) {
+            int64_t* hdr = seq - 2;
+            int64_t rc = __atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE);
+            int pcls = (int)((hdr[1] >> 8) - 1);
+            if (rc == 1 && rc != RC_ARENA_SENTINEL && pcls < 0) {
+                size_t np = (SEQ_HDR_SIZE + len + 1) * sizeof(int64_t);
+                int64_t* nh = (int64_t*)realloc(hdr, 16 + np);
+                int64_t* ns = nh + 2;
+                memmove(ns + SEQ_HDR_SIZE + 1, ns + SEQ_HDR_SIZE,
+                        (size_t)len * sizeof(int64_t));
+                ns[0] = len + 1;
+                ns[SEQ_HDR_SIZE] = elem;
+                return ns;
+            }
+            int64_t* res = yona_rt_seq_alloc(len + 1);
+            res[1] = seq[1];
+            res[SEQ_HDR_SIZE] = elem;
+            memcpy(res + SEQ_HDR_SIZE + 1, seq + SEQ_HDR_SIZE,
+                   (size_t)len * sizeof(int64_t));
+            return res;
+        }
+        return (int64_t*)flat_to_rbt_for_cons(seq, elem);
+    }
+
+    rbt_t* r = (rbt_t*)seq;
+
+    if (r->head_off > 0) {
+        if (is_unique(r)) {
+            r->head_off--;
+            r->head_cnt++;
+            r->length++;
+            r->head_buf[r->head_off] = elem;
+            return (int64_t*)r;
+        }
+        rbt_t* nr = rbt_clone(r);
+        nr->head_off--;
+        nr->head_cnt++;
+        nr->length++;
+        nr->head_buf[nr->head_off] = elem;
+        return (int64_t*)nr;
+    }
+
+    /* Head_buf full: chain it into head_next */
+    rbt_chunk_t* c = chunk_alloc();
+    c->count = r->head_cnt;
+    memcpy(c->elems, r->head_buf, (size_t)r->head_cnt * sizeof(int64_t));
+    c->next = r->head_next;
+    if (r->head_next) yona_rt_rc_inc(r->head_next);
+
+    if (is_unique(r)) {
+        r->head_next = c;
+        r->head_chain_len += r->head_cnt;
+        r->head_off = B - 1;
+        r->head_cnt = 1;
+        r->head_buf[B - 1] = elem;
+        r->length++;
+        return (int64_t*)r;
+    }
+    rbt_t* nr = rbt_copy_body(r);
+    nr->length = r->length + 1;
+    nr->head_off = B - 1;
+    nr->head_cnt = 1;
+    nr->head_buf[B - 1] = elem;
+    nr->head_next = c;
+    nr->head_chain_len = r->head_chain_len + r->head_cnt;
+    return (int64_t*)nr;
+}
+
+/* ===== Tail — O(1) amortized ===== */
+
 int64_t* yona_rt_seq_tail(int64_t* seq) {
-    int64_t len = yona_rt_seq_length(seq);
+    int64_t len = seq[0];
     if (len <= 1) return yona_rt_seq_alloc(0);
 
-    if (is_chunked(seq)) {
-        yona_chunk_t* old = (yona_chunk_t*)seq;
-        int64_t* hdr = ((int64_t*)old) - 2;
-
-        if (old->count == 1) {
-            /* Last element in this chunk — tail is the next chunk */
-            if (old->next) {
-                yona_rt_rc_inc(old->next);
-                return (int64_t*)old->next;
+    if (!is_rbt(seq)) {
+        if (len <= B) {
+            int64_t* hdr = seq - 2;
+            if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1
+                && hdr[0] != RC_ARENA_SENTINEL) {
+                memmove(seq + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1,
+                        (size_t)(len - 1) * sizeof(int64_t));
+                seq[0] = len - 1;
+                return seq;
             }
-            return yona_rt_seq_alloc(0);
+            int64_t* res = yona_rt_seq_alloc(len - 1);
+            res[1] = seq[1];
+            memcpy(res + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1,
+                   (size_t)(len - 1) * sizeof(int64_t));
+            return res;
         }
-
-        /* Unique owner — just bump offset */
-        if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1) {
-            old->offset++;
-            old->count--;
-            old->total_length--;
-            return (int64_t*)old;
+        /* Large flat seq (>B, from generator): promote to rbt minus first element */
+        int64_t hf = seq[1];
+        rbt_t* r = rbt_alloc_cons();
+        r->length = len - 1;
+        r->heap_flag = hf;
+        int64_t remain = len - 1;
+        if (remain <= B) {
+            r->head_off = 0;
+            r->head_cnt = remain;
+            memcpy(r->head_buf, seq + SEQ_HDR_SIZE + 1,
+                   (size_t)remain * sizeof(int64_t));
+        } else {
+            r->head_off = 0;
+            r->head_cnt = B;
+            memcpy(r->head_buf, seq + SEQ_HDR_SIZE + 1, B * sizeof(int64_t));
+            rbt_chunk_t* prev = NULL;
+            rbt_chunk_t* first = NULL;
+            int64_t pos = B + 1;
+            int64_t chain_total = 0;
+            while (pos < len) {
+                rbt_chunk_t* c = chunk_alloc();
+                int64_t n = len - pos;
+                if (n > B) n = B;
+                c->count = n;
+                memcpy(c->elems, seq + SEQ_HDR_SIZE + pos, (size_t)n * sizeof(int64_t));
+                chain_total += n;
+                if (!first) first = c;
+                if (prev) prev->next = c;
+                prev = c;
+                pos += n;
+            }
+            r->head_next = first;
+            r->head_chain_len = chain_total;
         }
+        return (int64_t*)r;
+    }
 
-        /* Shared — create new chunk header with adjusted offset */
-        yona_chunk_t* c = chunk_alloc(old->count - 1, len - 1);
-        c->offset = old->offset + 1;
-        memcpy(c->elems, old->elems, (size_t)(c->offset + c->count) * sizeof(int64_t));
-        c->next = old->next;
+    rbt_t* r = (rbt_t*)seq;
+
+    if (r->head_cnt > 1) {
+        if (is_unique(r)) {
+            r->head_off++;
+            r->head_cnt--;
+            r->length--;
+            return (int64_t*)r;
+        }
+        rbt_t* nr = rbt_clone(r);
+        nr->head_off++;
+        nr->head_cnt--;
+        nr->length--;
+        return (int64_t*)nr;
+    }
+
+    /* head_cnt == 1: exhausted. Pull from head_next chain. */
+    if (r->head_next) {
+        rbt_chunk_t* c = r->head_next;
+        if (is_unique(r)) {
+            yona_rt_rc_inc(c);
+            r->head_off = c->offset;
+            r->head_cnt = c->count;
+            memcpy(r->head_buf, c->elems, B * sizeof(int64_t));
+            r->head_chain_len -= c->count;
+            r->head_next = c->next;
+            if (c->next) yona_rt_rc_inc(c->next);
+            yona_rt_rc_dec(c);
+            r->length--;
+            return (int64_t*)r;
+        }
+        rbt_t* nr = rbt_copy_body(r);
+        nr->length = r->length - 1;
+        nr->head_off = c->offset;
+        nr->head_cnt = c->count;
+        memcpy(nr->head_buf, c->elems, B * sizeof(int64_t));
+        nr->head_next = c->next;
         if (c->next) yona_rt_rc_inc(c->next);
-        return (int64_t*)c;
+        nr->head_chain_len = r->head_chain_len - c->count;
+        return (int64_t*)nr;
     }
 
-    /* Flat seq */
-    int64_t* header = seq - 2;
-    if (__atomic_load_n(&header[0], __ATOMIC_ACQUIRE) == 1 && header[0] != RC_ARENA_SENTINEL) {
-        memmove(seq + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1, (size_t)(len - 1) * sizeof(int64_t));
-        seq[0] = len - 1;
-        return seq;
+    /* Head chain empty. Try back trie (using back_off to skip consumed). */
+    int64_t ta = trie_active(r);
+    if (ta > 0) {
+        rbt_t* nr = is_unique(r) ? r : rbt_clone(r);
+        int64_t n = (ta >= B) ? B : ta;
+        nr->head_off = 0;
+        nr->head_cnt = n;
+        for (int64_t i = 0; i < n; i++)
+            nr->head_buf[i] = trie_get(r->back_root, r->back_shift, r->back_off + i);
+        nr->back_off += n;
+        nr->length--;
+        return (int64_t*)nr;
     }
-    int64_t* result = yona_rt_seq_alloc(len - 1);
-    result[1] = seq[1]; /* copy heap_flag */
-    memcpy(result + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1, (size_t)(len - 1) * sizeof(int64_t));
-    return result;
+
+    /* Back trie empty. Only tail_buf remains. */
+    if (r->tail_cnt == 0) return yona_rt_seq_alloc(0);
+    int64_t new_len = r->tail_cnt;
+    int64_t* res = yona_rt_seq_alloc(new_len);
+    res[1] = r->heap_flag;
+    memcpy(res + SEQ_HDR_SIZE, r->tail_buf, (size_t)new_len * sizeof(int64_t));
+    return res;
 }
 
-/* Join (concat) — O(n) */
+/* ===== Snoc (append) — O(1) amortized ===== */
+
+int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem) {
+    int64_t len = seq[0];
+
+    if (!is_rbt(seq)) {
+        if (len < B) {
+            int64_t* res = yona_rt_seq_alloc(len + 1);
+            memcpy(res + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE,
+                   (size_t)len * sizeof(int64_t));
+            res[SEQ_HDR_SIZE + len] = elem;
+            res[1] = seq[1];
+            return res;
+        }
+        return (int64_t*)flat_to_rbt_for_snoc(seq, elem);
+    }
+
+    rbt_t* r = (rbt_t*)seq;
+
+    if (r->tail_cnt < B) {
+        if (is_unique(r)) {
+            r->tail_buf[r->tail_cnt++] = elem;
+            r->length++;
+            return (int64_t*)r;
+        }
+        rbt_t* nr = rbt_clone(r);
+        nr->tail_buf[nr->tail_cnt++] = elem;
+        nr->length++;
+        return (int64_t*)nr;
+    }
+
+    /* Tail buf full: push into back trie */
+    if (is_unique(r)) {
+        void* old_root = r->back_root;
+        trie_push_buf(r, r->tail_buf);
+        if (old_root && old_root != r->back_root)
+            yona_rt_rc_dec(old_root);
+        r->tail_cnt = 1;
+        r->tail_buf[0] = elem;
+        r->length++;
+        return (int64_t*)r;
+    }
+    rbt_t* nr = rbt_clone(r);
+    trie_push_buf(nr, r->tail_buf);
+    nr->tail_cnt = 1;
+    nr->tail_buf[0] = elem;
+    nr->length++;
+    return (int64_t*)nr;
+}
+
+/* ===== Join (concat) — O(n) ===== */
+
 int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
-    int64_t la = yona_rt_seq_length(a);
-    int64_t lb = yona_rt_seq_length(b);
+    int64_t la = yona_rt_seq_length(a), lb = yona_rt_seq_length(b);
     if (la == 0) return b;
     if (lb == 0) return a;
-
-    /* Flatten both to flat array — simplest correct approach */
-    int64_t* result = yona_rt_seq_alloc(la + lb);
-    for (int64_t i = 0; i < la; i++) result[SEQ_HDR_SIZE + i] = yona_rt_seq_get(a, i);
-    for (int64_t i = 0; i < lb; i++) result[SEQ_HDR_SIZE + la + i] = yona_rt_seq_get(b, i);
-    return result;
+    int64_t* res = yona_rt_seq_alloc(la + lb);
+    /* Propagate heap_flag from either operand */
+    int64_t hf_a = is_rbt(a) ? ((rbt_t*)a)->heap_flag : a[1];
+    int64_t hf_b = is_rbt(b) ? ((rbt_t*)b)->heap_flag : b[1];
+    res[1] = hf_a | hf_b;
+    for (int64_t i = 0; i < la; i++)
+        res[SEQ_HDR_SIZE + i] = yona_rt_seq_get(a, i);
+    for (int64_t i = 0; i < lb; i++)
+        res[SEQ_HDR_SIZE + la + i] = yona_rt_seq_get(b, i);
+    return res;
 }
 
-/* Snoc (append) — O(n) general, O(1) for flat unique owner */
-int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem) {
-    int64_t len = yona_rt_seq_length(seq);
+/* ===== Print ===== */
 
-    if (!is_chunked(seq) && len < CHUNK_SIZE) {
-        /* Flat seq with room: allocate new with one more element */
-        int64_t* result = yona_rt_seq_alloc(len + 1);
-        memcpy(result + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
-        result[SEQ_HDR_SIZE + len] = elem;
-        result[1] = seq[1]; /* copy heap_flag */
-        return result;
-    }
-
-    /* General case: join seq with [elem] */
-    int64_t* single = yona_rt_seq_alloc(1);
-    single[SEQ_HDR_SIZE] = elem;
-    return yona_rt_seq_join(seq, single);
-}
-
-/* Print */
 void yona_rt_print_seq(int64_t* seq) {
     int64_t len = yona_rt_seq_length(seq);
     printf("[");

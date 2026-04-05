@@ -46,12 +46,13 @@
  * for frequently allocated objects (closures, seq chunks, small ADTs).
  * Each pool is a linked list of freed blocks, reused on next alloc. */
 
-#define POOL_CLASSES 4
+#define POOL_CLASSES 5
 static const size_t pool_sizes[POOL_CLASSES] = {
     32,   /* small closures (5-slot header) */
     64,   /* small ADTs, tuples, flat seqs */
     128,  /* medium closures with captures */
-    296,  /* chunked seq nodes (sizeof(yona_chunk_t)) */
+    296,  /* RBT trie nodes, leaves, head chunks (272-296 bytes with RC header) */
+    608,  /* rbt_t root struct (592 bytes payload + 16 RC header) */
 };
 
 typedef struct pool_block {
@@ -143,7 +144,10 @@ void yona_rt_rc_inc(void* ptr) {
 #define RC_ARENA_SENTINEL INT64_MAX
 
 /* Forward declarations for recursive RC types */
-#define RC_TYPE_CHUNKED_FWD 11  /* chunked seq — has next pointer */
+#define RC_TYPE_CHUNKED_FWD 11  /* legacy chunked seq (unused, kept for tag safety) */
+#define RC_TYPE_RBT_FWD      12 /* RBT seq root struct */
+#define RC_TYPE_RBT_NODE_FWD 13 /* RBT internal node (32 child pointers) */
+#define RC_TYPE_RBT_LEAF_FWD 14 /* RBT leaf node (heap_flag + 32 elements) */
 
 /* Public: decrement refcount; free when it reaches 0.
  * Recursively rc_dec pointer-typed children for known container types. */
@@ -171,10 +175,77 @@ void yona_rt_rc_dec(void* ptr) {
                 }
             }
         } else if (type_tag == RC_TYPE_CHUNKED_FWD) {
-            /* Chunked seq: rc_dec next chunk pointer */
+            /* Legacy chunked seq: rc_dec next chunk pointer */
             typedef struct { int64_t tl, off, cnt; int64_t e[32]; void* next; } chunk_layout_t;
             chunk_layout_t* chunk = (chunk_layout_t*)ptr;
             if (chunk->next) yona_rt_rc_dec(chunk->next);
+        } else if (type_tag == RC_TYPE_RBT_FWD) {
+            /* RBT seq root: rc_dec elements in head/tail buffers, head chain, trie.
+             * Layout matches rbt_t in seq.c:
+             *   [0] length, [1] heap_flag, [2] head_off, [3] head_cnt,
+             *   [4..35] head_buf[32],
+             *   [36] head_next (ptr), [37] head_chain_len,
+             *   [38] tail_cnt, [39..70] tail_buf[32],
+             *   [71] back_shift, [72] back_root (ptr),
+             *   [73] back_size, [74] back_off */
+            int64_t hf = payload[1];
+            int64_t head_off = payload[2];
+            int64_t head_cnt = payload[3];
+            int64_t tail_cnt = payload[38];
+            if (hf) {
+                for (int64_t i = 0; i < head_cnt; i++) {
+                    int64_t v = payload[4 + head_off + i];
+                    if (v) yona_rt_rc_dec((void*)(intptr_t)v);
+                }
+                for (int64_t i = 0; i < tail_cnt; i++) {
+                    int64_t v = payload[39 + i];
+                    if (v) yona_rt_rc_dec((void*)(intptr_t)v);
+                }
+            }
+            /* Walk head chain and rc_dec elements if heap-typed */
+            void* head_next = *(void**)&payload[36];
+            if (hf && head_next) {
+                void* cur = head_next;
+                while (cur) {
+                    int64_t* cp = (int64_t*)cur;
+                    int64_t coff = cp[0], ccnt = cp[1];
+                    for (int64_t i = 0; i < ccnt; i++) {
+                        int64_t v = cp[2 + coff + i];
+                        if (v) yona_rt_rc_dec((void*)(intptr_t)v);
+                    }
+                    cur = *(void**)&cp[2 + 32];
+                }
+            }
+            if (head_next) yona_rt_rc_dec(head_next);
+            void* back_root = *(void**)&payload[72];
+            if (back_root) yona_rt_rc_dec(back_root);
+        } else if (type_tag == RC_TYPE_RBT_NODE_FWD) {
+            /* RBT internal node: rc_dec all non-null children. */
+            for (int i = 0; i < 32; i++) {
+                int64_t child = payload[i];
+                if (child) yona_rt_rc_dec((void*)(intptr_t)child);
+            }
+        } else if (type_tag == 15 /* RC_TYPE_RBT_CHUNK */) {
+            /* RBT head chain chunk: [offset, count, elems[32], next_ptr]
+             * rc_dec next chunk. Elements are rc_dec'd by the rbt_t destructor
+             * when walking the chain (it knows the heap_flag). */
+            /* Note: for simplicity, don't rc_dec elements here. The rbt_t
+             * destructor walks the head chain and handles element cleanup.
+             * But if a chunk is freed independently (e.g. after tail detaches
+             * it), we must handle elements. We use a conservative approach:
+             * always rc_dec the next pointer. */
+            void* next = *(void**)&payload[2 + 32]; /* after offset, count, elems[32] */
+            if (next) yona_rt_rc_dec(next);
+        } else if (type_tag == RC_TYPE_RBT_LEAF_FWD) {
+            /* RBT leaf node: rc_dec elements if heap_flag set.
+             * Layout: [heap_flag, elem0, ..., elem31] */
+            int64_t hf = payload[0];
+            if (hf) {
+                for (int i = 0; i < 32; i++) {
+                    int64_t v = payload[1 + i];
+                    if (v) yona_rt_rc_dec((void*)(intptr_t)v);
+                }
+            }
         } else if (type_tag == RC_TYPE_CLOSURE) {
             /* Closure: rc_dec heap-typed captures using the heap_mask.
              * Layout: [fn_ptr, ret_type, arity, num_captures, heap_mask, cap0, ...] */

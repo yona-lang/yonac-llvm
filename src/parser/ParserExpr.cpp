@@ -415,10 +415,8 @@ unique_ptr<ExprNode> ParserImpl::parse_prefix_expr() {
                 }
 
                 expect(TokenType::YRBRACKET, "Expected ']' after range");
-                std::cerr << "DEBUG: Creating RangeSequenceExpr" << std::endl;
                 auto range_expr = make_unique<RangeSequenceExpr>(loc,
                     first.release(), end.release(), step);
-                std::cerr << "DEBUG: RangeSequenceExpr created" << std::endl;
                 return range_expr;
             } else {
                 vector<ExprNode*> elements;

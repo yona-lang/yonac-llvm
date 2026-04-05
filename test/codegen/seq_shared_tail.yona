@@ -1,0 +1,5 @@
+let nums = [1, 2, 3, 4, 5] in
+let a = case nums of [h|_] -> h end in
+let b = case nums of [_|t] -> case t of [h|_] -> h end end in
+let c = case nums of [h|_] -> h end in
+(a, b, c)

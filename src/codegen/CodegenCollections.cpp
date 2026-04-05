@@ -295,104 +295,73 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         builder_->SetInsertPoint(done_bb);
         return {result, CType::SEQ};
     } else {
-        // Guard case: two-pass
-        // Pass 1: count matching elements
-        auto* count_loop_bb = BasicBlock::Create(*context_, "gen.count.loop", func);
-        auto* count_body_bb = BasicBlock::Create(*context_, "gen.count.body", func);
-        auto* count_inc_bb = BasicBlock::Create(*context_, "gen.count.inc", func);
-        auto* count_next_bb = BasicBlock::Create(*context_, "gen.count.next", func);
-        auto* alloc_bb = BasicBlock::Create(*context_, "gen.alloc", func);
-
+        // Guard case: single-pass indexed with over-allocation.
+        // Indexed get is O(1) for flat seqs, O(n/32) for chunked — much
+        // better than head/tail which is O(n) per call on flat seqs due
+        // to memmove. Over-allocate at source length, fill matching
+        // elements, then adjust count.
         auto* zero = ConstantInt::get(i64_ty, 0);
         auto* one = ConstantInt::get(i64_ty, 1);
-        builder_->CreateBr(count_loop_bb);
 
-        builder_->SetInsertPoint(count_loop_bb);
-        auto* ci_phi = builder_->CreatePHI(i64_ty, 2, "ci");
-        auto* cnt_phi = builder_->CreatePHI(i64_ty, 2, "cnt");
-        ci_phi->addIncoming(zero, count_loop_bb->getSinglePredecessor());
-        cnt_phi->addIncoming(zero, count_loop_bb->getSinglePredecessor());
-        auto* c_cond = builder_->CreateICmpSLT(ci_phi, src_len);
-        builder_->CreateCondBr(c_cond, count_body_bb, alloc_bb);
+        auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "gen_result");
 
-        builder_->SetInsertPoint(count_body_bb);
-        auto* c_elem = builder_->CreateCall(rt_seq_get_, {src_ptr, ci_phi}, "c_elem");
+        auto* loop_bb = BasicBlock::Create(*context_, "gen.loop", func);
+        auto* body_bb = BasicBlock::Create(*context_, "gen.body", func);
+        auto* guard_bb = BasicBlock::Create(*context_, "gen.guard", func);
+        auto* next_bb = BasicBlock::Create(*context_, "gen.next", func);
+        auto* done_bb = BasicBlock::Create(*context_, "gen.done", func);
+
+        builder_->CreateBr(loop_bb);
+
+        builder_->SetInsertPoint(loop_bb);
+        auto* i_phi = builder_->CreatePHI(i64_ty, 2, "i");
+        auto* wi_phi = builder_->CreatePHI(i64_ty, 2, "wi");
+        i_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
+        wi_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
+
+        auto* cond = builder_->CreateICmpSLT(i_phi, src_len);
+        builder_->CreateCondBr(cond, body_bb, done_bb);
+
+        builder_->SetInsertPoint(body_bb);
+        auto* elem = builder_->CreateCall(rt_seq_get_, {src_ptr, i_phi}, "elem");
+
         auto saved = named_values_;
-        named_values_[var_name] = {c_elem, CType::INT};
+        named_values_[var_name] = {elem, CType::INT};
         auto guard_val = codegen(ext->condition);
-        named_values_ = saved;
-        // Guard should be bool (i1) or int (i64 != 0)
         Value* guard_bool = guard_val.val;
         if (guard_bool->getType() == i64_ty)
             guard_bool = builder_->CreateICmpNE(guard_bool, zero);
-        builder_->CreateCondBr(guard_bool, count_inc_bb, count_next_bb);
+        else if (guard_bool->getType() != LType::getInt1Ty(*context_))
+            guard_bool = builder_->CreateICmpNE(
+                builder_->CreateZExtOrTrunc(guard_bool, i64_ty), zero);
+        builder_->CreateCondBr(guard_bool, guard_bb, next_bb);
 
-        builder_->SetInsertPoint(count_inc_bb);
-        auto* cnt_inc = builder_->CreateAdd(cnt_phi, one);
-        builder_->CreateBr(count_next_bb);
-
-        builder_->SetInsertPoint(count_next_bb);
-        auto* cnt_merged = builder_->CreatePHI(i64_ty, 2, "cnt.m");
-        cnt_merged->addIncoming(cnt_phi, count_body_bb);
-        cnt_merged->addIncoming(cnt_inc, count_inc_bb);
-        auto* ci_next = builder_->CreateAdd(ci_phi, one);
-        ci_phi->addIncoming(ci_next, count_next_bb);
-        cnt_phi->addIncoming(cnt_merged, count_next_bb);
-        builder_->CreateBr(count_loop_bb);
-
-        // Pass 2: allocate and fill
-        builder_->SetInsertPoint(alloc_bb);
-        auto* result = builder_->CreateCall(rt_seq_alloc_, {cnt_phi}, "gen_result");
-
-        auto* fill_loop_bb = BasicBlock::Create(*context_, "gen.fill.loop", func);
-        auto* fill_body_bb = BasicBlock::Create(*context_, "gen.fill.body", func);
-        auto* fill_store_bb = BasicBlock::Create(*context_, "gen.fill.store", func);
-        auto* fill_next_bb = BasicBlock::Create(*context_, "gen.fill.next", func);
-        auto* done_bb = BasicBlock::Create(*context_, "gen.done", func);
-
-        builder_->CreateBr(fill_loop_bb);
-
-        builder_->SetInsertPoint(fill_loop_bb);
-        auto* fi_phi = builder_->CreatePHI(i64_ty, 2, "fi");
-        auto* ri_phi = builder_->CreatePHI(i64_ty, 2, "ri");
-        fi_phi->addIncoming(zero, alloc_bb);
-        ri_phi->addIncoming(zero, alloc_bb);
-        auto* f_cond = builder_->CreateICmpSLT(fi_phi, src_len);
-        builder_->CreateCondBr(f_cond, fill_body_bb, done_bb);
-
-        builder_->SetInsertPoint(fill_body_bb);
-        auto* f_elem = builder_->CreateCall(rt_seq_get_, {src_ptr, fi_phi}, "f_elem");
-        named_values_[var_name] = {f_elem, CType::INT};
-        auto guard_val2 = codegen(ext->condition);
-        Value* guard_bool2 = guard_val2.val;
-        if (guard_bool2->getType() == i64_ty)
-            guard_bool2 = builder_->CreateICmpNE(guard_bool2, zero);
-        builder_->CreateCondBr(guard_bool2, fill_store_bb, fill_next_bb);
-
-        builder_->SetInsertPoint(fill_store_bb);
-        named_values_[var_name] = {f_elem, CType::INT};
+        builder_->SetInsertPoint(guard_bb);
+        named_values_[var_name] = {elem, CType::INT};
         auto body_val = codegen(node->reducerExpr);
         Value* store_val = body_val.val;
         if (store_val->getType()->isPointerTy())
             store_val = builder_->CreatePtrToInt(store_val, i64_ty);
         else if (store_val->getType()->isDoubleTy())
             store_val = builder_->CreateBitCast(store_val, i64_ty);
-        builder_->CreateCall(rt_seq_set_, {result, ri_phi, store_val});
-        auto* ri_next = builder_->CreateAdd(ri_phi, one);
-        builder_->CreateBr(fill_next_bb);
+        builder_->CreateCall(rt_seq_set_, {result, wi_phi, store_val});
+        auto* wi_inc = builder_->CreateAdd(wi_phi, one, "wi.inc");
+        builder_->CreateBr(next_bb);
 
-        builder_->SetInsertPoint(fill_next_bb);
-        auto* ri_merged = builder_->CreatePHI(i64_ty, 2, "ri.m");
-        ri_merged->addIncoming(ri_phi, fill_body_bb);
-        ri_merged->addIncoming(ri_next, fill_store_bb);
-        auto* fi_next = builder_->CreateAdd(fi_phi, one);
-        fi_phi->addIncoming(fi_next, fill_next_bb);
-        ri_phi->addIncoming(ri_merged, fill_next_bb);
-        builder_->CreateBr(fill_loop_bb);
+        builder_->SetInsertPoint(next_bb);
+        auto* wi_merged = builder_->CreatePHI(i64_ty, 2, "wi.m");
+        wi_merged->addIncoming(wi_phi, body_bb);
+        wi_merged->addIncoming(wi_inc, guard_bb);
+        auto* i_next = builder_->CreateAdd(i_phi, one);
+        i_phi->addIncoming(i_next, next_bb);
+        wi_phi->addIncoming(wi_merged, next_bb);
+        builder_->CreateBr(loop_bb);
 
         named_values_ = saved;
 
+        // Adjust count to actual number of matches (seq[0] = count)
         builder_->SetInsertPoint(done_bb);
+        builder_->CreateStore(wi_phi, result);
         return {result, CType::SEQ};
     }
 }
@@ -421,8 +390,8 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     std::string var_name = extractor_var_name(node->collectionExtractor);
     auto* func = builder_->GetInsertBlock()->getParent();
     auto* zero = ConstantInt::get(i64_ty, 0);
-    auto* one = ConstantInt::get(i64_ty, 1);
 
+    auto* one = ConstantInt::get(i64_ty, 1);
     auto* loop_bb = BasicBlock::Create(*context_, "setgen.loop", func);
     auto* body_bb = BasicBlock::Create(*context_, "setgen.body", func);
     auto* done_bb = BasicBlock::Create(*context_, "setgen.done", func);
@@ -477,11 +446,14 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
     auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "src_len");
-    auto* result = builder_->CreateCall(rt_dict_alloc_, {src_len}, "gen_dict");
 
     std::string var_name = extractor_var_name(node->collectionExtractor);
     auto* func = builder_->GetInsertBlock()->getParent();
     auto* zero = ConstantInt::get(i64_ty, 0);
+
+    // Dict generator uses HAMT dict_put (persistent insert).
+    // Indexed iteration avoids O(n²) memmove cost of head/tail on flat seqs.
+    auto* dict = builder_->CreateCall(rt_dict_alloc_, {zero}, "gen_dict");
     auto* one = ConstantInt::get(i64_ty, 1);
 
     auto* loop_bb = BasicBlock::Create(*context_, "dictgen.loop", func);
@@ -492,7 +464,10 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
 
     builder_->SetInsertPoint(loop_bb);
     auto* i_phi = builder_->CreatePHI(i64_ty, 2, "i");
+    auto* dict_phi = builder_->CreatePHI(ptr_ty, 2, "dict");
     i_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
+    dict_phi->addIncoming(dict, loop_bb->getSinglePredecessor());
+
     auto* cond = builder_->CreateICmpSLT(i_phi, src_len);
     builder_->CreateCondBr(cond, body_bb, done_bb);
 
@@ -512,16 +487,17 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
     if (val_i64->getType()->isPointerTy())
         val_i64 = builder_->CreatePtrToInt(val_i64, i64_ty);
 
-    builder_->CreateCall(rt_dict_set_, {result, i_phi, key_i64, val_i64});
+    auto* new_dict = builder_->CreateCall(rt_dict_put_, {dict_phi, key_i64, val_i64}, "dict.put");
 
     auto* i_next = builder_->CreateAdd(i_phi, one);
     i_phi->addIncoming(i_next, builder_->GetInsertBlock());
+    dict_phi->addIncoming(new_dict, builder_->GetInsertBlock());
     builder_->CreateBr(loop_bb);
 
     named_values_ = saved;
 
     builder_->SetInsertPoint(done_bb);
-    return {result, CType::DICT};
+    return {dict_phi, CType::DICT};
 }
 
 } // namespace yona::compiler::codegen
