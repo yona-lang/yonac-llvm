@@ -585,17 +585,14 @@ void yona_rt_print_symbol(const char* name) {
     printf(":%s", name);
 }
 
-/* ===== Set runtime ===== */
-/* Set: [count, elem0, elem1, ...] — same layout as sequence.         */
-/* Elements are i64 (the element type is known at compile time).       */
-/* Deduplication is the caller's responsibility at construction time.  */
+/* ===== Set runtime — legacy flat array ===== */
+/* Flat set layout: [count, heap_flag, elem0, elem1, ...]
+ * Used only during literal construction. HAMT-based operations below. */
 
-/* Set layout: [count, heap_flag, elem0, elem1, ...]
- * heap_flag: 1 if elements are heap-typed, 0 otherwise */
 int64_t* yona_rt_set_alloc(int64_t count) {
     int64_t* set = (int64_t*)rc_alloc(RC_TYPE_SET, (count + 2) * sizeof(int64_t));
     set[0] = count;
-    set[1] = 0; /* heap_flag — set by codegen */
+    set[1] = 0;
     return set;
 }
 
@@ -605,16 +602,6 @@ void yona_rt_set_set_heap(int64_t* set, int64_t flag) {
 
 void yona_rt_set_put(int64_t* set, int64_t index, int64_t value) {
     set[index + 2] = value;
-}
-
-void yona_rt_print_set(int64_t* set) {
-    int64_t len = set[0];
-    printf("{");
-    for (int64_t i = 0; i < len; i++) {
-        if (i > 0) printf(", ");
-        printf("%ld", set[i + 2]);
-    }
-    printf("}");
 }
 
 /* ===== Dict runtime (HAMT-based) ===== */
@@ -680,6 +667,107 @@ void yona_rt_dict_set(int64_t* dict, int64_t index, int64_t key, int64_t value) 
 
 void yona_rt_print_dict(int64_t* dict) {
     yona_rt_hamt_print((hamt_node_t*)dict);
+}
+
+/* ===== Set runtime — HAMT-based persistent operations ===== */
+/* Uses the same HAMT as dicts. Elements stored as keys with value=1. */
+
+static hamt_node_t* set_ensure_hamt(int64_t* set) {
+    if (!set) return yona_rt_hamt_empty();
+    int64_t* header = set - RC_HEADER_SIZE;
+    int64_t tag = DECODE_TAG(header[1]);
+    if (tag == RC_TYPE_DICT) return (hamt_node_t*)set;
+    hamt_node_t* h = yona_rt_hamt_empty();
+    int64_t count = set[0];
+    for (int64_t i = 0; i < count; i++)
+        h = yona_rt_hamt_put(h, set[i + 2], 1);
+    return h;
+}
+
+int64_t* yona_rt_set_insert(int64_t* set, int64_t elem) {
+    return (int64_t*)yona_rt_hamt_put(set_ensure_hamt(set), elem, 1);
+}
+
+int64_t yona_rt_set_contains(int64_t* set, int64_t elem) {
+    if (!set) return 0;
+    int64_t* header = set - RC_HEADER_SIZE;
+    int64_t tag = DECODE_TAG(header[1]);
+    if (tag == RC_TYPE_DICT) return yona_rt_hamt_contains((hamt_node_t*)set, elem);
+    int64_t count = set[0];
+    for (int64_t i = 0; i < count; i++)
+        if (set[i + 2] == elem) return 1;
+    return 0;
+}
+
+int64_t yona_rt_set_size(int64_t* set) {
+    if (!set) return 0;
+    int64_t* header = set - RC_HEADER_SIZE;
+    int64_t tag = DECODE_TAG(header[1]);
+    if (tag == RC_TYPE_DICT) return yona_rt_hamt_size((hamt_node_t*)set);
+    return set[0];
+}
+
+int64_t* yona_rt_set_elements(int64_t* set) {
+    if (!set) return yona_rt_seq_alloc(0);
+    int64_t* header = set - RC_HEADER_SIZE;
+    int64_t tag = DECODE_TAG(header[1]);
+    if (tag == RC_TYPE_DICT) return yona_rt_hamt_keys((hamt_node_t*)set);
+    int64_t count = set[0];
+    int64_t* seq = yona_rt_seq_alloc(count);
+    for (int64_t i = 0; i < count; i++) seq[2 + i] = set[2 + i];
+    return seq;
+}
+
+int64_t* yona_rt_set_union(int64_t* a, int64_t* b) {
+    hamt_node_t* ha = set_ensure_hamt(a);
+    int64_t* be = yona_rt_set_elements(b);
+    for (int64_t i = 0; i < be[0]; i++)
+        ha = yona_rt_hamt_put(ha, be[2 + i], 1);
+    return (int64_t*)ha;
+}
+
+int64_t* yona_rt_set_intersection(int64_t* a, int64_t* b) {
+    hamt_node_t* r = yona_rt_hamt_empty();
+    int64_t* ae = yona_rt_set_elements(a);
+    for (int64_t i = 0; i < ae[0]; i++) {
+        int64_t e = ae[2 + i];
+        if (yona_rt_set_contains(b, e)) r = yona_rt_hamt_put(r, e, 1);
+    }
+    return (int64_t*)r;
+}
+
+int64_t* yona_rt_set_difference(int64_t* a, int64_t* b) {
+    hamt_node_t* r = yona_rt_hamt_empty();
+    int64_t* ae = yona_rt_set_elements(a);
+    for (int64_t i = 0; i < ae[0]; i++) {
+        int64_t e = ae[2 + i];
+        if (!yona_rt_set_contains(b, e)) r = yona_rt_hamt_put(r, e, 1);
+    }
+    return (int64_t*)r;
+}
+
+void yona_rt_print_set(int64_t* set) {
+    if (!set) { printf("{}"); return; }
+    int64_t* header = set - RC_HEADER_SIZE;
+    int64_t tag = DECODE_TAG(header[1]);
+    if (tag == RC_TYPE_DICT) {
+        int64_t* elems = yona_rt_hamt_keys((hamt_node_t*)set);
+        int64_t len = elems[0];
+        printf("{");
+        for (int64_t i = 0; i < len; i++) {
+            if (i > 0) printf(", ");
+            printf("%ld", elems[2 + i]);
+        }
+        printf("}");
+        return;
+    }
+    int64_t len = set[0];
+    printf("{");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%ld", set[i + 2]);
+    }
+    printf("}");
 }
 
 /* ===== ADT runtime (recursive types) ===== */
@@ -1307,6 +1395,29 @@ int64_t* yona_Std_File__readLines(const char* path) {
     seq[0] = idx; /* actual line count (may differ from initial count) */
     yona_rt_rc_dec(content); /* free the file content */
     return seq;
+}
+
+/* ===== Std\Set — persistent hash set (HAMT-backed) ===== */
+int64_t* yona_Std_Set__insert(int64_t* set, int64_t elem) {
+    return yona_rt_set_insert(set, elem);
+}
+int64_t yona_Std_Set__contains(int64_t* set, int64_t elem) {
+    return yona_rt_set_contains(set, elem);
+}
+int64_t yona_Std_Set__size(int64_t* set) {
+    return yona_rt_set_size(set);
+}
+int64_t* yona_Std_Set__elements(int64_t* set) {
+    return yona_rt_set_elements(set);
+}
+int64_t* yona_Std_Set__union(int64_t* a, int64_t* b) {
+    return yona_rt_set_union(a, b);
+}
+int64_t* yona_Std_Set__intersection(int64_t* a, int64_t* b) {
+    return yona_rt_set_intersection(a, b);
+}
+int64_t* yona_Std_Set__difference(int64_t* a, int64_t* b) {
+    return yona_rt_set_difference(a, b);
 }
 
 /* ===== Std\Dict — persistent hash map (HAMT) ===== */

@@ -125,16 +125,28 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
 TypedValue Codegen::codegen_set(SetExpr* node) {
     set_debug_loc(node->source_context);
     size_t n = node->values.size();
-    auto count = ConstantInt::get(LType::getInt64Ty(*context_), n);
-    auto set = builder_->CreateCall(rt_set_alloc_, {count}, "set");
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    if (n == 0) {
+        /* Empty set: use flat alloc (codegen for {} uses SetExpr) */
+        auto* zero = ConstantInt::get(i64_ty, 0);
+        auto set = builder_->CreateCall(rt_set_alloc_, {zero}, "set");
+        return {set, CType::SET};
+    }
+
+    /* Non-empty set: build via persistent insert (HAMT-backed) */
+    auto* zero = ConstantInt::get(i64_ty, 0);
+    Value* set = builder_->CreateCall(rt_set_alloc_, {zero}, "set");
 
     CType elem_type = CType::INT;
     for (size_t i = 0; i < n; i++) {
         auto tv = codegen(node->values[i]);
         if (!tv) return {};
         if (i == 0) elem_type = tv.type;
-        auto idx = ConstantInt::get(LType::getInt64Ty(*context_), i);
-        builder_->CreateCall(rt_set_put_, {set, idx, tv.val});
+        Value* val = tv.val;
+        if (val->getType()->isPointerTy())
+            val = builder_->CreatePtrToInt(val, i64_ty);
+        set = builder_->CreateCall(rt_set_insert_, {set, val}, "set");
     }
     return {set, CType::SET, {elem_type}};
 }
@@ -396,13 +408,15 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
     auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "src_len");
-    auto* result = builder_->CreateCall(rt_set_alloc_, {src_len}, "gen_set");
 
     std::string var_name = extractor_var_name(node->collectionExtractor);
     auto* func = builder_->GetInsertBlock()->getParent();
     auto* zero = ConstantInt::get(i64_ty, 0);
-
     auto* one = ConstantInt::get(i64_ty, 1);
+
+    /* Build set via persistent insert (HAMT-backed). */
+    auto* empty_set = builder_->CreateCall(rt_set_alloc_, {zero}, "gen_set");
+
     auto* loop_bb = BasicBlock::Create(*context_, "setgen.loop", func);
     auto* body_bb = BasicBlock::Create(*context_, "setgen.body", func);
     auto* done_bb = BasicBlock::Create(*context_, "setgen.done", func);
@@ -411,7 +425,9 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
 
     builder_->SetInsertPoint(loop_bb);
     auto* i_phi = builder_->CreatePHI(i64_ty, 2, "i");
+    auto* set_phi = builder_->CreatePHI(ptr_ty, 2, "set");
     i_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
+    set_phi->addIncoming(empty_set, loop_bb->getSinglePredecessor());
     auto* cond = builder_->CreateICmpSLT(i_phi, src_len);
     builder_->CreateCondBr(cond, body_bb, done_bb);
 
@@ -426,16 +442,17 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     if (store_val->getType()->isPointerTy())
         store_val = builder_->CreatePtrToInt(store_val, i64_ty);
 
-    builder_->CreateCall(rt_set_put_, {result, i_phi, store_val});
+    auto* new_set = builder_->CreateCall(rt_set_insert_, {set_phi, store_val}, "set.ins");
 
     auto* i_next = builder_->CreateAdd(i_phi, one);
     i_phi->addIncoming(i_next, builder_->GetInsertBlock());
+    set_phi->addIncoming(new_set, builder_->GetInsertBlock());
     builder_->CreateBr(loop_bb);
 
     named_values_ = saved;
 
     builder_->SetInsertPoint(done_bb);
-    return {result, CType::SET};
+    return {set_phi, CType::SET};
 }
 
 TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {

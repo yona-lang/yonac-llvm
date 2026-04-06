@@ -231,6 +231,13 @@ private:
     llvm::Function* rt_print_symbol_ = nullptr;
     llvm::Function* rt_set_alloc_ = nullptr;
     llvm::Function* rt_set_put_ = nullptr;
+    llvm::Function* rt_set_insert_ = nullptr;
+    llvm::Function* rt_set_contains_ = nullptr;
+    llvm::Function* rt_set_size_ = nullptr;
+    llvm::Function* rt_set_elements_ = nullptr;
+    llvm::Function* rt_set_union_ = nullptr;
+    llvm::Function* rt_set_intersection_ = nullptr;
+    llvm::Function* rt_set_difference_ = nullptr;
     llvm::Function* rt_print_set_ = nullptr;
     llvm::Function* rt_dict_alloc_ = nullptr;
     llvm::Function* rt_dict_set_ = nullptr;

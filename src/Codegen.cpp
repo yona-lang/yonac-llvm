@@ -215,6 +215,13 @@ void Codegen::declare_runtime() {
     // Set runtime
     rt_set_alloc_     = decl("yona_rt_set_alloc", i64p, {i64});
     rt_set_put_       = decl("yona_rt_set_put", vd, {i64p, i64, i64});
+    rt_set_insert_    = decl("yona_rt_set_insert", i64p, {i64p, i64});
+    rt_set_contains_  = decl("yona_rt_set_contains", i64, {i64p, i64});
+    rt_set_size_      = decl("yona_rt_set_size", i64, {i64p});
+    rt_set_elements_  = decl("yona_rt_set_elements", i64p, {i64p});
+    rt_set_union_     = decl("yona_rt_set_union", i64p, {i64p, i64p});
+    rt_set_intersection_ = decl("yona_rt_set_intersection", i64p, {i64p, i64p});
+    rt_set_difference_ = decl("yona_rt_set_difference", i64p, {i64p, i64p});
     rt_print_set_     = decl("yona_rt_print_set", vd, {i64p});
 
     // Dict runtime

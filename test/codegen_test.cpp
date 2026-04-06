@@ -52,9 +52,19 @@ static string compile_and_run(const string& code) {
     string obj_path = "/tmp/yona_codegen_test.o";
     if (!codegen.emit_object_file(obj_path)) return "EMIT_ERROR";
 
-    // Compile runtime if needed
+    // Compile runtime if needed (or source changed)
     string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
+    bool need_recompile = !fs::exists(rt_path);
+    if (!need_recompile) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate) &&
+                fs::last_write_time(candidate) > fs::last_write_time(rt_path)) {
+                need_recompile = true; break;
+            }
+        }
+    }
+    if (need_recompile) {
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {

@@ -1,0 +1,7 @@
+FN yona_Std_Set__insert 2 SET INT -> SET
+FN yona_Std_Set__contains 2 SET INT -> BOOL
+FN yona_Std_Set__size 1 SET -> INT
+FN yona_Std_Set__elements 1 SET -> SEQ
+FN yona_Std_Set__union 2 SET SET -> SET
+FN yona_Std_Set__intersection 2 SET SET -> SET
+FN yona_Std_Set__difference 2 SET SET -> SET
