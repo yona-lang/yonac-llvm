@@ -9,19 +9,19 @@
 
 ## Benchmark Results
 
-| Benchmark | Yona | C | Ratio | Notes |
-|-----------|------|---|-------|-------|
-| list_map_filter | 0.76ms | 0.90ms | **0.8x** | Stream fusion |
-| tak | 68ms | 77ms | **0.9x** | Faster than C |
-| sum_squares | 0.59ms | 0.53ms | **1.1x** | |
-| list_sum | 0.99ms | 0.62ms | 1.6x | RBT head/tail |
-| sieve | 0.76ms | 0.57ms | 1.3x | |
-| list_reverse | 0.93ms | 0.67ms | 1.4x | RBT cons |
-| dict_build | 1.4ms | 0.68ms | **2.1x** | HAMT transient inserts |
-| set_build | 1.4ms | 0.76ms | **1.8x** | HAMT transient inserts |
-| fibonacci | 16ms | 7.9ms | 2.0x | |
-| ackermann | 164ms | 66ms | 2.5x | Deep recursion |
-| queens | 14ms | 1.4ms | 10.3x | Allocation-heavy |
+| Benchmark | Yona | Yona MB | C | C MB | Ratio | Notes |
+|-----------|------|---------|---|------|-------|-------|
+| list_map_filter | 0.76ms | 2.7 | 0.90ms | 2.9 | **0.8x** | Stream fusion |
+| tak | 68ms | 2.1 | 77ms | 2.0 | **0.9x** | Faster than C |
+| sum_squares | 0.59ms | 2.1 | 0.53ms | 2.0 | **1.1x** | |
+| sieve | 0.76ms | 2.9 | 0.57ms | 2.0 | 1.3x | |
+| list_reverse | 0.93ms | 2.9 | 0.67ms | 2.4 | 1.4x | |
+| list_sum | 0.99ms | 2.7 | 0.62ms | 2.4 | 1.6x | |
+| dict_build | 1.4ms | 3.2 | 0.68ms | 2.3 | **2.1x** | HAMT transient |
+| set_build | 1.4ms | 3.2 | 0.76ms | 2.2 | **1.8x** | HAMT transient |
+| fibonacci | 16ms | 2.1 | 7.9ms | 2.0 | 2.0x | |
+| ackermann | 164ms | 2.3 | 66ms | 2.2 | 2.5x | Deep recursion |
+| queens | 14ms | 42.7 | 1.4ms | 2.0 | 10.3x | Allocation-heavy (42MB vs 2MB) |
 
 ## Performance Optimization
 
