@@ -45,8 +45,36 @@
   blocking fallback: direct result registration via `IO_OP_DIRECT_RESULT`
   sentinel in io_ctx table, transparent to `io_await` callers.
 
-### Language
+### Language — Type System & Effects
+- [ ] **Algebraic Effect System** — first-class effects without monads.
+  `effect State s` with `get`, `put`; `handle action with ...` handlers
+  that compose. Replaces try/catch, enables typed side effects, mockable
+  testing. Positions Yona alongside Koka, Eff, OCaml 5 but compiled to
+  native via LLVM. Would naturally extend error handling, state, logging.
+- [ ] **Refinement Types** — compile-time invariant verification.
+  `type NonEmpty a = { seq : [a] | length seq > 0 }`, `type Port = { n : Int | 0 < n && n < 65536 }`.
+  Total functions like `head : NonEmpty a -> a` with no runtime check.
+- [ ] **Row Polymorphism for Records** — polymorphic record access.
+  `greet : { name : String | r } -> String` works on any record with
+  a `name` field. Like Elm/PureScript/OCaml row types.
+- [ ] **Linear/Affine Types for Resources** — `type Linear File`,
+  compiler enforces exactly-once use (must close). Composable with
+  effects for safe resource management.
+- [ ] **Gradual Typing with Contracts** — optional `@contract` annotations
+  that generate runtime checks in debug, erased in release.
+
+### Language — Concurrency
+- [ ] **Structural Concurrency** — scoped concurrency with cancellation.
+  `with scope` blocks ensure children can't outlive parent. Extends
+  existing transparent async (io_uring, thread pool, auto-await).
+- [ ] **Channels (CSP-style)** — typed channels for goroutine-style
+  communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
+
+### Language — Metaprogramming
+- [ ] **Multi-Stage Programming** — compile-time computation.
+  `static regex_compile pattern = ...` compiles regex at build time.
+  Hygienic macros via staging.
 
 ### Tooling
 - [ ] Package manager / build system
