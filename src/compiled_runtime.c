@@ -135,7 +135,7 @@ void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
 
 /* Public: increment refcount (atomic for thread safety) */
 void yona_rt_rc_inc(void* ptr) {
-    if (!ptr) return;
+    if (__builtin_expect(!ptr, 0)) return;
     int64_t* header = ((int64_t*)ptr) - RC_HEADER_SIZE;
     __atomic_fetch_add(&header[0], 1, __ATOMIC_RELAXED);
 }
@@ -152,12 +152,12 @@ void yona_rt_rc_inc(void* ptr) {
 /* Public: decrement refcount; free when it reaches 0.
  * Recursively rc_dec pointer-typed children for known container types. */
 void yona_rt_rc_dec(void* ptr) {
-    if (!ptr) return;
+    if (__builtin_expect(!ptr, 0)) return;
     int64_t* header = ((int64_t*)ptr) - RC_HEADER_SIZE;
     int64_t rc = __atomic_load_n(&header[0], __ATOMIC_RELAXED);
-    if (rc == RC_ARENA_SENTINEL) return;  /* arena-allocated, skip */
+    if (__builtin_expect(rc == RC_ARENA_SENTINEL, 0)) return;
     int64_t old = __atomic_fetch_sub(&header[0], 1, __ATOMIC_ACQ_REL);
-    if (old <= 1) {
+    if (__builtin_expect(old <= 1, 0)) {
         int64_t encoded_tag = header[1];
         int64_t type_tag = DECODE_TAG(encoded_tag);
         int pool_cls = DECODE_POOL_CLASS(encoded_tag);

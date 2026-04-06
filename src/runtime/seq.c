@@ -28,6 +28,10 @@ extern void* rc_alloc(int64_t type_tag, size_t bytes);
 extern void yona_rt_rc_inc(void* ptr);
 extern void yona_rt_rc_dec(void* ptr);
 
+/* Branch prediction hints — most seq operations take the fast path. */
+#define LIKELY(x)   __builtin_expect(!!(x), 1)
+#define UNLIKELY(x) __builtin_expect(!!(x), 0)
+
 #define RC_TYPE_SEQ       1
 #define RC_TYPE_RBT       12
 #define RC_TYPE_RBT_NODE  13
@@ -260,9 +264,9 @@ int64_t yona_rt_seq_is_empty(int64_t* seq) {
 }
 
 int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    if (!is_rbt(seq)) return seq[SEQ_HDR_SIZE + index];
+    if (LIKELY(!is_rbt(seq))) return seq[SEQ_HDR_SIZE + index];
     rbt_t* r = (rbt_t*)seq;
-    if (index < r->head_cnt)
+    if (LIKELY(index < r->head_cnt))
         return r->head_buf[r->head_off + index];
     index -= r->head_cnt;
     if (index < r->head_chain_len)
@@ -280,7 +284,7 @@ void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
 }
 
 int64_t yona_rt_seq_head(int64_t* seq) {
-    if (is_rbt(seq)) return ((rbt_t*)seq)->head_buf[((rbt_t*)seq)->head_off];
+    if (UNLIKELY(is_rbt(seq))) return ((rbt_t*)seq)->head_buf[((rbt_t*)seq)->head_off];
     return seq[SEQ_HDR_SIZE];
 }
 
@@ -331,8 +335,8 @@ static rbt_t* flat_to_rbt_for_snoc(int64_t* flat, int64_t elem) {
 int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
     int64_t len = seq[0];
 
-    if (!is_rbt(seq)) {
-        if (len < B) {
+    if (LIKELY(!is_rbt(seq))) {
+        if (LIKELY(len < B)) {
             int64_t* hdr = seq - 2;
             int64_t rc = __atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE);
             int pcls = (int)((hdr[1] >> 8) - 1);
@@ -358,8 +362,9 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
 
     rbt_t* r = (rbt_t*)seq;
 
-    if (r->head_off > 0) {
-        if (is_unique(r)) {
+    if (LIKELY(r->head_off > 0)) {
+        /* Fast path: room in head_buf (31/32 cons calls) */
+        if (LIKELY(is_unique(r))) {
             r->head_off--;
             r->head_cnt++;
             r->length++;
@@ -374,7 +379,7 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         return (int64_t*)nr;
     }
 
-    /* Head_buf full: chain it into head_next */
+    /* Head_buf full: chain it into head_next (1/32 cons calls) */
     rbt_chunk_t* c = chunk_alloc();
     c->count = r->head_cnt;
     memcpy(c->elems, r->head_buf, (size_t)r->head_cnt * sizeof(int64_t));
@@ -404,10 +409,10 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
 
 int64_t* yona_rt_seq_tail(int64_t* seq) {
     int64_t len = seq[0];
-    if (len <= 1) return yona_rt_seq_alloc(0);
+    if (UNLIKELY(len <= 1)) return yona_rt_seq_alloc(0);
 
-    if (!is_rbt(seq)) {
-        if (len <= B) {
+    if (LIKELY(!is_rbt(seq))) {
+        if (LIKELY(len <= B)) {
             int64_t* hdr = seq - 2;
             if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1
                 && hdr[0] != RC_ARENA_SENTINEL) {
@@ -461,8 +466,9 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
 
     rbt_t* r = (rbt_t*)seq;
 
-    if (r->head_cnt > 1) {
-        if (is_unique(r)) {
+    if (LIKELY(r->head_cnt > 1)) {
+        /* Fast path: bump head_off (31/32 tail calls) */
+        if (LIKELY(is_unique(r))) {
             r->head_off++;
             r->head_cnt--;
             r->length--;
@@ -475,7 +481,7 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
         return (int64_t*)nr;
     }
 
-    /* head_cnt == 1: exhausted. Pull from head_next chain. */
+    /* head_cnt == 1: exhausted, pull from chain (1/32 tail calls) */
     if (r->head_next) {
         rbt_chunk_t* c = r->head_next;
         if (is_unique(r)) {
