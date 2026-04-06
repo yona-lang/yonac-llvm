@@ -1152,11 +1152,27 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                 auto meta_it2 = module_meta_.find(mangled);
                 if (meta_it2 != module_meta_.end()) {
                     auto& meta = meta_it2->second;
+                    // Check if ALL metadata params are INT (indicates a boxed
+                    // extern wrapper where all types are i64 at the ABI level).
+                    bool all_meta_int = true;
+                    for (auto ct : meta.param_types)
+                        if (ct != CType::INT) { all_meta_int = false; break; }
+
                     for (size_t i = 0; i < all_args.size() && i < meta.param_types.size(); i++) {
-                        if (all_args[i].type != meta.param_types[i]) {
-                            types_differ = true;
-                            break;
-                        }
+                        CType a = all_args[i].type, m = meta.param_types[i];
+                        if (a == m) continue;
+                        // For boxed extern wrappers (all-INT metadata), skip GENFN
+                        // when the arg type is still i64-compatible AND doesn't
+                        // need different semantic codegen. STRING, BOOL, SYMBOL
+                        // are fine (i64 values or pointers treated as i64).
+                        // ADT, TUPLE, FUNCTION need GENFN (different codegen).
+                        if (all_meta_int && m == CType::INT &&
+                            (a == CType::STRING || a == CType::BOOL ||
+                             a == CType::SYMBOL || a == CType::SEQ ||
+                             a == CType::SET || a == CType::DICT ||
+                             a == CType::BYTES)) continue;
+                        types_differ = true;
+                        break;
                     }
                 }
             }
@@ -1198,10 +1214,26 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
                     ret_ctype = cffi_it->second.return_type;
             }
 
-            // Declare the extern function with the correct signature
+            // Declare the extern function. Boxed wrappers (all-INT metadata)
+            // return i64; typed wrappers (with FLOAT etc.) return their native type.
+            auto i64_ty_local = LType::getInt64Ty(*context_);
+            bool is_boxed = true;
+            if (meta_it != module_meta_.end()) {
+                for (auto ct : meta_it->second.param_types)
+                    if (ct != CType::INT) { is_boxed = false; break; }
+                if (meta_it->second.return_type != CType::INT &&
+                    meta_it->second.return_type != CType::BOOL &&
+                    meta_it->second.return_type != CType::SYMBOL)
+                    is_boxed = (meta_it->second.return_type == CType::STRING ||
+                                meta_it->second.return_type == CType::SEQ ||
+                                meta_it->second.return_type == CType::SET ||
+                                meta_it->second.return_type == CType::DICT ||
+                                meta_it->second.return_type == CType::ADT) && is_boxed;
+            }
+
             std::vector<LType*> arg_types;
             for (auto& a : all_args) arg_types.push_back(a.val->getType());
-            auto ret_llvm = llvm_type(ret_ctype);
+            auto ret_llvm = is_boxed ? i64_ty_local : llvm_type(ret_ctype);
             auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
 
             auto* ext_fn = module_->getFunction(mangled);
@@ -1212,7 +1244,20 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
 
             std::vector<Value*> vals;
             for (auto& a : all_args) vals.push_back(a.val);
-            auto* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
+            Value* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
+
+            // Convert boxed i64 result to the correct LLVM type
+            if (is_boxed) {
+                if (ret_ctype == CType::BOOL) {
+                    ext_result = builder_->CreateICmpNE(ext_result,
+                        ConstantInt::get(i64_ty_local, 0), "bool_conv");
+                } else if (ret_ctype == CType::STRING || ret_ctype == CType::SEQ ||
+                           ret_ctype == CType::SET || ret_ctype == CType::DICT ||
+                           ret_ctype == CType::FUNCTION || ret_ctype == CType::ADT) {
+                    ext_result = builder_->CreateIntToPtr(ext_result,
+                        PointerType::get(*context_, 0), "ptr_conv");
+                }
+            }
             return {ext_result, ret_ctype};
         }
 

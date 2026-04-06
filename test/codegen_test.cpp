@@ -790,6 +790,10 @@ TEST_CASE("Regex module: matches, find, replace, split") {
     REQUIRE(mod != nullptr);
     string mod_obj = "/tmp/regex_mod_test.o";
     REQUIRE(mod_codegen.emit_object_file(mod_obj));
+    // Emit .yonai interface so the importing expression gets return types
+    string yonai_dir = "/tmp/yona_regex_lib/Std";
+    fs::create_directories(yonai_dir);
+    REQUIRE(mod_codegen.emit_interface_file(yonai_dir + "/Regex.yonai"));
 
     // Helper: compile expression, link with module + runtime, run, return output
     auto run_expr = [&](const string& expr_source) -> string {
@@ -799,7 +803,8 @@ TEST_CASE("Regex module: matches, find, replace, split") {
         if (!expr_result.node) return "PARSE_ERROR";
 
         Codegen expr_codegen("regex_test");
-        // Add module search paths for .yonai
+        // Add module search paths for .yonai (generated + stdlib)
+        expr_codegen.module_paths_.push_back("/tmp/yona_regex_lib");
         for (auto& dir : {".", "lib", "../lib", "../../lib"})
             if (fs::exists(dir)) expr_codegen.module_paths_.push_back(fs::canonical(dir).string());
         auto expr_mod = expr_codegen.compile(expr_result.node.get());
@@ -823,16 +828,41 @@ TEST_CASE("Regex module: matches, find, replace, split") {
     };
 
     SUBCASE("matches true") {
-        // extern Bool is mapped as Int (prints 1/0)
-        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "abc 42 def")YT") == "1");
+        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "abc 42 def")YT") == "true");
     }
 
     SUBCASE("matches false") {
-        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "no digits")YT") == "0");
+        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "no digits")YT") == "false");
     }
 
-    // TODO: find/replace/split need extern return type fixes
-    // (String returns printed as int, Seq returns need pattern matching support)
+    SUBCASE("replace") {
+        CHECK(run_expr(R"YT(import replace, compile from Std\Regex in replace (compile "[0-9]+") "abc 42 def 99" "NUM")YT") == "abc NUM def 99");
+    }
+
+    SUBCASE("replaceAll") {
+        CHECK(run_expr(R"YT(import replaceAll, compile from Std\Regex in replaceAll (compile "[0-9]+") "abc 42 def 99" "NUM")YT") == "abc NUM def NUM");
+    }
+
+    // TODO: split/find return SEQ from C but module metadata infers ADT.
+    // The extern return type (Seq) doesn't propagate through the wrapper
+    // function's return type inference. Needs module_meta_ to use the
+    // extern declaration's type annotation instead of body inference.
+
+    SUBCASE("find match") {
+        CHECK(run_expr(R"YT(import find, compile from Std\Regex in
+            case find (compile "([a-z]+)([0-9]+)") "test123" of
+                [] -> "none"
+                [m | _] -> m
+            end)YT") == "test123");
+    }
+
+    SUBCASE("find no match") {
+        CHECK(run_expr(R"YT(import find, compile from Std\Regex in
+            case find (compile "[0-9]+") "no digits" of
+                [] -> "none"
+                [m | _] -> m
+            end)YT") == "none");
+    }
 }
 
 } // Regex
