@@ -151,7 +151,8 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
         function_declarations,
         adt_declarations,
         trait_declarations,
-        instance_declarations
+        instance_declarations,
+        extern_declarations
     );
 }
 

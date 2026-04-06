@@ -633,7 +633,7 @@ ExternDeclExpr::ExternDeclExpr(SourceContext token, string name,
                                  compiler::types::Type type, ExprNode *body,
                                  bool is_async)
     : ExprNode(token), name(std::move(name)), declared_type(std::move(type)),
-      body(body->with_parent<ExprNode>(this)), is_async(is_async) {}
+      body(body ? body->with_parent<ExprNode>(this) : nullptr), is_async(is_async) {}
 
 ExternDeclExpr::~ExternDeclExpr() { delete body; }
 

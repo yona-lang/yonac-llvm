@@ -67,6 +67,17 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(cli11)
 
+# PCRE2 for regex module (optional)
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+    pkg_check_modules(PCRE2 libpcre2-8)
+endif()
+if(PCRE2_FOUND)
+    message(STATUS "Found PCRE2: ${PCRE2_LIBRARIES}")
+else()
+    message(STATUS "PCRE2 not found — Std\\Regex module will not be available")
+endif()
+
 find_package(LLVM CONFIG REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -94,6 +105,9 @@ file(GLOB_RECURSE all_lib_SRCS
 # Exclude files #included from compiled_runtime.c
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/seq\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/hamt\\.c$")
+if(NOT PCRE2_FOUND)
+    list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/regex\\.c$")
+endif()
 
 file(GLOB all_TESTS
 		"${PROJECT_SOURCE_DIR}/test/*.h"
@@ -124,6 +138,10 @@ target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib_static PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(yona_lib_static PRIVATE ${llvm_libs})
+if(PCRE2_FOUND)
+    target_link_libraries(yona_lib_static PRIVATE ${PCRE2_LIBRARIES})
+    target_include_directories(yona_lib_static PRIVATE ${PCRE2_INCLUDE_DIRS})
+endif()
 target_compile_definitions(yona_lib_static PRIVATE YONA_STATIC_BUILD)
 
 target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -131,6 +149,10 @@ target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 target_link_libraries(yona_lib PRIVATE ${llvm_libs})
+if(PCRE2_FOUND)
+    target_link_libraries(yona_lib PRIVATE ${PCRE2_LIBRARIES})
+    target_include_directories(yona_lib PRIVATE ${PCRE2_INCLUDE_DIRS})
+endif()
 
 # For DLL builds on Windows, we need to export symbols (only for SHARED libraries)
 if(WIN32 AND BUILD_SHARED_LIBS)

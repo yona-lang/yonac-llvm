@@ -301,6 +301,17 @@ void yona_rt_rc_dec(void* ptr) {
                     if (elem_val) yona_rt_rc_dec((void*)(intptr_t)elem_val);
                 }
             }
+        } else if (type_tag == 16 /* RC_TYPE_REGEX */) {
+            /* Regex handle: free the PCRE2 compiled pattern.
+             * Layout: [pcre2_code* code]
+             * yona_regex_free_code is a weak symbol — if regex.c isn't
+             * linked (PCRE2 unavailable), this is a no-op. */
+            void* code = *(void**)payload;
+            if (code) {
+                extern void yona_regex_free_code(void* code) __attribute__((weak));
+                if (yona_regex_free_code)
+                    yona_regex_free_code(code);
+            }
         }
         if (pool_cls >= 0)
             pool_free(header, pool_sizes[pool_cls]);

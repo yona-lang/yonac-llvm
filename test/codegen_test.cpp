@@ -85,8 +85,25 @@ static string compile_and_run(const string& code) {
         }
     }
 
+    // Compile regex runtime if PCRE2 is available
+    string regex_obj = "";
+    for (auto& dir : {".", "src", "../src", "../../src"}) {
+        auto regex_src = fs::path(dir) / "runtime" / "regex.c";
+        if (fs::exists(regex_src)) {
+            regex_obj = "/tmp/yona_regex_test.o";
+            if (!fs::exists(regex_obj) ||
+                fs::last_write_time(regex_src) > fs::last_write_time(regex_obj)) {
+                string cmd = "cc -c " + regex_src.string() + " -o " + regex_obj + " 2>/dev/null";
+                if (system(cmd.c_str()) != 0) regex_obj = "";
+            }
+            break;
+        }
+    }
+
     string exe_path = "/tmp/yona_codegen_test";
-    string link_cmd = "cc " + obj_path + " " + rt_path + " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
+    string link_cmd = "cc " + obj_path + " " + rt_path;
+    if (!regex_obj.empty()) link_cmd += " " + regex_obj + " -lpcre2-8";
+    link_cmd += " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
     if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
 
     array<char, 256> buffer;
@@ -710,3 +727,112 @@ TEST_CASE("Debug info: disabled by default") {
 // IR fixture tests removed — IR text comparison is fragile due to
 // whitespace/formatting differences between runs. The E2E fixture tests
 // (compile → run → check output) are more reliable and valuable.
+
+TEST_SUITE("Regex") {
+
+TEST_CASE("Regex module: matches, find, replace, split") {
+    namespace fs = std::filesystem;
+    using namespace yona::compiler::codegen;
+
+    // Ensure runtime is compiled
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string src_dir = string(dir);
+                system(("cc -c " + candidate.string() + " -I" + src_dir +
+                    " -o " + rt_path + " 2>/dev/null").c_str());
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir +
+                            " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj +
+                            " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " +
+                            rt_path).c_str());
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    // Compile regex.c
+    string regex_obj = "/tmp/yona_regex_test.o";
+    for (auto& dir : {".", "src", "../src", "../../src"}) {
+        auto regex_src = fs::path(dir) / "runtime" / "regex.c";
+        if (fs::exists(regex_src)) {
+            system(("cc -c " + regex_src.string() + " -o " + regex_obj + " 2>/dev/null").c_str());
+            break;
+        }
+    }
+
+    // Compile the Regex module
+    string regex_mod_src;
+    for (auto& dir : {".", "lib", "../lib", "../../lib"}) {
+        auto candidate = fs::path(dir) / "Std" / "Regex.yona";
+        if (fs::exists(candidate)) {
+            ifstream f(candidate);
+            regex_mod_src = string(istreambuf_iterator<char>(f), {});
+            break;
+        }
+    }
+    REQUIRE(!regex_mod_src.empty());
+
+    parser::Parser mp;
+    auto mod_result = mp.parse_module(regex_mod_src, "Regex.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("regex_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    string mod_obj = "/tmp/regex_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+
+    // Helper: compile expression, link with module + runtime, run, return output
+    auto run_expr = [&](const string& expr_source) -> string {
+        parser::Parser ep;
+        istringstream stream(expr_source);
+        auto expr_result = ep.parse_input(stream);
+        if (!expr_result.node) return "PARSE_ERROR";
+
+        Codegen expr_codegen("regex_test");
+        // Add module search paths for .yonai
+        for (auto& dir : {".", "lib", "../lib", "../../lib"})
+            if (fs::exists(dir)) expr_codegen.module_paths_.push_back(fs::canonical(dir).string());
+        auto expr_mod = expr_codegen.compile(expr_result.node.get());
+        if (!expr_mod) return "CODEGEN_ERROR";
+        string expr_obj = "/tmp/regex_expr_test.o";
+        if (!expr_codegen.emit_object_file(expr_obj)) return "EMIT_ERROR";
+
+        string link = "cc " + expr_obj + " " + mod_obj + " " + rt_path +
+            " " + regex_obj + " -lpcre2-8 -lm -lpthread -rdynamic" +
+            " -o /tmp/regex_link_test 2>/dev/null";
+        if (system(link.c_str()) != 0) return "LINK_ERROR";
+
+        array<char, 512> buf;
+        string output;
+        FILE* pipe = popen("/tmp/regex_link_test 2>/dev/null", "r");
+        if (!pipe) return "RUN_ERROR";
+        while (fgets(buf.data(), buf.size(), pipe)) output += buf.data();
+        pclose(pipe);
+        if (!output.empty() && output.back() == '\n') output.pop_back();
+        return output;
+    };
+
+    SUBCASE("matches true") {
+        // extern Bool is mapped as Int (prints 1/0)
+        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "abc 42 def")YT") == "1");
+    }
+
+    SUBCASE("matches false") {
+        CHECK(run_expr(R"YT(import matches, compile from Std\Regex in matches (compile "[0-9]+") "no digits")YT") == "0");
+    }
+
+    // TODO: find/replace/split need extern return type fixes
+    // (String returns printed as int, Seq returns need pattern matching support)
+}
+
+} // Regex
