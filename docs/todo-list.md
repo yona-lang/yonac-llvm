@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 717 assertions across 74 test cases (all passing)
-- **Stdlib**: 26 modules, ~270 exported functions (12 pure Yona + 14 C runtime)
+- **Tests**: 751 assertions across 75 test cases (all passing)
+- **Stdlib**: 27 modules, ~280 exported functions (12 pure Yona + 15 C runtime)
 - **Benchmarks**: 11/11 passing, 6 within 1.5x C, list_map_filter at 1.0x C
 
 ## Benchmark Results
@@ -71,7 +71,12 @@
 - [ ] STM (Software Transactional Memory) — for shared mutable state
 
 ## Stdlib Gaps
-- [ ] Regex (string pattern matching) — consider PCRE2 C binding
+- [x] **Regex** — PCRE2-backed Std\Regex module. compile (JIT), matches,
+  find, findAll, replace, replaceAll, split. RC-managed handles. Hybrid
+  Yona+C module with extern bindings.
+- [x] **Cross-module return type propagation** — fixed pre-existing issue
+  where imported functions lost Bool/String/Seq return types. Boxed extern
+  wrapper detection + i64-to-native conversion.
 - [ ] Process.exec non-blocking — current exec/execStatus are blocking.
   Should use io_uring or thread pool for async subprocess execution.
 
@@ -150,10 +155,10 @@
 - Benchmark suite: 11 benchmarks, C references, history tracking
 - Stale cache detection for LTO bitcode and test runtime
 
-### Standard Library (26 modules)
+### Standard Library (27 modules)
 Pure Yona (12): Option, Result, List, Tuple, Range, Math, Pair, Bool, Test,
 Collection, Function, Http
 
-C runtime (14): String, Encoding, Types, IO, File, Process (exec, execStatus,
+C runtime (15): String, Encoding, Types, IO, File, Process (exec, execStatus,
 setenv, hostname, getenv, getcwd, exit), Random, Json, Crypto, Log, Net,
-Bytes, Time, Path, Format, Dict, Set
+Bytes, Time, Path, Format, Dict, Set, Regex
