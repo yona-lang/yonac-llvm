@@ -51,7 +51,8 @@ def find_benchmarks(filter_name=None):
 
 
 def compile_yona(source, opt_level, exe_path):
-    cmd = [str(YONAC), f"-O{opt_level}", "-o", str(exe_path), str(source)]
+    lib_path = ROOT / "lib"
+    cmd = [str(YONAC), f"-O{opt_level}", "-I", str(lib_path), "-o", str(exe_path), str(source)]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         return result.returncode == 0

@@ -1,5 +1,7 @@
 import spawn, pid, wait from Std\Process in
-let proc = spawn "sleep 0" in
-let p = pid proc in
-let _ = wait proc in
-if p > 0 then "ok" else "fail"
+do
+    proc = spawn "sleep 0"
+    p = pid proc
+    wait proc
+    if p > 0 then "ok" else "fail"
+end

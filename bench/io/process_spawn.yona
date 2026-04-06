@@ -1,0 +1,7 @@
+import spawn, readAll, wait from Std\Process, length from Std\String in
+do
+    proc = spawn "seq 1 10000"
+    out = readAll proc
+    wait proc
+    length out
+end

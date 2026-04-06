@@ -1,7 +1,9 @@
 import spawn, writeStdin, closeStdin, readAll, wait from Std\Process in
-let proc = spawn "cat" in
-let _ = writeStdin proc "hello from stdin" in
-let _ = closeStdin proc in
-let out = readAll proc in
-let _ = wait proc in
-out
+do
+    proc = spawn "cat"
+    writeStdin proc "hello from stdin"
+    closeStdin proc
+    out = readAll proc
+    wait proc
+    out
+end

@@ -1,0 +1,5 @@
+import exec from Std\Process, length from Std\String in
+let a = exec "echo hello",
+    b = exec "echo world",
+    c = exec "echo yona"
+in length a + length b + length c
