@@ -22,10 +22,42 @@ extern int64_t* yona_rt_seq_alloc(int64_t count);
 
 /* ===== Generic io_uring completer ===== */
 
+/* Sentinel: when io_uring is unavailable, IO functions store the direct
+ * result in the io_ctx table with a special type. io_await returns it. */
+#define IO_OP_DIRECT_RESULT 99
+static _Atomic uint64_t direct_result_id = 0x80000000ULL; /* high offset avoids uring ID collision */
+
+/* Register a direct (blocking fallback) result for io_await. */
+static int64_t io_register_direct_result(void* result) {
+    uint64_t id = atomic_fetch_add(&direct_result_id, 1);
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_DIRECT_RESULT;
+    ctx->fd = -1;
+    ctx->buf = (char*)result;
+    ctx->buf_size = 0;
+    ctx->close_fd = 0;
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+/* Exported for compiled_runtime.c wrapper functions */
+int64_t yona_io_register_direct_result(void* result) {
+    return io_register_direct_result(result);
+}
+
 int64_t yona_rt_io_await(int64_t uring_id) {
     if (uring_id <= 0) return 0;
-    int32_t res = ring_await((uint64_t)uring_id);
     io_context_t* ctx = io_ctx_take((uint64_t)uring_id);
+    if (ctx && ctx->type == IO_OP_DIRECT_RESULT) {
+        /* Blocking fallback: result is stored in buf pointer */
+        int64_t result = (int64_t)(intptr_t)ctx->buf;
+        free(ctx);
+        return result;
+    }
+    if (ctx) io_ctx_put((uint64_t)uring_id, ctx); /* put it back for real await */
+
+    int32_t res = ring_await((uint64_t)uring_id);
+    ctx = io_ctx_take((uint64_t)uring_id);
     if (!ctx) return (int64_t)res;
 
     int64_t result;
@@ -85,6 +117,25 @@ int64_t yona_rt_io_await(int64_t uring_id) {
 
 /* ===== Submit-and-return functions ===== */
 
+/* Blocking fallback: read entire file synchronously.
+ * Used when io_uring is unavailable (ENOMEM, old kernel, container). */
+static int64_t read_file_blocking(const char* path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        char* empty = (char*)yona_rt_rc_alloc_string(1);
+        empty[0] = '\0';
+        return (int64_t)(intptr_t)empty;
+    }
+    struct stat st;
+    if (fstat(fd, &st) < 0) { close(fd); char* e = (char*)yona_rt_rc_alloc_string(1); e[0]='\0'; return (int64_t)(intptr_t)e; }
+    size_t size = (size_t)st.st_size;
+    char* buf = (char*)yona_rt_rc_alloc_string(size + 1);
+    ssize_t n = read(fd, buf, size);
+    if (n >= 0) buf[n] = '\0'; else buf[0] = '\0';
+    close(fd);
+    return (int64_t)(intptr_t)buf;
+}
+
 /* readFile: open, allocate buffer, submit uring read, return ID */
 int64_t yona_platform_read_file_submit(const char* path) {
     int fd = open(path, O_RDONLY);
@@ -110,7 +161,12 @@ int64_t yona_platform_read_file_submit(const char* path) {
     sqe.off = 0;
 
     uint64_t id = ring_submit_sqe(&sqe);
-    if (id == 0) { close(fd); free(ctx); return 0; }
+    if (id == 0) {
+        /* io_uring unavailable — fall back to blocking read */
+        close(fd);
+        free(ctx);
+        return 0;
+    }
     io_ctx_put(id, ctx);
     return (int64_t)id;
 }

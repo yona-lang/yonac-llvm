@@ -1347,16 +1347,22 @@ void yona_Std_IO__printInt(int64_t n)    { printf("%ld", n); fflush(stdout); }
 void yona_Std_IO__printFloat(double f)   { printf("%g", f); fflush(stdout); }
 
 /* Std\File — async ops return uring ID, sync ops return directly */
+/* Register a direct result for io_await fallback when io_uring is unavailable */
+extern int64_t yona_io_register_direct_result(void* result);
+#define io_register_direct_result yona_io_register_direct_result
+
 int64_t yona_Std_File__readFile(const char* path) {
     int64_t id = yona_platform_read_file_submit(path);
     if (id > 0) return id; /* uring ID = promise */
-    /* Fallback: sync read, return the string pointer as i64 */
-    return (int64_t)(intptr_t)yona_platform_read_file(path);
+    /* io_uring unavailable: read synchronously, wrap result for io_await */
+    char* data = yona_platform_read_file(path);
+    return io_register_direct_result(data);
 }
 int64_t yona_Std_File__writeFile(const char* path, const char* content) {
     int64_t id = yona_platform_write_file_submit(path, content);
     if (id > 0) return id; /* uring ID = promise */
-    return yona_platform_write_file(path, content) == 0 ? 1 : 0;
+    int64_t ok = yona_platform_write_file(path, content) == 0 ? 1 : 0;
+    return io_register_direct_result((void*)(intptr_t)ok);
 }
 int64_t yona_Std_File__appendFile(const char* path, const char* content) {
     return yona_platform_append_file(path, content) == 0 ? 1 : 0;
@@ -1458,9 +1464,9 @@ int64_t yona_Std_File__readFileBytes(const char* path) {
     extern int64_t yona_platform_read_file_bytes_submit(const char* path);
     int64_t id = yona_platform_read_file_bytes_submit(path);
     if (id > 0) return id;
-    /* Fallback: sync read to Bytes */
     extern void* yona_rt_bytes_from_string(const char* s);
-    return (int64_t)(intptr_t)yona_rt_bytes_from_string(yona_platform_read_file(path));
+    void* bytes = yona_rt_bytes_from_string(yona_platform_read_file(path));
+    return io_register_direct_result(bytes);
 }
 
 int64_t yona_Std_File__writeFileBytes(const char* path, void* bytes) {

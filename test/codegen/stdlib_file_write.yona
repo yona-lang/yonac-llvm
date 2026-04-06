@@ -1,0 +1,2 @@
+import writeFile from Std\File in
+writeFile "/tmp/yona_test_write.txt" "hello yona io"

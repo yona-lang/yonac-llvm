@@ -37,9 +37,10 @@
 - [x] **Head-tail pattern mutation** — `case s of [h|t] -> x :: s` corrupted
   `s` because seq_tail modified it in place. Fixed by targeted rc_inc when
   the scrutinee variable appears in the case body.
-- [ ] **File I/O runtime crash** — `import readFile from Std\File` crashes
-  at runtime (segfault). Pre-existing, not related to recent changes.
-  Likely io_uring or LTO bitcode issue.
+- [x] **File I/O crash when io_uring unavailable** — `io_uring_setup` returns
+  ENOMEM in constrained environments (containers, low-memory). Fixed with
+  blocking fallback: direct result registration via `IO_OP_DIRECT_RESULT`
+  sentinel in io_ctx table, transparent to `io_await` callers.
 
 ### Language
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
