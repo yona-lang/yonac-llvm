@@ -1,235 +1,173 @@
-# Yona-LLVM Compiler
+# Yona
 
-A compiler and interpreter for the [Yona programming language](https://yona-lang.org/), featuring transparent async, automatic parallelization, and a comprehensive standard library.
+A compiled functional programming language targeting LLVM, featuring persistent data structures, transparent async, pattern matching, and a comprehensive standard library.
 
-## Project Status
+## Highlights
 
-- ✅ **Interpreter**: Feature-complete with transparent async
-- ✅ **LLVM Compiler**: Compiles to native executables with unboxed primitives
-- ✅ **Type System**: Hindley-Milner with Promise\<T\> coercion
-- ✅ **Parser**: Newline-aware with juxtaposition function application
-- ✅ **Async**: Promise-aware type system, parallel let bindings, type-directed auto-await
-- ✅ **Standard Library**: 19 native modules, 150+ functions
-- ✅ **C Embedding API**: Stable C interface with sandboxing
-- ✅ **Test Coverage**: 348 tests, 1573 assertions, 71 codegen fixtures, 100% passing
-- 📋 **Planned**: Module compilation, LLVM coroutines for async
+- **Compiled to native** via LLVM — performance within 1-2x of C
+- **Persistent data structures** — immutable sequences (RBT), dictionaries and sets (HAMT)
+- **Transparent async** — no async/await keywords; independent let bindings auto-parallelize
+- **Pattern matching** — head-tail, tuples, constructors, or-patterns, guards
+- **Algebraic data types** — with traits, default methods, cross-module dispatch
+- **Module system** — FQN imports, interface files, cross-module generics
+- **27 stdlib modules** — I/O, networking, regex, JSON, crypto, process management
 
-## Features
-
-- **Transparent Async** — no async/await keywords; Promise\<T\> auto-coerces to T at use sites
-- **Auto-Parallelization** — independent let bindings execute in parallel via thread pool
-- **Newline-Aware Parsing** — newlines delimit expressions; semicolons for one-liners; brackets suppress newlines
-- **Juxtaposition Application** — `f x y` function calls (Haskell-style), alongside `f(x, y)`
-- **Pattern Matching** — wildcards, tuples, lists, head-tail, dicts, records, or-patterns, non-linear patterns, guards
-- **Type Inference** — Hindley-Milner with polymorphism and Promise coercion
-- **String Interpolation** — `"hello {name}"` with auto-conversion
-- **Module System** — import/export with FQN, aliases, native + file-based modules
-- **Currying** — automatic partial application
-- **C Embedding API** — embed Yona in any language via FFI
-
-## Setup
-
-### Red Hat / Fedora
+## Quick Start
 
 ```bash
-sudo dnf install llvm llvm-devel llvm-libs clang20 lld20 cmake ninja-build \
-  libcxx-devel libcxxabi-devel
-```
-
-### macOS
-
-```bash
-brew install llvm cmake ninja
-```
-
-### Windows
-
-Ensure Visual Studio 2022 or later is installed with C++ development tools.
-
-## Building
-
-```bash
-# Configure (Linux)
-cmake --preset x64-debug-linux
+# Install (Fedora/RHEL)
+sudo dnf install llvm llvm-devel llvm-libs clang lld cmake ninja-build pcre2-devel
 
 # Build
+git clone https://github.com/yona-lang/yonac-llvm.git
+cd yonac-llvm
+cmake --preset x64-release-linux
+cmake --build --preset build-release-linux
+
+# Run
+./out/build/x64-release-linux/yonac -e 'let fib n = if n <= 1 then n else fib (n-1) + fib (n-2) in fib 10'
+# => 55
+```
+
+See [INSTALL.md](INSTALL.md) for macOS, Windows, and Docker instructions.
+
+## Language Examples
+
+```yona
+-- Pattern matching with head-tail decomposition
+let foldl fn acc seq =
+    case seq of
+        [] -> acc
+        [h|t] -> foldl fn (fn acc h) t
+    end
+in foldl (\a b -> a + b) 0 [1, 2, 3, 4, 5]
+-- => 15
+```
+
+```yona
+-- Comprehensions with guards (stream-fused into single loop)
+let nums = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] in
+let doubled = [x * 2 for x = nums] in
+[x for x = doubled, if x > 10]
+-- => [12, 14, 16, 18, 20]
+```
+
+```yona
+-- Algebraic data types and pattern matching
+type Option a = Some a | None
+
+let map fn opt =
+    case opt of
+        Some x -> Some (fn x)
+        None -> None
+    end
+in map (\x -> x * 2) (Some 21)
+-- => Some 42
+```
+
+```yona
+-- Transparent async: independent bindings run in parallel
+import exec from Std\Process in
+let a = exec "echo hello",
+    b = exec "echo world"
+in a ++ " " ++ b
+-- Both commands run concurrently via thread pool
+```
+
+```yona
+-- Persistent dictionaries (HAMT, O(1) amortized)
+import put, get, size from Std\Dict in
+let d = put (put (put {} 1 "one") 2 "two") 3 "three" in
+(get d 2 "missing", size d)
+-- => ("two", 3)
+```
+
+```yona
+-- Regex (PCRE2 with JIT)
+import compile, matches, find from Std\Regex in
+let re = compile "([a-z]+)([0-9]+)" in
+case find re "test123" of
+    [] -> "no match"
+    [full | groups] -> full
+end
+-- => "test123"
+```
+
+## Standard Library
+
+| Module | Key Functions |
+|--------|---------------|
+| `Std\List` | map, filter, fold, foldl, reverse, flatten, zip, take, drop |
+| `Std\Dict` | put, get, contains, size, keys |
+| `Std\Set` | insert, contains, size, union, intersection, difference |
+| `Std\String` | length, split, join, trim, indexOf, replace, toUpper, toLower |
+| `Std\Math` | abs, max, min, sqrt, sin, cos, pow, factorial, gcd |
+| `Std\Regex` | compile, matches, find, findAll, replace, replaceAll, split |
+| `Std\File` | readFile, writeFile, exists, readLines, listDir |
+| `Std\Process` | spawn, exec, readLine, readAll, wait, kill, writeStdin |
+| `Std\IO` | print, println, readLine |
+| `Std\Json` | parse, stringify |
+| `Std\Net` | connect, accept, send, recv |
+| `Std\Option` | Some, None, map, unwrapOr |
+| `Std\Result` | Ok, Err, map, mapErr, unwrapOr |
+
+Full API docs: `python3 scripts/gendocs.py` generates [docs/api/](docs/api/).
+
+## Performance
+
+Benchmarks vs equivalent C (gcc -O2):
+
+| Benchmark | Ratio | Notes |
+|-----------|-------|-------|
+| list_map_filter | **1.0x** | Stream fusion eliminates intermediate allocations |
+| tak | **0.8x** | Faster than C (LLVM optimizations) |
+| sum_squares | 1.2x | |
+| sieve | 1.4x | |
+| dict_build (10K) | 2.0x | HAMT with transient inserts |
+| set_build (10K) | 2.1x | HAMT-backed |
+| fibonacci | 2.0x | |
+| queens | 10.8x | Allocation-heavy (42MB vs 2MB) |
+
+## Architecture
+
+```
+Source → Lexer → Parser → AST → Codegen (LLVM IR) → Native Executable
+```
+
+- **Lexer**: Newline-aware, juxtaposition-based function application
+- **Codegen**: Type-directed with `TypedValue = {Value*, CType}`, monomorphization
+- **Memory**: Atomic RC, hybrid Perceus DUP/DROP, pool allocator, arena allocation
+- **Async**: io_uring (Linux), thread pool with work-stealing
+- **Data structures**: RBT sequences, HAMT dicts/sets with structural sharing
+
+## Documentation
+
+- [Installation Guide](INSTALL.md)
+- [Language Syntax Reference](docs/language-syntax.md)
+- [Module System](docs/module-system.md)
+- [Memory Management](docs/memory-management.md)
+- [Status & Roadmap](docs/todo-list.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [API Reference](docs/api/)
+
+## Building & Testing
+
+```bash
+# Debug build
+cmake --preset x64-debug-linux
 cmake --build --preset build-debug-linux
 
 # Run tests
 ctest --preset unit-tests-linux
-```
 
-Replace `linux` with `macos` or omit the suffix for Windows. Replace `debug` with `release` for release builds.
-
-```bash
-# Run specific test
-YONA_PATH=test/code ./out/build/x64-debug-linux/tests -tc="TestName"
+# Run benchmarks
+python3 bench/runner.py --compare
 
 # Format code
 ./scripts/format.sh
 ```
 
-## Language Examples
+## License
 
-### Newlines and Semicolons
-
-```yona
-# Newlines delimit case arms and do-block expressions
-case x of
-  :ok -> handle_ok x
-  :error -> handle_error x
-  _ -> default_handler x
-end
-
-# Semicolons for one-liners
-case x of :ok -> 1; :error -> 2; _ -> 0 end
-
-# Newlines suppressed inside brackets
-let list = [
-  1, 2, 3,
-  4, 5, 6
-] in list
-```
-
-### Function Application
-
-```yona
-# Juxtaposition (space-separated)
-println "Hello, World!"
-map (\x -> x * 2) [1, 2, 3]
-add 3 4
-
-# Parenthesized
-add(3, 4)
-println("Hello")
-
-# Partial application
-let add5 = add 5 in add5 10  # Returns 15
-```
-
-### String Interpolation
-
-```yona
-let name = "World" in "Hello {name}!"
-let x = 6 in "result is {(x * 7)}"
-```
-
-### Pattern Matching
-
-```yona
-case value of
-  0 -> "zero"
-  n | n > 0 -> "positive"
-  _ -> "negative"
-end
-
-# OR patterns
-case status of
-  :ok | :success -> "good"
-  :error | :failure -> "bad"
-end
-
-# Non-linear patterns
-case (x, x) of
-  (a, a) -> "equal"
-  (a, b) -> "different"
-end
-```
-
-### Transparent Async
-
-```yona
-# Independent bindings auto-parallelize
-let
-  a = read_file "foo.txt",
-  b = read_file "bar.txt"
-in
-  a ++ b  # Both reads happen in parallel, auto-awaited here
-```
-
-### Modules
-
-```yona
-# Import specific functions
-import map, filter from Std\List in
-  filter (\x -> x > 0) (map (\x -> x - 1) [1, 2, 3])
-
-# Import with alias
-import Std\Math as M in
-  M.abs(-42)
-```
-
-## Standard Library
-
-| Module | Functions |
-|--------|-----------|
-| `Std\IO` | print, println, readFile, writeFile, appendFile, fileExists, deleteFile, readLine, readChar |
-| `Std\Math` | sin, cos, tan, asin, acos, atan, atan2, exp, log, log10, pow, sqrt, ceil, floor, round, abs, pi, e, max, min, factorial |
-| `Std\List` | map, filter, fold, foldl, foldr, length, head, tail, reverse, take, drop, flatten, zip, lookup, splitAt, any, all, contains, isEmpty |
-| `Std\String` | length, toUpperCase, toLowerCase, trim, split, join, substring, indexOf, contains, replace, startsWith, endsWith, toString, chars |
-| `Std\Dict` | get, put, remove, containsKey, keys, values, size, toList, fromList, merge, fold, map, filter, isEmpty, lookup |
-| `Std\Set` | contains, add, remove, size, toList, fromList, union, intersection, difference, fold, map, filter, isEmpty |
-| `Std\Option` | some, none, isSome, isNone, unwrapOr, map |
-| `Std\Result` | ok, err, isOk, isErr, unwrapOr, map, mapErr |
-| `Std\Tuple` | fst, snd, swap, mapBoth, zip, unzip |
-| `Std\Range` | range, toList, contains, length, take, drop |
-| `Std\Json` | parse, stringify |
-| `Std\Regexp` | match, matchAll, replace, split, test |
-| `Std\File` | exists, isDir, isFile, listDir, mkdir, remove, basename, dirname, extension, join, absolute |
-| `Std\Random` | int, float, choice, shuffle |
-| `Std\Time` | now, nowMillis, format, parse |
-| `Std\Timer` | sleep (async), millis, nanos, measure |
-| `Std\Types` | typeOf, isInt, isFloat, isString, isBool, isSeq, isSet, isDict, isTuple, isFunction, toInt, toFloat, toStr |
-| `Std\Http` | get, post (async) |
-| `Std\System` | env, exit |
-
-## C Embedding API
-
-Embed Yona in any application via the C API (`yona_api.h`):
-
-```c
-#include "yona_api.h"
-
-// Create interpreter
-yona_interp_t interp = yona_create();
-
-// Evaluate Yona code
-yona_value_t result;
-yona_eval(interp, "1 + 2", &result);
-printf("result: %d\n", yona_as_int(result));  // 3
-yona_value_free(result);
-
-// Register host-provided functions
-yona_register_function(interp, "App\\Handlers", "notify", 2, my_notify_fn, context);
-
-// Call from Yona code
-yona_eval(interp, "import notify from App\\Handlers in notify \"team\" \"alert\"", &result);
-
-yona_value_free(result);
-yona_destroy(interp);
-```
-
-## Architecture
-
-- **Lexer & Parser**: Recursive descent with Pratt parsing, newline-aware tokenization
-- **AST**: Visitor pattern with comprehensive node types
-- **Interpreter**: Tree-walking with frame-based execution, transparent async
-- **LLVM Compiler**: Type-directed codegen with unboxed primitives, deferred function compilation, lambda lifting for closures
-- **Type Checker**: Hindley-Milner with Promise\<T\> coercion
-- **Async Runtime**: Thread pool, dependency analyzer, auto-parallelization
-- **C API**: Stable `extern "C"` interface with opaque handles and sandboxing
-
-## Documentation
-
-- [Language Syntax Reference](docs/language-syntax.md)
-- [C Embedding API](docs/c-embedding-api.md)
-- [LLVM Backend Plan](docs/llvm-backend-plan.md)
-- [Module System](docs/module-system.md)
-- [Type System](docs/type-system-implementation.md)
-- [Async Implementation](docs/async-implementation-plan.md)
-- [TODO List](docs/todo-list.md)
-- [Project Roadmap](docs/project-roadmap.md)
-
-## Development
-
-See [CLAUDE.md](CLAUDE.md) for build details and architecture guide.
+[GPLv3](LICENSE.txt)
