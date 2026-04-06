@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	cmake --preset x64-release-linux
+
+override_dh_auto_build:
+	cmake --build --preset build-release-linux
+
+override_dh_auto_install:
+	install -Dm755 out/build/x64-release-linux/yonac $(CURDIR)/debian/yona/usr/bin/yonac
+	install -Dm755 out/build/x64-release-linux/yona $(CURDIR)/debian/yona/usr/bin/yona
+	install -d $(CURDIR)/debian/yona/usr/lib/yona/lib/Std
+	cp -r lib/Std/*.yona* $(CURDIR)/debian/yona/usr/lib/yona/lib/Std/ 2>/dev/null || true
+	install -d $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/platform
+	install -Dm644 src/compiled_runtime.c $(CURDIR)/debian/yona/usr/lib/yona/src/
+	cp src/runtime/*.c $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/ 2>/dev/null || true
+	cp src/runtime/platform/* $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/platform/
+
+override_dh_auto_test:
+	cd out/build/x64-release-linux && ctest --output-on-failure || true

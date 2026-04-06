@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [x86_64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-20 llvm-20-dev clang-20 lld-20 \
+            cmake ninja-build libpcre2-dev
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-20 100
+          sudo update-alternatives --install /usr/bin/lld lld /usr/bin/lld-20 100
+          sudo update-alternatives --install /usr/bin/llvm-config llvm-config /usr/bin/llvm-config-20 100
+
+      - name: Build release
+        run: |
+          cmake --preset x64-release-linux
+          cmake --build --preset build-release-linux
+
+      - name: Run tests
+        run: ctest --preset unit-tests-linux
+
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          DIST=yona-${VERSION}-linux-${{ matrix.arch }}
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform
+          cp out/build/x64-release-linux/yonac ${DIST}/bin/
+          cp out/build/x64-release-linux/yona ${DIST}/bin/
+          cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
+          cp src/compiled_runtime.c ${DIST}/src/
+          cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
+          cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true
+          cp src/runtime/platform/* ${DIST}/src/runtime/platform/
+          cp LICENSE.txt README.md INSTALL.md CHANGELOG.md ${DIST}/
+          tar czf ${DIST}.tar.gz ${DIST}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: yona-*-linux-*.tar.gz
+
+  build-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install llvm cmake ninja pcre2
+
+      - name: Build release
+        run: |
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          cmake --preset x64-release-macos
+          cmake --build --preset build-release-macos
+
+      - name: Package
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          DIST=yona-${VERSION}-macos-$(uname -m)
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform
+          cp out/build/x64-release-macos/yonac ${DIST}/bin/
+          cp out/build/x64-release-macos/yona ${DIST}/bin/
+          cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
+          cp src/compiled_runtime.c ${DIST}/src/
+          cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
+          cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true
+          cp src/runtime/platform/* ${DIST}/src/runtime/platform/
+          cp LICENSE.txt README.md INSTALL.md CHANGELOG.md ${DIST}/
+          tar czf ${DIST}.tar.gz ${DIST}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: yona-*-macos-*.tar.gz
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: yona-*.tar.gz
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false

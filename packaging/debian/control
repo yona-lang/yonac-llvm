@@ -1,0 +1,29 @@
+Source: yona
+Section: devel
+Priority: optional
+Maintainer: Yona Team <team@yona-lang.org>
+Build-Depends: debhelper-compat (= 13),
+               cmake (>= 3.10),
+               ninja-build,
+               clang,
+               lld,
+               llvm-dev (>= 16),
+               libpcre2-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/yona-lang/yonac-llvm
+Vcs-Git: https://github.com/yona-lang/yonac-llvm.git
+Vcs-Browser: https://github.com/yona-lang/yonac-llvm
+
+Package: yona
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends},
+         llvm (>= 16),
+         clang,
+         lld,
+         libpcre2-8-0
+Description: Yona programming language compiler targeting LLVM
+ Yona is a compiled functional programming language that targets LLVM.
+ Features include algebraic data types, pattern matching, traits,
+ persistent data structures (RBT sequences, HAMT dictionaries/sets),
+ async I/O via io_uring, and a comprehensive standard library with
+ 27 modules and 290+ exported functions.

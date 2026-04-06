@@ -1,0 +1,62 @@
+# Changelog
+
+## v0.1.0 (2025-04-06)
+
+Initial release of the Yona compiler targeting LLVM.
+
+### Language Features
+- Newline-aware lexer with juxtaposition-based function application
+- Pattern matching: integer, symbol, wildcard, head-tail, tuple, constructor, or-pattern, guards
+- Algebraic data types (non-recursive flat, recursive heap-allocated)
+- Traits with concrete/constrained instances, default methods, superclass constraints
+- Module system with FQN-based imports, interface files (.yonai), cross-module generics
+- Exception handling (raise/try/catch via setjmp/longjmp)
+- Closures with env-passing convention and closure devirtualization
+- String interpolation, do-blocks, pipe operators
+- Generators/comprehensions for seq, set, dict with stream fusion
+
+### Performance
+- LLVM codegen with optimization levels O0-O3
+- Stream fusion: chained comprehensions fused into single loops
+- LTO: cross-module inlining of C runtime via llvm::Linker
+- Closure devirtualization for known lambdas at HOF call sites
+- fastcc calling convention for internal functions
+- Branch prediction hints on hot runtime paths
+- Benchmark results: list_map_filter at 1.0x C, tak 0.8x (faster than C)
+
+### Data Structures
+- Persistent Seq: flat array (<=32) + radix-balanced trie with head chain + tail buffer
+- Persistent Dict: HAMT with splitmix64 hash, transient inserts (2.0x C)
+- Persistent Set: HAMT-backed, sharing Dict infrastructure (2.1x C)
+
+### Memory Management
+- Atomic reference counting (RELAXED inc, ACQ_REL dec)
+- Recursive destructors for all container types via heap_mask bitmasks
+- Hybrid Perceus DUP/DROP (callee-owns for non-seq, callee-borrows for seq)
+- Slab-based pool allocator (5 size classes)
+- Arena allocation for non-escaping let-bound values
+- Unique-owner optimization (in-place mutation when rc==1)
+- io_uring buffer pinning for async I/O safety
+
+### Standard Library (27 modules)
+- **Pure Yona (12)**: Option, Result, List, Tuple, Range, Math, Pair, Bool, Test, Collection, Function, Http
+- **C runtime (15)**: String, Encoding, Types, IO, File, Process, Random, Json, Crypto, Log, Net, Bytes, Time, Path, Format, Dict, Set, Regex
+
+### I/O Architecture
+- io_uring backend (Linux): raw syscalls, submit-and-return, async file/network I/O
+- Thread pool with work-stealing for extern async functions
+- Non-blocking Process module: spawn, readLine, readAll, wait, kill, writeStdin
+
+### Tooling
+- `yonac` compiler CLI with -O0 to -O3, --emit-ir, --emit-obj, debug symbols
+- `yona` interactive REPL
+- DWARF debug info generation
+- Documentation system (doc comments extracted by gendocs.py)
+- Benchmark suite with 11 benchmarks and C reference implementations
+- CI/CD: GitHub Actions with Linux, macOS, Windows builds
+
+### Testing
+- 763 assertions across 75 test cases
+- Codegen E2E fixtures (compile -> run -> check output)
+- Multi-module linking tests
+- Trait/generic cross-module tests

@@ -87,9 +87,14 @@
 - [ ] LSP server
 
 ## Distribution & Packaging
-- [ ] RPM/DEB/Homebrew/Windows packages
-- [ ] Static binary releases via GitHub Releases
-- [ ] Docker image, CI/CD pipeline
+- [x] **RPM package** — `packaging/yona.spec` for Fedora/RHEL
+- [x] **DEB package** — `packaging/debian/` for Ubuntu/Debian
+- [x] **Homebrew formula** — `Formula/yona.rb` for macOS
+- [x] **Docker image** — multi-stage `Dockerfile` (Fedora-based)
+- [x] **GitHub Releases workflow** — `.github/workflows/release.yml`,
+  builds Linux + macOS binaries on tag push
+- [x] **Documentation** — INSTALL.md, CONTRIBUTING.md, CHANGELOG.md
+- [ ] Windows installer (NSIS/WiX)
 
 ## Platform Support
 - [ ] Multi-arch build setup — CMake cross-compilation presets for

@@ -1,0 +1,11 @@
+yona (0.1.0-1) unstable; urgency=low
+
+  * Initial release
+  * Compiler (yonac) and REPL (yona)
+  * 27 stdlib modules, 290+ exported functions
+  * Persistent data structures (RBT Seq, HAMT Dict/Set)
+  * Async I/O via io_uring, thread pool
+  * PCRE2-backed regex module
+  * Non-blocking Process module
+
+ -- Yona Team <team@yona-lang.org>  Sun, 06 Apr 2025 00:00:00 +0000

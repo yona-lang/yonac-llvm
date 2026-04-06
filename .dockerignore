@@ -1,0 +1,7 @@
+out/
+.git/
+*.o
+*.bc
+*.a
+*.so
+*.dylib

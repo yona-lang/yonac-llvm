@@ -1,0 +1,8 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: yona
+Upstream-Contact: team@yona-lang.org
+Source: https://github.com/yona-lang/yonac-llvm
+
+Files: *
+Copyright: 2024-2025 Yona Team
+License: GPL-3.0-only
