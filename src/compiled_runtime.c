@@ -301,6 +301,11 @@ void yona_rt_rc_dec(void* ptr) {
                     if (elem_val) yona_rt_rc_dec((void*)(intptr_t)elem_val);
                 }
             }
+        } else if (type_tag == 17 /* RC_TYPE_PROCESS */) {
+            /* Process handle: close pipe fds, reap zombie.
+             * yona_process_destroy is defined in os_linux.c. */
+            extern void yona_process_destroy(void* proc) __attribute__((weak));
+            if (yona_process_destroy) yona_process_destroy(ptr);
         } else if (type_tag == 16 /* RC_TYPE_REGEX */) {
             /* Regex handle: free the PCRE2 compiled pattern.
              * Layout: [pcre2_code* code]

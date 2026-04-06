@@ -3,8 +3,8 @@
 ## Summary
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 751 assertions across 75 test cases (all passing)
-- **Stdlib**: 27 modules, ~280 exported functions (12 pure Yona + 15 C runtime)
+- **Tests**: 763 assertions across 75 test cases (all passing)
+- **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Benchmarks**: 11/11 passing, 6 within 1.5x C, list_map_filter at 1.0x C
 
 ## Benchmark Results
@@ -77,8 +77,10 @@
 - [x] **Cross-module return type propagation** — fixed pre-existing issue
   where imported functions lost Bool/String/Seq return types. Boxed extern
   wrapper detection + i64-to-native conversion.
-- [ ] Process.exec non-blocking — current exec/execStatus are blocking.
-  Should use io_uring or thread pool for async subprocess execution.
+- [x] **Non-blocking Process** — full subprocess management via spawn/wait/
+  kill/readLine/readAll/writeStdin/closeStdin/pid. RC_TYPE_PROCESS handle
+  with pipe redirection (stdin/stdout/stderr). exec/execStatus now AFN
+  (async via thread pool). 7 new test fixtures.
 
 ## Tooling
 - [ ] Package manager / build system

@@ -1,0 +1,6 @@
+import spawn, readLine, wait from Std\Process in
+let proc = spawn "echo line1; echo line2; echo line3" in
+let l1 = readLine proc in
+let l2 = readLine proc in
+let _ = wait proc in
+l1 ++ " " ++ l2

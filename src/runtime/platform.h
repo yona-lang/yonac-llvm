@@ -80,4 +80,33 @@ int64_t yona_platform_setenv(const char* name, const char* value);
 /* Get hostname. Returns rc_alloc'd string. */
 char* yona_platform_hostname(void);
 
+/* ===== Non-blocking Process (spawn/wait/kill) ===== */
+
+/* Spawn a subprocess with pipe redirection. Returns RC-managed process handle. */
+void* yona_Std_Process__spawn(const char* cmd);
+
+/* Read one line from subprocess stdout (blocking). */
+char* yona_Std_Process__readLine(void* proc);
+
+/* Read all remaining stdout (blocking — use via AFN for async). */
+char* yona_Std_Process__readAll(void* proc);
+
+/* Wait for subprocess exit (blocking — use via AFN for async). Returns exit code. */
+int64_t yona_Std_Process__wait(void* proc);
+
+/* Send signal to subprocess. Returns 1 on success, 0 on failure. */
+int64_t yona_Std_Process__kill(void* proc, int64_t signal);
+
+/* Write data to subprocess stdin pipe. Returns 1 on success, 0 on failure. */
+int64_t yona_Std_Process__writeStdin(void* proc, const char* data);
+
+/* Close subprocess stdin (signal EOF). Returns 1. */
+int64_t yona_Std_Process__closeStdin(void* proc);
+
+/* Get subprocess PID. */
+int64_t yona_Std_Process__pid(void* proc);
+
+/* Destructor (called by rc_dec). */
+void yona_process_destroy(void* proc);
+
 #endif /* YONA_PLATFORM_H */

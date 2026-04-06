@@ -1,0 +1,5 @@
+import spawn, readAll, wait from Std\Process in
+let proc = spawn "echo hello world" in
+let out = readAll proc in
+let code = wait proc in
+out
