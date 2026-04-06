@@ -239,7 +239,7 @@ def main():
     parser.add_argument("filter", nargs="?", help="Filter by benchmark name")
     parser.add_argument("-n", "--iterations", type=int, default=3)
     parser.add_argument("-O", "--opt-level", type=int, default=2)
-    parser.add_argument("--compare-c", action="store_true")
+    parser.add_argument("--compare-c", "--compare", action="store_true")
     parser.add_argument("--all-opt-levels", action="store_true", help="Run O0, O1, O2, O3")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--save", action="store_true", help="Save results to bench/history.jsonl")

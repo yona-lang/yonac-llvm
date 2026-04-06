@@ -31,6 +31,13 @@
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 
+### Compiler Bugs
+- [ ] **Recursive seq-parameter type inference** — functions that take a seq
+  parameter and are called with `[]` as initial accumulator get the param
+  typed as INT instead of SEQ. Affects: insertion sort, any recursive
+  function with `foldl (\acc x -> f x acc) [] list` pattern. Workaround:
+  ensure first call passes a known-typed seq, not `[]`.
+
 ### Language
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 

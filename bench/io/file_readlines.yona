@@ -1,0 +1,4 @@
+import readLines from Std\File in
+let lines = readLines "bench/data/bench_text.txt" in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+foldl (\acc _ -> acc + 1) 0 lines
