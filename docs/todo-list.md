@@ -9,19 +9,19 @@
 
 ## Benchmark Results
 
-| Benchmark | Yona | Yona MB | C | C MB | Ratio | Notes |
-|-----------|------|---------|---|------|-------|-------|
-| list_map_filter | 0.76ms | 2.7 | 0.90ms | 2.9 | **0.8x** | Stream fusion |
-| tak | 68ms | 2.1 | 77ms | 2.0 | **0.9x** | Faster than C |
-| sum_squares | 0.59ms | 2.1 | 0.53ms | 2.0 | **1.1x** | |
-| sieve | 0.76ms | 2.9 | 0.57ms | 2.0 | 1.3x | |
-| list_reverse | 0.93ms | 2.9 | 0.67ms | 2.4 | 1.4x | |
-| list_sum | 0.99ms | 2.7 | 0.62ms | 2.4 | 1.6x | |
-| dict_build | 1.4ms | 3.2 | 0.68ms | 2.3 | **2.1x** | HAMT transient |
-| set_build | 1.4ms | 3.2 | 0.76ms | 2.2 | **1.8x** | HAMT transient |
-| fibonacci | 16ms | 2.1 | 7.9ms | 2.0 | 2.0x | |
-| ackermann | 164ms | 2.3 | 66ms | 2.2 | 2.5x | Deep recursion |
-| queens | 14ms | 42.7 | 1.4ms | 2.0 | 10.3x | Allocation-heavy (42MB vs 2MB) |
+| Benchmark | Yona | C | Time ratio | Yona MB | C MB | Mem ratio |
+|-----------|------|---|------------|---------|------|-----------|
+| list_map_filter | 0.85ms | 0.81ms | **1.0x** | 2.6 | 2.9 | 0.9x |
+| tak | 66ms | 77ms | **0.8x** | 2.1 | 2.0 | 1.1x |
+| sum_squares | 0.60ms | 0.52ms | 1.2x | 2.2 | 2.0 | 1.1x |
+| sieve | 0.76ms | 0.56ms | 1.4x | 2.9 | 2.0 | 1.5x |
+| list_reverse | 0.96ms | 0.68ms | 1.4x | 2.9 | 2.4 | 1.2x |
+| list_sum | 1.0ms | 0.66ms | 1.6x | 2.7 | 2.4 | 1.1x |
+| dict_build | 1.4ms | 0.70ms | **2.0x** | 3.1 | 2.2 | 1.4x |
+| set_build | 1.5ms | 0.72ms | **2.1x** | 3.2 | 2.2 | 1.5x |
+| fibonacci | 16ms | 8.0ms | 2.0x | 2.1 | 2.0 | 1.1x |
+| ackermann | 166ms | 65ms | 2.6x | 2.2 | 2.3 | 1.0x |
+| queens | 14ms | 1.3ms | 10.8x | 42.7 | 2.0 | **21x** |
 
 ## Performance Optimization
 
@@ -59,11 +59,10 @@
   unique-owner in-place tail mutation from corrupting shared bindings.
 
 ### Remaining
-- [ ] **Arena allocation** — per-scope bump allocator for non-escaping
-  let-bound values. Framework exists (escape analysis + arena runtime)
-  but disabled: per-scope arena creation/destruction hurts recursive code
-  (queens 14ms→39ms). Needs smarter heuristic: only enable for scopes
-  with multiple heap-typed non-escaping bindings, not per-let-scope.
+- [x] **Arena allocation** — per-scope bump allocator for non-escaping
+  heap-typed let-bound values. Escape analysis identifies non-escaping
+  bindings; arena created only when >= 2 heap-allocating non-escaping
+  bindings exist (avoids overhead for recursive scopes with few bindings).
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Analysis: would give ~10-15% on top of current optimizations. Low
   priority — static branch hints already capture most of the benefit.

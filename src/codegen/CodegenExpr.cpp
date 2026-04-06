@@ -293,9 +293,10 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     // Escape analysis: determine which bindings don't escape this scope.
     // Analysis results stored for future arena optimization.
     std::unordered_set<std::string> local_non_escaping;
-    if (false) { // Arena allocation disabled: per-scope arena overhead hurts recursive
-                  // code (queens). Needs smarter heuristic: only enable for scopes with
-                  // multiple heap-typed non-escaping bindings.
+    // Arena heuristic: only activate for scopes with >= 2 heap-allocating
+    // non-escaping bindings. A single binding doesn't justify the 4KB arena
+    // malloc overhead, and recursive scopes (like queens) typically have few.
+    if (node->aliases.size() >= 2) {
         std::unordered_set<std::string> local_fns;
         for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
         for (auto& [name, _] : compiled_functions_) local_fns.insert(name);
@@ -378,20 +379,30 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
         };
         check_escape(node->expr, true);
 
+        // Filter to non-escaping names with heap-allocating RHS
         for (auto& name : let_names) {
-            if (!escaping.count(name))
-                local_non_escaping.insert(name);
+            if (escaping.count(name)) continue;
+            // Check if the alias's RHS is a heap-allocating expression
+            for (auto* alias : node->aliases) {
+                if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+                    if (va->identifier->name->value != name) continue;
+                    auto ty = va->expr->get_type();
+                    if (ty == AST_VALUES_SEQUENCE_EXPR || ty == AST_TUPLE_EXPR ||
+                        ty == AST_SET_EXPR || ty == AST_DICT_EXPR ||
+                        ty == AST_SEQ_GENERATOR_EXPR || ty == AST_SET_GENERATOR_EXPR ||
+                        ty == AST_DICT_GENERATOR_EXPR || ty == AST_FUNCTION_EXPR) {
+                        local_non_escaping.insert(name);
+                    }
+                }
+            }
         }
     }
 
-    // Arena allocation for non-escaping values.
-    // Non-escaping let-bound values are bump-allocated from a per-scope
-    // arena, avoiding individual malloc/free overhead. The arena is freed
-    // in bulk at scope exit. RC sentinel (INT64_MAX) prevents rc_dec
-    // from freeing arena-allocated values individually.
+    // Arena allocation for non-escaping heap values.
+    // Only create arena if >= 2 such bindings exist (justifies the 4KB overhead).
     llvm::Value* arena = nullptr;
     auto saved_arena = current_arena_;
-    if (!local_non_escaping.empty()) {
+    if (local_non_escaping.size() >= 2) {
         auto i64_ty = LType::getInt64Ty(*context_);
         arena = builder_->CreateCall(rt_arena_create_,
             {ConstantInt::get(i64_ty, 4096)}, "arena");
