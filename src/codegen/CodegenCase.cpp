@@ -143,6 +143,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
             // Coerce scrutinee to pointer for seq runtime calls
             Value* seq_ptr = scrutinee.val;
+            if (!seq_ptr->getType()->isPointerTy())
+                seq_ptr = builder_->CreateIntToPtr(seq_ptr, ptr_ty);
 
             if (htp->heads.size() == 1) {
                 // Inline is_empty: load count from seq[0], check == 0
@@ -185,6 +187,15 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 }
             }
             if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
+                // rc_inc scrutinee before tail when the scrutinee variable is
+                // also referenced in the case body (e.g., `case s of [h|t] -> x :: s`).
+                // Without this, seq_tail(s) modifies s in place, corrupting later uses.
+                // Only do this when the scrutinee IS a named variable used in the body.
+                if (node->expr->get_type() == AST_IDENTIFIER_EXPR) {
+                    auto scrut_name = static_cast<IdentifierExpr*>(node->expr)->name->value;
+                    if (count_identifier_refs(clause->body, scrut_name) > 0)
+                        emit_rc_inc(seq_ptr, CType::SEQ);
+                }
                 auto tv = builder_->CreateCall(rt_seq_tail_, {seq_ptr});
                 auto* pv = static_cast<PatternValue*>(htp->tail);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
@@ -196,6 +207,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             if (sp->patterns.empty()) {
                 // Inline is_empty: count/total_length at index 0
                 Value* seq_val = scrutinee.val;
+                if (!seq_val->getType()->isPointerTy())
+                    seq_val = builder_->CreateIntToPtr(seq_val, PointerType::get(*context_, 0));
                 auto* count_ptr = builder_->CreateGEP(LType::getInt64Ty(*context_),
                     seq_val, {ConstantInt::get(LType::getInt64Ty(*context_), 0)});
                 auto* count = builder_->CreateLoad(LType::getInt64Ty(*context_), count_ptr, "seq_count");

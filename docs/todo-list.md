@@ -32,11 +32,14 @@
   Low priority: static branch hints already capture most benefit.
 
 ### Compiler Bugs
-- [ ] **Recursive seq-parameter type inference** — functions that take a seq
-  parameter and are called with `[]` as initial accumulator get the param
-  typed as INT instead of SEQ. Affects: insertion sort, any recursive
-  function with `foldl (\acc x -> f x acc) [] list` pattern. Workaround:
-  ensure first call passes a known-typed seq, not `[]`.
+- [x] **Recursive seq-parameter type inference** — fixed by adding inttoptr
+  coercion in case seq patterns when scrutinee is i64-typed (boxed pointer).
+- [x] **Head-tail pattern mutation** — `case s of [h|t] -> x :: s` corrupted
+  `s` because seq_tail modified it in place. Fixed by targeted rc_inc when
+  the scrutinee variable appears in the case body.
+- [ ] **File I/O runtime crash** — `import readFile from Std\File` crashes
+  at runtime (segfault). Pre-existing, not related to recent changes.
+  Likely io_uring or LTO bitcode issue.
 
 ### Language
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
