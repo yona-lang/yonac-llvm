@@ -224,6 +224,17 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         return {};
     }
 
+    // Stream fusion: if source is a deferred single-use generator, fuse.
+    if (ext->collection->get_type() == AST_IDENTIFIER_EXPR) {
+        auto* src_id = static_cast<IdentifierExpr*>(ext->collection);
+        auto it = deferred_generators_.find(src_id->name->value);
+        if (it != deferred_generators_.end()) {
+            auto* inner = it->second;
+            deferred_generators_.erase(it);
+            return codegen_fused_seq_generator(node, inner);
+        }
+    }
+
     auto src = codegen(ext->collection);
     if (!src) return {};
 
@@ -498,6 +509,159 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
 
     builder_->SetInsertPoint(done_bb);
     return {dict_phi, CType::DICT};
+}
+
+// ===== Stream fusion: fused generator codegen =====
+//
+// Emits a single loop that combines an inner (deferred) generator with an
+// outer generator. Eliminates the intermediate sequence allocation.
+//
+// Given: outer = [outer_reducer | outer_var = <inner>, if outer_guard]
+//        inner = [inner_reducer | inner_var = src, if inner_guard]
+//
+// Produces a single loop over src that applies inner_reducer → outer_reducer
+// with both guards, storing into a single result array.
+
+TypedValue Codegen::codegen_fused_seq_generator(SeqGeneratorExpr* outer,
+                                                 SeqGeneratorExpr* inner) {
+    set_debug_loc(outer->source_context);
+
+    auto* outer_ext = static_cast<ValueCollectionExtractorExpr*>(outer->collectionExtractor);
+    auto* inner_ext = static_cast<ValueCollectionExtractorExpr*>(inner->collectionExtractor);
+
+    bool inner_guarded = (inner_ext->condition != nullptr);
+    bool outer_guarded = (outer_ext->condition != nullptr);
+    bool any_guard = inner_guarded || outer_guarded;
+
+    std::string inner_var = extractor_var_name(inner->collectionExtractor);
+    std::string outer_var = extractor_var_name(outer->collectionExtractor);
+
+    // Codegen the original source (the inner generator's input)
+    auto src = codegen(inner_ext->collection);
+    if (!src) return {};
+
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto ptr_ty = PointerType::get(*context_, 0);
+
+    Value* src_ptr = src.val;
+    if (!src_ptr->getType()->isPointerTy())
+        src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
+
+    auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "fuse_len");
+    auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "fuse_result");
+
+    auto* func = builder_->GetInsertBlock()->getParent();
+    auto* zero = ConstantInt::get(i64_ty, 0);
+    auto* one = ConstantInt::get(i64_ty, 1);
+
+    auto* loop_bb = BasicBlock::Create(*context_, "fuse.loop", func);
+    auto* body_bb = BasicBlock::Create(*context_, "fuse.body", func);
+    auto* done_bb = BasicBlock::Create(*context_, "fuse.done", func);
+
+    BasicBlock* next_bb = any_guard
+        ? BasicBlock::Create(*context_, "fuse.next", func) : nullptr;
+
+    builder_->CreateBr(loop_bb);
+
+    // Loop header: iterate source via head/tail (O(1) per element on rbt)
+    builder_->SetInsertPoint(loop_bb);
+    auto* cur_phi = builder_->CreatePHI(ptr_ty, 2, "fuse.cur");
+    cur_phi->addIncoming(src_ptr, loop_bb->getSinglePredecessor());
+
+    // Write index (for non-guard: same as element count)
+    auto* wi_phi = builder_->CreatePHI(i64_ty, 2, "fuse.wi");
+    wi_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
+
+    auto* is_empty = builder_->CreateCall(rt_seq_is_empty_, {cur_phi}, "fuse.empty");
+    auto* not_empty = builder_->CreateICmpEQ(is_empty, zero, "fuse.nempty");
+    builder_->CreateCondBr(not_empty, body_bb, done_bb);
+
+    // Body: head/tail on source cursor
+    builder_->SetInsertPoint(body_bb);
+    auto* elem = builder_->CreateCall(rt_seq_head_, {cur_phi}, "fuse.elem");
+    auto* next_cur = builder_->CreateCall(rt_seq_tail_, {cur_phi}, "fuse.next_cur");
+
+    auto saved = named_values_;
+    named_values_[inner_var] = {elem, CType::INT};
+
+    // Track blocks that branch to next_bb with unchanged wi
+    std::vector<BasicBlock*> skip_blocks;
+
+    // Inner guard (if present)
+    if (inner_guarded) {
+        auto guard_val = codegen(inner_ext->condition);
+        Value* gb = guard_val.val;
+        if (gb->getType() == i64_ty) gb = builder_->CreateICmpNE(gb, zero);
+        else if (gb->getType() != LType::getInt1Ty(*context_))
+            gb = builder_->CreateICmpNE(builder_->CreateZExtOrTrunc(gb, i64_ty), zero);
+        auto* pass_bb = BasicBlock::Create(*context_, "fuse.ipass", func);
+        skip_blocks.push_back(builder_->GetInsertBlock());
+        builder_->CreateCondBr(gb, pass_bb, next_bb);
+        builder_->SetInsertPoint(pass_bb);
+        // Re-bind inner var (codegen of guard may have changed insert point)
+        named_values_[inner_var] = {elem, CType::INT};
+    }
+
+    // Evaluate inner reducer → produces the element the outer sees
+    auto inner_result = codegen(inner->reducerExpr);
+    Value* ir_val = inner_result.val;
+
+    // Bind outer variable to inner's result
+    named_values_[outer_var] = {ir_val, inner_result.type};
+
+    // Outer guard (if present)
+    if (outer_guarded) {
+        auto guard_val = codegen(outer_ext->condition);
+        Value* gb = guard_val.val;
+        if (gb->getType() == i64_ty) gb = builder_->CreateICmpNE(gb, zero);
+        else if (gb->getType() != LType::getInt1Ty(*context_))
+            gb = builder_->CreateICmpNE(builder_->CreateZExtOrTrunc(gb, i64_ty), zero);
+        auto* store_bb = BasicBlock::Create(*context_, "fuse.store", func);
+        skip_blocks.push_back(builder_->GetInsertBlock());
+        builder_->CreateCondBr(gb, store_bb, next_bb);
+        builder_->SetInsertPoint(store_bb);
+        named_values_[outer_var] = {ir_val, inner_result.type};
+    }
+
+    // Evaluate outer reducer → final value to store
+    auto final_val = codegen(outer->reducerExpr);
+    Value* store_val = final_val.val;
+    if (store_val->getType()->isPointerTy())
+        store_val = builder_->CreatePtrToInt(store_val, i64_ty);
+    else if (store_val->getType()->isDoubleTy())
+        store_val = builder_->CreateBitCast(store_val, i64_ty);
+
+    builder_->CreateCall(rt_seq_set_, {result, wi_phi, store_val});
+
+    if (any_guard) {
+        auto* wi_inc = builder_->CreateAdd(wi_phi, one, "fuse.wi.inc");
+        auto* store_end_bb = builder_->GetInsertBlock();
+        builder_->CreateBr(next_bb);
+
+        // Merge write index and cursor
+        builder_->SetInsertPoint(next_bb);
+        auto* wi_merged = builder_->CreatePHI(i64_ty,
+            (int)(skip_blocks.size() + 1), "fuse.wi.m");
+        for (auto* sb : skip_blocks)
+            wi_merged->addIncoming(wi_phi, sb);
+        wi_merged->addIncoming(wi_inc, store_end_bb);
+
+        cur_phi->addIncoming(next_cur, next_bb);
+        wi_phi->addIncoming(wi_merged, next_bb);
+        builder_->CreateBr(loop_bb);
+    } else {
+        auto* wi_inc = builder_->CreateAdd(wi_phi, one, "fuse.wi.inc");
+        cur_phi->addIncoming(next_cur, builder_->GetInsertBlock());
+        wi_phi->addIncoming(wi_inc, builder_->GetInsertBlock());
+        builder_->CreateBr(loop_bb);
+    }
+
+    named_values_ = saved;
+
+    builder_->SetInsertPoint(done_bb);
+    // Always adjust count: wi_phi tracks actual elements stored
+    builder_->CreateStore(wi_phi, result);
+    return {result, CType::SEQ};
 }
 
 } // namespace yona::compiler::codegen

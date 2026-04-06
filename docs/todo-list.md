@@ -22,7 +22,9 @@
 - [x] **Tail call marking** — self-recursive calls → LLVM TCE loops.
 
 ### Remaining
-- [ ] **Stream fusion** — fuse map/filter/fold chains into single loops.
+- [x] **Stream fusion** — deferred single-use generator let-bindings fused
+  at codegen time. Eliminates intermediate seq allocations in chained
+  comprehensions. list_map_filter: 1.5x → 1.0x C.
 - [x] **LTO** — cross-module inlining via clang bitcode + llvm::Linker.
   Queens: 16x→10.8x C, list_map_filter: 1.4x→1.2x C.
 - [x] **Hash-based Dict** — HAMT with splitmix64 hash, O(1) amortized.

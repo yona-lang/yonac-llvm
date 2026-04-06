@@ -218,7 +218,14 @@ int main(int argc, char* argv[]) {
 
             // Compile to LLVM bitcode for LTO (enables runtime function inlining).
             // Merge all runtime sources (main + platform) into one bitcode.
-            if (!filesystem::exists(rt_bc)) {
+            // Regenerate if .bc doesn't exist or source is newer
+            bool need_bc = !filesystem::exists(rt_bc);
+            if (!need_bc && filesystem::exists(candidate)) {
+                auto bc_time = filesystem::last_write_time(rt_bc);
+                auto src_time = filesystem::last_write_time(candidate);
+                if (src_time > bc_time) need_bc = true;
+            }
+            if (need_bc) {
                 string bc_main = rt_bc + ".main";
                 string bc_cmd = "clang -emit-llvm -O2 -c " + candidate.string() +
                     " -I" + src_dir + " -o " + bc_main + " 2>/dev/null";

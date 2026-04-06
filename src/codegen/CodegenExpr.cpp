@@ -179,6 +179,112 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
     return {result, CType::BOOL};
 }
 
+// ===== Stream fusion: count identifier references in AST =====
+
+int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
+    if (!node) return 0;
+    auto ty = node->get_type();
+
+    if (ty == AST_IDENTIFIER_EXPR)
+        return static_cast<IdentifierExpr*>(node)->name->value == name ? 1 : 0;
+
+    // Binary ops: all inherit from BinaryOpExpr with left/right
+    if (dynamic_cast<BinaryOpExpr*>(static_cast<AstNode*>(node))) {
+        auto* b = static_cast<BinaryOpExpr*>(node);
+        return count_identifier_refs(b->left, name) + count_identifier_refs(b->right, name);
+    }
+
+    if (ty == AST_IF_EXPR) {
+        auto* e = static_cast<IfExpr*>(node);
+        return count_identifier_refs(e->condition, name)
+             + count_identifier_refs(e->thenExpr, name)
+             + count_identifier_refs(e->elseExpr, name);
+    }
+    if (ty == AST_LET_EXPR) {
+        auto* e = static_cast<LetExpr*>(node);
+        int c = 0;
+        for (auto* a : e->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(a)) {
+                c += count_identifier_refs(va->expr, name);
+                if (va->identifier->name->value == name) return c; // shadowed
+            } else if (auto* la = dynamic_cast<LambdaAlias*>(a)) {
+                c += count_identifier_refs(la->lambda, name);
+                if (la->name->value == name) return c;
+            }
+        }
+        return c + count_identifier_refs(e->expr, name);
+    }
+    if (ty == AST_CASE_EXPR) {
+        auto* e = static_cast<CaseExpr*>(node);
+        int c = count_identifier_refs(e->expr, name);
+        for (auto* clause : e->clauses)
+            c += count_identifier_refs(clause->body, name);
+        return c;
+    }
+    if (ty == AST_APPLY_EXPR) {
+        auto* e = static_cast<ApplyExpr*>(node);
+        int c = 0;
+        if (auto* nc = dynamic_cast<NameCall*>(e->call))
+            c += (nc->name->value == name) ? 1 : 0;
+        for (auto& arg : e->args) {
+            if (std::holds_alternative<ExprNode*>(arg))
+                c += count_identifier_refs(std::get<ExprNode*>(arg), name);
+            else
+                c += count_identifier_refs(std::get<ValueExpr*>(arg), name);
+        }
+        return c;
+    }
+    if (ty == AST_TUPLE_EXPR) {
+        auto* e = static_cast<TupleExpr*>(node);
+        int c = 0;
+        for (auto* v : e->values) c += count_identifier_refs(v, name);
+        return c;
+    }
+    if (ty == AST_VALUES_SEQUENCE_EXPR) {
+        auto* e = static_cast<ValuesSequenceExpr*>(node);
+        int c = 0;
+        for (auto* v : e->values) c += count_identifier_refs(v, name);
+        return c;
+    }
+    if (ty == AST_SEQ_GENERATOR_EXPR) {
+        auto* g = static_cast<SeqGeneratorExpr*>(node);
+        auto* ext = static_cast<ValueCollectionExtractorExpr*>(g->collectionExtractor);
+        int c = count_identifier_refs(ext->collection, name);
+        // Binding variable shadows name inside reducer/condition
+        std::string var;
+        if (auto* id = std::get_if<IdentifierExpr*>(&ext->expr))
+            var = (*id)->name->value;
+        if (var != name) {
+            c += count_identifier_refs(g->reducerExpr, name);
+            if (ext->condition) c += count_identifier_refs(ext->condition, name);
+        }
+        return c;
+    }
+    if (ty == AST_FUNCTION_EXPR) {
+        auto* f = static_cast<FunctionExpr*>(node);
+        // Check if name is shadowed by a parameter
+        for (auto& p : f->patterns) {
+            if (p->get_type() == AST_PATTERN_VALUE) {
+                auto* pv = static_cast<PatternValue*>(p);
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    if ((*id)->name->value == name) return 0; // shadowed by param
+            }
+        }
+        int c = 0;
+        for (auto* body : f->bodies)
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+                c += count_identifier_refs(bwg->expr, name);
+        return c;
+    }
+    if (ty == AST_DO_EXPR) {
+        auto* e = static_cast<DoExpr*>(node);
+        int c = 0;
+        for (auto* s : e->steps) c += count_identifier_refs(s, name);
+        return c;
+    }
+    return 0; // literals, symbols, etc.
+}
+
 // ===== Let Bindings =====
 
 TypedValue Codegen::codegen_let(LetExpr* node) {
@@ -296,6 +402,18 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     for (auto* alias : node->aliases) {
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
             std::string vname = va->identifier->name->value;
+
+            // Stream fusion: defer single-use generator bindings.
+            // If the RHS is a SeqGeneratorExpr and it's used exactly once in the
+            // let body, skip codegen now and fuse it into the consuming generator.
+            if (va->expr->get_type() == AST_SEQ_GENERATOR_EXPR) {
+                int refs = count_identifier_refs(node->expr, vname);
+                if (refs == 1) {
+                    deferred_generators_[vname] = static_cast<SeqGeneratorExpr*>(va->expr);
+                    continue; // skip codegen, rc_inc, scope tracking
+                }
+            }
+
             // If non-escaping, set arena for this binding's allocation
             bool use_arena = arena && local_non_escaping.count(vname);
             if (use_arena) current_arena_ = arena;
@@ -400,6 +518,13 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
         builder_->CreateCall(rt_arena_destroy_, {arena});
 
     current_arena_ = saved_arena;
+
+    // Clean up any deferred generators not consumed by fusion
+    for (auto* alias : node->aliases) {
+        if (auto* va = dynamic_cast<ValueAlias*>(alias))
+            deferred_generators_.erase(va->identifier->name->value);
+    }
+
     return result;
 }
 
@@ -490,6 +615,18 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
 
 TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     set_debug_loc(node->source_context);
+    // Materialize deferred generator if referenced outside fusion context
+    {
+        auto dg_it = deferred_generators_.find(node->name->value);
+        if (dg_it != deferred_generators_.end()) {
+            auto* gen = dg_it->second;
+            deferred_generators_.erase(dg_it);
+            auto tv = codegen_seq_generator(gen);
+            if (tv) named_values_[node->name->value] = tv;
+            return tv;
+        }
+    }
+
     auto it = named_values_.find(node->name->value);
     if (it != named_values_.end()) {
         // If it's a FUNCTION with nullptr val, set last_lambda_name_ for higher-order support

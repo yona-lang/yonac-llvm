@@ -111,6 +111,11 @@ private:
     // Deferred functions: name → AST (compiled at call site)
     std::unordered_map<std::string, DeferredFunction> deferred_functions_;
 
+    // Stream fusion: deferred single-use generator bindings.
+    // When a let-bound seq generator has exactly one use, we skip its codegen
+    // and fuse it into the consuming generator at codegen time.
+    std::unordered_map<std::string, ast::SeqGeneratorExpr*> deferred_generators_;
+
     // Compiled function cache: name + arg types → LLVM function + return type
     struct CompiledFunction {
         llvm::Function* fn;
@@ -384,6 +389,8 @@ private:
 
     // Generators / comprehensions
     TypedValue codegen_seq_generator(SeqGeneratorExpr* node);
+    TypedValue codegen_fused_seq_generator(SeqGeneratorExpr* outer, SeqGeneratorExpr* inner);
+    static int count_identifier_refs(ast::AstNode* node, const std::string& name);
     TypedValue codegen_set_generator(SetGeneratorExpr* node);
     TypedValue codegen_dict_generator(DictGeneratorExpr* node);
 
