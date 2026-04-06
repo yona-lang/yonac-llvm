@@ -293,7 +293,9 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     // Escape analysis: determine which bindings don't escape this scope.
     // Analysis results stored for future arena optimization.
     std::unordered_set<std::string> local_non_escaping;
-    if (false) { // Disabled: analysis-only, enable when arena allocation is ready
+    if (false) { // Arena allocation disabled: per-scope arena overhead hurts recursive
+                  // code (queens). Needs smarter heuristic: only enable for scopes with
+                  // multiple heap-typed non-escaping bindings.
         std::unordered_set<std::string> local_fns;
         for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
         for (auto& [name, _] : compiled_functions_) local_fns.insert(name);

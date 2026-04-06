@@ -11,17 +11,17 @@
 
 | Benchmark | Yona | C | Ratio | Notes |
 |-----------|------|---|-------|-------|
-| list_map_filter | 0.82ms | 0.83ms | **1.0x** | Stream fusion |
-| list_sum | 0.84ms | 0.72ms | 1.2x | RBT head/tail |
-| list_reverse | 1.0ms | 0.69ms | 1.5x | RBT cons |
-| sum_squares | 0.60ms | 0.57ms | **1.0x** | |
-| tak | 65ms | 78ms | **0.8x** | Faster than C |
-| sieve | 0.77ms | 0.55ms | 1.4x | |
+| list_map_filter | 0.76ms | 0.90ms | **0.8x** | Stream fusion |
+| tak | 68ms | 77ms | **0.9x** | Faster than C |
+| sum_squares | 0.59ms | 0.53ms | **1.1x** | |
+| list_sum | 0.99ms | 0.62ms | 1.6x | RBT head/tail |
+| sieve | 0.76ms | 0.57ms | 1.3x | |
+| list_reverse | 0.93ms | 0.67ms | 1.4x | RBT cons |
+| dict_build | 1.4ms | 0.68ms | **2.1x** | HAMT transient inserts |
+| set_build | 1.4ms | 0.76ms | **1.8x** | HAMT transient inserts |
 | fibonacci | 16ms | 7.9ms | 2.0x | |
-| ackermann | 163ms | 66ms | 2.5x | Deep recursion |
-| queens | 14ms | 1.4ms | 10.4x | Allocation-heavy |
-| dict_build | 6.9ms | — | — | 10K HAMT inserts |
-| set_build | 7.5ms | — | — | 10K HAMT inserts |
+| ackermann | 164ms | 66ms | 2.5x | Deep recursion |
+| queens | 14ms | 1.4ms | 10.3x | Allocation-heavy |
 
 ## Performance Optimization
 
@@ -41,8 +41,9 @@
 - [x] **LTO** — cross-module inlining via clang bitcode + llvm::Linker.
   Queens: 16x→10.8x C, list_map_filter: 1.4x→1.2x C.
 - [x] **Hash-based Dict** — HAMT with splitmix64 hash, O(1) amortized.
-  Std\Dict module (put/get/contains/size/keys). 10K build in 6.9ms.
+  Transient inserts (unique-owner in-place mutation). dict_build: 1.4ms (2.1x C).
 - [x] **Hash-based Set** — HAMT-backed persistent set, sharing Dict's trie.
+  Transient inserts. set_build: 1.4ms (1.8x C).
   Std\Set module (insert/contains/size/elements/union/intersection/difference).
 - [x] **Seq snoc** — O(1) amortized via RBT tail buffer.
 - [x] **Mutual tail call optimization** — LLVM already handles this.
@@ -58,6 +59,11 @@
   unique-owner in-place tail mutation from corrupting shared bindings.
 
 ### Remaining
+- [ ] **Arena allocation** — per-scope bump allocator for non-escaping
+  let-bound values. Framework exists (escape analysis + arena runtime)
+  but disabled: per-scope arena creation/destruction hurts recursive code
+  (queens 14ms→39ms). Needs smarter heuristic: only enable for scopes
+  with multiple heap-typed non-escaping bindings, not per-let-scope.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Analysis: would give ~10-15% on top of current optimizations. Low
   priority — static branch hints already capture most of the benefit.
