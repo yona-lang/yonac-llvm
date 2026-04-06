@@ -64,6 +64,13 @@ typedef struct {
     int64_t payload[]; /* [k0,v0,k1,v1,..., child0,child1,...] */
 } hamt_node_t;
 
+/* Transient (unique-owner) check for in-place mutation. */
+static int hamt_is_unique(hamt_node_t* n) {
+    if (!n) return 0;
+    int64_t* hdr = ((int64_t*)n) - 2;
+    return __builtin_expect(__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1, 1);
+}
+
 static hamt_node_t* hamt_alloc(int data_count, int node_count, int64_t size) {
     size_t payload_bytes = (size_t)(data_count * 2 + node_count) * sizeof(int64_t);
     hamt_node_t* n = (hamt_node_t*)rc_alloc(RC_TYPE_DICT,
@@ -288,6 +295,7 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
                                             int64_t val, uint64_t hash, int shift) {
     uint64_t frag = (hash >> shift) & HAMT_MASK;
     uint64_t bit = (uint64_t)1 << frag;
+    int unique = hamt_is_unique(node);
 
     if ((uint64_t)node->datamap & bit) {
         /* Slot has inline data */
@@ -296,6 +304,10 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
 
         if (existing_key == key) {
             /* Same key: replace value */
+            if (unique) {
+                node->payload[idx * 2 + 1] = val;
+                return node;
+            }
             return hamt_copy_replace_data(node, idx, val);
         }
 
@@ -304,6 +316,7 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
         int64_t existing_val = hamt_data_val(node, idx);
         hamt_node_t* child = hamt_merge_two(existing_key, existing_val, existing_hash,
                                               key, val, hash, shift + HAMT_BITS);
+        /* Promote requires changing node size (data→child), can't mutate in place */
         return hamt_copy_promote_to_node(node, idx, child, bit);
     }
 
@@ -313,6 +326,16 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
         hamt_node_t* old_child = hamt_child(node, idx);
         hamt_node_t* new_child = yona_rt_hamt_put_impl(old_child, key, val, hash,
                                                           shift + HAMT_BITS);
+
+        if (unique) {
+            /* Transient: swap child pointer in place, no allocation */
+            int dc = hamt_data_count(node);
+            if (new_child != old_child)
+                yona_rt_rc_dec((void*)(intptr_t)old_child);
+            node->payload[dc * 2 + idx] = (int64_t)(intptr_t)new_child;
+            node->size++;
+            return node;
+        }
 
         /* Copy node, replacing child at idx */
         int dc = hamt_data_count(node);
@@ -334,7 +357,7 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
         return n;
     }
 
-    /* Slot empty: add inline data */
+    /* Slot empty: add inline data — requires growing payload, can't mutate */
     int idx = hamt_index((uint64_t)node->datamap | bit, bit);
     hamt_node_t* n = hamt_copy_with_data(node, idx, key, val);
     n->datamap |= (int64_t)bit;
