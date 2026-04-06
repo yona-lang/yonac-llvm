@@ -43,6 +43,15 @@ extern void yona_rt_rc_dec(void* ptr);
 #define RC_ARENA_SENTINEL INT64_MAX
 #define SEQ_HDR_SIZE 2
 
+/* Flat seq layout: [count, flags, elem0, elem1, ...]
+ * flags encodes both heap_flag and offset for O(1) tail:
+ *   bits 0-31:  heap_flag (1 if elements are heap pointers)
+ *   bits 32-63: offset (index of first valid element in elems[])
+ * Access: seq[SEQ_HDR_SIZE + FLAT_OFF(seq) + index] */
+#define FLAT_OFF(seq) ((int)((uint64_t)(seq)[1] >> 32))
+#define FLAT_HF(seq)  ((int)((seq)[1] & 0xFFFFFFFF))
+#define FLAT_SET_OFF_HF(seq, off, hf) ((seq)[1] = ((int64_t)(off) << 32) | ((hf) & 0xFFFFFFFF))
+
 /* ===== Types ===== */
 
 typedef struct { int64_t children[B]; } rbt_node_t;
@@ -253,7 +262,7 @@ void yona_rt_seq_set_heap(int64_t* seq, int64_t flag) {
     if (is_rbt(seq))
         ((rbt_t*)seq)->heap_flag = flag;
     else
-        seq[1] = flag;
+        FLAT_SET_OFF_HF(seq, FLAT_OFF(seq), (int)flag);
 }
 
 int64_t yona_rt_seq_length(int64_t* seq) { return seq[0]; }
@@ -264,7 +273,7 @@ int64_t yona_rt_seq_is_empty(int64_t* seq) {
 }
 
 int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
-    if (LIKELY(!is_rbt(seq))) return seq[SEQ_HDR_SIZE + index];
+    if (LIKELY(!is_rbt(seq))) return seq[SEQ_HDR_SIZE + FLAT_OFF(seq) + index];
     rbt_t* r = (rbt_t*)seq;
     if (LIKELY(index < r->head_cnt))
         return r->head_buf[r->head_off + index];
@@ -285,13 +294,14 @@ void yona_rt_seq_set(int64_t* seq, int64_t index, int64_t value) {
 
 int64_t yona_rt_seq_head(int64_t* seq) {
     if (UNLIKELY(is_rbt(seq))) return ((rbt_t*)seq)->head_buf[((rbt_t*)seq)->head_off];
-    return seq[SEQ_HDR_SIZE];
+    return seq[SEQ_HDR_SIZE + FLAT_OFF(seq)];
 }
 
 /* ===== Flat-to-RBT promotion ===== */
 
 static rbt_t* flat_to_rbt_for_cons(int64_t* flat, int64_t elem) {
-    int64_t len = flat[0], hf = flat[1];
+    int64_t len = flat[0];
+    int hf = FLAT_HF(flat), off = FLAT_OFF(flat);
     rbt_t* r = rbt_alloc_cons();
     r->length = len + 1;
     r->heap_flag = hf;
@@ -300,28 +310,31 @@ static rbt_t* flat_to_rbt_for_cons(int64_t* flat, int64_t elem) {
     r->head_buf[B - 1] = elem;
     rbt_chunk_t* c = chunk_alloc();
     c->count = len;
-    memcpy(c->elems, flat + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
+    memcpy(c->elems, flat + SEQ_HDR_SIZE + off, (size_t)len * sizeof(int64_t));
     r->head_next = c;
     r->head_chain_len = len;
     return r;
 }
 
 static rbt_t* flat_to_rbt_for_snoc(int64_t* flat, int64_t elem) {
-    int64_t len = flat[0], hf = flat[1];
+    int64_t len = flat[0];
+    int hf = FLAT_HF(flat), off = FLAT_OFF(flat);
+    /* Note: snoc promotions should use offset-adjusted elements */
+    int64_t* base = flat + SEQ_HDR_SIZE + off;
     rbt_t* r = rbt_alloc_zeroed();
     r->length = len + 1;
     r->heap_flag = hf;
     if (len <= B) {
         r->head_off = 0;
         r->head_cnt = len;
-        memcpy(r->head_buf, flat + SEQ_HDR_SIZE, (size_t)len * sizeof(int64_t));
+        memcpy(r->head_buf, base, (size_t)len * sizeof(int64_t));
     } else {
         r->head_off = 0;
         r->head_cnt = B;
-        memcpy(r->head_buf, flat + SEQ_HDR_SIZE, B * sizeof(int64_t));
+        memcpy(r->head_buf, base, B * sizeof(int64_t));
         rbt_chunk_t* c = chunk_alloc();
         c->count = len - B;
-        memcpy(c->elems, flat + SEQ_HDR_SIZE + B, (size_t)(len - B) * sizeof(int64_t));
+        memcpy(c->elems, base + B, (size_t)(len - B) * sizeof(int64_t));
         r->head_next = c;
         r->head_chain_len = len - B;
     }
@@ -337,24 +350,27 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
 
     if (LIKELY(!is_rbt(seq))) {
         if (LIKELY(len < B)) {
-            int64_t* hdr = seq - 2;
-            int64_t rc = __atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE);
-            int pcls = (int)((hdr[1] >> 8) - 1);
-            if (rc == 1 && rc != RC_ARENA_SENTINEL && pcls < 0) {
-                size_t np = (SEQ_HDR_SIZE + len + 1) * sizeof(int64_t);
-                int64_t* nh = (int64_t*)realloc(hdr, 16 + np);
-                int64_t* ns = nh + 2;
-                memmove(ns + SEQ_HDR_SIZE + 1, ns + SEQ_HDR_SIZE,
-                        (size_t)len * sizeof(int64_t));
-                ns[0] = len + 1;
-                ns[SEQ_HDR_SIZE] = elem;
-                return ns;
+            int off = FLAT_OFF(seq);
+            int hf = FLAT_HF(seq);
+
+            /* If there's offset space, prepend into it (O(1), no copy) */
+            if (off > 0) {
+                int64_t* hdr = seq - 2;
+                if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1
+                    && hdr[0] != RC_ARENA_SENTINEL) {
+                    seq[SEQ_HDR_SIZE + off - 1] = elem;
+                    seq[0] = len + 1;
+                    FLAT_SET_OFF_HF(seq, off - 1, hf);
+                    return seq;
+                }
             }
+
+            /* No offset space — copy with elem prepended */
             int64_t* res = yona_rt_seq_alloc(len + 1);
-            res[1] = seq[1];
             res[SEQ_HDR_SIZE] = elem;
-            memcpy(res + SEQ_HDR_SIZE + 1, seq + SEQ_HDR_SIZE,
+            memcpy(res + SEQ_HDR_SIZE + 1, seq + SEQ_HDR_SIZE + off,
                    (size_t)len * sizeof(int64_t));
+            FLAT_SET_OFF_HF(res, 0, hf);
             return res;
         }
         return (int64_t*)flat_to_rbt_for_cons(seq, elem);
@@ -413,22 +429,27 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
 
     if (LIKELY(!is_rbt(seq))) {
         if (LIKELY(len <= B)) {
+            /* Offset-based tail: bump offset instead of memmove.
+             * For unique owner, modify in place. For shared, copy. */
             int64_t* hdr = seq - 2;
+            int off = FLAT_OFF(seq);
+            int hf = FLAT_HF(seq);
             if (__atomic_load_n(&hdr[0], __ATOMIC_ACQUIRE) == 1
                 && hdr[0] != RC_ARENA_SENTINEL) {
-                memmove(seq + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1,
-                        (size_t)(len - 1) * sizeof(int64_t));
                 seq[0] = len - 1;
+                FLAT_SET_OFF_HF(seq, off + 1, hf);
                 return seq;
             }
+            /* Shared: copy only the valid elements (no offset) */
             int64_t* res = yona_rt_seq_alloc(len - 1);
-            res[1] = seq[1];
-            memcpy(res + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + 1,
+            FLAT_SET_OFF_HF(res, 0, hf);
+            memcpy(res + SEQ_HDR_SIZE, seq + SEQ_HDR_SIZE + off + 1,
                    (size_t)(len - 1) * sizeof(int64_t));
             return res;
         }
         /* Large flat seq (>B, from generator): promote to rbt minus first element */
-        int64_t hf = seq[1];
+        int hf = FLAT_HF(seq), off = FLAT_OFF(seq);
+        int64_t* base = seq + SEQ_HDR_SIZE + off;
         rbt_t* r = rbt_alloc_cons();
         r->length = len - 1;
         r->heap_flag = hf;
@@ -436,12 +457,11 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
         if (remain <= B) {
             r->head_off = 0;
             r->head_cnt = remain;
-            memcpy(r->head_buf, seq + SEQ_HDR_SIZE + 1,
-                   (size_t)remain * sizeof(int64_t));
+            memcpy(r->head_buf, base + 1, (size_t)remain * sizeof(int64_t));
         } else {
             r->head_off = 0;
             r->head_cnt = B;
-            memcpy(r->head_buf, seq + SEQ_HDR_SIZE + 1, B * sizeof(int64_t));
+            memcpy(r->head_buf, base + 1, B * sizeof(int64_t));
             rbt_chunk_t* prev = NULL;
             rbt_chunk_t* first = NULL;
             int64_t pos = B + 1;
@@ -451,7 +471,7 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
                 int64_t n = len - pos;
                 if (n > B) n = B;
                 c->count = n;
-                memcpy(c->elems, seq + SEQ_HDR_SIZE + pos, (size_t)n * sizeof(int64_t));
+                memcpy(c->elems, base + pos, (size_t)n * sizeof(int64_t));
                 chain_total += n;
                 if (!first) first = c;
                 if (prev) prev->next = c;

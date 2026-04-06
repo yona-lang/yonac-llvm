@@ -28,6 +28,17 @@
 ## Remaining Work
 
 ### Performance
+- [ ] **Unboxed Int function parameters** — recursive functions pass i64
+  args through closure env (heap-allocated). For non-capturing recursive
+  functions, pass i64 directly without boxing. Targets: ackermann (2.5x→~1.5x C),
+  fibonacci (2.0x→~1.3x C).
+- [ ] **Flat-array seq for stack patterns** — queens/sort use seqs as stacks
+  (cons/head/tail only, no indexed access). A lightweight flat-array
+  representation (just realloc+memmove, no RBT overhead) could cut queens
+  from 42MB→~5MB. Target: queens (10.3x→~3x C).
+- [ ] **GHC-style list fusion for cons chains** — sort builds many
+  intermediate cons results (`h :: insert x t`). Fusing nested cons
+  into a single allocation could reduce sort from 2.9x→~1.5x C.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 

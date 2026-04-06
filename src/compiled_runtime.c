@@ -165,12 +165,15 @@ void yona_rt_rc_dec(void* ptr) {
 
         if (type_tag == RC_TYPE_SEQ) {
             /* Flat seq: rc_dec elements if heap_flag set.
-             * Layout: [count, heap_flag, elem0, ...] */
+             * Layout: [count, flags, elem0, ...]
+             * flags: bits 0-31 = heap_flag, bits 32-63 = offset */
             int64_t count = payload[0];
-            int64_t heap_flag = payload[1];
+            int64_t flags = payload[1];
+            int heap_flag = (int)(flags & 0xFFFFFFFF);
+            int offset = (int)((uint64_t)flags >> 32);
             if (heap_flag) {
                 for (int64_t i = 0; i < count; i++) {
-                    int64_t val = payload[2 + i];
+                    int64_t val = payload[2 + offset + i];
                     if (val) yona_rt_rc_dec((void*)(intptr_t)val);
                 }
             }
