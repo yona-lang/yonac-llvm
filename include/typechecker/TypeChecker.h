@@ -1,0 +1,102 @@
+#ifndef YONA_TYPECHECKER_TYPE_CHECKER_H
+#define YONA_TYPECHECKER_TYPE_CHECKER_H
+
+/// Hindley-Milner type checker for Yona.
+///
+/// Walks the AST, infers types for every expression, and stores
+/// the result in a type map (AST node → MonoType). The codegen
+/// can then query this map instead of guessing types.
+///
+/// Usage:
+///   TypeChecker checker(diag);
+///   checker.check(root_node);
+///   auto* ty = checker.type_of(some_node);
+
+#include "InferType.h"
+#include "TypeArena.h"
+#include "UnionFind.h"
+#include "Unification.h"
+#include "TypeEnv.h"
+#include "Diagnostic.h"
+#include "ast.h"
+#include <unordered_map>
+
+namespace yona::compiler::typechecker {
+
+class TypeChecker {
+public:
+    explicit TypeChecker(DiagnosticEngine& diag);
+
+    /// Type-check a top-level expression. Returns inferred type (nullptr on error).
+    MonoTypePtr check(ast::AstNode* node);
+
+    /// Retrieve the type assigned to an AST node after checking.
+    MonoTypePtr type_of(ast::AstNode* node) const;
+
+    /// Resolve all union-find links in a type (zonk).
+    MonoTypePtr zonk(MonoTypePtr type);
+
+    /// Has errors?
+    bool has_errors() const { return error_count_ > 0; }
+
+    /// Access arena (for tests).
+    TypeArena& arena() { return arena_; }
+
+private:
+    /// Main recursive inference. Returns inferred monotype.
+    MonoTypePtr infer(ast::AstNode* node, std::shared_ptr<TypeEnv> env, int level);
+
+    // --- Inference for specific node types ---
+    MonoTypePtr infer_integer(ast::AstNode* node);
+    MonoTypePtr infer_float(ast::AstNode* node);
+    MonoTypePtr infer_string(ast::AstNode* node);
+    MonoTypePtr infer_bool(ast::AstNode* node);
+    MonoTypePtr infer_symbol(ast::AstNode* node);
+    MonoTypePtr infer_identifier(ast::IdentifierExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_let(ast::LetExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_function(ast::FunctionExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_apply(ast::ApplyExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_if(ast::IfExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_binary(ast::BinaryOpExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_tuple(ast::TupleExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_seq(ast::ValuesSequenceExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_do(ast::DoExpr* node, std::shared_ptr<TypeEnv> env, int level);
+
+    // --- Generalization / Instantiation ---
+
+    /// Generalize a type at the given level: free vars with level > given become quantified.
+    TypeScheme generalize(MonoTypePtr type, int level);
+
+    /// Instantiate a polymorphic scheme with fresh variables at the given level.
+    MonoTypePtr instantiate(const TypeScheme& scheme, int level);
+
+    /// Collect free type variables with level > given level.
+    void collect_free_vars(MonoTypePtr type, int level, std::vector<TypeId>& vars);
+
+    /// Substitute type variables according to a mapping.
+    MonoTypePtr substitute(MonoTypePtr type, const std::unordered_map<TypeId, MonoTypePtr>& subst);
+
+    // --- Helpers ---
+
+    /// Record the inferred type for an AST node.
+    void record(ast::AstNode* node, MonoTypePtr type);
+
+    /// Map operator AST type to operator name string for env lookup.
+    static std::string op_name(ast::AstNodeType type);
+
+    TypeArena arena_;
+    UnionFind uf_;
+    Unifier unifier_;
+    DiagnosticEngine& diag_;
+    int error_count_ = 0;
+
+    /// Root environment with builtins.
+    std::shared_ptr<TypeEnv> root_env_;
+
+    /// Type map: AST node → inferred monotype.
+    std::unordered_map<ast::AstNode*, MonoTypePtr> type_map_;
+};
+
+} // namespace yona::compiler::typechecker
+
+#endif // YONA_TYPECHECKER_TYPE_CHECKER_H

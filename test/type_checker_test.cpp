@@ -307,4 +307,91 @@ TEST_CASE("register_builtins: type names available") {
     CHECK(env->lookup("false").has_value());
 }
 
+// ===== Core Inference Tests =====
+// These tests parse Yona code and run the type checker.
+
+} // close TypeChecker suite temporarily
+
+#include "typechecker/TypeChecker.h"
+#include "Parser.h"
+#include <sstream>
+
+static std::string check_expr_str(const std::string& source) {
+    yona::parser::Parser parser;
+    std::istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (!result.node) return "PARSE_ERROR";
+
+    yona::compiler::DiagnosticEngine diag;
+    yona::compiler::typechecker::TypeChecker checker(diag);
+    auto* t = checker.check(result.node.get());
+    if (!t) return "?";
+    return yona::compiler::typechecker::pretty_print(checker.zonk(t));
+}
+
+TEST_SUITE("TypeChecker") { // reopen suite
+
+TEST_CASE("Inference: integer literal") {
+    CHECK(check_expr_str("42") == "Int");
+}
+
+TEST_CASE("Inference: float literal") {
+    CHECK(check_expr_str("3.14") == "Float");
+}
+
+TEST_CASE("Inference: string literal") {
+    CHECK(check_expr_str("\"hello\"") == "String");
+}
+
+TEST_CASE("Inference: boolean literals") {
+    CHECK(check_expr_str("true") == "Bool");
+    CHECK(check_expr_str("false") == "Bool");
+}
+
+TEST_CASE("Inference: arithmetic produces Int") {
+    CHECK(check_expr_str("1 + 2") == "Int");
+    CHECK(check_expr_str("10 - 3") == "Int");
+    CHECK(check_expr_str("4 * 5") == "Int");
+}
+
+TEST_CASE("Inference: comparison produces Bool") {
+    CHECK(check_expr_str("1 < 2") == "Bool");
+    CHECK(check_expr_str("3 == 4") == "Bool");
+}
+
+TEST_CASE("Inference: if expression unifies branches") {
+    CHECK(check_expr_str("if true then 1 else 2") == "Int");
+    CHECK(check_expr_str("if true then \"a\" else \"b\"") == "String");
+}
+
+TEST_CASE("Inference: let binding") {
+    CHECK(check_expr_str("let x = 42 in x") == "Int");
+    CHECK(check_expr_str("let x = 1 in x + 2") == "Int");
+}
+
+TEST_CASE("Inference: let with function") {
+    CHECK(check_expr_str("let f x = x + 1 in f 5") == "Int");
+}
+
+TEST_CASE("Inference: tuple") {
+    CHECK(check_expr_str("(1, \"hello\")") == "(Int, String)");
+    CHECK(check_expr_str("(1, 2, 3)") == "(Int, Int, Int)");
+}
+
+TEST_CASE("Inference: sequence") {
+    CHECK(check_expr_str("[1, 2, 3]") == "Seq Int");
+}
+
+TEST_CASE("Inference: string concat") {
+    CHECK(check_expr_str("\"a\" ++ \"b\"") == "String");
+}
+
+TEST_CASE("Inference: nested let") {
+    CHECK(check_expr_str("let x = 1 in let y = x + 1 in y") == "Int");
+}
+
+TEST_CASE("Inference: lambda") {
+    CHECK(check_expr_str("let f = \\x -> x + 1 in f 5") == "Int");
+}
+
 } // TypeChecker
