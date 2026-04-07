@@ -13,6 +13,11 @@
 #include <iostream>
 
 namespace yona::compiler::codegen {
+
+// Closure layout constants — match CLOSURE_HDR_SIZE in compiled_runtime.c
+static constexpr int CLOSURE_FIELD_FN = 0;      // fn_ptr
+static constexpr int CLOSURE_FIELD_ARITY = 2;   // arity
+static constexpr int CLOSURE_HDR_SIZE = 5;       // fn_ptr, ret_type, arity, num_captures, heap_mask
 using namespace llvm;
 using LType = llvm::Type;
 
@@ -1075,7 +1080,7 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
 
         // Load arity from closure[2] to handle over-application (currying)
         auto* arity_gep = builder_->CreateGEP(i64_ty, var_val,
-            {ConstantInt::get(i64_ty, 2)}, "arity_ptr");
+            {ConstantInt::get(i64_ty, CLOSURE_FIELD_ARITY)}, "arity_ptr");
         auto* arity_val = builder_->CreateLoad(i64_ty, arity_gep, "arity");
 
         // Apply args, handling over-application by iterating
@@ -1088,7 +1093,7 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
 
             // Load arity for current closure
             auto* cur_arity_gep = builder_->CreateGEP(i64_ty, current_closure,
-                {ConstantInt::get(i64_ty, 2)}, "cur_arity_ptr");
+                {ConstantInt::get(i64_ty, CLOSURE_FIELD_ARITY)}, "cur_arity_ptr");
             auto* cur_arity = builder_->CreateLoad(i64_ty, cur_arity_gep, "cur_arity");
 
             // For compile-time constant arity (common case), use it directly.

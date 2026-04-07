@@ -13,6 +13,9 @@
 #include <iostream>
 
 namespace yona::compiler::codegen {
+
+// Constants — match runtime defines
+static constexpr int64_t ARENA_DEFAULT_SIZE = 4096;
 using namespace llvm;
 using LType = llvm::Type;
 
@@ -384,7 +387,7 @@ llvm::Value* Codegen::setup_let_arena(const std::unordered_set<std::string>& non
     if (non_escaping.size() < 2) return nullptr;
     auto i64_ty = LType::getInt64Ty(*context_);
     return builder_->CreateCall(rt_.arena_create_,
-        {ConstantInt::get(i64_ty, 4096)}, "arena");
+        {ConstantInt::get(i64_ty, ARENA_DEFAULT_SIZE)}, "arena");
 }
 
 // Codegen all let aliases: ValueAlias, LambdaAlias, PatternAlias.
