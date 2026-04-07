@@ -59,17 +59,17 @@ TypedValue Codegen::codegen_tuple(TupleExpr* node) {
     }
 
     // Heap-allocate tuple with metadata for recursive destruction
-    auto* tuple_ptr = builder_->CreateCall(rt_tuple_alloc_,
+    auto* tuple_ptr = builder_->CreateCall(rt_.tuple_alloc_,
         {ConstantInt::get(i64_ty, elems.size())}, "tuple");
     int64_t tuple_heap_mask = 0;
     for (size_t i = 0; i < elems.size(); i++) {
-        builder_->CreateCall(rt_tuple_set_,
+        builder_->CreateCall(rt_.tuple_set_,
             {tuple_ptr, ConstantInt::get(i64_ty, i), elems[i]});
         if (is_heap_type(subtypes[i]) && i < 64)
             tuple_heap_mask |= ((int64_t)1 << i);
     }
     if (tuple_heap_mask != 0)
-        builder_->CreateCall(rt_tuple_set_heap_mask_,
+        builder_->CreateCall(rt_.tuple_set_heap_mask_,
             {tuple_ptr, ConstantInt::get(i64_ty, tuple_heap_mask)});
     auto* tuple_i64 = builder_->CreatePtrToInt(tuple_ptr, i64_ty, "tuple_i64");
     return {tuple_i64, CType::TUPLE, subtypes};
@@ -89,7 +89,7 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
         // Set length at seq[0]
         builder_->CreateStore(count, seq);
     } else {
-        seq = builder_->CreateCall(rt_seq_alloc_, {count}, "seq");
+        seq = builder_->CreateCall(rt_.seq_alloc_, {count}, "seq");
     }
 
     CType elem_type = CType::INT;
@@ -108,7 +108,7 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
             auto* alloca = builder_->CreateAlloca(store_val->getType());
             builder_->CreateStore(store_val, alloca);
             uint64_t sz = module_->getDataLayout().getTypeAllocSize(store_val->getType());
-            store_val = builder_->CreateCall(rt_box_, {alloca, ConstantInt::get(i64_ty, sz)});
+            store_val = builder_->CreateCall(rt_.box_, {alloca, ConstantInt::get(i64_ty, sz)});
             store_val = builder_->CreatePtrToInt(store_val, i64_ty);
         } else if (store_val->getType()->isPointerTy()) {
             store_val = builder_->CreatePtrToInt(store_val, i64_ty);
@@ -117,7 +117,7 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
         } else if (store_val->getType() != i64_ty) {
             store_val = builder_->CreateZExtOrTrunc(store_val, i64_ty);
         }
-        builder_->CreateCall(rt_seq_set_, {seq, idx, store_val});
+        builder_->CreateCall(rt_.seq_set_, {seq, idx, store_val});
     }
     return {seq, CType::SEQ, {elem_type}};
 }
@@ -130,13 +130,13 @@ TypedValue Codegen::codegen_set(SetExpr* node) {
     if (n == 0) {
         /* Empty set: use flat alloc (codegen for {} uses SetExpr) */
         auto* zero = ConstantInt::get(i64_ty, 0);
-        auto set = builder_->CreateCall(rt_set_alloc_, {zero}, "set");
+        auto set = builder_->CreateCall(rt_.set_alloc_, {zero}, "set");
         return {set, CType::SET};
     }
 
     /* Non-empty set: build via persistent insert (HAMT-backed) */
     auto* zero = ConstantInt::get(i64_ty, 0);
-    Value* set = builder_->CreateCall(rt_set_alloc_, {zero}, "set");
+    Value* set = builder_->CreateCall(rt_.set_alloc_, {zero}, "set");
 
     CType elem_type = CType::INT;
     for (size_t i = 0; i < n; i++) {
@@ -146,7 +146,7 @@ TypedValue Codegen::codegen_set(SetExpr* node) {
         Value* val = tv.val;
         if (val->getType()->isPointerTy())
             val = builder_->CreatePtrToInt(val, i64_ty);
-        set = builder_->CreateCall(rt_set_insert_, {set, val}, "set");
+        set = builder_->CreateCall(rt_.set_insert_, {set, val}, "set");
     }
     return {set, CType::SET, {elem_type}};
 }
@@ -156,7 +156,7 @@ TypedValue Codegen::codegen_dict(DictExpr* node) {
     size_t n = node->values.size();
     auto i64_ty = LType::getInt64Ty(*context_);
     auto zero = ConstantInt::get(i64_ty, 0);
-    Value* dict = builder_->CreateCall(rt_dict_alloc_, {zero}, "dict");
+    Value* dict = builder_->CreateCall(rt_.dict_alloc_, {zero}, "dict");
 
     CType key_type = CType::INT, val_type = CType::INT;
     for (size_t i = 0; i < n; i++) {
@@ -171,7 +171,7 @@ TypedValue Codegen::codegen_dict(DictExpr* node) {
             key_val = builder_->CreatePtrToInt(key_val, i64_ty);
         if (val_val->getType()->isPointerTy())
             val_val = builder_->CreatePtrToInt(val_val, i64_ty);
-        dict = builder_->CreateCall(rt_dict_put_, {dict, key_val, val_val}, "dict");
+        dict = builder_->CreateCall(rt_.dict_put_, {dict, key_val, val_val}, "dict");
     }
     return {dict, CType::DICT, {key_type, val_type}};
 }
@@ -188,7 +188,7 @@ TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
         elem_val = builder_->CreatePtrToInt(elem_val, LType::getInt64Ty(*context_));
     if (seq_ptr->getType()->isIntegerTy())
         seq_ptr = builder_->CreateIntToPtr(seq_ptr, PointerType::get(*context_, 0));
-    return {builder_->CreateCall(rt_seq_cons_, {elem_val, seq_ptr}, "cons"), CType::SEQ, {elem.type}};
+    return {builder_->CreateCall(rt_.seq_cons_, {elem_val, seq_ptr}, "cons"), CType::SEQ, {elem.type}};
 }
 
 TypedValue Codegen::codegen_join(JoinExpr* node) {
@@ -198,7 +198,7 @@ TypedValue Codegen::codegen_join(JoinExpr* node) {
     if (!left || !right) return {};
 
     if (left.type == CType::STRING || right.type == CType::STRING)
-        return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
+        return {builder_->CreateCall(rt_.string_concat_, {left.val, right.val}), CType::STRING};
     // Join (++) always produces a sequence. Both operands must be sequences.
     // If an operand is typed as INT (element type not propagated from sequence
     // destructuring), the i64 value is actually a pointer to a sequence —
@@ -207,7 +207,7 @@ TypedValue Codegen::codegen_join(JoinExpr* node) {
         if (tv.val->getType()->isPointerTy()) return tv.val;
         return builder_->CreateIntToPtr(tv.val, PointerType::get(*context_, 0));
     };
-    return {builder_->CreateCall(rt_seq_join_, {as_seq(left), as_seq(right)}), CType::SEQ};
+    return {builder_->CreateCall(rt_.seq_join_, {as_seq(left), as_seq(right)}), CType::SEQ};
 }
 
 // ===== Generator / Comprehension codegen =====
@@ -258,7 +258,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
     if (!src_ptr->getType()->isPointerTy())
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
-    auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "src_len");
+    auto* src_len = builder_->CreateCall(rt_.seq_length_, {src_ptr}, "src_len");
 
     bool has_guard = ext->condition != nullptr;
     std::string var_name = extractor_var_name(node->collectionExtractor);
@@ -269,7 +269,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         // Simple case: no guard, result has same length as source.
         // Use head/tail iteration instead of indexed get for O(1) per
         // element (indexed get is O(n/32) for chunked seqs).
-        auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "gen_result");
+        auto* result = builder_->CreateCall(rt_.seq_alloc_, {src_len}, "gen_result");
         auto ptr_ty = PointerType::get(*context_, 0);
 
         auto* loop_bb = BasicBlock::Create(*context_, "gen.loop", func);
@@ -286,14 +286,14 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         auto* cur_phi = builder_->CreatePHI(ptr_ty, 2, "cur");
         cur_phi->addIncoming(src_ptr, loop_bb->getSinglePredecessor());
 
-        auto* is_empty = builder_->CreateCall(rt_seq_is_empty_, {cur_phi}, "gen.empty");
+        auto* is_empty = builder_->CreateCall(rt_.seq_is_empty_, {cur_phi}, "gen.empty");
         auto* cond = builder_->CreateICmpEQ(is_empty, zero, "gen.cond");
         builder_->CreateCondBr(cond, body_bb, done_bb);
 
         // Body: x = head(cur); cur = tail(cur); result[i] = reducer(x)
         builder_->SetInsertPoint(body_bb);
-        auto* elem = builder_->CreateCall(rt_seq_head_, {cur_phi}, "elem");
-        auto* next_cur = builder_->CreateCall(rt_seq_tail_, {cur_phi}, "cur.next");
+        auto* elem = builder_->CreateCall(rt_.seq_head_, {cur_phi}, "elem");
+        auto* next_cur = builder_->CreateCall(rt_.seq_tail_, {cur_phi}, "cur.next");
 
         auto saved = named_values_;
         named_values_[var_name] = {elem, CType::INT};
@@ -306,7 +306,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         else if (store_val->getType()->isDoubleTy())
             store_val = builder_->CreateBitCast(store_val, i64_ty);
 
-        builder_->CreateCall(rt_seq_set_, {result, i_phi, store_val});
+        builder_->CreateCall(rt_.seq_set_, {result, i_phi, store_val});
 
         auto* i_next = builder_->CreateAdd(i_phi, ConstantInt::get(i64_ty, 1), "i.next");
         i_phi->addIncoming(i_next, builder_->GetInsertBlock());
@@ -326,7 +326,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         auto* zero = ConstantInt::get(i64_ty, 0);
         auto* one = ConstantInt::get(i64_ty, 1);
 
-        auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "gen_result");
+        auto* result = builder_->CreateCall(rt_.seq_alloc_, {src_len}, "gen_result");
 
         auto* loop_bb = BasicBlock::Create(*context_, "gen.loop", func);
         auto* body_bb = BasicBlock::Create(*context_, "gen.body", func);
@@ -346,7 +346,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         builder_->CreateCondBr(cond, body_bb, done_bb);
 
         builder_->SetInsertPoint(body_bb);
-        auto* elem = builder_->CreateCall(rt_seq_get_, {src_ptr, i_phi}, "elem");
+        auto* elem = builder_->CreateCall(rt_.seq_get_, {src_ptr, i_phi}, "elem");
 
         auto saved = named_values_;
         named_values_[var_name] = {elem, CType::INT};
@@ -367,7 +367,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
             store_val = builder_->CreatePtrToInt(store_val, i64_ty);
         else if (store_val->getType()->isDoubleTy())
             store_val = builder_->CreateBitCast(store_val, i64_ty);
-        builder_->CreateCall(rt_seq_set_, {result, wi_phi, store_val});
+        builder_->CreateCall(rt_.seq_set_, {result, wi_phi, store_val});
         auto* wi_inc = builder_->CreateAdd(wi_phi, one, "wi.inc");
         builder_->CreateBr(next_bb);
 
@@ -407,7 +407,7 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     if (!src_ptr->getType()->isPointerTy())
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
-    auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "src_len");
+    auto* src_len = builder_->CreateCall(rt_.seq_length_, {src_ptr}, "src_len");
 
     std::string var_name = extractor_var_name(node->collectionExtractor);
     auto* func = builder_->GetInsertBlock()->getParent();
@@ -415,7 +415,7 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     auto* one = ConstantInt::get(i64_ty, 1);
 
     /* Build set via persistent insert (HAMT-backed). */
-    auto* empty_set = builder_->CreateCall(rt_set_alloc_, {zero}, "gen_set");
+    auto* empty_set = builder_->CreateCall(rt_.set_alloc_, {zero}, "gen_set");
 
     auto* loop_bb = BasicBlock::Create(*context_, "setgen.loop", func);
     auto* body_bb = BasicBlock::Create(*context_, "setgen.body", func);
@@ -432,7 +432,7 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     builder_->CreateCondBr(cond, body_bb, done_bb);
 
     builder_->SetInsertPoint(body_bb);
-    auto* elem = builder_->CreateCall(rt_seq_get_, {src_ptr, i_phi}, "elem");
+    auto* elem = builder_->CreateCall(rt_.seq_get_, {src_ptr, i_phi}, "elem");
 
     auto saved = named_values_;
     named_values_[var_name] = {elem, CType::INT};
@@ -442,7 +442,7 @@ TypedValue Codegen::codegen_set_generator(SetGeneratorExpr* node) {
     if (store_val->getType()->isPointerTy())
         store_val = builder_->CreatePtrToInt(store_val, i64_ty);
 
-    auto* new_set = builder_->CreateCall(rt_set_insert_, {set_phi, store_val}, "set.ins");
+    auto* new_set = builder_->CreateCall(rt_.set_insert_, {set_phi, store_val}, "set.ins");
 
     auto* i_next = builder_->CreateAdd(i_phi, one);
     i_phi->addIncoming(i_next, builder_->GetInsertBlock());
@@ -473,7 +473,7 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
     if (!src_ptr->getType()->isPointerTy())
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
-    auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "src_len");
+    auto* src_len = builder_->CreateCall(rt_.seq_length_, {src_ptr}, "src_len");
 
     std::string var_name = extractor_var_name(node->collectionExtractor);
     auto* func = builder_->GetInsertBlock()->getParent();
@@ -481,7 +481,7 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
 
     // Dict generator uses HAMT dict_put (persistent insert).
     // Indexed iteration avoids O(n²) memmove cost of head/tail on flat seqs.
-    auto* dict = builder_->CreateCall(rt_dict_alloc_, {zero}, "gen_dict");
+    auto* dict = builder_->CreateCall(rt_.dict_alloc_, {zero}, "gen_dict");
     auto* one = ConstantInt::get(i64_ty, 1);
 
     auto* loop_bb = BasicBlock::Create(*context_, "dictgen.loop", func);
@@ -500,7 +500,7 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
     builder_->CreateCondBr(cond, body_bb, done_bb);
 
     builder_->SetInsertPoint(body_bb);
-    auto* elem = builder_->CreateCall(rt_seq_get_, {src_ptr, i_phi}, "elem");
+    auto* elem = builder_->CreateCall(rt_.seq_get_, {src_ptr, i_phi}, "elem");
 
     auto saved = named_values_;
     named_values_[var_name] = {elem, CType::INT};
@@ -515,7 +515,7 @@ TypedValue Codegen::codegen_dict_generator(DictGeneratorExpr* node) {
     if (val_i64->getType()->isPointerTy())
         val_i64 = builder_->CreatePtrToInt(val_i64, i64_ty);
 
-    auto* new_dict = builder_->CreateCall(rt_dict_put_, {dict_phi, key_i64, val_i64}, "dict.put");
+    auto* new_dict = builder_->CreateCall(rt_.dict_put_, {dict_phi, key_i64, val_i64}, "dict.put");
 
     auto* i_next = builder_->CreateAdd(i_phi, one);
     i_phi->addIncoming(i_next, builder_->GetInsertBlock());
@@ -564,8 +564,8 @@ TypedValue Codegen::codegen_fused_seq_generator(SeqGeneratorExpr* outer,
     if (!src_ptr->getType()->isPointerTy())
         src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
 
-    auto* src_len = builder_->CreateCall(rt_seq_length_, {src_ptr}, "fuse_len");
-    auto* result = builder_->CreateCall(rt_seq_alloc_, {src_len}, "fuse_result");
+    auto* src_len = builder_->CreateCall(rt_.seq_length_, {src_ptr}, "fuse_len");
+    auto* result = builder_->CreateCall(rt_.seq_alloc_, {src_len}, "fuse_result");
 
     auto* func = builder_->GetInsertBlock()->getParent();
     auto* zero = ConstantInt::get(i64_ty, 0);
@@ -589,14 +589,14 @@ TypedValue Codegen::codegen_fused_seq_generator(SeqGeneratorExpr* outer,
     auto* wi_phi = builder_->CreatePHI(i64_ty, 2, "fuse.wi");
     wi_phi->addIncoming(zero, loop_bb->getSinglePredecessor());
 
-    auto* is_empty = builder_->CreateCall(rt_seq_is_empty_, {cur_phi}, "fuse.empty");
+    auto* is_empty = builder_->CreateCall(rt_.seq_is_empty_, {cur_phi}, "fuse.empty");
     auto* not_empty = builder_->CreateICmpEQ(is_empty, zero, "fuse.nempty");
     builder_->CreateCondBr(not_empty, body_bb, done_bb);
 
     // Body: head/tail on source cursor
     builder_->SetInsertPoint(body_bb);
-    auto* elem = builder_->CreateCall(rt_seq_head_, {cur_phi}, "fuse.elem");
-    auto* next_cur = builder_->CreateCall(rt_seq_tail_, {cur_phi}, "fuse.next_cur");
+    auto* elem = builder_->CreateCall(rt_.seq_head_, {cur_phi}, "fuse.elem");
+    auto* next_cur = builder_->CreateCall(rt_.seq_tail_, {cur_phi}, "fuse.next_cur");
 
     auto saved = named_values_;
     named_values_[inner_var] = {elem, CType::INT};
@@ -648,7 +648,7 @@ TypedValue Codegen::codegen_fused_seq_generator(SeqGeneratorExpr* outer,
     else if (store_val->getType()->isDoubleTy())
         store_val = builder_->CreateBitCast(store_val, i64_ty);
 
-    builder_->CreateCall(rt_seq_set_, {result, wi_phi, store_val});
+    builder_->CreateCall(rt_.seq_set_, {result, wi_phi, store_val});
 
     if (any_guard) {
         auto* wi_inc = builder_->CreateAdd(wi_phi, one, "fuse.wi.inc");

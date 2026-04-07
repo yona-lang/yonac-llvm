@@ -123,7 +123,7 @@ TypedValue Codegen::codegen_binary(AstNode* left_node, AstNode* right_node, cons
 
     // String concatenation
     if (left.type == CType::STRING && right.type == CType::STRING && op == "+") {
-        return {builder_->CreateCall(rt_string_concat_, {left.val, right.val}), CType::STRING};
+        return {builder_->CreateCall(rt_.string_concat_, {left.val, right.val}), CType::STRING};
     }
 
     // Promote int to float if mixed
@@ -383,7 +383,7 @@ std::unordered_set<std::string> Codegen::analyze_let_escaping(LetExpr* node) {
 llvm::Value* Codegen::setup_let_arena(const std::unordered_set<std::string>& non_escaping) {
     if (non_escaping.size() < 2) return nullptr;
     auto i64_ty = LType::getInt64Ty(*context_);
-    return builder_->CreateCall(rt_arena_create_,
+    return builder_->CreateCall(rt_.arena_create_,
         {ConstantInt::get(i64_ty, 4096)}, "arena");
 }
 
@@ -494,7 +494,7 @@ void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
         }
     }
     if (arena)
-        builder_->CreateCall(rt_arena_destroy_, {arena});
+        builder_->CreateCall(rt_.arena_destroy_, {arena});
 }
 
 TypedValue Codegen::codegen_let(LetExpr* node) {
@@ -657,7 +657,7 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
 
         if (adt_it->second.is_recursive) {
             // Recursive ADT: heap-allocate via runtime
-            auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
+            auto* node_ptr = builder_->CreateCall(rt_.adt_alloc_,
                 {ConstantInt::get(tag_ty, adt_it->second.tag),
                  ConstantInt::get(i64_ty, 0)}, "adt_node");
             return {node_ptr, CType::ADT};
@@ -721,8 +721,8 @@ TypedValue Codegen::codegen_raise(RaiseExpr* node) {
     } else if (exc_val.type == CType::ADT && exc_val.val->getType()->isPointerTy()) {
         // Recursive ADT: use runtime accessors
         tag_val = builder_->CreateZExt(
-            builder_->CreateCall(rt_adt_get_tag_, {exc_val.val}), i64_ty);
-        auto field = builder_->CreateCall(rt_adt_get_field_, {exc_val.val, ConstantInt::get(i64_ty, 0)});
+            builder_->CreateCall(rt_.adt_get_tag_, {exc_val.val}), i64_ty);
+        auto field = builder_->CreateCall(rt_.adt_get_field_, {exc_val.val, ConstantInt::get(i64_ty, 0)});
         payload_val = builder_->CreateIntToPtr(field, PointerType::get(*context_, 0));
     } else {
         // Fallback: treat as integer tag with no payload
@@ -732,7 +732,7 @@ TypedValue Codegen::codegen_raise(RaiseExpr* node) {
         payload_val = ConstantPointerNull::get(PointerType::get(*context_, 0));
     }
 
-    builder_->CreateCall(rt_raise_, {tag_val, payload_val});
+    builder_->CreateCall(rt_.raise_, {tag_val, payload_val});
     builder_->CreateUnreachable();
     return {UndefValue::get(i64_ty), CType::UNIT};
 }
@@ -748,7 +748,7 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
     auto merge_bb = BasicBlock::Create(*context_, "try.merge");
 
     // Push jmp_buf slot, then call setjmp in THIS function's stack frame
-    auto jmp_buf_ptr = builder_->CreateCall(rt_try_begin_, {}, "jmp.buf");
+    auto jmp_buf_ptr = builder_->CreateCall(rt_.try_begin_, {}, "jmp.buf");
     auto setjmp_fn = module_->getFunction("setjmp");
     auto try_result = builder_->CreateCall(setjmp_fn, {jmp_buf_ptr}, "try.setjmp");
     auto is_exc = builder_->CreateICmpNE(try_result, ConstantInt::get(i32_ty, 0));
@@ -760,7 +760,7 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
     bool try_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
     BasicBlock* try_end_bb = nullptr;
     if (!try_terminated) {
-        builder_->CreateCall(rt_try_end_, {});
+        builder_->CreateCall(rt_.try_end_, {});
         if (!try_val) try_val = {ConstantInt::get(i64_ty, 0), CType::INT};
         builder_->CreateBr(merge_bb);
         try_end_bb = builder_->GetInsertBlock();
@@ -770,8 +770,8 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
 
     // Catch body: get exception tag and payload, pattern match
     builder_->SetInsertPoint(catch_bb);
-    auto exc_tag = builder_->CreateCall(rt_get_exc_sym_, {}, "exc.tag");
-    auto exc_payload = builder_->CreateCall(rt_get_exc_msg_, {}, "exc.payload");
+    auto exc_tag = builder_->CreateCall(rt_.get_exc_sym_, {}, "exc.tag");
+    auto exc_payload = builder_->CreateCall(rt_.get_exc_msg_, {}, "exc.payload");
 
     TypedValue catch_val = {ConstantInt::get(i64_ty, 0), CType::INT};
     std::vector<std::pair<TypedValue, BasicBlock*>> catch_results;
@@ -853,7 +853,7 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
                 builder_->SetInsertPoint(next_bb);
             else {
                 builder_->SetInsertPoint(next_bb);
-                builder_->CreateCall(rt_raise_, {exc_tag, exc_payload});
+                builder_->CreateCall(rt_.raise_, {exc_tag, exc_payload});
                 builder_->CreateUnreachable();
             }
         }

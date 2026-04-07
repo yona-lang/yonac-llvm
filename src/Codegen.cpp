@@ -76,7 +76,7 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     closeable_int.method_mangled_names["close"] = "Closeable_Int__close";
     trait_instances_["Closeable:Int"] = closeable_int;
     // Register rt_close as the implementation
-    compiled_functions_["Closeable_Int__close"] = {rt_close_, CType::UNIT, {CType::INT}};
+    compiled_functions_["Closeable_Int__close"] = {rt_.close_, CType::UNIT, {CType::INT}};
 }
 Codegen::~Codegen() = default;
 
@@ -194,114 +194,114 @@ void Codegen::declare_runtime() {
                                 Function::ExternalLinkage, name, module_.get());
     };
 
-    rt_print_int_     = decl("yona_rt_print_int", vd, {i64});
-    rt_print_float_   = decl("yona_rt_print_float", vd, {f64});
-    rt_print_string_  = decl("yona_rt_print_string", vd, {ptr});
-    rt_print_bool_    = decl("yona_rt_print_bool", vd, {i1});
-    rt_print_newline_ = decl("yona_rt_print_newline", vd, {});
-    rt_print_seq_     = decl("yona_rt_print_seq", vd, {i64p});
-    rt_string_concat_ = decl("yona_rt_string_concat", ptr, {ptr, ptr});
-    rt_seq_alloc_     = decl("yona_rt_seq_alloc", i64p, {i64});
-    rt_seq_set_       = decl("yona_rt_seq_set", vd, {i64p, i64, i64});
-    rt_seq_get_       = decl("yona_rt_seq_get", i64, {i64p, i64});
-    rt_seq_length_    = decl("yona_rt_seq_length", i64, {i64p});
-    rt_seq_cons_      = decl("yona_rt_seq_cons", i64p, {i64, i64p});
-    rt_seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
-    rt_seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
-    rt_seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
-    rt_seq_is_empty_  = decl("yona_rt_seq_is_empty", i64, {i64p});
-    rt_print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
+    rt_.print_int_     = decl("yona_rt_print_int", vd, {i64});
+    rt_.print_float_   = decl("yona_rt_print_float", vd, {f64});
+    rt_.print_string_  = decl("yona_rt_print_string", vd, {ptr});
+    rt_.print_bool_    = decl("yona_rt_print_bool", vd, {i1});
+    rt_.print_newline_ = decl("yona_rt_print_newline", vd, {});
+    rt_.print_seq_     = decl("yona_rt_print_seq", vd, {i64p});
+    rt_.string_concat_ = decl("yona_rt_string_concat", ptr, {ptr, ptr});
+    rt_.seq_alloc_     = decl("yona_rt_seq_alloc", i64p, {i64});
+    rt_.seq_set_       = decl("yona_rt_seq_set", vd, {i64p, i64, i64});
+    rt_.seq_get_       = decl("yona_rt_seq_get", i64, {i64p, i64});
+    rt_.seq_length_    = decl("yona_rt_seq_length", i64, {i64p});
+    rt_.seq_cons_      = decl("yona_rt_seq_cons", i64p, {i64, i64p});
+    rt_.seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
+    rt_.seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
+    rt_.seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
+    rt_.seq_is_empty_  = decl("yona_rt_seq_is_empty", i64, {i64p});
+    rt_.print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
 
     // Set runtime
-    rt_set_alloc_     = decl("yona_rt_set_alloc", i64p, {i64});
-    rt_set_put_       = decl("yona_rt_set_put", vd, {i64p, i64, i64});
-    rt_set_insert_    = decl("yona_rt_set_insert", i64p, {i64p, i64});
-    rt_set_contains_  = decl("yona_rt_set_contains", i64, {i64p, i64});
-    rt_set_size_      = decl("yona_rt_set_size", i64, {i64p});
-    rt_set_elements_  = decl("yona_rt_set_elements", i64p, {i64p});
-    rt_set_union_     = decl("yona_rt_set_union", i64p, {i64p, i64p});
-    rt_set_intersection_ = decl("yona_rt_set_intersection", i64p, {i64p, i64p});
-    rt_set_difference_ = decl("yona_rt_set_difference", i64p, {i64p, i64p});
-    rt_print_set_     = decl("yona_rt_print_set", vd, {i64p});
+    rt_.set_alloc_     = decl("yona_rt_set_alloc", i64p, {i64});
+    rt_.set_put_       = decl("yona_rt_set_put", vd, {i64p, i64, i64});
+    rt_.set_insert_    = decl("yona_rt_set_insert", i64p, {i64p, i64});
+    rt_.set_contains_  = decl("yona_rt_set_contains", i64, {i64p, i64});
+    rt_.set_size_      = decl("yona_rt_set_size", i64, {i64p});
+    rt_.set_elements_  = decl("yona_rt_set_elements", i64p, {i64p});
+    rt_.set_union_     = decl("yona_rt_set_union", i64p, {i64p, i64p});
+    rt_.set_intersection_ = decl("yona_rt_set_intersection", i64p, {i64p, i64p});
+    rt_.set_difference_ = decl("yona_rt_set_difference", i64p, {i64p, i64p});
+    rt_.print_set_     = decl("yona_rt_print_set", vd, {i64p});
 
     // Dict runtime
-    rt_dict_alloc_    = decl("yona_rt_dict_alloc", i64p, {i64});
-    rt_dict_set_      = decl("yona_rt_dict_set", vd, {i64p, i64, i64, i64});
-    rt_dict_put_      = decl("yona_rt_dict_put", i64p, {i64p, i64, i64});
-    rt_dict_get_      = decl("yona_rt_dict_get", i64, {i64p, i64, i64});
-    rt_dict_size_     = decl("yona_rt_dict_size", i64, {i64p});
-    rt_dict_contains_ = decl("yona_rt_dict_contains", i64, {i64p, i64});
-    rt_dict_keys_     = decl("yona_rt_dict_keys", i64p, {i64p});
-    rt_print_dict_    = decl("yona_rt_print_dict", vd, {i64p});
+    rt_.dict_alloc_    = decl("yona_rt_dict_alloc", i64p, {i64});
+    rt_.dict_set_      = decl("yona_rt_dict_set", vd, {i64p, i64, i64, i64});
+    rt_.dict_put_      = decl("yona_rt_dict_put", i64p, {i64p, i64, i64});
+    rt_.dict_get_      = decl("yona_rt_dict_get", i64, {i64p, i64, i64});
+    rt_.dict_size_     = decl("yona_rt_dict_size", i64, {i64p});
+    rt_.dict_contains_ = decl("yona_rt_dict_contains", i64, {i64p, i64});
+    rt_.dict_keys_     = decl("yona_rt_dict_keys", i64p, {i64p});
+    rt_.print_dict_    = decl("yona_rt_print_dict", vd, {i64p});
 
     // Async runtime: promise = async_call(fn_ptr, arg), result = async_await(promise)
     // fn_ptr type: i64 (*)(i64) — function pointer taking and returning i64
     auto fn_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {i64}, false), 0);
     auto promise_ptr = ptr; // opaque pointer to yona_promise_t
-    rt_async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
+    rt_.async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
     auto thunk_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {}, false), 0);
-    rt_async_call_thunk_ = decl("yona_rt_async_call_thunk", promise_ptr, {thunk_ptr_ty});
-    rt_async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
+    rt_.async_call_thunk_ = decl("yona_rt_async_call_thunk", promise_ptr, {thunk_ptr_ty});
+    rt_.async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
 
     // ADT runtime (recursive types)
     auto i8 = LType::getInt8Ty(*context_);
-    rt_adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i64, i64});
-    rt_adt_get_tag_   = decl("yona_rt_adt_get_tag", i64, {ptr});
-    rt_adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
-    rt_adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
-    rt_adt_set_heap_mask_ = decl("yona_rt_adt_set_heap_mask", vd, {ptr, i64});
+    rt_.adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i64, i64});
+    rt_.adt_get_tag_   = decl("yona_rt_adt_get_tag", i64, {ptr});
+    rt_.adt_get_field_ = decl("yona_rt_adt_get_field", i64, {ptr, i64});
+    rt_.adt_set_field_ = decl("yona_rt_adt_set_field", vd, {ptr, i64, i64});
+    rt_.adt_set_heap_mask_ = decl("yona_rt_adt_set_heap_mask", vd, {ptr, i64});
 
     // General closures: {fn_ptr, ret_tag, arity, cap0, ...} with env-passing
-    rt_closure_create_  = decl("yona_rt_closure_create", ptr, {ptr, i64, i64, i64});
-    rt_closure_set_cap_ = decl("yona_rt_closure_set_cap", vd, {ptr, i64, i64});
-    rt_closure_get_cap_ = decl("yona_rt_closure_get_cap", i64, {ptr, i64});
-    rt_closure_set_heap_mask_ = decl("yona_rt_closure_set_heap_mask", vd, {ptr, i64});
+    rt_.closure_create_  = decl("yona_rt_closure_create", ptr, {ptr, i64, i64, i64});
+    rt_.closure_set_cap_ = decl("yona_rt_closure_set_cap", vd, {ptr, i64, i64});
+    rt_.closure_get_cap_ = decl("yona_rt_closure_get_cap", i64, {ptr, i64});
+    rt_.closure_set_heap_mask_ = decl("yona_rt_closure_set_heap_mask", vd, {ptr, i64});
 
     // Tuple allocation with metadata
-    rt_tuple_alloc_ = decl("yona_rt_tuple_alloc", ptr, {i64});
-    rt_tuple_set_ = decl("yona_rt_tuple_set", vd, {ptr, i64, i64});
-    rt_tuple_set_heap_mask_ = decl("yona_rt_tuple_set_heap_mask", vd, {ptr, i64});
+    rt_.tuple_alloc_ = decl("yona_rt_tuple_alloc", ptr, {i64});
+    rt_.tuple_set_ = decl("yona_rt_tuple_set", vd, {ptr, i64, i64});
+    rt_.tuple_set_heap_mask_ = decl("yona_rt_tuple_set_heap_mask", vd, {ptr, i64});
 
     // Reference counting
-    rt_rc_inc_ = decl("yona_rt_rc_inc", vd, {ptr});
-    rt_rc_dec_ = decl("yona_rt_rc_dec", vd, {ptr});
+    rt_.rc_inc_ = decl("yona_rt_rc_inc", vd, {ptr});
+    rt_.rc_dec_ = decl("yona_rt_rc_dec", vd, {ptr});
 
     // Arena allocator
-    rt_arena_create_  = decl("yona_rt_arena_create", ptr, {i64});
-    rt_arena_alloc_   = decl("yona_rt_arena_alloc", ptr, {ptr, i64, i64});
-    rt_arena_destroy_ = decl("yona_rt_arena_destroy", vd, {ptr});
+    rt_.arena_create_  = decl("yona_rt_arena_create", ptr, {i64});
+    rt_.arena_alloc_   = decl("yona_rt_arena_alloc", ptr, {ptr, i64, i64});
+    rt_.arena_destroy_ = decl("yona_rt_arena_destroy", vd, {ptr});
 
     // io_uring await
-    rt_io_await_ = decl("yona_rt_io_await", i64, {i64});
+    rt_.io_await_ = decl("yona_rt_io_await", i64, {i64});
 
     // Resource cleanup (with expression)
     // Bytes
-    rt_bytes_alloc_       = decl("yona_rt_bytes_alloc", ptr, {i64});
-    rt_bytes_length_      = decl("yona_rt_bytes_length", i64, {ptr});
-    rt_bytes_get_         = decl("yona_rt_bytes_get", i64, {ptr, i64});
-    rt_bytes_set_         = decl("yona_rt_bytes_set", vd, {ptr, i64, i64});
-    rt_bytes_concat_      = decl("yona_rt_bytes_concat", ptr, {ptr, ptr});
-    rt_bytes_slice_       = decl("yona_rt_bytes_slice", ptr, {ptr, i64, i64});
-    rt_bytes_from_string_ = decl("yona_rt_bytes_from_string", ptr, {ptr});
-    rt_bytes_to_string_   = decl("yona_rt_bytes_to_string", ptr, {ptr});
-    rt_bytes_from_seq_    = decl("yona_rt_bytes_from_seq", ptr, {ptr});
-    rt_bytes_to_seq_      = decl("yona_rt_bytes_to_seq", ptr, {ptr});
-    rt_print_bytes_       = decl("yona_rt_print_bytes", vd, {ptr});
+    rt_.bytes_alloc_       = decl("yona_rt_bytes_alloc", ptr, {i64});
+    rt_.bytes_length_      = decl("yona_rt_bytes_length", i64, {ptr});
+    rt_.bytes_get_         = decl("yona_rt_bytes_get", i64, {ptr, i64});
+    rt_.bytes_set_         = decl("yona_rt_bytes_set", vd, {ptr, i64, i64});
+    rt_.bytes_concat_      = decl("yona_rt_bytes_concat", ptr, {ptr, ptr});
+    rt_.bytes_slice_       = decl("yona_rt_bytes_slice", ptr, {ptr, i64, i64});
+    rt_.bytes_from_string_ = decl("yona_rt_bytes_from_string", ptr, {ptr});
+    rt_.bytes_to_string_   = decl("yona_rt_bytes_to_string", ptr, {ptr});
+    rt_.bytes_from_seq_    = decl("yona_rt_bytes_from_seq", ptr, {ptr});
+    rt_.bytes_to_seq_      = decl("yona_rt_bytes_to_seq", ptr, {ptr});
+    rt_.print_bytes_       = decl("yona_rt_print_bytes", vd, {ptr});
 
-    rt_box_ = decl("yona_rt_box", ptr, {ptr, i64});
-    rt_close_ = decl("yona_rt_close", vd, {i64});
+    rt_.box_ = decl("yona_rt_box", ptr, {ptr, i64});
+    rt_.close_ = decl("yona_rt_close", vd, {i64});
 
     // Exception handling (setjmp/longjmp)
     auto i32 = LType::getInt32Ty(*context_);
-    rt_try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns jmp_buf*
-    rt_try_end_       = decl("yona_rt_try_end", vd, {});
-    rt_raise_         = decl("yona_rt_raise", vd, {i64, ptr});
-    rt_get_exc_sym_   = decl("yona_rt_get_exception_symbol", i64, {});
-    rt_get_exc_msg_   = decl("yona_rt_get_exception_message", ptr, {});
+    rt_.try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns jmp_buf*
+    rt_.try_end_       = decl("yona_rt_try_end", vd, {});
+    rt_.raise_         = decl("yona_rt_raise", vd, {i64, ptr});
+    rt_.get_exc_sym_   = decl("yona_rt_get_exception_symbol", i64, {});
+    rt_.get_exc_msg_   = decl("yona_rt_get_exception_message", ptr, {});
     // Declare C setjmp — must be called from the compiled function's stack frame
     auto setjmp_fn = decl("setjmp", i32, {ptr});
     setjmp_fn->addFnAttr(llvm::Attribute::ReturnsTwice);
-    rt_raise_->addFnAttr(llvm::Attribute::NoReturn);
+    rt_.raise_->addFnAttr(llvm::Attribute::NoReturn);
 }
 
 void Codegen::report_error(const SourceLocation& loc, const std::string& message) {
@@ -1032,13 +1032,13 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
     if (!tv.val) return;
     Value* v = tv.val;
     switch (tv.type) {
-        case CType::INT:    builder_->CreateCall(rt_print_int_, {v}); break;
-        case CType::FLOAT:  builder_->CreateCall(rt_print_float_, {v}); break;
-        case CType::BOOL:   builder_->CreateCall(rt_print_bool_, {v}); break;
-        case CType::STRING: builder_->CreateCall(rt_print_string_, {v}); break;
-        case CType::SEQ:    builder_->CreateCall(rt_print_seq_, {v}); break;
+        case CType::INT:    builder_->CreateCall(rt_.print_int_, {v}); break;
+        case CType::FLOAT:  builder_->CreateCall(rt_.print_float_, {v}); break;
+        case CType::BOOL:   builder_->CreateCall(rt_.print_bool_, {v}); break;
+        case CType::STRING: builder_->CreateCall(rt_.print_string_, {v}); break;
+        case CType::SEQ:    builder_->CreateCall(rt_.print_seq_, {v}); break;
         case CType::TUPLE: {
-            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("(")});
+            builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr("(")});
             if (!tv.subtypes.empty()) {
                 // Boxed tuple (i64 = ptrtoint'd ptr to i64 array): GEP + load
                 auto i64_ty_local = LType::getInt64Ty(*context_);
@@ -1047,7 +1047,7 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
                     tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
                 for (unsigned i = 0; i < tv.subtypes.size(); i++) {
                     if (i > 0)
-                        builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(", ")});
+                        builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr(", ")});
                     auto* gep = builder_->CreateGEP(i64_ty_local, tuple_ptr,
                         {ConstantInt::get(i64_ty_local, i + 2)}); // +2 for tuple header
                     auto* elem = builder_->CreateLoad(i64_ty_local, gep);
@@ -1055,34 +1055,34 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
                     codegen_print_value({elem, et});
                 }
             }
-            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(")")});
+            builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr(")")});
             break;
         }
-        case CType::SET:    builder_->CreateCall(rt_print_set_, {tv.val}); break;
-        case CType::DICT:   builder_->CreateCall(rt_print_dict_, {tv.val}); break;
-        case CType::UNIT:     builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("()")}); break;
-        case CType::FUNCTION: builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<function>")}); break;
+        case CType::SET:    builder_->CreateCall(rt_.print_set_, {tv.val}); break;
+        case CType::DICT:   builder_->CreateCall(rt_.print_dict_, {tv.val}); break;
+        case CType::UNIT:     builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr("()")}); break;
+        case CType::FUNCTION: builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr("<function>")}); break;
         case CType::SYMBOL: {
             // Symbol is an interned i64 ID. Look up the string for printing.
             if (auto* ci = dyn_cast<ConstantInt>(tv.val)) {
                 int64_t id = ci->getSExtValue();
                 if (id >= 0 && id < (int64_t)symbol_strings_.size()) {
-                    builder_->CreateCall(rt_print_symbol_, {symbol_strings_[id]});
+                    builder_->CreateCall(rt_.print_symbol_, {symbol_strings_[id]});
                 }
             } else {
                 // Runtime symbol value — need a table lookup.
                 // Emit a GEP into the symbol names table (emitted at finalization).
                 // For now, emit a placeholder.
-                builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr(":<dynamic>")});
+                builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr(":<dynamic>")});
             }
             break;
         }
         case CType::ADT: {
-            builder_->CreateCall(rt_print_string_, {builder_->CreateGlobalStringPtr("<adt>")});
+            builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr("<adt>")});
             break;
         }
         case CType::BYTES: {
-            builder_->CreateCall(rt_print_bytes_, {tv.val});
+            builder_->CreateCall(rt_.print_bytes_, {tv.val});
             break;
         }
         default: break;
@@ -1092,7 +1092,7 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
 void Codegen::codegen_print(const TypedValue& tv) {
     auto resolved = auto_await(tv);
     codegen_print_value(resolved);
-    builder_->CreateCall(rt_print_newline_, {});
+    builder_->CreateCall(rt_.print_newline_, {});
 }
 
 // ===== Core Dispatch =====
@@ -1265,7 +1265,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                         if (info.field_names[fi] == field_name) {
                             CType ftype = (fi < info.field_types.size()) ? info.field_types[fi] : CType::INT;
                             if (info.is_recursive) {
-                                auto val = builder_->CreateCall(rt_adt_get_field_,
+                                auto val = builder_->CreateCall(rt_.adt_get_field_,
                                     {obj.val, ConstantInt::get(LType::getInt64Ty(*context_), fi)});
                                 if (ftype == CType::STRING || ftype == CType::SEQ || ftype == CType::ADT)
                                     return {builder_->CreateIntToPtr(val, PointerType::get(*context_, 0)), ftype};

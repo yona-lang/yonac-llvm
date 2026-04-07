@@ -211,104 +211,63 @@ private:
     // Check if a module FQN is a C FFI import (starts with "C\")
     static bool is_cffi_import(const std::string& mod_fqn);
 
-    // Runtime function declarations
-    llvm::Function* rt_print_int_ = nullptr;
-    llvm::Function* rt_print_float_ = nullptr;
-    llvm::Function* rt_print_string_ = nullptr;
-    llvm::Function* rt_print_bool_ = nullptr;
-    llvm::Function* rt_print_newline_ = nullptr;
-    llvm::Function* rt_print_seq_ = nullptr;
-    llvm::Function* rt_string_concat_ = nullptr;
-    llvm::Function* rt_seq_alloc_ = nullptr;
-    llvm::Function* rt_seq_set_ = nullptr;
-    llvm::Function* rt_seq_get_ = nullptr;
-    llvm::Function* rt_seq_length_ = nullptr;
-    llvm::Function* rt_seq_cons_ = nullptr;
-    llvm::Function* rt_seq_join_ = nullptr;
-    llvm::Function* rt_seq_head_ = nullptr;
-    llvm::Function* rt_seq_tail_ = nullptr;
-    llvm::Function* rt_seq_is_empty_ = nullptr;
-    llvm::Function* rt_print_symbol_ = nullptr;
-    llvm::Function* rt_set_alloc_ = nullptr;
-    llvm::Function* rt_set_put_ = nullptr;
-    llvm::Function* rt_set_insert_ = nullptr;
-    llvm::Function* rt_set_contains_ = nullptr;
-    llvm::Function* rt_set_size_ = nullptr;
-    llvm::Function* rt_set_elements_ = nullptr;
-    llvm::Function* rt_set_union_ = nullptr;
-    llvm::Function* rt_set_intersection_ = nullptr;
-    llvm::Function* rt_set_difference_ = nullptr;
-    llvm::Function* rt_print_set_ = nullptr;
-    llvm::Function* rt_dict_alloc_ = nullptr;
-    llvm::Function* rt_dict_set_ = nullptr;
-    llvm::Function* rt_dict_put_ = nullptr;
-    llvm::Function* rt_dict_get_ = nullptr;
-    llvm::Function* rt_dict_size_ = nullptr;
-    llvm::Function* rt_dict_contains_ = nullptr;
-    llvm::Function* rt_dict_keys_ = nullptr;
-    llvm::Function* rt_print_dict_ = nullptr;
-    llvm::Function* rt_adt_alloc_ = nullptr;
-    llvm::Function* rt_adt_get_tag_ = nullptr;
-    llvm::Function* rt_adt_get_field_ = nullptr;
-    llvm::Function* rt_adt_set_field_ = nullptr;
-    llvm::Function* rt_adt_set_heap_mask_ = nullptr;
-    llvm::Function* rt_async_call_thunk_ = nullptr;
-    llvm::Function* rt_try_begin_ = nullptr;
-    llvm::Function* rt_try_end_ = nullptr;
-    llvm::Function* rt_raise_ = nullptr;
-    llvm::Function* rt_get_exc_sym_ = nullptr;
-    llvm::Function* rt_get_exc_msg_ = nullptr;
+    // All runtime function declarations grouped in a struct
+    struct RuntimeDecls {
+        // Printing
+        llvm::Function *print_int_ = nullptr, *print_float_ = nullptr,
+            *print_string_ = nullptr, *print_bool_ = nullptr, *print_newline_ = nullptr,
+            *print_seq_ = nullptr, *print_symbol_ = nullptr, *print_set_ = nullptr,
+            *print_dict_ = nullptr, *print_bytes_ = nullptr;
+        // Strings
+        llvm::Function* string_concat_ = nullptr;
+        // Sequences
+        llvm::Function *seq_alloc_ = nullptr, *seq_set_ = nullptr, *seq_get_ = nullptr,
+            *seq_length_ = nullptr, *seq_cons_ = nullptr, *seq_join_ = nullptr,
+            *seq_head_ = nullptr, *seq_tail_ = nullptr, *seq_is_empty_ = nullptr;
+        // Sets
+        llvm::Function *set_alloc_ = nullptr, *set_put_ = nullptr, *set_insert_ = nullptr,
+            *set_contains_ = nullptr, *set_size_ = nullptr, *set_elements_ = nullptr,
+            *set_union_ = nullptr, *set_intersection_ = nullptr, *set_difference_ = nullptr;
+        // Dicts
+        llvm::Function *dict_alloc_ = nullptr, *dict_set_ = nullptr, *dict_put_ = nullptr,
+            *dict_get_ = nullptr, *dict_size_ = nullptr, *dict_contains_ = nullptr,
+            *dict_keys_ = nullptr;
+        // ADTs
+        llvm::Function *adt_alloc_ = nullptr, *adt_get_tag_ = nullptr,
+            *adt_get_field_ = nullptr, *adt_set_field_ = nullptr, *adt_set_heap_mask_ = nullptr;
+        // Async
+        llvm::Function *async_call_ = nullptr, *async_call_thunk_ = nullptr,
+            *async_await_ = nullptr, *io_await_ = nullptr;
+        // Exceptions
+        llvm::Function *try_begin_ = nullptr, *try_end_ = nullptr, *raise_ = nullptr,
+            *get_exc_sym_ = nullptr, *get_exc_msg_ = nullptr;
+        // Closures
+        llvm::Function *closure_create_ = nullptr, *closure_set_cap_ = nullptr,
+            *closure_get_cap_ = nullptr, *closure_set_heap_mask_ = nullptr,
+            *closure2_create_ = nullptr, *closure2_apply_ = nullptr;
+        // Tuples
+        llvm::Function *tuple_alloc_ = nullptr, *tuple_set_ = nullptr,
+            *tuple_set_heap_mask_ = nullptr;
+        // Reference counting
+        llvm::Function *rc_inc_ = nullptr, *rc_dec_ = nullptr;
+        // Bytes
+        llvm::Function *bytes_alloc_ = nullptr, *bytes_length_ = nullptr,
+            *bytes_get_ = nullptr, *bytes_set_ = nullptr, *bytes_concat_ = nullptr,
+            *bytes_slice_ = nullptr, *bytes_from_string_ = nullptr, *bytes_to_string_ = nullptr,
+            *bytes_from_seq_ = nullptr, *bytes_to_seq_ = nullptr;
+        // Misc
+        llvm::Function *box_ = nullptr, *close_ = nullptr;
+        // Arena
+        llvm::Function *arena_create_ = nullptr, *arena_alloc_ = nullptr,
+            *arena_destroy_ = nullptr;
+    } rt_;
 
     // Symbol interning: name → i64 ID, ID → global string constant
     std::unordered_map<std::string, int64_t> symbol_ids_;
-    std::vector<llvm::Constant*> symbol_strings_;  // ID → @"name" global string ptr
+    std::vector<llvm::Constant*> symbol_strings_;
 
     // Intern a symbol name, returning its i64 ID
     int64_t intern_symbol(const std::string& name);
-    llvm::Function* rt_async_call_ = nullptr;
-    llvm::Function* rt_async_await_ = nullptr;
-    llvm::Function* rt_closure2_create_ = nullptr;
-    llvm::Function* rt_closure2_apply_ = nullptr;
-
-    // General closures: {fn_ptr, cap0, cap1, ...} with env-passing convention
-    llvm::Function* rt_closure_create_ = nullptr;
-    llvm::Function* rt_closure_set_cap_ = nullptr;
-    llvm::Function* rt_closure_get_cap_ = nullptr;
-    llvm::Function* rt_closure_set_heap_mask_ = nullptr;
-    llvm::Function* rt_tuple_alloc_ = nullptr;
-    llvm::Function* rt_tuple_set_ = nullptr;
-    llvm::Function* rt_tuple_set_heap_mask_ = nullptr;
-
-    // Reference counting
-    llvm::Function* rt_rc_inc_ = nullptr;
-    llvm::Function* rt_rc_dec_ = nullptr;
-
-    // io_uring await
-    llvm::Function* rt_io_await_ = nullptr;
-
-    // Bytes
-    llvm::Function* rt_bytes_alloc_ = nullptr;
-    llvm::Function* rt_bytes_length_ = nullptr;
-    llvm::Function* rt_bytes_get_ = nullptr;
-    llvm::Function* rt_bytes_set_ = nullptr;
-    llvm::Function* rt_bytes_concat_ = nullptr;
-    llvm::Function* rt_bytes_slice_ = nullptr;
-    llvm::Function* rt_bytes_from_string_ = nullptr;
-    llvm::Function* rt_bytes_to_string_ = nullptr;
-    llvm::Function* rt_bytes_from_seq_ = nullptr;
-    llvm::Function* rt_bytes_to_seq_ = nullptr;
-    llvm::Function* rt_print_bytes_ = nullptr;
-
-    // Boxing (tuples in collections)
-    llvm::Function* rt_box_ = nullptr;
-
-    // Resource cleanup (with expression)
-    llvm::Function* rt_close_ = nullptr;
-
-    // Arena allocator
-    llvm::Function* rt_arena_create_ = nullptr;
-    llvm::Function* rt_arena_alloc_ = nullptr;
-    llvm::Function* rt_arena_destroy_ = nullptr;
 
     // DWARF debug info
     std::unique_ptr<llvm::DIBuilder> di_builder_;

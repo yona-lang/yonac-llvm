@@ -283,7 +283,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         // Load captures from env
         for (size_t ci = 0; ci < def.free_vars.size(); ci++) {
-            auto* cap_val = builder_->CreateCall(rt_closure_get_cap_,
+            auto* cap_val = builder_->CreateCall(rt_.closure_get_cap_,
                 {env, ConstantInt::get(i64_ty, ci)}, def.free_vars[ci] + "_cap");
             CType cap_type = capture_tvs[ci].type;
             Value* typed_val = cap_val;
@@ -348,7 +348,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         // Create closure object at the current insertion point
         // Store return CType tag and user-arg arity for call-site dispatch
-        auto* closure = builder_->CreateCall(rt_closure_create_,
+        auto* closure = builder_->CreateCall(rt_.closure_create_,
             {fn, ConstantInt::get(i64_ty, static_cast<int64_t>(ret_ctype)),
              ConstantInt::get(i64_ty, def.param_names.size()),
              ConstantInt::get(i64_ty, def.free_vars.size())}, fn_name + "_closure");
@@ -375,12 +375,12 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
                 cap_i64 = builder_->CreateBitCast(cap_i64, i64_ty);
             else if (cap_i64->getType()->isIntegerTy() && cap_i64->getType() != i64_ty)
                 cap_i64 = builder_->CreateZExtOrTrunc(cap_i64, i64_ty);
-            builder_->CreateCall(rt_closure_set_cap_,
+            builder_->CreateCall(rt_.closure_set_cap_,
                 {closure, ConstantInt::get(i64_ty, ci), cap_i64});
         }
         // Store heap_mask so rc_dec can recursively free captures
         if (heap_mask != 0)
-            builder_->CreateCall(rt_closure_set_heap_mask_,
+            builder_->CreateCall(rt_.closure_set_heap_mask_,
                 {closure, ConstantInt::get(i64_ty, heap_mask)});
 
         last_lambda_name_ = fn_name;
@@ -942,19 +942,19 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
 
     if (info.is_recursive) {
         // Recursive ADT: heap-allocate via runtime
-        auto* node_ptr = builder_->CreateCall(rt_adt_alloc_,
+        auto* node_ptr = builder_->CreateCall(rt_.adt_alloc_,
             {ConstantInt::get(tag_ty, info.tag),
              ConstantInt::get(i64_ty, info.arity)}, "adt_node");
         int64_t adt_heap_mask = 0;
         for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
             Value* arg_val = to_i64(all_args[ai].val);
-            builder_->CreateCall(rt_adt_set_field_,
+            builder_->CreateCall(rt_.adt_set_field_,
                 {node_ptr, ConstantInt::get(i64_ty, ai), arg_val});
             if (is_heap_type(all_args[ai].type) && ai < 64)
                 adt_heap_mask |= ((int64_t)1 << ai);
         }
         if (adt_heap_mask != 0)
-            builder_->CreateCall(rt_adt_set_heap_mask_,
+            builder_->CreateCall(rt_.adt_set_heap_mask_,
                 {node_ptr, ConstantInt::get(i64_ty, adt_heap_mask)});
         TypedValue result{node_ptr, CType::ADT};
         result.adt_type_name = info.type_name;
@@ -1509,7 +1509,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
             Value* arg = call_args.empty()
                 ? ConstantInt::get(i64_ty, 0)
                 : to_i64(call_args[0]);
-            promise = builder_->CreateCall(rt_async_call_, {cf.fn, arg}, "async_call");
+            promise = builder_->CreateCall(rt_.async_call_, {cf.fn, arg}, "async_call");
         } else {
             // Multi-arg: generate a thunk that captures all args via globals
             auto thunk_type = llvm::FunctionType::get(i64_ty, {}, false);
@@ -1550,7 +1550,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                 builder_->CreateStore(call_args[ai], arg_globals[ai]);
             }
 
-            promise = builder_->CreateCall(rt_async_call_thunk_, {thunk_fn}, "async_thunk_call");
+            promise = builder_->CreateCall(rt_.async_call_thunk_, {thunk_fn}, "async_thunk_call");
         }
         return {promise, CType::PROMISE, {inner_ret}};
     }
@@ -1694,7 +1694,7 @@ Value* Codegen::wrap_in_closure(Function* fn, CType ret_type) {
 
     // Create trivial closure {wrapper_fn_ptr, ret_tag, arity, <no captures>}
     int64_t arity = fn->arg_size(); // user args (wrapper has env + original params)
-    return builder_->CreateCall(rt_closure_create_,
+    return builder_->CreateCall(rt_.closure_create_,
         {existing, ConstantInt::get(i64_ty, static_cast<int64_t>(ret_type)),
          ConstantInt::get(i64_ty, arity),
          ConstantInt::get(i64_ty, 0)}, wrapper_name + "_closure");
@@ -1706,9 +1706,9 @@ TypedValue Codegen::auto_await(TypedValue tv) {
     // Dispatch: io_uring promise vs thread-pool promise
     Value* awaited;
     if (tv.is_io_promise) {
-        awaited = builder_->CreateCall(rt_io_await_, {tv.val}, "io_await");
+        awaited = builder_->CreateCall(rt_.io_await_, {tv.val}, "io_await");
     } else {
-        awaited = builder_->CreateCall(rt_async_await_, {tv.val}, "await");
+        awaited = builder_->CreateCall(rt_.async_await_, {tv.val}, "await");
     }
 
     // The awaited value's type is stored in subtypes[0]

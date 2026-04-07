@@ -51,7 +51,7 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
             builder_->CreateICmpSGT(count, ConstantInt::get(i64_ty, 0)),
             body_bb, next_bb);
     } else {
-        auto len = builder_->CreateCall(rt_seq_length_, {seq_ptr});
+        auto len = builder_->CreateCall(rt_.seq_length_, {seq_ptr});
         auto min_len = ConstantInt::get(i64_ty, htp->heads.size());
         builder_->CreateCondBr(builder_->CreateICmpSGE(len, min_len), body_bb, next_bb);
     }
@@ -62,9 +62,9 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
     for (size_t hi = 0; hi < htp->heads.size(); hi++) {
         Value* hv;
         if (hi == 0 && htp->heads.size() == 1)
-            hv = builder_->CreateCall(rt_seq_head_, {seq_ptr}, "head");
+            hv = builder_->CreateCall(rt_.seq_head_, {seq_ptr}, "head");
         else
-            hv = builder_->CreateCall(rt_seq_get_, {seq_ptr, ConstantInt::get(i64_ty, hi)});
+            hv = builder_->CreateCall(rt_.seq_get_, {seq_ptr, ConstantInt::get(i64_ty, hi)});
         Value* elem_val = hv;
         if (elem_type == CType::SEQ || elem_type == CType::STRING ||
             elem_type == CType::FUNCTION || elem_type == CType::ADT ||
@@ -83,7 +83,7 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
             if (count_identifier_refs(clause->body, scrut_name) > 0)
                 emit_rc_inc(seq_ptr, CType::SEQ);
         }
-        auto tv = builder_->CreateCall(rt_seq_tail_, {seq_ptr});
+        auto tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
         auto* pv = static_cast<PatternValue*>(htp->tail);
         if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
             named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
@@ -183,13 +183,13 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
     auto i64_ty = LType::getInt64Ty(*context_);
 
     if (ctor_it->second.is_recursive) {
-        auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+        auto scr_tag = builder_->CreateCall(rt_.adt_get_tag_, {scrutinee.val});
         builder_->CreateCondBr(
             builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i64_ty, tag)),
             body_bb, next_bb);
         builder_->SetInsertPoint(body_bb);
         for (size_t fi = 0; fi < cp->sub_patterns.size(); fi++) {
-            auto field_val = builder_->CreateCall(rt_adt_get_field_,
+            auto field_val = builder_->CreateCall(rt_.adt_get_field_,
                 {scrutinee.val, ConstantInt::get(i64_ty, fi)});
             auto* sub_pat = cp->sub_patterns[fi];
             if (sub_pat->get_type() == AST_PATTERN_VALUE) {
@@ -407,7 +407,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 auto i64_ty = LType::getInt64Ty(*context_);
 
                 if (ctor_it->second.is_recursive) {
-                    auto scr_tag = builder_->CreateCall(rt_adt_get_tag_, {scrutinee.val});
+                    auto scr_tag = builder_->CreateCall(rt_.adt_get_tag_, {scrutinee.val});
                     builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
                                            body_bb, next_bb);
                     builder_->SetInsertPoint(body_bb);
@@ -415,7 +415,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                         if (!name_expr) continue;
                         for (size_t fi = 0; fi < ctor_it->second.field_names.size(); fi++) {
                             if (ctor_it->second.field_names[fi] == name_expr->value) {
-                                auto val = builder_->CreateCall(rt_adt_get_field_,
+                                auto val = builder_->CreateCall(rt_.adt_get_field_,
                                     {scrutinee.val, ConstantInt::get(i64_ty, fi)});
                                 if (pattern->get_type() == AST_PATTERN_VALUE) {
                                     auto* pv = static_cast<PatternValue*>(pattern);
