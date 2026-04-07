@@ -287,165 +287,138 @@ int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
 
 // ===== Let Bindings =====
 
-TypedValue Codegen::codegen_let(LetExpr* node) {
-    set_debug_loc(node->source_context);
-
-    // Escape analysis: determine which bindings don't escape this scope.
-    // Analysis results stored for future arena optimization.
+// Analyze which let-bound names don't escape the scope (for arena allocation).
+std::unordered_set<std::string> Codegen::analyze_let_escaping(LetExpr* node) {
     std::unordered_set<std::string> local_non_escaping;
-    // Arena heuristic: only activate for scopes with >= 2 heap-allocating
-    // non-escaping bindings. A single binding doesn't justify the 4KB arena
-    // malloc overhead, and recursive scopes (like queens) typically have few.
-    if (node->aliases.size() >= 2) {
-        std::unordered_set<std::string> local_fns;
-        for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
-        for (auto& [name, _] : compiled_functions_) local_fns.insert(name);
-        // Collect let-bound names
-        std::unordered_set<std::string> let_names;
+    if (node->aliases.size() < 2) return local_non_escaping;
+
+    std::unordered_set<std::string> local_fns;
+    for (auto& [name, _] : deferred_functions_) local_fns.insert(name);
+    for (auto& [name, _] : compiled_functions_) local_fns.insert(name);
+
+    std::unordered_set<std::string> let_names;
+    for (auto* alias : node->aliases) {
+        if (auto* va = dynamic_cast<ValueAlias*>(alias))
+            let_names.insert(va->identifier->name->value);
+        else if (auto* la = dynamic_cast<LambdaAlias*>(alias))
+            let_names.insert(la->name->value);
+    }
+
+    std::unordered_set<std::string> escaping;
+    std::function<void(AstNode*, bool)> check_escape = [&](AstNode* n, bool ret_pos) {
+        if (!n) return;
+        if (n->get_type() == AST_IDENTIFIER_EXPR) {
+            auto* id = static_cast<IdentifierExpr*>(n);
+            if (ret_pos && let_names.count(id->name->value))
+                escaping.insert(id->name->value);
+            return;
+        }
+        if (n->get_type() == AST_LET_EXPR) { check_escape(static_cast<LetExpr*>(n)->expr, ret_pos); return; }
+        if (n->get_type() == AST_IF_EXPR) {
+            auto* ie = static_cast<IfExpr*>(n);
+            check_escape(ie->thenExpr, ret_pos);
+            check_escape(ie->elseExpr, ret_pos);
+            return;
+        }
+        if (n->get_type() == AST_CASE_EXPR) {
+            for (auto* clause : static_cast<CaseExpr*>(n)->clauses) check_escape(clause->body, ret_pos);
+            return;
+        }
+        if (n->get_type() == AST_DO_EXPR) {
+            auto* de = static_cast<DoExpr*>(n);
+            if (!de->steps.empty()) check_escape(de->steps.back(), ret_pos);
+            return;
+        }
+        if (n->get_type() == AST_FUNCTION_EXPR) {
+            auto* fe = static_cast<FunctionExpr*>(n);
+            std::function<void(AstNode*)> walk = [&](AstNode* nd) {
+                if (!nd) return;
+                if (nd->get_type() == AST_IDENTIFIER_EXPR) {
+                    if (let_names.count(static_cast<IdentifierExpr*>(nd)->name->value))
+                        escaping.insert(static_cast<IdentifierExpr*>(nd)->name->value);
+                    return;
+                }
+                if (nd->get_type() == AST_LET_EXPR) { walk(static_cast<LetExpr*>(nd)->expr); return; }
+                if (nd->get_type() == AST_IF_EXPR) { auto* i = static_cast<IfExpr*>(nd); walk(i->condition); walk(i->thenExpr); walk(i->elseExpr); return; }
+                if (nd->get_type() == AST_CASE_EXPR) { auto* c = static_cast<CaseExpr*>(nd); walk(c->expr); for (auto* cl : c->clauses) walk(cl->body); return; }
+                if (nd->get_type() == AST_APPLY_EXPR) { auto* a = static_cast<ApplyExpr*>(nd); for (auto& arg : a->args) { if (std::holds_alternative<ExprNode*>(arg)) walk(std::get<ExprNode*>(arg)); else walk(std::get<ValueExpr*>(arg)); } return; }
+            };
+            for (auto* body : fe->bodies)
+                if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) walk(bwg->expr);
+            return;
+        }
+        if (n->get_type() == AST_APPLY_EXPR) {
+            auto* ae = static_cast<ApplyExpr*>(n);
+            std::string callee;
+            if (auto* nc = dynamic_cast<NameCall*>(ae->call)) callee = nc->name->value;
+            bool is_local = local_fns.count(callee) > 0;
+            for (auto& arg : ae->args) {
+                AstNode* a = std::holds_alternative<ExprNode*>(arg)
+                    ? static_cast<AstNode*>(std::get<ExprNode*>(arg))
+                    : static_cast<AstNode*>(std::get<ValueExpr*>(arg));
+                check_escape(a, !is_local);
+            }
+        }
+    };
+    check_escape(node->expr, true);
+
+    for (auto& name : let_names) {
+        if (escaping.count(name)) continue;
         for (auto* alias : node->aliases) {
-            if (auto* va = dynamic_cast<ValueAlias*>(alias))
-                let_names.insert(va->identifier->name->value);
-            else if (auto* la = dynamic_cast<LambdaAlias*>(alias))
-                let_names.insert(la->name->value);
-        }
-        // Check which escape
-        std::unordered_set<std::string> escaping;
-        // A binding escapes if it appears in the result expression
-        std::function<void(AstNode*, bool)> check_escape = [&](AstNode* n, bool ret_pos) {
-            if (!n) return;
-            if (n->get_type() == AST_IDENTIFIER_EXPR) {
-                auto* id = static_cast<IdentifierExpr*>(n);
-                if (ret_pos && let_names.count(id->name->value))
-                    escaping.insert(id->name->value);
-                return;
-            }
-            if (n->get_type() == AST_LET_EXPR) {
-                auto* le = static_cast<LetExpr*>(n);
-                check_escape(le->expr, ret_pos);
-                return;
-            }
-            if (n->get_type() == AST_IF_EXPR) {
-                auto* ie = static_cast<IfExpr*>(n);
-                check_escape(ie->thenExpr, ret_pos);
-                check_escape(ie->elseExpr, ret_pos);
-                return;
-            }
-            if (n->get_type() == AST_CASE_EXPR) {
-                auto* ce = static_cast<CaseExpr*>(n);
-                for (auto* clause : ce->clauses) check_escape(clause->body, ret_pos);
-                return;
-            }
-            if (n->get_type() == AST_DO_EXPR) {
-                auto* de = static_cast<DoExpr*>(n);
-                if (!de->steps.empty())
-                    check_escape(de->steps.back(), ret_pos);
-                return;
-            }
-            if (n->get_type() == AST_FUNCTION_EXPR) {
-                // Lambda captures — all referenced let_names escape
-                auto* fe = static_cast<FunctionExpr*>(n);
-                std::function<void(AstNode*)> walk = [&](AstNode* node) {
-                    if (!node) return;
-                    if (node->get_type() == AST_IDENTIFIER_EXPR) {
-                        auto* id2 = static_cast<IdentifierExpr*>(node);
-                        if (let_names.count(id2->name->value))
-                            escaping.insert(id2->name->value);
-                        return;
-                    }
-                    if (node->get_type() == AST_LET_EXPR) { walk(static_cast<LetExpr*>(node)->expr); return; }
-                    if (node->get_type() == AST_IF_EXPR) { auto* i = static_cast<IfExpr*>(node); walk(i->condition); walk(i->thenExpr); walk(i->elseExpr); return; }
-                    if (node->get_type() == AST_CASE_EXPR) { auto* c = static_cast<CaseExpr*>(node); walk(c->expr); for (auto* cl : c->clauses) walk(cl->body); return; }
-                    if (node->get_type() == AST_APPLY_EXPR) { auto* a = static_cast<ApplyExpr*>(node); for (auto& arg : a->args) { if (std::holds_alternative<ExprNode*>(arg)) walk(std::get<ExprNode*>(arg)); else walk(std::get<ValueExpr*>(arg)); } return; }
-                };
-                for (auto* body : fe->bodies) {
-                    if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) walk(bwg->expr);
-                }
-                return;
-            }
-            if (n->get_type() == AST_APPLY_EXPR) {
-                auto* ae = static_cast<ApplyExpr*>(n);
-                std::string callee;
-                if (auto* nc = dynamic_cast<NameCall*>(ae->call)) callee = nc->name->value;
-                bool is_local = local_fns.count(callee) > 0;
-                for (auto& arg : ae->args) {
-                    AstNode* a = std::holds_alternative<ExprNode*>(arg) ?
-                        static_cast<AstNode*>(std::get<ExprNode*>(arg)) :
-                        static_cast<AstNode*>(std::get<ValueExpr*>(arg));
-                    // Args to opaque functions escape
-                    check_escape(a, !is_local);
-                }
-                return;
-            }
-        };
-        check_escape(node->expr, true);
-
-        // Filter to non-escaping names with heap-allocating RHS
-        for (auto& name : let_names) {
-            if (escaping.count(name)) continue;
-            // Check if the alias's RHS is a heap-allocating expression
-            for (auto* alias : node->aliases) {
-                if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
-                    if (va->identifier->name->value != name) continue;
-                    auto ty = va->expr->get_type();
-                    if (ty == AST_VALUES_SEQUENCE_EXPR || ty == AST_TUPLE_EXPR ||
-                        ty == AST_SET_EXPR || ty == AST_DICT_EXPR ||
-                        ty == AST_SEQ_GENERATOR_EXPR || ty == AST_SET_GENERATOR_EXPR ||
-                        ty == AST_DICT_GENERATOR_EXPR || ty == AST_FUNCTION_EXPR) {
-                        local_non_escaping.insert(name);
-                    }
-                }
+            if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+                if (va->identifier->name->value != name) continue;
+                auto ty = va->expr->get_type();
+                if (ty == AST_VALUES_SEQUENCE_EXPR || ty == AST_TUPLE_EXPR ||
+                    ty == AST_SET_EXPR || ty == AST_DICT_EXPR ||
+                    ty == AST_SEQ_GENERATOR_EXPR || ty == AST_SET_GENERATOR_EXPR ||
+                    ty == AST_DICT_GENERATOR_EXPR || ty == AST_FUNCTION_EXPR)
+                    local_non_escaping.insert(name);
             }
         }
     }
+    return local_non_escaping;
+}
 
-    // Arena allocation for non-escaping heap values.
-    // Only create arena if >= 2 such bindings exist (justifies the 4KB overhead).
-    llvm::Value* arena = nullptr;
+// Set up arena allocator for non-escaping bindings (if enough qualify).
+llvm::Value* Codegen::setup_let_arena(const std::unordered_set<std::string>& non_escaping) {
+    if (non_escaping.size() < 2) return nullptr;
+    auto i64_ty = LType::getInt64Ty(*context_);
+    return builder_->CreateCall(rt_arena_create_,
+        {ConstantInt::get(i64_ty, 4096)}, "arena");
+}
+
+// Codegen all let aliases: ValueAlias, LambdaAlias, PatternAlias.
+void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
+                                   const std::unordered_set<std::string>& non_escaping,
+                                   std::vector<TypedValue>& scope_bindings,
+                                   std::vector<bool>& binding_is_arena) {
     auto saved_arena = current_arena_;
-    if (local_non_escaping.size() >= 2) {
-        auto i64_ty = LType::getInt64Ty(*context_);
-        arena = builder_->CreateCall(rt_arena_create_,
-            {ConstantInt::get(i64_ty, 4096)}, "arena");
-    }
-
-    // Track all heap-typed bindings for RC release at scope exit
-    std::vector<TypedValue> scope_bindings;
-    std::vector<bool> binding_is_arena; // parallel: true if arena-allocated
 
     for (auto* alias : node->aliases) {
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
             std::string vname = va->identifier->name->value;
 
-            // Stream fusion: defer single-use generator bindings.
-            // If the RHS is a SeqGeneratorExpr and it's used exactly once in the
-            // let body, skip codegen now and fuse it into the consuming generator.
+            // Stream fusion: defer single-use generator bindings
             if (va->expr->get_type() == AST_SEQ_GENERATOR_EXPR) {
                 int refs = count_identifier_refs(node->expr, vname);
                 if (refs == 1) {
                     deferred_generators_[vname] = static_cast<SeqGeneratorExpr*>(va->expr);
-                    continue; // skip codegen, rc_inc, scope tracking
+                    continue;
                 }
             }
 
-            // If non-escaping, set arena for this binding's allocation
-            bool use_arena = arena && local_non_escaping.count(vname);
+            bool use_arena = arena && non_escaping.count(vname);
             if (use_arena) current_arena_ = arena;
-
             auto tv = codegen(va->expr);
-
             if (use_arena) current_arena_ = saved_arena;
 
             if (tv) {
                 named_values_[vname] = tv;
 
-                // Seq protection: rc_inc let-bound seqs so that unique-owner
-                // in-place tail mutation doesn't corrupt the binding when the
-                // same variable is used in multiple case expressions.
-                // Function parameters don't need this (consumed once per call).
+                // Seq protection: rc_inc to prevent unique-owner tail mutation
                 if (tv.type == CType::SEQ && tv.val && !llvm::isa<llvm::Constant>(tv.val))
                     emit_rc_inc(tv.val, CType::SEQ);
 
-                // Track for RC
                 if (is_heap_type(tv.type) && tv.val) {
                     scope_bindings.push_back(tv);
                     binding_is_arena.push_back(use_arena);
@@ -468,7 +441,7 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
             auto tv = codegen_lambda_alias(la);
             if (tv && is_heap_type(tv.type) && tv.val) {
                 scope_bindings.push_back(tv);
-                binding_is_arena.push_back(false); // closures always heap
+                binding_is_arena.push_back(false);
             }
         } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
             auto tv = codegen(pa->expr);
@@ -483,7 +456,7 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
                         Value* elem;
                         if (tuple_ptr->getType()->isPointerTy()) {
                             auto* gep = builder_->CreateGEP(i64_local, tuple_ptr,
-                                {ConstantInt::get(i64_local, i + 2)}, "let_tuple_gep"); // +2 for tuple header
+                                {ConstantInt::get(i64_local, i + 2)}, "let_tuple_gep");
                             elem = builder_->CreateLoad(i64_local, gep, "let_tuple_elem");
                         } else {
                             elem = builder_->CreateExtractValue(tuple_ptr, {(unsigned)i});
@@ -505,38 +478,51 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
             }
         }
     }
+    current_arena_ = saved_arena;
+}
 
-    // Note: Last-use analysis framework (LastUseAnalysis.h/cpp) is built
-    // and ready for full Perceus seq DUP/DROP. Currently not wired in
-    // because hybrid Perceus skips seq DUP (callee-borrows for seqs).
-
-    auto result = codegen(node->expr);
-
-    // Perceus DROP: release let-bound heap values whose last use has already
-    // consumed them (via DUP at non-last uses + callee DROP). Only DROP
-    // bindings that were NEVER used in the body (the last-use analysis
-    // would not have marked any of their uses).
+// Clean up scope: RC decrement bindings, destroy arena, clean deferred generators.
+void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
+                                 const std::vector<bool>& binding_is_arena,
+                                 const TypedValue& result, llvm::Value* arena) {
     if (!scope_bindings.empty() && result && result.val) {
-        // Protect result in case it IS a binding (ownership transfer)
         emit_rc_inc(result.val, result.type);
         for (size_t i = 0; i < scope_bindings.size(); i++) {
             if (i < binding_is_arena.size() && binding_is_arena[i])
-                continue; // arena-allocated: will be freed in bulk
+                continue;
             emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
         }
     }
-
-    // Destroy arena (frees all non-escaping allocations in bulk)
     if (arena)
         builder_->CreateCall(rt_arena_destroy_, {arena});
+}
 
+TypedValue Codegen::codegen_let(LetExpr* node) {
+    set_debug_loc(node->source_context);
+
+    // 1. Escape analysis
+    auto non_escaping = analyze_let_escaping(node);
+
+    // 2. Arena setup
+    auto saved_arena = current_arena_;
+    auto* arena = setup_let_arena(non_escaping);
+
+    // 3. Codegen all aliases
+    std::vector<TypedValue> scope_bindings;
+    std::vector<bool> binding_is_arena;
+    codegen_let_aliases(node, arena, non_escaping, scope_bindings, binding_is_arena);
+
+    // 4. Codegen body
+    auto result = codegen(node->expr);
+
+    // 5. Cleanup scope
+    cleanup_let_scope(scope_bindings, binding_is_arena, result, arena);
     current_arena_ = saved_arena;
 
-    // Clean up any deferred generators not consumed by fusion
-    for (auto* alias : node->aliases) {
+    // 6. Clean up deferred generators not consumed by fusion
+    for (auto* alias : node->aliases)
         if (auto* va = dynamic_cast<ValueAlias*>(alias))
             deferred_generators_.erase(va->identifier->name->value);
-    }
 
     return result;
 }

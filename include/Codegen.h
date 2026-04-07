@@ -354,8 +354,32 @@ private:
 
     // Control flow
     TypedValue codegen_let(LetExpr* node);
+    // codegen_let helpers
+    std::unordered_set<std::string> analyze_let_escaping(LetExpr* node);
+    llvm::Value* setup_let_arena(const std::unordered_set<std::string>& non_escaping);
+    void codegen_let_aliases(LetExpr* node, llvm::Value* arena,
+                              const std::unordered_set<std::string>& non_escaping,
+                              std::vector<TypedValue>& scope_bindings,
+                              std::vector<bool>& binding_is_arena);
+    void cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
+                            const std::vector<bool>& binding_is_arena,
+                            const TypedValue& result, llvm::Value* arena);
+
     TypedValue codegen_if(IfExpr* node);
     TypedValue codegen_case(CaseExpr* node);
+    // codegen_case pattern helpers — return true if body codegen was inlined
+    bool codegen_pattern_value(PatternValue* pat, const TypedValue& scrutinee,
+                                llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+    bool codegen_pattern_headtail(HeadTailsPattern* pat, CaseExpr* node,
+                                   CaseClause* clause, const TypedValue& scrutinee,
+                                   llvm::Value* seq_ptr,
+                                   llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+    bool codegen_pattern_seq(SeqPattern* pat, const TypedValue& scrutinee,
+                              llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+    bool codegen_pattern_tuple(TuplePattern* pat, const TypedValue& scrutinee,
+                                llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+    bool codegen_pattern_constructor(ConstructorPattern* pat, const TypedValue& scrutinee,
+                                      llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
     TypedValue codegen_do(DoExpr* node);
     TypedValue codegen_raise(RaiseExpr* node);
     TypedValue codegen_try_catch(TryCatchExpr* node);
