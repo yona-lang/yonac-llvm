@@ -76,6 +76,20 @@
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
 
+### Codegen Refactoring (prerequisite for effect system)
+- [x] **Phase 1: Break codegen_apply** (761 lines → 48-line dispatcher + 11 helpers)
+  resolve_function, prepare_arguments, handle_partial_application,
+  handle_higher_order_call, emit_direct_call
+- [x] **Phase 1: Break codegen_let** (252 lines → 25-line dispatcher + 4 helpers)
+- [x] **Phase 1: Break codegen_case** (461 lines → 5 pattern helpers)
+- [ ] **Phase 2: Extract RuntimeDecls** — move 76 rt_* pointers into a struct
+- [ ] **Phase 2: Deduplicate generators** — seq/set/dict share ~60% code
+- [ ] **Phase 2: Define constants** — replace 787 magic numbers
+- [ ] **Phase 3: Split Codegen class** — CodegenContext + RuntimeManager +
+  TypeCache + Codegen (<50 members each)
+- [ ] **Phase 3: Split compiled_runtime.c** — rc.c, adt.c, exceptions.c,
+  async.c, closures.c, printing.c (seq.c, hamt.c, regex.c already split)
+
 ### Tooling
 - [ ] Package manager / build system
 - [ ] LSP server
