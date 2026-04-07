@@ -105,6 +105,9 @@ file(GLOB_RECURSE all_lib_SRCS
 # Exclude files #included from compiled_runtime.c
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/seq\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/hamt\\.c$")
+list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/exceptions\\.c$")
+list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/async\\.c$")
+list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/closures\\.c$")
 if(NOT PCRE2_FOUND)
     list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/regex\\.c$")
 endif()

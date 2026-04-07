@@ -172,8 +172,8 @@ bool Codegen::codegen_pattern_tuple(TuplePattern* tp, const TypedValue& scrutine
 
 bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedValue& scrutinee,
                                            BasicBlock* body_bb, BasicBlock* next_bb) {
-    auto ctor_it = adt_constructors_.find(cp->constructor_name);
-    if (ctor_it == adt_constructors_.end()) {
+    auto ctor_it = types_.adt_constructors.find(cp->constructor_name);
+    if (ctor_it == types_.adt_constructors.end()) {
         builder_->CreateBr(body_bb);
         return false;
     }
@@ -277,8 +277,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         auto* first_pat = node->clauses[0]->pattern;
         if (first_pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
             auto* cp = static_cast<ConstructorPattern*>(first_pat);
-            auto ctor_it = adt_constructors_.find(cp->constructor_name);
-            if (ctor_it != adt_constructors_.end() && ctor_it->second.is_recursive) {
+            auto ctor_it = types_.adt_constructors.find(cp->constructor_name);
+            if (ctor_it != types_.adt_constructors.end() && ctor_it->second.is_recursive) {
                 // Convert i64 → ptr for recursive ADT
                 scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
                     PointerType::get(*context_, 0));
@@ -300,8 +300,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 auto* cp = static_cast<ConstructorPattern*>(pat);
                 covered_ctors.insert(cp->constructor_name);
                 if (adt_type_name.empty()) {
-                    auto it = adt_constructors_.find(cp->constructor_name);
-                    if (it != adt_constructors_.end())
+                    auto it = types_.adt_constructors.find(cp->constructor_name);
+                    if (it != types_.adt_constructors.end())
                         adt_type_name = it->second.type_name;
                 }
             } else if (pat->get_type() == AST_UNDERSCORE_PATTERN ||
@@ -312,7 +312,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
         if (!adt_type_name.empty() && !has_wildcard) {
             // Check all constructors of this ADT are covered
-            for (auto& [name, info] : adt_constructors_) {
+            for (auto& [name, info] : types_.adt_constructors) {
                 if (info.type_name == adt_type_name && covered_ctors.count(name) == 0) {
                     std::cerr << "Warning: non-exhaustive pattern match on " << adt_type_name
                               << " — missing constructor " << name << "\n";
@@ -400,8 +400,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         } else if (pat->get_type() == AST_RECORD_PATTERN) {
             // Named field pattern: Person { name = n, age = a }
             auto* rp = static_cast<RecordPattern*>(pat);
-            auto ctor_it = adt_constructors_.find(rp->recordType);
-            if (ctor_it != adt_constructors_.end()) {
+            auto ctor_it = types_.adt_constructors.find(rp->recordType);
+            if (ctor_it != types_.adt_constructors.end()) {
                 int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
                 auto tag_ty = LType::getInt64Ty(*context_);
                 auto i64_ty = LType::getInt64Ty(*context_);

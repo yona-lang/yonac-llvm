@@ -263,8 +263,8 @@ std::pair<llvm::Type*, CType> Codegen::infer_return_type(AstNode* node) {
             } else break;
         }
         if (!root_name.empty()) {
-            auto adt_it = adt_constructors_.find(root_name);
-            if (adt_it != adt_constructors_.end()) {
+            auto adt_it = types_.adt_constructors.find(root_name);
+            if (adt_it != types_.adt_constructors.end()) {
                 if (adt_it->second.is_recursive)
                     return {PointerType::get(*context_, 0), CType::ADT};
                 auto tag_ty = i64_ty;

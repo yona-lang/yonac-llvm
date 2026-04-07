@@ -193,7 +193,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
                 if (deferred_functions_.count(v) > 0)
                     continue;
                 // Extern/imported function: skip (resolved at link time)
-                if (extern_functions_.count(v) > 0)
+                if (imports_.extern_functions.count(v) > 0)
                     continue;
                 // Null-valued function (e.g., not yet compiled): skip
                 if (!it->second.val)
@@ -251,26 +251,26 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         auto saved_block = builder_->GetInsertBlock();
         auto saved_point = builder_->GetInsertPoint();
         auto saved_values = named_values_;
-        auto saved_di_scope = di_scope_;
+        auto saved_di_scope = debug_.scope;
         auto saved_debug_loc = builder_->getCurrentDebugLocation();
 
         // Create debug info for closure function
-        if (debug_info_ && di_builder_ && di_file_) {
-            auto* di_func_ty = di_builder_->createSubroutineType(
-                di_builder_->getOrCreateTypeArray({}));
-            auto* di_sp = di_builder_->createFunction(
-                di_file_, fn_name, fn_name, di_file_,
+        if (debug_.enabled && debug_.builder && debug_.file) {
+            auto* di_func_ty = debug_.builder->createSubroutineType(
+                debug_.builder->getOrCreateTypeArray({}));
+            auto* di_sp = debug_.builder->createFunction(
+                debug_.file, fn_name, fn_name, debug_.file,
                 node->source_context.line, di_func_ty, node->source_context.line,
                 DINode::FlagZero, DISubprogram::SPFlagDefinition);
             fn->setSubprogram(di_sp);
-            di_scope_ = di_sp;
+            debug_.scope = di_sp;
         }
 
         auto* entry = BasicBlock::Create(*context_, "entry", fn);
         builder_->SetInsertPoint(entry);
-        if (debug_info_ && di_scope_)
+        if (debug_.enabled && debug_.scope)
             builder_->SetCurrentDebugLocation(
-                DILocation::get(*context_, node->source_context.line, 0, di_scope_));
+                DILocation::get(*context_, node->source_context.line, 0, debug_.scope));
 
         // Set up scope: keep function references from outer scope
         named_values_.clear();
@@ -341,9 +341,9 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         // Restore state
         named_values_ = saved_values;
-        di_scope_ = saved_di_scope;
+        debug_.scope = saved_di_scope;
         if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
-        if (debug_info_) builder_->SetCurrentDebugLocation(saved_debug_loc);
+        if (debug_.enabled) builder_->SetCurrentDebugLocation(saved_debug_loc);
 
         // Remove from compiled_functions_ — closure functions are called through
         // their closure pointer (indirect call path), not directly.
@@ -474,7 +474,7 @@ Codegen::CompiledFunction Codegen::compile_function(
         if (ct == AST_FIELD_ACCESS_EXPR) {
             auto* fa = static_cast<FieldAccessExpr*>(node);
             std::string fname = fa->name->value;
-            for (auto& [cname, info] : adt_constructors_) {
+            for (auto& [cname, info] : types_.adt_constructors) {
                 for (size_t fi = 0; fi < info.field_names.size(); fi++) {
                     if (info.field_names[fi] == fname && fi < info.field_types.size())
                         return {llvm_type(info.field_types[fi]), info.field_types[fi]};
@@ -491,8 +491,8 @@ Codegen::CompiledFunction Codegen::compile_function(
                 }
             }
             // Check ADT constructors (zero-arity)
-            auto adt_it = adt_constructors_.find(id->name->value);
-            if (adt_it != adt_constructors_.end()) {
+            auto adt_it = types_.adt_constructors.find(id->name->value);
+            if (adt_it != types_.adt_constructors.end()) {
                 if (adt_it->second.is_recursive)
                     return {PointerType::get(*context_, 0), CType::ADT};
                 std::vector<LType*> fields = {tag_ty};
@@ -515,8 +515,8 @@ Codegen::CompiledFunction Codegen::compile_function(
                 } else break;
             }
             if (!root_name.empty()) {
-                auto adt_it = adt_constructors_.find(root_name);
-                if (adt_it != adt_constructors_.end()) {
+                auto adt_it = types_.adt_constructors.find(root_name);
+                if (adt_it != types_.adt_constructors.end()) {
                     if (adt_it->second.is_recursive)
                         return {PointerType::get(*context_, 0), CType::ADT};
                     std::vector<LType*> fields = {tag_ty};
@@ -561,27 +561,27 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto saved_block = builder_->GetInsertBlock();
     auto saved_point = builder_->GetInsertPoint();
     auto saved_values = named_values_;
-    auto saved_di_scope = di_scope_;
+    auto saved_di_scope = debug_.scope;
     auto saved_debug_loc = builder_->getCurrentDebugLocation();
 
     // Create debug info for this function
-    if (debug_info_ && di_builder_ && di_file_) {
+    if (debug_.enabled && debug_.builder && debug_.file) {
         auto* di_func_ty = di_func_type(param_ctypes, preliminary_ret);
-        auto* di_sp = di_builder_->createFunction(
-            di_file_, name, name, di_file_,
+        auto* di_sp = debug_.builder->createFunction(
+            debug_.file, name, name, debug_.file,
             def.ast->source_context.line, di_func_ty, def.ast->source_context.line,
             DINode::FlagZero, DISubprogram::SPFlagDefinition);
         fn->setSubprogram(di_sp);
-        di_scope_ = di_sp;
+        debug_.scope = di_sp;
     }
 
     auto entry = BasicBlock::Create(*context_, "entry", fn);
     builder_->SetInsertPoint(entry);
 
     // Set debug location to this function's scope (not the caller's)
-    if (debug_info_ && di_scope_)
+    if (debug_.enabled && debug_.scope)
         builder_->SetCurrentDebugLocation(
-            DILocation::get(*context_, def.ast->source_context.line, 0, di_scope_));
+            DILocation::get(*context_, def.ast->source_context.line, 0, debug_.scope));
 
     // Bind parameters
     named_values_.clear();
@@ -661,14 +661,14 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
 
         // Emit parameter debug info (only for user params, not captures)
-        if (debug_info_ && di_scope_ && di_builder_ && i < def.param_names.size()) {
+        if (debug_.enabled && debug_.scope && debug_.builder && i < def.param_names.size()) {
             auto* alloca = builder_->CreateAlloca(arg.getType(), nullptr, pname + ".dbg");
             builder_->CreateStore(&arg, alloca);
-            auto* di_param = di_builder_->createParameterVariable(
-                di_scope_, pname, i + 1, di_file_,
+            auto* di_param = debug_.builder->createParameterVariable(
+                debug_.scope, pname, i + 1, debug_.file,
                 def.ast->source_context.line, di_type_for(ct));
-            di_builder_->insertDeclare(alloca, di_param, di_builder_->createExpression(),
-                DILocation::get(*context_, def.ast->source_context.line, 0, di_scope_),
+            debug_.builder->insertDeclare(alloca, di_param, debug_.builder->createExpression(),
+                DILocation::get(*context_, def.ast->source_context.line, 0, debug_.scope),
                 builder_->GetInsertBlock());
         }
 
@@ -693,14 +693,14 @@ Codegen::CompiledFunction Codegen::compile_function(
             fn = Function::Create(new_fn_type, Function::InternalLinkage, name, module_.get());
 
             // Re-attach debug info to the recreated function
-            if (debug_info_ && di_builder_ && di_file_) {
+            if (debug_.enabled && debug_.builder && debug_.file) {
                 auto* di_func_ty = di_func_type(param_ctypes, preliminary_ret);
-                auto* di_sp = di_builder_->createFunction(
-                    di_file_, name, name, di_file_,
+                auto* di_sp = debug_.builder->createFunction(
+                    debug_.file, name, name, debug_.file,
                     def.ast->source_context.line, di_func_ty, def.ast->source_context.line,
                     DINode::FlagZero, DISubprogram::SPFlagDefinition);
                 fn->setSubprogram(di_sp);
-                di_scope_ = di_sp;
+                debug_.scope = di_sp;
             }
 
             // Recompile
@@ -712,9 +712,9 @@ Codegen::CompiledFunction Codegen::compile_function(
 
             auto new_entry = BasicBlock::Create(*context_, "entry", fn);
             builder_->SetInsertPoint(new_entry);
-            if (debug_info_ && di_scope_)
+            if (debug_.enabled && debug_.scope)
                 builder_->SetCurrentDebugLocation(
-                    DILocation::get(*context_, def.ast->source_context.line, 0, di_scope_));
+                    DILocation::get(*context_, def.ast->source_context.line, 0, debug_.scope));
 
             i = 0;
             for (auto& arg : fn->args()) {
@@ -823,9 +823,9 @@ Codegen::CompiledFunction Codegen::compile_function(
 
     // Restore
     named_values_ = saved_values;
-    di_scope_ = saved_di_scope;
+    debug_.scope = saved_di_scope;
     if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
-    if (debug_info_) builder_->SetCurrentDebugLocation(saved_debug_loc);
+    if (debug_.enabled) builder_->SetCurrentDebugLocation(saved_debug_loc);
 
     CompiledFunction cf;
     cf.fn = fn;
@@ -924,7 +924,7 @@ void Codegen::wrap_function_args_in_closures(std::vector<TypedValue>& all_args) 
 }
 
 TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std::vector<TypedValue>& all_args) {
-    auto& info = adt_constructors_[fn_name];
+    auto& info = types_.adt_constructors[fn_name];
     auto tag_ty = LType::getInt64Ty(*context_);
     auto i64_ty = LType::getInt64Ty(*context_);
 
@@ -1146,17 +1146,17 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
 
 TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_name,
                                          const std::vector<TypedValue>& all_args) {
-    auto ext_it = extern_functions_.find(fn_name);
+    auto ext_it = imports_.extern_functions.find(fn_name);
     std::string mangled = ext_it->second;
 
     // On-demand GENFN re-parse: if the function has source available
     // and call-site arg types differ from the pre-compiled signature,
     // re-parse and compile locally (cross-module monomorphization).
-    auto genfn_it = imported_function_sources_.find(mangled);
+    auto genfn_it = imports_.imported_sources.find(mangled);
     bool types_differ = false;
-    if (genfn_it != imported_function_sources_.end()) {
-        auto meta_it2 = module_meta_.find(mangled);
-        if (meta_it2 != module_meta_.end()) {
+    if (genfn_it != imports_.imported_sources.end()) {
+        auto meta_it2 = imports_.meta.find(mangled);
+        if (meta_it2 != imports_.meta.end()) {
             auto& meta = meta_it2->second;
             // Check if ALL metadata params are INT (indicates a boxed
             // extern wrapper where all types are i64 at the ABI level).
@@ -1182,13 +1182,13 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
             }
         }
     }
-    if (genfn_it != imported_function_sources_.end() && types_differ) {
+    if (genfn_it != imports_.imported_sources.end() && types_differ) {
         auto& ifs = genfn_it->second;
         auto reparsed = reparse_genfn(ifs.local_name, ifs.source_text);
         if (reparsed && !reparsed->functions.empty()) {
             auto* func_ast = reparsed->functions[0];
             reparsed->functions.clear();
-            imported_ast_nodes_.push_back(std::unique_ptr<FunctionExpr>(func_ast));
+            imports_.imported_ast_nodes.push_back(std::unique_ptr<FunctionExpr>(func_ast));
             codegen_function_def(func_ast, fn_name);
             auto def_it2 = deferred_functions_.find(fn_name);
             if (def_it2 != deferred_functions_.end()) {
@@ -1196,8 +1196,8 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
                 auto cf_it2 = compiled_functions_.find(fn_name);
                 if (cf_it2 != compiled_functions_.end()) {
                     // Remove from extern so future calls use local copy
-                    extern_functions_.erase(fn_name);
-                    imported_function_sources_.erase(mangled);
+                    imports_.extern_functions.erase(fn_name);
+                    imports_.imported_sources.erase(mangled);
                     auto& cf2 = cf_it2->second;
                     std::vector<Value*> vals;
                     for (auto& a : all_args) vals.push_back(a.val);
@@ -1210,13 +1210,13 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
 
     // Try to get return type from module metadata
     CType ret_ctype = CType::INT; // default
-    auto meta_it = module_meta_.find(mangled);
-    if (meta_it != module_meta_.end()) {
+    auto meta_it = imports_.meta.find(mangled);
+    if (meta_it != imports_.meta.end()) {
         ret_ctype = meta_it->second.return_type;
     } else {
         // Check CFFI signatures
-        auto cffi_it = cffi_signatures_.find(mangled);
-        if (cffi_it != cffi_signatures_.end())
+        auto cffi_it = types_.cffi_signatures.find(mangled);
+        if (cffi_it != types_.cffi_signatures.end())
             ret_ctype = cffi_it->second.return_type;
     }
 
@@ -1224,7 +1224,7 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
     // return i64; typed wrappers (with FLOAT etc.) return their native type.
     auto i64_ty_local = LType::getInt64Ty(*context_);
     bool is_boxed = true;
-    if (meta_it != module_meta_.end()) {
+    if (meta_it != imports_.meta.end()) {
         for (auto ct : meta_it->second.param_types)
             if (ct != CType::INT) { is_boxed = false; break; }
         if (meta_it->second.return_type != CType::INT &&
@@ -1601,8 +1601,8 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     wrap_function_args_in_closures(all_args);
 
     // 4. Check if it's an ADT constructor call
-    auto adt_it = adt_constructors_.find(fn_name);
-    if (adt_it != adt_constructors_.end() && adt_it->second.arity > 0)
+    auto adt_it = types_.adt_constructors.find(fn_name);
+    if (adt_it != types_.adt_constructors.end() && adt_it->second.arity > 0)
         return codegen_adt_construct(fn_name, all_args);
 
     // 5. Resolve the function (compiled, deferred, or trait method)
@@ -1616,8 +1616,8 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
             return codegen_higher_order_call(fn_name, all_args);
 
         // Imported extern function
-        auto ext_it = extern_functions_.find(fn_name);
-        if (ext_it != extern_functions_.end())
+        auto ext_it = imports_.extern_functions.find(fn_name);
+        if (ext_it != imports_.extern_functions.end())
             return codegen_extern_call(node, fn_name, all_args);
 
         // Try as an LLVM function in the module

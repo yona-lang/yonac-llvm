@@ -53,7 +53,7 @@ std::string Codegen::resolve_trait_method(const std::string& method_name, CType 
     }
 
     // Search all trait instances for one that provides this method for the given type
-    for (auto& [key, inst] : trait_instances_) {
+    for (auto& [key, inst] : types_.trait_instances) {
         if (inst.type_name == type_name) {
             auto it = inst.method_mangled_names.find(method_name);
             if (it != inst.method_mangled_names.end()) {
@@ -63,13 +63,13 @@ std::string Codegen::resolve_trait_method(const std::string& method_name, CType 
     }
 
     // Also check if trait registry has this method (for cross-module resolution)
-    for (auto& [trait_name, trait] : trait_registry_) {
+    for (auto& [trait_name, trait] : types_.traits) {
         for (auto& mn : trait.method_names) {
             if (mn == method_name) {
                 // Found the trait, now look for instance
                 std::string key = trait_name + ":" + type_name;
-                auto inst_it = trait_instances_.find(key);
-                if (inst_it != trait_instances_.end()) {
+                auto inst_it = types_.trait_instances.find(key);
+                if (inst_it != types_.trait_instances.end()) {
                     auto meth_it = inst_it->second.method_mangled_names.find(method_name);
                     if (meth_it != inst_it->second.method_mangled_names.end())
                         return meth_it->second;
@@ -125,7 +125,7 @@ bool Codegen::emit_interface_file(const std::string& path) {
     // Write ADT definitions
     // Group constructors by type name
     std::map<std::string, std::vector<const AdtInfo*>> adts;
-    for (auto& [name, info] : adt_constructors_)
+    for (auto& [name, info] : types_.adt_constructors)
         adts[info.type_name].push_back(&info);
 
     for (auto& [type_name, ctors] : adts) {
@@ -138,7 +138,7 @@ bool Codegen::emit_interface_file(const std::string& path) {
         out << "ADT " << type_name << " " << ctors.size() << " " << max_arity
             << (is_recursive ? " recursive" : "") << "\n";
         for (auto* ctor : ctors) {
-            for (auto& [cname, cinfo] : adt_constructors_) {
+            for (auto& [cname, cinfo] : types_.adt_constructors) {
                 if (&cinfo == ctor)
                     out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity;
                     if (!ctor->field_names.empty()) {
@@ -153,7 +153,7 @@ bool Codegen::emit_interface_file(const std::string& path) {
     }
 
     // Write trait definitions
-    for (auto& [name, trait] : trait_registry_) {
+    for (auto& [name, trait] : types_.traits) {
         out << "TRAIT " << name << " " << trait.type_param << " " << trait.method_names.size() << "\n";
         for (auto& method : trait.method_names) {
             out << "  METHOD " << method << "\n";
@@ -161,7 +161,7 @@ bool Codegen::emit_interface_file(const std::string& path) {
     }
 
     // Write trait instances
-    for (auto& [key, inst] : trait_instances_) {
+    for (auto& [key, inst] : types_.trait_instances) {
         out << "INSTANCE " << inst.trait_name << " " << inst.type_name << "\n";
         for (auto& [method, mangled_name] : inst.method_mangled_names) {
             out << "  IMPL " << method << " " << mangled_name << "\n";
@@ -169,14 +169,14 @@ bool Codegen::emit_interface_file(const std::string& path) {
     }
 
     // Write function signatures
-    for (auto& [mangled, meta] : module_meta_) {
+    for (auto& [mangled, meta] : imports_.meta) {
         out << "FN " << mangled << " " << meta.param_types.size();
         for (auto ct : meta.param_types) out << " " << ctype_to_string(ct);
         out << " -> " << ctype_to_string(meta.return_type) << "\n";
     }
 
     // Write generic function source for cross-module monomorphization
-    for (auto& [mangled, source] : module_function_source_) {
+    for (auto& [mangled, source] : imports_.function_source) {
         // Extract local name from mangled: yona_Pkg_Mod__funcname -> funcname
         auto pos = mangled.rfind("__");
         std::string local_name = (pos != std::string::npos) ? mangled.substr(pos + 2) : mangled;
@@ -209,8 +209,8 @@ bool Codegen::load_interface_file(const std::string& path) {
         if (keyword == "ADT") {
             // Finalize previous ADT's total_variants/max_arity
             for (auto& cn : current_ctor_names) {
-                adt_constructors_[cn].total_variants = current_total_variants;
-                adt_constructors_[cn].max_arity = current_max_arity;
+                types_.adt_constructors[cn].total_variants = current_total_variants;
+                types_.adt_constructors[cn].max_arity = current_max_arity;
             }
             current_ctor_names.clear();
 
@@ -236,7 +236,7 @@ bool Codegen::load_interface_file(const std::string& path) {
                     }
                 }
             }
-            adt_constructors_[name] = {current_adt, tag, arity, current_total_variants,
+            types_.adt_constructors[name] = {current_adt, tag, arity, current_total_variants,
                                         current_max_arity, current_is_recursive, fnames, ftypes};
             current_ctor_names.push_back(name);
         } else if (keyword == "TRAIT") {
@@ -247,14 +247,14 @@ bool Codegen::load_interface_file(const std::string& path) {
             ti.name = name;
             ti.type_param = type_param;
             // Methods will be read on subsequent lines
-            trait_registry_[name] = ti;
+            types_.traits[name] = ti;
         } else if (keyword == "METHOD") {
             std::string method_name;
             iss >> method_name;
             // Add to the last registered trait
-            if (!trait_registry_.empty()) {
+            if (!types_.traits.empty()) {
                 // Find the most recently added trait
-                for (auto& [name, trait] : trait_registry_) {
+                for (auto& [name, trait] : types_.traits) {
                     // Just add to it; in practice we process sequentially
                     trait.method_names.push_back(method_name);
                     break;
@@ -267,13 +267,13 @@ bool Codegen::load_interface_file(const std::string& path) {
             TraitInstanceInfo tii;
             tii.trait_name = trait_name;
             tii.type_name = type_name;
-            trait_instances_[key] = tii;
+            types_.trait_instances[key] = tii;
         } else if (keyword == "IMPL") {
             std::string method_name, mangled_name;
             iss >> method_name >> mangled_name;
             // Add to the last registered instance
-            if (!trait_instances_.empty()) {
-                for (auto& [key, inst] : trait_instances_) {
+            if (!types_.trait_instances.empty()) {
+                for (auto& [key, inst] : types_.trait_instances) {
                     inst.method_mangled_names[method_name] = mangled_name;
                     break;
                 }
@@ -301,7 +301,7 @@ bool Codegen::load_interface_file(const std::string& path) {
             meta.is_io_async = is_io_async;
             if (is_any_async) meta.async_inner_type = string_to_ctype(ret_str);
 
-            module_meta_[mangled] = meta;
+            imports_.meta[mangled] = meta;
         } else if (keyword == "GENFN_BEGIN") {
             // Parse: GENFN_BEGIN mangled_name local_name
             std::string mangled, local_name;
@@ -312,7 +312,7 @@ bool Codegen::load_interface_file(const std::string& path) {
                 if (!source.empty()) source += "\n";
                 source += line;
             }
-            imported_function_sources_[mangled] = {source, local_name};
+            imports_.imported_sources[mangled] = {source, local_name};
         }
     }
     return true;
@@ -353,7 +353,7 @@ std::unique_ptr<ast::ModuleDecl> Codegen::reparse_genfn(
     const std::string& local_name, const std::string& source_text) {
     parser::Parser parser;
     // Register known constructors so pattern matching parses correctly
-    for (auto& [name, info] : adt_constructors_) {
+    for (auto& [name, info] : types_.adt_constructors) {
         parser.register_constructor(name, info.type_name, info.tag, info.arity, info.field_names);
     }
     std::string mod_source = "module __Import\nexport " + local_name + "\n" + source_text + "\n";
@@ -368,7 +368,7 @@ std::unique_ptr<ast::ModuleDecl> Codegen::reparse_genfn(
 LType* Codegen::adt_llvm_type(const std::string& type_name) {
     auto i64_ty = LType::getInt64Ty(*context_);
     // Find a constructor for this ADT type to get struct info
-    for (auto& [name, info] : adt_constructors_) {
+    for (auto& [name, info] : types_.adt_constructors) {
         if (info.type_name == type_name) {
             if (info.is_recursive)
                 return PointerType::get(*context_, 0);
@@ -383,11 +383,11 @@ LType* Codegen::adt_llvm_type(const std::string& type_name) {
 // Register trait instance methods as extern function declarations
 // so that re-parsed GENFN bodies can call them via trait dispatch.
 void Codegen::register_trait_externs() {
-    for (auto& [key, inst] : trait_instances_) {
+    for (auto& [key, inst] : types_.trait_instances) {
         for (auto& [method_name, mangled] : inst.method_mangled_names) {
             if (compiled_functions_.count(mangled) > 0) continue;
-            auto meta_it = module_meta_.find(mangled);
-            if (meta_it != module_meta_.end()) {
+            auto meta_it = imports_.meta.find(mangled);
+            if (meta_it != imports_.meta.end()) {
                 auto& meta = meta_it->second;
                 std::vector<LType*> param_types;
                 for (size_t i = 0; i < meta.param_types.size(); i++) {
@@ -420,22 +420,22 @@ void Codegen::register_import(const std::string& mod_fqn,
                                const std::string& func_name,
                                const std::string& import_name) {
     // Check if it's an ADT constructor
-    auto ctor_it = adt_constructors_.find(func_name);
-    if (ctor_it != adt_constructors_.end()) {
+    auto ctor_it = types_.adt_constructors.find(func_name);
+    if (ctor_it != types_.adt_constructors.end()) {
         if (ctor_it->second.arity > 0)
             named_values_[import_name] = {nullptr, CType::FUNCTION};
         if (import_name != func_name)
-            adt_constructors_[import_name] = ctor_it->second;
+            types_.adt_constructors[import_name] = ctor_it->second;
         return;
     }
 
     std::string mangled = mangle_name(mod_fqn, func_name);
 
     // Register as extern — the pre-compiled version from the module is the default.
-    // GENFN source (if available) is stored in imported_function_sources_ for
+    // GENFN source (if available) is stored in imports_.imported_sources for
     // on-demand monomorphization when call-site types differ from the module's.
-    auto meta_it = module_meta_.find(mangled);
-    if (meta_it != module_meta_.end() && meta_it->second.is_io_async) {
+    auto meta_it = imports_.meta.find(mangled);
+    if (meta_it != imports_.meta.end() && meta_it->second.is_io_async) {
         // IO: C function submits to io_uring and returns i64 (uring ID).
         // Called directly (no thread pool). Result tagged as PROMISE.
         // auto_await calls yona_rt_io_await to complete.
@@ -453,7 +453,7 @@ void Codegen::register_import(const std::string& mod_fqn,
         cf.is_io_async = true;
         compiled_functions_[import_name] = cf;
         named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
-    } else if (meta_it != module_meta_.end() && meta_it->second.is_async) {
+    } else if (meta_it != imports_.meta.end() && meta_it->second.is_async) {
         // AFN: thread-pool async (existing mechanism)
         auto& meta = meta_it->second;
         std::vector<LType*> param_types;
@@ -469,14 +469,14 @@ void Codegen::register_import(const std::string& mod_fqn,
         named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
     } else {
         named_values_[import_name] = {nullptr, CType::FUNCTION};
-        extern_functions_[import_name] = mangled;
+        imports_.extern_functions[import_name] = mangled;
     }
 }
 
 // Register ALL exports from a loaded .yonai (wildcard import)
 void Codegen::register_all_imports(const std::string& mod_fqn) {
-    // Register all functions from module_meta_
-    for (auto& [mangled, meta] : module_meta_) {
+    // Register all functions from imports_.meta
+    for (auto& [mangled, meta] : imports_.meta) {
         // Extract function name from mangled: yona_Pkg_Mod__func -> func
         auto pos = mangled.rfind("__");
         if (pos != std::string::npos) {
@@ -516,15 +516,15 @@ void Codegen::register_all_imports(const std::string& mod_fqn) {
                     named_values_[func_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
                 } else {
                     named_values_[func_name] = {nullptr, CType::FUNCTION};
-                    extern_functions_[func_name] = mangled;
+                    imports_.extern_functions[func_name] = mangled;
                 }
             }
         }
     }
     // Register all constructors
-    for (auto& [name, info] : adt_constructors_) {
+    for (auto& [name, info] : types_.adt_constructors) {
         if (info.type_name.find(mod_fqn) != std::string::npos ||
-            module_meta_.count(mangle_name(mod_fqn, name)) > 0) {
+            imports_.meta.count(mangle_name(mod_fqn, name)) > 0) {
             // Already registered by load_interface_file
         }
     }

@@ -427,14 +427,14 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
                     binding_is_arena.push_back(use_arena);
                 }
 
-                if (debug_info_ && di_scope_ && di_builder_ && tv.val) {
+                if (debug_.enabled && debug_.scope && debug_.builder && tv.val) {
                     auto* alloca = builder_->CreateAlloca(tv.val->getType(), nullptr, vname);
                     builder_->CreateStore(tv.val, alloca);
-                    auto* di_var = di_builder_->createAutoVariable(
-                        di_scope_, vname, di_file_, va->source_context.line, di_type_for(tv.type));
-                    di_builder_->insertDeclare(alloca, di_var, di_builder_->createExpression(),
+                    auto* di_var = debug_.builder->createAutoVariable(
+                        debug_.scope, vname, debug_.file, va->source_context.line, di_type_for(tv.type));
+                    debug_.builder->insertDeclare(alloca, di_var, debug_.builder->createExpression(),
                         DILocation::get(*context_, va->source_context.line,
-                                        va->source_context.column, di_scope_),
+                                        va->source_context.column, debug_.scope),
                         builder_->GetInsertBlock());
                     tv.val = builder_->CreateLoad(tv.val->getType(), alloca, vname);
                     named_values_[vname] = tv;
@@ -653,8 +653,8 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
         return {nullptr, CType::FUNCTION};
     }
     // Check if it's a zero-arity ADT constructor
-    auto adt_it = adt_constructors_.find(node->name->value);
-    if (adt_it != adt_constructors_.end() && adt_it->second.arity == 0) {
+    auto adt_it = types_.adt_constructors.find(node->name->value);
+    if (adt_it != types_.adt_constructors.end() && adt_it->second.arity == 0) {
         auto tag_ty = LType::getInt64Ty(*context_);
         auto i64_ty = LType::getInt64Ty(*context_);
 
@@ -676,7 +676,7 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
         }
     }
     // Check if it's a non-zero-arity ADT constructor (used as a function reference)
-    if (adt_it != adt_constructors_.end()) {
+    if (adt_it != types_.adt_constructors.end()) {
         last_lambda_name_ = node->name->value;
         return {nullptr, CType::FUNCTION};
     }
@@ -794,8 +794,8 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
             if (pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
                 // ADT constructor pattern: RuntimeError msg -> ...
                 auto* cpat = static_cast<ConstructorPattern*>(pat);
-                auto ctor_it = adt_constructors_.find(cpat->constructor_name);
-                if (ctor_it != adt_constructors_.end()) {
+                auto ctor_it = types_.adt_constructors.find(cpat->constructor_name);
+                if (ctor_it != types_.adt_constructors.end()) {
                     auto tag_val = ConstantInt::get(i64_ty, ctor_it->second.tag);
                     auto cmp = builder_->CreateICmpEQ(exc_tag, tag_val);
                     builder_->CreateCondBr(cmp, body_bb, next_bb);

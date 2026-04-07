@@ -140,75 +140,76 @@ private:
     // Current arena pointer (nullptr if no arena active)
     llvm::Value* current_arena_ = nullptr;
 
-    // Trait registry: trait name → info
+    // ===== Type Registry — ADTs, traits, CFFI =====
     struct TraitInfo {
-        std::string name;
-        std::string type_param;
+        std::string name, type_param;
         std::vector<std::string> method_names;
-        std::vector<std::pair<std::string, std::string>> superclasses;  // Phase 3: superclass constraints
-        std::unordered_map<std::string, FunctionExpr*> default_impls;   // Phase 3: method → default impl AST
+        std::vector<std::pair<std::string, std::string>> superclasses;
+        std::unordered_map<std::string, FunctionExpr*> default_impls;
     };
-    std::unordered_map<std::string, TraitInfo> trait_registry_;
-
-    // Trait instance registry: "TraitName:TypeName" → instance info
     struct TraitInstanceInfo {
-        std::string trait_name;
-        std::string type_name;
-        std::unordered_map<std::string, std::string> method_mangled_names; // method → mangled fn name
-        std::vector<std::pair<std::string, std::string>> constraints;      // Phase 2: constraints
+        std::string trait_name, type_name;
+        std::unordered_map<std::string, std::string> method_mangled_names;
+        std::vector<std::pair<std::string, std::string>> constraints;
     };
-    std::unordered_map<std::string, TraitInstanceInfo> trait_instances_;
-
-    // Resolve a trait method for a concrete type, returns mangled function name (empty if not found)
-    std::string resolve_trait_method(const std::string& method_name, CType arg_type,
-                                     const std::string& adt_type_name = "");
-
-    // Map CType to Yona type name
-    static std::string ctype_to_type_name(CType ct);
-
-    // ADT constructor metadata
     struct AdtInfo {
         std::string type_name;
-        int tag;
-        int arity;
-        int total_variants;
-        int max_arity;
+        int tag, arity, total_variants, max_arity;
         bool is_recursive = false;
-        std::vector<std::string> field_names;  // named fields (empty for positional)
-        std::vector<CType> field_types;         // CType of each field
+        std::vector<std::string> field_names;
+        std::vector<CType> field_types;
     };
-    std::unordered_map<std::string, AdtInfo> adt_constructors_;
-
-    // ADT struct type cache: type_name → struct type
-    std::unordered_map<std::string, llvm::StructType*> adt_struct_types_;
-
-    // External module function mapping: local name → mangled symbol name
-    std::unordered_map<std::string, std::string> extern_functions_;
-
-    // Cross-module generic function source: mangled name → source text
-    std::unordered_map<std::string, std::string> module_function_source_;
-
-    // Imported generic function source from .yonai files
-    struct ImportedFunctionSource {
-        std::string source_text;
-        std::string local_name;
-    };
-    std::unordered_map<std::string, ImportedFunctionSource> imported_function_sources_;
-
-    // Ownership of re-parsed imported function AST nodes
-    std::vector<std::unique_ptr<ast::FunctionExpr>> imported_ast_nodes_;
-
-    // C FFI function info: symbol name → {return type, param types}
     struct CFFISignature {
         CType return_type;
         std::vector<CType> param_types;
     };
-    std::unordered_map<std::string, CFFISignature> cffi_signatures_;
+    struct ImportedFunctionSource {
+        std::string source_text, local_name;
+    };
+    struct ModuleFunctionMeta {
+        std::vector<CType> param_types;
+        CType return_type;
+        bool is_async = false;
+        bool is_io_async = false;
+        CType async_inner_type = CType::INT;
+    };
 
-    // Register known C library function signatures
+    struct TypeRegistry {
+        std::unordered_map<std::string, TraitInfo> traits;
+        std::unordered_map<std::string, TraitInstanceInfo> trait_instances;
+        std::unordered_map<std::string, AdtInfo> adt_constructors;
+        std::unordered_map<std::string, llvm::StructType*> adt_struct_types;
+        std::unordered_map<std::string, CFFISignature> cffi_signatures;
+    } types_;
+
+    // ===== Module System — imports, exports, cross-module =====
+    struct ImportState {
+        std::unordered_map<std::string, std::string> extern_functions;       // local → mangled
+        std::unordered_map<std::string, std::string> function_source;        // mangled → source
+        std::unordered_map<std::string, ImportedFunctionSource> imported_sources;
+        std::vector<std::unique_ptr<ast::FunctionExpr>> imported_ast_nodes;  // ownership
+        std::unordered_map<std::string, ModuleFunctionMeta> meta;            // function metadata
+    } imports_;
+
+    // ===== Symbol Interning =====
+    struct SymbolTable {
+        std::unordered_map<std::string, int64_t> ids;
+        std::vector<llvm::Constant*> strings;
+    } symbols_;
+
+    // ===== Debug Info =====
+    struct DebugState {
+        std::unique_ptr<llvm::DIBuilder> builder;
+        llvm::DICompileUnit* cu = nullptr;
+        llvm::DIFile* file = nullptr;
+        llvm::DIScope* scope = nullptr;
+        bool enabled = false;
+    } debug_;
+
+    std::string resolve_trait_method(const std::string& method_name, CType arg_type,
+                                     const std::string& adt_type_name = "");
+    static std::string ctype_to_type_name(CType ct);
     void register_cffi_signatures();
-
-    // Check if a module FQN is a C FFI import (starts with "C\")
     static bool is_cffi_import(const std::string& mod_fqn);
 
     // All runtime function declarations grouped in a struct
@@ -262,20 +263,8 @@ private:
             *arena_destroy_ = nullptr;
     } rt_;
 
-    // Symbol interning: name → i64 ID, ID → global string constant
-    std::unordered_map<std::string, int64_t> symbol_ids_;
-    std::vector<llvm::Constant*> symbol_strings_;
-
-    // Intern a symbol name, returning its i64 ID
     int64_t intern_symbol(const std::string& name);
-
-    // DWARF debug info
-    std::unique_ptr<llvm::DIBuilder> di_builder_;
-    llvm::DICompileUnit* di_cu_ = nullptr;
-    llvm::DIFile* di_file_ = nullptr;
-    llvm::DIScope* di_scope_ = nullptr;  // current scope (function or lexical block)
-    bool debug_info_ = false;
-    int opt_level_ = 2; // 0=O0, 1=O1, 2=O2 (default), 3=O3
+    int opt_level_ = 2;
 
     // Debug info helpers
     void init_debug_info(const std::string& filename);
@@ -460,16 +449,6 @@ private:
 
 public:
     int error_count_ = 0;
-    // Module function type metadata — populated during compile_module,
-    // can be queried by importers for type-safe cross-module linking.
-    struct ModuleFunctionMeta {
-        std::vector<CType> param_types;
-        CType return_type;
-        bool is_async = false;       // AFN: thread-pool async
-        bool is_io_async = false;    // IO: io_uring submit-and-return
-        CType async_inner_type = CType::INT;
-    };
-    std::unordered_map<std::string, ModuleFunctionMeta> module_meta_;
 };
 
 } // namespace yona::compiler::codegen

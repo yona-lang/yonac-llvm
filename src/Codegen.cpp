@@ -67,14 +67,14 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     closeable.name = "Closeable";
     closeable.type_param = "a";
     closeable.method_names.push_back("close");
-    trait_registry_["Closeable"] = closeable;
+    types_.traits["Closeable"] = closeable;
 
     // Closeable Int — for file descriptors and socket handles
     TraitInstanceInfo closeable_int;
     closeable_int.trait_name = "Closeable";
     closeable_int.type_name = "Int";
     closeable_int.method_mangled_names["close"] = "Closeable_Int__close";
-    trait_instances_["Closeable:Int"] = closeable_int;
+    types_.trait_instances["Closeable:Int"] = closeable_int;
     // Register rt_close as the implementation
     compiled_functions_["Closeable_Int__close"] = {rt_.close_, CType::UNIT, {CType::INT}};
 }
@@ -83,21 +83,21 @@ Codegen::~Codegen() = default;
 // ===== DWARF Debug Info =====
 
 void Codegen::set_debug_info(bool enabled, const std::string& filename) {
-    debug_info_ = enabled;
+    debug_.enabled = enabled;
     if (enabled) init_debug_info(filename);
 }
 
 void Codegen::init_debug_info(const std::string& filename) {
-    di_builder_ = std::make_unique<DIBuilder>(*module_);
+    debug_.builder = std::make_unique<DIBuilder>(*module_);
     // Use DW_LANG_C as closest match for Yona
     auto file_path = std::filesystem::path(filename);
     auto dir = file_path.parent_path().string();
     auto file = file_path.filename().string();
     if (dir.empty()) dir = ".";
-    di_file_ = di_builder_->createFile(file, dir);
-    di_cu_ = di_builder_->createCompileUnit(
-        dwarf::DW_LANG_C, di_file_, "yonac", false, "", 0);
-    di_scope_ = di_cu_;
+    debug_.file = debug_.builder->createFile(file, dir);
+    debug_.cu = debug_.builder->createCompileUnit(
+        dwarf::DW_LANG_C, debug_.file, "yonac", false, "", 0);
+    debug_.scope = debug_.cu;
     // Add debug info flag to module
     module_->addModuleFlag(Module::Warning, "Debug Info Version",
                            DEBUG_METADATA_VERSION);
@@ -105,38 +105,38 @@ void Codegen::init_debug_info(const std::string& filename) {
 }
 
 void Codegen::finalize_debug_info() {
-    if (di_builder_) di_builder_->finalize();
+    if (debug_.builder) debug_.builder->finalize();
 }
 
 void Codegen::set_debug_loc(const SourceLocation& loc) {
-    if (!debug_info_ || !di_scope_) return;
+    if (!debug_.enabled || !debug_.scope) return;
     if (loc.line == 0) return; // skip unknown locations
     builder_->SetCurrentDebugLocation(
-        DILocation::get(*context_, loc.line, loc.column, di_scope_));
+        DILocation::get(*context_, loc.line, loc.column, debug_.scope));
 }
 
 DIType* Codegen::di_type_for(CType ct) {
-    if (!di_builder_) return nullptr;
+    if (!debug_.builder) return nullptr;
     switch (ct) {
-        case CType::INT:    return di_builder_->createBasicType("Int", 64, dwarf::DW_ATE_signed);
-        case CType::FLOAT:  return di_builder_->createBasicType("Float", 64, dwarf::DW_ATE_float);
-        case CType::BOOL:   return di_builder_->createBasicType("Bool", 8, dwarf::DW_ATE_boolean);
-        case CType::STRING: return di_builder_->createPointerType(
-            di_builder_->createBasicType("Char", 8, dwarf::DW_ATE_signed_char), 64);
-        case CType::SYMBOL: return di_builder_->createBasicType("Symbol", 64, dwarf::DW_ATE_signed);
-        case CType::UNIT:   return di_builder_->createBasicType("Unit", 64, dwarf::DW_ATE_signed);
-        case CType::FUNCTION: return di_builder_->createPointerType(nullptr, 64);
+        case CType::INT:    return debug_.builder->createBasicType("Int", 64, dwarf::DW_ATE_signed);
+        case CType::FLOAT:  return debug_.builder->createBasicType("Float", 64, dwarf::DW_ATE_float);
+        case CType::BOOL:   return debug_.builder->createBasicType("Bool", 8, dwarf::DW_ATE_boolean);
+        case CType::STRING: return debug_.builder->createPointerType(
+            debug_.builder->createBasicType("Char", 8, dwarf::DW_ATE_signed_char), 64);
+        case CType::SYMBOL: return debug_.builder->createBasicType("Symbol", 64, dwarf::DW_ATE_signed);
+        case CType::UNIT:   return debug_.builder->createBasicType("Unit", 64, dwarf::DW_ATE_signed);
+        case CType::FUNCTION: return debug_.builder->createPointerType(nullptr, 64);
         case CType::SEQ:
         case CType::SET:
         case CType::DICT:
         case CType::ADT:
         case CType::PROMISE:
-            return di_builder_->createPointerType(
-                di_builder_->createBasicType("Opaque", 8, dwarf::DW_ATE_unsigned), 64);
+            return debug_.builder->createPointerType(
+                debug_.builder->createBasicType("Opaque", 8, dwarf::DW_ATE_unsigned), 64);
         case CType::TUPLE:
-            return di_builder_->createBasicType("Tuple", 64, dwarf::DW_ATE_signed);
+            return debug_.builder->createBasicType("Tuple", 64, dwarf::DW_ATE_signed);
     }
-    return di_builder_->createBasicType("Unknown", 64, dwarf::DW_ATE_signed);
+    return debug_.builder->createBasicType("Unknown", 64, dwarf::DW_ATE_signed);
 }
 
 DISubroutineType* Codegen::di_func_type(const std::vector<CType>& param_types, CType ret_type) {
@@ -144,7 +144,7 @@ DISubroutineType* Codegen::di_func_type(const std::vector<CType>& param_types, C
     types.push_back(di_type_for(ret_type)); // return type first
     for (auto ct : param_types)
         types.push_back(di_type_for(ct));
-    return di_builder_->createSubroutineType(di_builder_->getOrCreateTypeArray(types));
+    return debug_.builder->createSubroutineType(debug_.builder->getOrCreateTypeArray(types));
 }
 
 void Codegen::init_target() {
@@ -337,11 +337,11 @@ std::string Codegen::suggest_similar(const std::string& name) const {
         int d = edit_distance(name, k);
         if (d < best_dist) { best = k; best_dist = d; }
     }
-    for (auto& [k, _] : extern_functions_) {
+    for (auto& [k, _] : imports_.extern_functions) {
         int d = edit_distance(name, k);
         if (d < best_dist) { best = k; best_dist = d; }
     }
-    for (auto& [k, _] : adt_constructors_) {
+    for (auto& [k, _] : types_.adt_constructors) {
         int d = edit_distance(name, k);
         if (d < best_dist) { best = k; best_dist = d; }
     }
@@ -433,7 +433,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 else ftypes.push_back(CType::INT);
             }
 
-            adt_constructors_[ctor->name] = {adt->name, static_cast<int>(ci), arity,
+            types_.adt_constructors[ctor->name] = {adt->name, static_cast<int>(ci), arity,
                                               static_cast<int>(adt->variants.size()), max_arity, is_recursive,
                                               ctor->field_names, ftypes};
         }
@@ -471,7 +471,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 ti.default_impls[m.name] = m.default_impl;
             }
         }
-        trait_registry_[trait->name] = ti;
+        types_.traits[trait->name] = ti;
     }
 
     // Register trait instances: mangle method names and register as deferred functions
@@ -486,11 +486,11 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             inst->constraints.begin(), inst->constraints.end());
 
         // Phase 3: Verify superclass instances exist
-        auto trait_it = trait_registry_.find(inst->trait_name);
-        if (trait_it != trait_registry_.end()) {
+        auto trait_it = types_.traits.find(inst->trait_name);
+        if (trait_it != types_.traits.end()) {
             for (auto& [sc_trait, sc_var] : trait_it->second.superclasses) {
                 std::string sc_key = sc_trait + ":" + inst->type_name;
-                if (trait_instances_.find(sc_key) == trait_instances_.end()) {
+                if (types_.trait_instances.find(sc_key) == types_.trait_instances.end()) {
                     std::cerr << "Warning: instance " << inst->trait_name << " " << inst->type_name
                               << " requires " << sc_trait << " " << inst->type_name
                               << " (superclass), but no such instance found yet\n";
@@ -511,7 +511,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         }
 
         // Phase 3: Fill in default implementations for missing methods
-        if (trait_it != trait_registry_.end()) {
+        if (trait_it != types_.traits.end()) {
             for (auto& [method_name, default_fn] : trait_it->second.default_impls) {
                 if (provided_methods.find(method_name) == provided_methods.end()) {
                     // Method not provided by instance — use default from trait
@@ -522,7 +522,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             }
         }
 
-        trait_instances_[key] = tii;
+        types_.trait_instances[key] = tii;
     }
 
     // Process module-level extern declarations
@@ -535,7 +535,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             auto cf_it = compiled_functions_.find(ext->name);
             if (cf_it != compiled_functions_.end()) {
                 auto& cf = cf_it->second;
-                module_meta_[mangled] = {cf.param_types, cf.return_type};
+                imports_.meta[mangled] = {cf.param_types, cf.return_type};
                 // Create a forwarding wrapper
                 if (cf.fn->getName() != mangled) {
                     auto* wrapper = Function::Create(
@@ -561,7 +561,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         // Store source text for exported generic functions (.yonai emission)
         if (export_set.count(fn_name) && !func->source_text.empty()) {
             std::string mangled = mangle_name(fqn, fn_name);
-            module_function_source_[mangled] = func->source_text;
+            imports_.function_source[mangled] = func->source_text;
         }
     }
 
@@ -634,8 +634,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 else if (auto* rp = src ? dynamic_cast<RecordPattern*>(src) : nullptr)
                     ctor_name_lookup = rp->recordType;
                 if (!ctor_name_lookup.empty()) {
-                    auto ctor_it = adt_constructors_.find(ctor_name_lookup);
-                    if (ctor_it != adt_constructors_.end()) {
+                    auto ctor_it = types_.adt_constructors.find(ctor_name_lookup);
+                    if (ctor_it != types_.adt_constructors.end()) {
                         TypedValue tv;
                         tv.type = CType::ADT;
                         tv.adt_type_name = ctor_it->second.type_name;
@@ -657,9 +657,9 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                     }
                 } else {
                     // No constructor pattern — inferred from field access or other usage.
-                    // Search adt_constructors_ for a constructor with matching field names.
+                    // Search types_.adt_constructors for a constructor with matching field names.
                     bool found = false;
-                    for (auto& [cname, cinfo] : adt_constructors_) {
+                    for (auto& [cname, cinfo] : types_.adt_constructors) {
                         if (!cinfo.field_names.empty()) {
                             TypedValue tv;
                             tv.type = CType::ADT;
@@ -692,7 +692,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         if (is_exported) {
             // Store type metadata for importers
             std::string mangled = mangle_name(fqn, fn_name);
-            module_meta_[mangled] = {cf.param_types, cf.return_type};
+            imports_.meta[mangled] = {cf.param_types, cf.return_type};
 
             // Check if the function already has the right linkage
             if (cf.fn->getName() != mangled) {
@@ -717,14 +717,14 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
 
     // Third pass: compile trait instance methods with ExternalLinkage
     // so importing modules can call them via resolved trait dispatch.
-    for (auto& [key, inst] : trait_instances_) {
+    for (auto& [key, inst] : types_.trait_instances) {
         for (auto& [method_name, mangled] : inst.method_mangled_names) {
             auto cf_it = compiled_functions_.find(mangled);
             if (cf_it != compiled_functions_.end()) {
                 cf_it->second.fn->setLinkage(Function::ExternalLinkage);
                 // Emit FN metadata for the .yonai file
-                if (module_meta_.find(mangled) == module_meta_.end()) {
-                    module_meta_[mangled] = {cf_it->second.param_types, cf_it->second.return_type};
+                if (imports_.meta.find(mangled) == imports_.meta.end()) {
+                    imports_.meta[mangled] = {cf_it->second.param_types, cf_it->second.return_type};
                 }
                 continue;
             }
@@ -744,8 +744,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                         if (auto* cp = src ? dynamic_cast<ConstructorPattern*>(src) : nullptr)
                             ctor_name = cp->constructor_name;
                         if (!ctor_name.empty()) {
-                            auto ctor_it = adt_constructors_.find(ctor_name);
-                            if (ctor_it != adt_constructors_.end()) {
+                            auto ctor_it = types_.adt_constructors.find(ctor_name);
+                            if (ctor_it != types_.adt_constructors.end()) {
                                 tv.adt_type_name = ctor_it->second.type_name;
                                 if (ctor_it->second.is_recursive) {
                                     tv.val = ConstantPointerNull::get(PointerType::get(*context_, 0));
@@ -763,7 +763,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                             // Try the instance type name
                             tv.adt_type_name = inst.type_name;
                             // Find any constructor for this type
-                            for (auto& [cn, ci] : adt_constructors_) {
+                            for (auto& [cn, ci] : types_.adt_constructors) {
                                 if (ci.type_name == inst.type_name) {
                                     if (ci.is_recursive) {
                                         tv.val = ConstantPointerNull::get(PointerType::get(*context_, 0));
@@ -787,7 +787,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 auto cf = compile_function(mangled, def_it->second, typed_args);
                 if (cf.fn) {
                     cf.fn->setLinkage(Function::ExternalLinkage);
-                    module_meta_[mangled] = {cf.param_types, cf.return_type};
+                    imports_.meta[mangled] = {cf.param_types, cf.return_type};
                 }
             }
         }
@@ -809,8 +809,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
 
         for (auto& name : re.names) {
             // Check if it's an ADT constructor
-            auto ctor_it = adt_constructors_.find(name);
-            if (ctor_it != adt_constructors_.end()) {
+            auto ctor_it = types_.adt_constructors.find(name);
+            if (ctor_it != types_.adt_constructors.end()) {
                 // ADT constructors are re-exported via the interface file (no wrapper needed)
                 continue;
             }
@@ -820,8 +820,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             std::string dst_mangled = mangle_name(fqn, name);
 
             // Look up source function metadata
-            auto meta_it = module_meta_.find(src_mangled);
-            if (meta_it == module_meta_.end()) {
+            auto meta_it = imports_.meta.find(src_mangled);
+            if (meta_it == imports_.meta.end()) {
                 report_error(mod->source_context,
                     "re-export: function '" + name + "' not found in module '" + src_fqn + "'");
                 continue;
@@ -849,8 +849,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             auto* result = builder_->CreateCall(src_fn, args);
             builder_->CreateRet(result);
 
-            // Register in module_meta_ so the interface file includes it
-            module_meta_[dst_mangled] = meta;
+            // Register in imports_.meta so the interface file includes it
+            imports_.meta[dst_mangled] = meta;
         }
     }
 
@@ -1003,15 +1003,15 @@ Function* Codegen::codegen_main(AstNode* node) {
     auto fn = Function::Create(llvm::FunctionType::get(i32, {}, false),
                                 Function::ExternalLinkage, "main", module_.get());
     // Create debug info for main function
-    if (debug_info_ && di_builder_ && di_file_) {
-        auto* di_func_ty = di_builder_->createSubroutineType(
-            di_builder_->getOrCreateTypeArray({di_builder_->createBasicType("Int", 32, dwarf::DW_ATE_signed)}));
-        auto* di_sp = di_builder_->createFunction(
-            di_file_, "main", "main", di_file_,
+    if (debug_.enabled && debug_.builder && debug_.file) {
+        auto* di_func_ty = debug_.builder->createSubroutineType(
+            debug_.builder->getOrCreateTypeArray({debug_.builder->createBasicType("Int", 32, dwarf::DW_ATE_signed)}));
+        auto* di_sp = debug_.builder->createFunction(
+            debug_.file, "main", "main", debug_.file,
             node->source_context.line, di_func_ty, node->source_context.line,
             DINode::FlagZero, DISubprogram::SPFlagDefinition);
         fn->setSubprogram(di_sp);
-        di_scope_ = di_sp;
+        debug_.scope = di_sp;
     }
     auto bb = BasicBlock::Create(*context_, "entry", fn);
     builder_->SetInsertPoint(bb);
@@ -1066,8 +1066,8 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
             // Symbol is an interned i64 ID. Look up the string for printing.
             if (auto* ci = dyn_cast<ConstantInt>(tv.val)) {
                 int64_t id = ci->getSExtValue();
-                if (id >= 0 && id < (int64_t)symbol_strings_.size()) {
-                    builder_->CreateCall(rt_.print_symbol_, {symbol_strings_[id]});
+                if (id >= 0 && id < (int64_t)symbols_.strings.size()) {
+                    builder_->CreateCall(rt_.print_symbol_, {symbols_.strings[id]});
                 }
             } else {
                 // Runtime symbol value — need a table lookup.
@@ -1146,8 +1146,8 @@ TypedValue Codegen::codegen(AstNode* node) {
                     return {builder_->CreateCall(cf_it->second.fn, {arg.val}), cf_it->second.return_type};
                 }
                 // Check extern functions
-                auto ext_it = extern_functions_.find(fn_name);
-                if (ext_it != extern_functions_.end()) {
+                auto ext_it = imports_.extern_functions.find(fn_name);
+                if (ext_it != imports_.extern_functions.end()) {
                     auto* ext_fn = module_->getFunction(ext_it->second);
                     if (!ext_fn) {
                         auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
@@ -1185,8 +1185,8 @@ TypedValue Codegen::codegen(AstNode* node) {
                 }
                 if (cf_it != compiled_functions_.end())
                     return {builder_->CreateCall(cf_it->second.fn, {arg.val}), cf_it->second.return_type};
-                auto ext_it = extern_functions_.find(fn_name);
-                if (ext_it != extern_functions_.end()) {
+                auto ext_it = imports_.extern_functions.find(fn_name);
+                if (ext_it != imports_.extern_functions.end()) {
                     auto* ext_fn = module_->getFunction(ext_it->second);
                     if (!ext_fn) {
                         auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
@@ -1224,7 +1224,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                 return {};
             }
             // Find the constructor with the matching field names
-            for (auto& [ctor_name, info] : adt_constructors_) {
+            for (auto& [ctor_name, info] : types_.adt_constructors) {
                 if (info.field_names.empty()) continue;
                 // Copy the struct, replace updated fields
                 Value* result = obj.val;
@@ -1260,7 +1260,7 @@ TypedValue Codegen::codegen(AstNode* node) {
             if (!obj) return {};
             std::string field_name = fa->name->value;
             if (obj.type == CType::ADT) {
-                for (auto& [ctor_name, info] : adt_constructors_) {
+                for (auto& [ctor_name, info] : types_.adt_constructors) {
                     for (size_t fi = 0; fi < info.field_names.size(); fi++) {
                         if (info.field_names[fi] == field_name) {
                             CType ftype = (fi < info.field_types.size()) ? info.field_types[fi] : CType::INT;
@@ -1308,11 +1308,11 @@ TypedValue Codegen::codegen(AstNode* node) {
 // ===== Symbol interning =====
 
 int64_t Codegen::intern_symbol(const std::string& name) {
-    auto it = symbol_ids_.find(name);
-    if (it != symbol_ids_.end()) return it->second;
-    int64_t id = static_cast<int64_t>(symbol_strings_.size());
-    symbol_ids_[name] = id;
-    symbol_strings_.push_back(builder_->CreateGlobalStringPtr(name, "sym." + name));
+    auto it = symbols_.ids.find(name);
+    if (it != symbols_.ids.end()) return it->second;
+    int64_t id = static_cast<int64_t>(symbols_.strings.size());
+    symbols_.ids[name] = id;
+    symbols_.strings.push_back(builder_->CreateGlobalStringPtr(name, "sym." + name));
     return id;
 }
 
