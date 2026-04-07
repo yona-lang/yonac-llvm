@@ -1,0 +1,7 @@
+handle
+    let x = perform State.get () in
+    x + 1
+with
+    State.get () resume -> resume 41
+    return val -> val
+end

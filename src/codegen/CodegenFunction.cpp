@@ -1040,8 +1040,8 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
     auto ret_llvm = llvm_type(ret_ctype);
     auto var_val = var_it->second.val;
 
-    if (isa<Function>(var_val)) {
-        // Direct function pointer (e.g., let g = f): call as fn(args...)
+    if (isa<Function>(var_val) || effect_resume_names_.count(fn_name)) {
+        // Direct function pointer or effect resume fn ptr
         auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
         auto result = builder_->CreateCall(fn_type, var_val, vals, "indirect_call");
         return {result, ret_ctype};

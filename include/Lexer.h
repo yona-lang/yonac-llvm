@@ -65,6 +65,9 @@ enum class TokenType {
     YINSTANCE,
     YEXTERN,     // extern
     YFOR,        // for (generator comprehensions)
+    YEFFECT,     // effect (effect declaration)
+    YPERFORM,    // perform (effect operation invocation)
+    YHANDLE,     // handle (effect handler installation)
 
     // Operators
     YPLUS,           // +

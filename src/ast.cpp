@@ -1575,6 +1575,42 @@ void InstanceDeclNode::print(std::ostream &os) const {
     os << "end";
 }
 
+// ===== Algebraic Effects =====
+
+EffectDeclNode::EffectDeclNode(SourceContext token, string name, string type_param,
+                               vector<EffectOpSig> operations)
+    : AstNode(token), name(std::move(name)), type_param(std::move(type_param)),
+      operations(std::move(operations)) {}
+EffectDeclNode::~EffectDeclNode() = default;
+void EffectDeclNode::print(std::ostream &os) const { os << "effect " << name; }
+
+PerformExpr::PerformExpr(SourceContext token, string effect_name, string operation_name,
+                         vector<ExprNode*> args)
+    : ExprNode(token), effect_name(std::move(effect_name)),
+      operation_name(std::move(operation_name)), args(std::move(args)) {}
+PerformExpr::~PerformExpr() { for (auto* a : args) delete a; }
+void PerformExpr::print(std::ostream &os) const { os << "perform " << effect_name << "." << operation_name; }
+
+HandlerClause::HandlerClause(SourceContext token, string effect_name, string op_name,
+                             vector<string> arg_names, string resume_name, ExprNode* body)
+    : AstNode(token), effect_name(std::move(effect_name)), operation_name(std::move(op_name)),
+      arg_names(std::move(arg_names)), resume_name(std::move(resume_name)),
+      is_return_clause(false), body(body ? body->with_parent<ExprNode>(this) : nullptr) {}
+HandlerClause::HandlerClause(SourceContext token, string return_binding, ExprNode* body)
+    : AstNode(token), is_return_clause(true), return_binding(std::move(return_binding)),
+      body(body ? body->with_parent<ExprNode>(this) : nullptr) {}
+HandlerClause::~HandlerClause() { delete body; }
+void HandlerClause::print(std::ostream &os) const {
+    if (is_return_clause) os << "return " << return_binding;
+    else os << effect_name << "." << operation_name;
+}
+
+HandleExpr::HandleExpr(SourceContext token, ExprNode* body, vector<HandlerClause*> clauses)
+    : ExprNode(token), body(body ? body->with_parent<ExprNode>(this) : nullptr),
+      clauses(std::move(clauses)) {}
+HandleExpr::~HandleExpr() { delete body; for (auto* c : clauses) delete c; }
+void HandleExpr::print(std::ostream &os) const { os << "handle ... end"; }
+
 std::ostream &operator<<(std::ostream &os, const AstNode &obj) {
   obj.print(os);
   return os;

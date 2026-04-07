@@ -174,12 +174,19 @@ private:
         CType async_inner_type = CType::INT;
     };
 
+    struct EffectInfo {
+        std::string name, type_param;
+        struct OpSig { std::string name; int arg_count; };
+        std::vector<OpSig> operations;
+    };
+
     struct TypeRegistry {
         std::unordered_map<std::string, TraitInfo> traits;
         std::unordered_map<std::string, TraitInstanceInfo> trait_instances;
         std::unordered_map<std::string, AdtInfo> adt_constructors;
         std::unordered_map<std::string, llvm::StructType*> adt_struct_types;
         std::unordered_map<std::string, CFFISignature> cffi_signatures;
+        std::unordered_map<std::string, EffectInfo> effects;
     } types_;
 
     // ===== Module System — imports, exports, cross-module =====
@@ -332,6 +339,17 @@ private:
     TypedValue codegen_raise(RaiseExpr* node);
     TypedValue codegen_try_catch(TryCatchExpr* node);
     TypedValue codegen_with(WithExpr* node);
+
+    // Algebraic effects
+    TypedValue codegen_perform(PerformExpr* node);
+    TypedValue codegen_handle(HandleExpr* node);
+
+    /// Effect handler context — maps "Effect.op" to handler function pointers.
+    struct HandlerContext {
+        std::unordered_map<std::string, llvm::Value*> handler_closures;
+    };
+    std::vector<HandlerContext> handler_stack_;
+    std::unordered_set<std::string> effect_resume_names_; ///< Names of resume fn ptr params
 
     // Identifiers
     TypedValue codegen_identifier(IdentifierExpr* node);

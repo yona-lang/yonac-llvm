@@ -138,6 +138,10 @@ class CollectionExtractorExpr;
 class ConstructorPattern;
 class TraitDeclNode;
 class InstanceDeclNode;
+class EffectDeclNode;
+class PerformExpr;
+class HandleExpr;
+class HandlerClause;
 
 // Templated visitor base class that allows each visitor to specify its own return type
 template<typename ResultType>
@@ -261,6 +265,10 @@ public:
   virtual ResultType visit(UserDefinedTypeNode *node) const = 0;
   virtual ResultType visit(TraitDeclNode *node) const = 0;
   virtual ResultType visit(InstanceDeclNode *node) const = 0;
+  virtual ResultType visit(EffectDeclNode *node) const = 0;
+  virtual ResultType visit(PerformExpr *node) const = 0;
+  virtual ResultType visit(HandleExpr *node) const = 0;
+  virtual ResultType visit(HandlerClause *node) const = 0;
   virtual ResultType visit(ScopedNode *node) const = 0;
 
   // Default implementations for intermediate classes that dispatch to concrete types

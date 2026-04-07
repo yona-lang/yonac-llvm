@@ -480,6 +480,12 @@ unique_ptr<ExprNode> ParserImpl::parse_prefix_expr() {
         case TokenType::YRAISE:
             return parse_raise_expr();
 
+        case TokenType::YPERFORM:
+            return parse_perform_expr();
+
+        case TokenType::YHANDLE:
+            return parse_handle_expr();
+
         case TokenType::YWITH:
             return parse_with_expr();
 
@@ -1514,6 +1520,148 @@ unique_ptr<NameExpr> ParserImpl::parse_name() {
 
     auto token = advance();
     return make_unique<NameExpr>(token_location(token), string(token.lexeme));
+}
+
+// ===== Algebraic Effects =====
+
+/// Parse `perform Effect.op args`
+unique_ptr<ExprNode> ParserImpl::parse_perform_expr() {
+    SourceLocation loc = current_location();
+    advance(); // consume 'perform'
+    skip_newlines();
+
+    // Parse Effect.op
+    if (!check(TokenType::YIDENTIFIER)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected effect name after 'perform'");
+        return nullptr;
+    }
+    string effect_name(advance().lexeme);
+
+    if (!match(TokenType::YDOT)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected '.' after effect name in perform");
+        return nullptr;
+    }
+
+    if (!check(TokenType::YIDENTIFIER)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected operation name after '.'");
+        return nullptr;
+    }
+    string op_name(advance().lexeme);
+
+    // Parse arguments (0 or more expressions)
+    vector<ExprNode*> args;
+    while (!is_at_end() && !check(TokenType::YNEWLINE) && !check(TokenType::YSEMICOLON) &&
+           !check(TokenType::YIN) && !check(TokenType::YEND) && !check(TokenType::YWITH) &&
+           !check(TokenType::YELSE) && !check(TokenType::YTHEN) && !check(TokenType::YRBRACKET) &&
+           !check(TokenType::YRPAREN)) {
+        auto arg = parse_expr();
+        if (!arg) break;
+        args.push_back(arg.release());
+    }
+
+    return make_unique<PerformExpr>(loc, effect_name, op_name, args);
+}
+
+/// Parse `handle <body> with <clauses> end`
+unique_ptr<ExprNode> ParserImpl::parse_handle_expr() {
+    SourceLocation loc = current_location();
+    advance(); // consume 'handle'
+    skip_newlines();
+
+    // Parse body expression (everything until 'with')
+    auto body = parse_expr();
+    if (!body) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected expression after 'handle'");
+        return nullptr;
+    }
+
+    skip_newlines();
+    expect(TokenType::YWITH, "Expected 'with' after handle body");
+    skip_newlines();
+
+    // Parse handler clauses until 'end'
+    vector<HandlerClause*> clauses;
+    while (!is_at_end() && !check(TokenType::YEND)) {
+        skip_newlines();
+        if (check(TokenType::YEND)) break;
+
+        SourceLocation clause_loc = current_location();
+
+        // Check for return clause: `return val -> body`
+        if (check(TokenType::YIDENTIFIER) && current().lexeme == "return") {
+            advance(); // consume 'return'
+            skip_newlines();
+            if (!check(TokenType::YIDENTIFIER)) {
+                error(ParseError::Type::INVALID_SYNTAX, "Expected binding name after 'return'");
+                break;
+            }
+            string binding(advance().lexeme);
+            skip_newlines();
+            expect(TokenType::YARROW, "Expected '->' in return handler");
+            skip_newlines();
+            auto ret_body = parse_expr();
+            if (!ret_body) break;
+            clauses.push_back(new HandlerClause(clause_loc, binding, ret_body.release()));
+            skip_newlines();
+            continue;
+        }
+
+        // Parse operation clause: Effect.op arg_names resume -> body
+        if (!check(TokenType::YIDENTIFIER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected effect name or 'return' in handler clause");
+            break;
+        }
+        string effect_name(advance().lexeme);
+        if (!match(TokenType::YDOT)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected '.' after effect name in handler");
+            break;
+        }
+        if (!check(TokenType::YIDENTIFIER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected operation name after '.'");
+            break;
+        }
+        string op_name(advance().lexeme);
+        skip_newlines();
+
+        // Parse arg names and resume name (identifiers before '->')
+        vector<string> arg_names;
+        string resume_name;
+        while (check(TokenType::YIDENTIFIER) || check(TokenType::YLPAREN)) {
+            if (check(TokenType::YLPAREN)) {
+                advance(); // consume '('
+                if (check(TokenType::YRPAREN)) {
+                    advance(); // consume ')' — unit arg ()
+                    continue;
+                }
+                // Named arg inside parens
+                if (check(TokenType::YIDENTIFIER)) {
+                    arg_names.push_back(string(advance().lexeme));
+                }
+                expect(TokenType::YRPAREN, "Expected ')'");
+                continue;
+            }
+            // Check if next token after this identifier is '->' (makes this the resume name)
+            string name(advance().lexeme);
+            skip_newlines();
+            if (check(TokenType::YARROW)) {
+                resume_name = name;
+                break;
+            }
+            arg_names.push_back(name);
+        }
+
+        expect(TokenType::YARROW, "Expected '->' in handler clause");
+        skip_newlines();
+        auto clause_body = parse_expr();
+        if (!clause_body) break;
+
+        clauses.push_back(new HandlerClause(clause_loc, effect_name, op_name,
+                                            arg_names, resume_name, clause_body.release()));
+        skip_newlines();
+    }
+
+    expect(TokenType::YEND, "Expected 'end' after handler clauses");
+    return make_unique<HandleExpr>(loc, body.release(), clauses);
 }
 
 } // namespace yona::parser

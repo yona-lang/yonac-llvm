@@ -174,7 +174,11 @@ enum AstNodeType {
   AST_ADT_CONSTRUCTOR,
   AST_CONSTRUCTOR_PATTERN,
   AST_TRAIT_DECL,
-  AST_INSTANCE_DECL
+  AST_INSTANCE_DECL,
+  AST_EFFECT_DECL,
+  AST_PERFORM_EXPR,
+  AST_HANDLE_EXPR,
+  AST_HANDLER_CLAUSE
 };
 
 struct expr_wrapper {
@@ -2252,6 +2256,97 @@ public:
     }
     [[nodiscard]] AstNodeType get_type() const override { return AST_INSTANCE_DECL; };
     ~InstanceDeclNode() override;
+};
+
+// ===== Algebraic Effects =====
+
+/// An effect operation signature (name + type).
+struct EffectOpSig {
+    string name;
+    compiler::types::Type type_signature;
+};
+
+/// Effect declaration: `effect State s; get : () -> s; put : s -> (); end`
+class EffectDeclNode final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string name;            ///< Effect name, e.g. "State"
+    string type_param;      ///< Type parameter, e.g. "s"
+    vector<EffectOpSig> operations;
+
+    explicit EffectDeclNode(SourceContext token, string name, string type_param,
+                            vector<EffectOpSig> operations);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_EFFECT_DECL; };
+    ~EffectDeclNode() override;
+};
+
+/// Perform expression: `perform State.get ()`
+class PerformExpr final : public ExprNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string effect_name;     ///< "State"
+    string operation_name;  ///< "get"
+    vector<ExprNode*> args; ///< Operation arguments (excluding resume)
+
+    explicit PerformExpr(SourceContext token, string effect_name, string operation_name,
+                         vector<ExprNode*> args);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_PERFORM_EXPR; };
+    ~PerformExpr() override;
+};
+
+/// One handler clause in a handle...with block.
+/// Either an operation handler: `State.get () resume -> resume 42`
+/// Or a return handler: `return val -> val`
+class HandlerClause final : public AstNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string effect_name;     ///< "State" (empty for return clause)
+    string operation_name;  ///< "get" (empty for return clause)
+    vector<string> arg_names;  ///< Bound names for op args
+    string resume_name;     ///< "resume" (empty for return clause)
+    bool is_return_clause;  ///< true if this is `return val -> ...`
+    string return_binding;  ///< "val" (for return clause)
+    ExprNode* body;         ///< Handler body expression
+
+    /// Operation handler constructor
+    explicit HandlerClause(SourceContext token, string effect_name, string op_name,
+                           vector<string> arg_names, string resume_name, ExprNode* body);
+    /// Return handler constructor
+    explicit HandlerClause(SourceContext token, string return_binding, ExprNode* body);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_HANDLER_CLAUSE; };
+    ~HandlerClause() override;
+};
+
+/// Handle expression: `handle <body> with <clauses> end`
+class HandleExpr final : public ExprNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    ExprNode* body;
+    vector<HandlerClause*> clauses;
+
+    explicit HandleExpr(SourceContext token, ExprNode* body, vector<HandlerClause*> clauses);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_HANDLE_EXPR; };
+    ~HandleExpr() override;
 };
 
 // AstVisitor class is now defined in ast_visitor.h as a template

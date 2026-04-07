@@ -156,6 +156,8 @@ public:
     unique_ptr<ExprNode> parse_try_expr();
     unique_ptr<ExprNode> parse_raise_expr();
     unique_ptr<ExprNode> parse_with_expr();
+    unique_ptr<ExprNode> parse_perform_expr();
+    unique_ptr<ExprNode> parse_handle_expr();
     unique_ptr<ExprNode> parse_do_remaining(vector<ExprNode*>& exprs);
     unique_ptr<ExprNode> parse_record_expr();
     unique_ptr<ExprNode> parse_string_interpolation();

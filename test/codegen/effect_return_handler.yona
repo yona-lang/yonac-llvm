@@ -1,0 +1,4 @@
+handle perform State.get () with
+    State.get () resume -> resume 42
+    return val -> val + 1
+end

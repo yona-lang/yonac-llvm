@@ -1,0 +1,4 @@
+handle perform State.put 99 with
+    State.put s resume -> resume s
+    return val -> val
+end

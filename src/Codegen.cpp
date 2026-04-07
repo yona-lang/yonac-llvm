@@ -1210,6 +1210,8 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_RAISE_EXPR:      return codegen_raise(static_cast<RaiseExpr*>(node));
         case AST_TRY_CATCH_EXPR:  return codegen_try_catch(static_cast<TryCatchExpr*>(node));
         case AST_WITH_EXPR:      return codegen_with(static_cast<WithExpr*>(node));
+        case AST_PERFORM_EXPR:   return codegen_perform(static_cast<PerformExpr*>(node));
+        case AST_HANDLE_EXPR:    return codegen_handle(static_cast<HandleExpr*>(node));
         case AST_IDENTIFIER_EXPR: return codegen_identifier(static_cast<IdentifierExpr*>(node));
         case AST_FUNCTION_EXPR:   return codegen_function_def(static_cast<FunctionExpr*>(node), "");
         case AST_APPLY_EXPR:      return codegen_apply(static_cast<ApplyExpr*>(node));
