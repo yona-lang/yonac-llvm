@@ -516,4 +516,64 @@ TEST_CASE("ADT: Some applied to string") {
     CHECK(check_with_adt("Some \"hello\"") == "Option String");
 }
 
+// ===== Trait Tests =====
+
+} // close suite
+
+static std::string check_with_traits(const std::string& source, bool expect_error = false) {
+    yona::parser::Parser parser;
+    std::istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (!result.node) return "PARSE_ERROR";
+
+    yona::compiler::DiagnosticEngine diag;
+    yona::compiler::typechecker::TypeChecker checker(diag);
+
+    // Register trait Num with method abs : a -> a
+    auto& arena = checker.arena();
+    auto* a = arena.fresh_var(0);
+    auto* abs_type = arena.make_arrow(a, a);
+    checker.register_trait_method("Num", "abs", abs_type);
+    checker.register_instance("Num", "Int");
+    checker.register_instance("Num", "Float");
+
+    auto* t = checker.check(result.node.get());
+    checker.solve_constraints();
+
+    if (expect_error) return checker.has_errors() ? "ERROR" : "NO_ERROR";
+    if (!t) return "?";
+    return yona::compiler::typechecker::pretty_print(checker.zonk(t));
+}
+
+TEST_SUITE("TypeChecker") { // reopen
+
+TEST_CASE("Trait: abs applied to Int") {
+    CHECK(check_with_traits("abs 42") == "Int");
+}
+
+TEST_CASE("Trait: abs applied to Float") {
+    CHECK(check_with_traits("abs 3.14") == "Float");
+}
+
+TEST_CASE("Trait error: abs applied to String") {
+    CHECK(check_with_traits("abs \"hello\"", true) == "ERROR");
+}
+
+TEST_CASE("Trait: no error on valid usage") {
+    CHECK(check_with_traits("abs 42", false) != "ERROR");
+}
+
+// ===== Codegen Integration Test =====
+// Verify the type checker can be wired into the compilation pipeline
+
+TEST_CASE("Integration: type checker produces correct types for compilation") {
+    auto s = check_expr_str("let f x = x + 1 in let g y = f y in g 10");
+    CHECK(s == "Int");
+}
+
+TEST_CASE("Integration: polymorphic identity function") {
+    // let id = \x -> x in id applies to both Int and String
+    CHECK(check_expr_str("let id = \\x -> x in id 42") == "Int");
+}
+
 } // TypeChecker

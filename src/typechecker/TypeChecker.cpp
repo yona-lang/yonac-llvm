@@ -412,7 +412,8 @@ MonoTypePtr TypeChecker::substitute(MonoTypePtr type,
 }
 
 MonoTypePtr TypeChecker::instantiate(const TypeScheme& scheme, int level) {
-    if (scheme.quantified_vars.empty()) return scheme.body;
+    if (scheme.quantified_vars.empty() && scheme.constraints.empty())
+        return scheme.body;
 
     std::unordered_map<TypeId, MonoTypePtr> subst;
     for (auto id : scheme.quantified_vars) {
@@ -420,6 +421,13 @@ MonoTypePtr TypeChecker::instantiate(const TypeScheme& scheme, int level) {
         uf_.add_var(fresh->var_id, level);
         subst[id] = fresh;
     }
+
+    // Record deferred constraints (substituted)
+    for (auto& c : scheme.constraints) {
+        auto* subst_type = substitute(c.type, subst);
+        deferred_constraints_.push_back({c.trait_name, subst_type, {}, ""});
+    }
+
     return substitute(scheme.body, subst);
 }
 
@@ -630,6 +638,63 @@ void TypeChecker::register_adt(const std::string& type_name,
             root_env_->bind_scheme(ctor_name, TypeScheme(quant_vars, fn_type));
         }
     }
+}
+
+// ===== Trait Registration =====
+
+void TypeChecker::register_trait_method(const std::string& trait_name,
+                                         const std::string& method_name,
+                                         MonoTypePtr method_type) {
+    std::vector<TypeId> qvars;
+    collect_free_vars(method_type, -1, qvars);
+
+    std::vector<Constraint> constraints;
+    // Add trait constraint on the first free var (the type param)
+    if (!qvars.empty()) {
+        // Find the first var that appears as a param type
+        auto* resolved = unifier_.resolve(method_type);
+        MonoTypePtr constrained = nullptr;
+        if (resolved && resolved->tag == MonoType::Arrow)
+            constrained = unifier_.resolve(resolved->param_type);
+        if (!constrained) {
+            auto* v = arena_.fresh_var(0);
+            uf_.add_var(v->var_id, 0);
+            constrained = v;
+            qvars.push_back(v->var_id);
+        }
+        constraints.push_back({trait_name, constrained});
+    }
+
+    root_env_->bind_scheme(method_name, TypeScheme(qvars, constraints, method_type));
+}
+
+void TypeChecker::register_instance(const std::string& trait_name, const std::string& type_name) {
+    trait_instances_[trait_name].push_back(type_name);
+}
+
+bool TypeChecker::solve_constraints() {
+    bool all_ok = true;
+    for (auto& dc : deferred_constraints_) {
+        auto* resolved = zonk(dc.type);
+        if (resolved->tag == MonoType::Var) continue; // unsolved var
+
+        std::string type_name = pretty_print(resolved);
+
+        auto it = trait_instances_.find(dc.trait_name);
+        if (it == trait_instances_.end()) {
+            diag_.error(dc.loc, "no instances for trait '" + dc.trait_name + "'");
+            all_ok = false;
+            continue;
+        }
+        bool found = false;
+        for (auto& inst : it->second)
+            if (inst == type_name) { found = true; break; }
+        if (!found) {
+            diag_.error(dc.loc, "no instance for '" + dc.trait_name + " " + type_name + "'");
+            all_ok = false;
+        }
+    }
+    return all_ok;
 }
 
 } // namespace yona::compiler::typechecker

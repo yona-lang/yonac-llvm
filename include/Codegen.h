@@ -29,6 +29,8 @@
 #include "types.h"
 #include "Diagnostic.h"
 
+namespace yona::compiler::typechecker { class TypeChecker; }
+
 namespace yona::compiler::codegen {
 
 using namespace yona::ast;
@@ -67,6 +69,10 @@ public:
             compiler::DiagnosticEngine* diag = nullptr);
     ~Codegen();
 
+    // Set optional type checker for type-aware codegen.
+    // When set, the codegen queries type_checker_->type_of(node) instead of guessing.
+    void set_type_checker(typechecker::TypeChecker* tc) { type_checker_ = tc; }
+
     // Compile a single expression (wraps in main())
     llvm::Module* compile(AstNode* node);
 
@@ -104,6 +110,7 @@ private:
     std::unique_ptr<llvm::Module> module_;
     std::unique_ptr<llvm::IRBuilder<>> builder_;
     llvm::TargetMachine* target_machine_ = nullptr;
+    typechecker::TypeChecker* type_checker_ = nullptr;
 
     // Scope: variable name → typed value
     std::unordered_map<std::string, TypedValue> named_values_;

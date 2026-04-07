@@ -24,6 +24,7 @@
 #include "Parser.h"
 #include "Codegen.h"
 #include "Diagnostic.h"
+#include "typechecker/TypeChecker.h"
 
 using namespace std;
 using namespace yona;
@@ -155,6 +156,10 @@ int main(int argc, char* argv[]) {
             }
             return 1;
         }
+        // Optional type checking (non-blocking — codegen still works if types have errors)
+        typechecker::TypeChecker type_checker(diag);
+        type_checker.check(parse_result.node.get());
+        codegen.set_type_checker(&type_checker);
         llvm_mod = codegen.compile(parse_result.node.get());
     }
 

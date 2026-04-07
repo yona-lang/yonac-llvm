@@ -46,6 +46,16 @@ public:
     void register_adt(const std::string& type_name, const std::vector<std::string>& type_params,
                        const std::vector<std::pair<std::string, int>>& constructors);
 
+    /// Register a trait method (binds as polymorphic with constraint).
+    void register_trait_method(const std::string& trait_name, const std::string& method_name,
+                                MonoTypePtr method_type);
+
+    /// Register a trait instance for a concrete type.
+    void register_instance(const std::string& trait_name, const std::string& type_name);
+
+    /// Solve deferred trait constraints. Returns false on unsatisfied constraints.
+    bool solve_constraints();
+
 private:
     /// Main recursive inference. Returns inferred monotype.
     MonoTypePtr infer(ast::AstNode* node, std::shared_ptr<TypeEnv> env, int level);
@@ -112,6 +122,18 @@ private:
 
     /// Type map: AST node → inferred monotype.
     std::unordered_map<ast::AstNode*, MonoTypePtr> type_map_;
+
+    /// Trait instance registry: "TraitName" → set of concrete type names with instances.
+    std::unordered_map<std::string, std::vector<std::string>> trait_instances_;
+
+    /// Deferred trait constraints gathered during inference.
+    struct DeferredConstraint {
+        std::string trait_name;
+        MonoTypePtr type;
+        SourceLocation loc;
+        std::string context;
+    };
+    std::vector<DeferredConstraint> deferred_constraints_;
 };
 
 } // namespace yona::compiler::typechecker
