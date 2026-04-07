@@ -68,6 +68,17 @@
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
 
+### Diagnostics
+- [ ] **Rich error explanations** — compiler flag `--explain` (or `-Wverbose`)
+  that expands error messages with detailed explanations, examples of correct
+  code, and links to documentation. Each error gets an error code (E0001,
+  E0002, ...) with a dedicated explanation page. Similar to Rust's
+  `--explain` / Elm's error messages. Covers: type mismatches, missing
+  imports, undefined variables, exhaustiveness warnings, effect errors,
+  trait resolution failures. Also consolidate existing error messages
+  (parser, codegen, type checker) into a unified DiagnosticEngine with
+  consistent formatting, source context display, and colored output.
+
 ### Tooling
 - [ ] Package manager / build system
 - [ ] LSP server

@@ -1,11 +1,12 @@
-/// Unit tests for the type checker foundation:
-/// TypeArena, UnionFind, Unifier.
+/// Unit tests for the type checker:
+/// TypeArena, UnionFind, Unifier, TypeEnv, builtins.
 
 #include <doctest/doctest.h>
 #include "typechecker/InferType.h"
 #include "typechecker/TypeArena.h"
 #include "typechecker/UnionFind.h"
 #include "typechecker/Unification.h"
+#include "typechecker/TypeEnv.h"
 #include "Diagnostic.h"
 
 using namespace yona::compiler::typechecker;
@@ -182,6 +183,128 @@ TEST_CASE("pretty_print formats types correctly") {
     CHECK(pretty_print(opt) == "Option Int");
     auto* tup = arena.make_tuple({arena.make_con(TyCon::Int), arena.make_con(TyCon::String)});
     CHECK(pretty_print(tup) == "(Int, String)");
+}
+
+// ===== TypeEnv Tests =====
+
+TEST_CASE("TypeEnv: bind and lookup") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    auto* int_t = arena.make_con(TyCon::Int);
+    env->bind("x", int_t);
+    auto result = env->lookup("x");
+    REQUIRE(result.has_value());
+    CHECK(result->body->tag == MonoType::Con);
+    CHECK(result->body->con == TyCon::Int);
+}
+
+TEST_CASE("TypeEnv: lookup not found returns nullopt") {
+    auto env = std::make_shared<TypeEnv>();
+    CHECK(!env->lookup("nonexistent").has_value());
+}
+
+TEST_CASE("TypeEnv: child scope inherits parent bindings") {
+    TypeArena arena;
+    auto parent = std::make_shared<TypeEnv>();
+    parent->bind("x", arena.make_con(TyCon::Int));
+    auto child = parent->child();
+    auto result = child->lookup("x");
+    REQUIRE(result.has_value());
+    CHECK(result->body->con == TyCon::Int);
+}
+
+TEST_CASE("TypeEnv: child scope shadows parent") {
+    TypeArena arena;
+    auto parent = std::make_shared<TypeEnv>();
+    parent->bind("x", arena.make_con(TyCon::Int));
+    auto child = parent->child();
+    child->bind("x", arena.make_con(TyCon::String));
+    // Child sees String
+    CHECK(child->lookup("x")->body->con == TyCon::String);
+    // Parent still sees Int
+    CHECK(parent->lookup("x")->body->con == TyCon::Int);
+}
+
+TEST_CASE("TypeEnv: polymorphic scheme binding") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    // forall a. a -> a
+    auto* a = arena.fresh_var(1);
+    auto* id_type = arena.make_arrow(a, a);
+    env->bind_scheme("id", TypeScheme({a->var_id}, id_type));
+    auto result = env->lookup("id");
+    REQUIRE(result.has_value());
+    CHECK(result->quantified_vars.size() == 1);
+    CHECK(result->body->tag == MonoType::Arrow);
+}
+
+TEST_CASE("register_builtins: arithmetic operators have correct types") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    // + : Int -> Int -> Int
+    auto plus = env->lookup("+");
+    REQUIRE(plus.has_value());
+    CHECK(plus->body->tag == MonoType::Arrow);
+    CHECK(plus->body->param_type->con == TyCon::Int);
+    CHECK(plus->body->return_type->tag == MonoType::Arrow);
+    CHECK(plus->body->return_type->return_type->con == TyCon::Int);
+}
+
+TEST_CASE("register_builtins: comparison operators return Bool") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    auto eq = env->lookup("==");
+    REQUIRE(eq.has_value());
+    CHECK(eq->body->return_type->return_type->con == TyCon::Bool);
+}
+
+TEST_CASE("register_builtins: cons is polymorphic") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    auto cons = env->lookup("::");
+    REQUIRE(cons.has_value());
+    CHECK(cons->quantified_vars.size() == 1);
+    // :: : a -> Seq a -> Seq a
+    CHECK(cons->body->tag == MonoType::Arrow);
+}
+
+TEST_CASE("register_builtins: pipe is polymorphic") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    auto pipe = env->lookup("|>");
+    REQUIRE(pipe.has_value());
+    CHECK(pipe->quantified_vars.size() == 2);
+}
+
+TEST_CASE("register_builtins: string concat") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    auto concat = env->lookup("++");
+    REQUIRE(concat.has_value());
+    CHECK(concat->body->param_type->con == TyCon::String);
+}
+
+TEST_CASE("register_builtins: type names available") {
+    TypeArena arena;
+    auto env = std::make_shared<TypeEnv>();
+    register_builtins(*env, arena);
+
+    CHECK(env->lookup("Int").has_value());
+    CHECK(env->lookup("Float").has_value());
+    CHECK(env->lookup("Bool").has_value());
+    CHECK(env->lookup("String").has_value());
+    CHECK(env->lookup("true").has_value());
+    CHECK(env->lookup("false").has_value());
 }
 
 } // TypeChecker
