@@ -1,0 +1,2 @@
+let f x = if x > 100 then "big" else if x > 10 then "medium" else "small" in
+f 50
