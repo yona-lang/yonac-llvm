@@ -432,4 +432,50 @@ TEST_CASE("Inference: recursive sum via case") {
     ) == "Int");
 }
 
+// ===== Negative Tests (type errors) =====
+
+static bool check_has_error(const std::string& source) {
+    yona::parser::Parser parser;
+    std::istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (!result.node) return true; // parse error counts
+
+    yona::compiler::DiagnosticEngine diag;
+    yona::compiler::typechecker::TypeChecker checker(diag);
+    checker.check(result.node.get());
+    return checker.has_errors();
+}
+
+TEST_CASE("Type error: adding string to int") {
+    CHECK(check_has_error("1 + \"hello\""));
+}
+
+TEST_CASE("Type error: if condition not bool") {
+    CHECK(check_has_error("if 42 then 1 else 2"));
+}
+
+TEST_CASE("Type error: if branches mismatch") {
+    CHECK(check_has_error("if true then 1 else \"hello\""));
+}
+
+TEST_CASE("Type error: undefined variable") {
+    CHECK(check_has_error("x + 1"));
+}
+
+TEST_CASE("Type error: heterogeneous sequence") {
+    CHECK(check_has_error("[1, \"hello\", 3]"));
+}
+
+TEST_CASE("No error: valid arithmetic") {
+    CHECK(!check_has_error("1 + 2 + 3"));
+}
+
+TEST_CASE("No error: valid let binding") {
+    CHECK(!check_has_error("let x = 42 in x + 1"));
+}
+
+TEST_CASE("No error: valid case expression") {
+    CHECK(!check_has_error("case 1 of 0 -> 10; _ -> 20 end"));
+}
+
 } // TypeChecker

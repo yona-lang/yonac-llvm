@@ -37,7 +37,7 @@ public:
     MonoTypePtr zonk(MonoTypePtr type);
 
     /// Has errors?
-    bool has_errors() const { return error_count_ > 0; }
+    bool has_errors() const { return error_count_ > 0 || diag_.has_errors(); }
 
     /// Access arena (for tests).
     TypeArena& arena() { return arena_; }
