@@ -394,4 +394,42 @@ TEST_CASE("Inference: lambda") {
     CHECK(check_expr_str("let f = \\x -> x + 1 in f 5") == "Int");
 }
 
+// ===== Case Expression + Pattern Inference =====
+
+TEST_CASE("Inference: case with integer patterns") {
+    CHECK(check_expr_str("case 42 of 0 -> \"zero\"; _ -> \"other\" end") == "String");
+}
+
+TEST_CASE("Inference: case with identifier binding") {
+    CHECK(check_expr_str("case 42 of x -> x + 1 end") == "Int");
+}
+
+TEST_CASE("Inference: case with head-tail pattern") {
+    CHECK(check_expr_str("case [1, 2, 3] of [h|t] -> h end") == "Int");
+}
+
+TEST_CASE("Inference: case with empty seq pattern") {
+    CHECK(check_expr_str("case [1, 2] of [] -> 0; [h|t] -> h end") == "Int");
+}
+
+TEST_CASE("Inference: case with tuple pattern") {
+    CHECK(check_expr_str("case (1, \"hello\") of (a, b) -> a end") == "Int");
+}
+
+TEST_CASE("Inference: case branches must unify") {
+    // Both branches return Int
+    CHECK(check_expr_str("case 1 of 0 -> 10; _ -> 20 end") == "Int");
+}
+
+TEST_CASE("Inference: cons operator") {
+    CHECK(check_expr_str("1 :: [2, 3]") == "Seq Int");
+}
+
+TEST_CASE("Inference: recursive sum via case") {
+    CHECK(check_expr_str(
+        "let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in "
+        "foldl (\\a b -> a + b) 0 [1, 2, 3]"
+    ) == "Int");
+}
+
 } // TypeChecker

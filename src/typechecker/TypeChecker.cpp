@@ -92,6 +92,10 @@ MonoTypePtr TypeChecker::infer(AstNode* node, std::shared_ptr<TypeEnv> env, int 
             result = infer_seq(static_cast<ValuesSequenceExpr*>(node), env, level); break;
         case AST_DO_EXPR:
             result = infer_do(static_cast<DoExpr*>(node), env, level); break;
+        case AST_CASE_EXPR:
+            result = infer_case(static_cast<CaseExpr*>(node), env, level); break;
+        case AST_CONS_LEFT_EXPR:
+            result = infer_cons(static_cast<ConsLeftExpr*>(node), env, level); break;
         default:
             // Binary operators
             if (auto* binop = dynamic_cast<BinaryOpExpr*>(node)) {
@@ -399,6 +403,151 @@ MonoTypePtr TypeChecker::instantiate(const TypeScheme& scheme, int level) {
         subst[id] = fresh;
     }
     return substitute(scheme.body, subst);
+}
+
+// ===== Case Expression =====
+
+MonoTypePtr TypeChecker::infer_case(CaseExpr* node, std::shared_ptr<TypeEnv> env, int level) {
+    auto* scrut_type = infer(node->expr, env, level);
+
+    MonoTypePtr result_type = nullptr;
+
+    for (auto* clause : node->clauses) {
+        auto clause_env = env->child();
+
+        // Infer pattern and bind variables
+        auto* pat_type = infer_pattern(clause->pattern, clause_env, level);
+        unifier_.unify(scrut_type, pat_type, clause->source_context, "in case pattern");
+
+        // Infer body
+        auto* body_type = infer(clause->body, clause_env, level);
+
+        if (!result_type)
+            result_type = body_type;
+        else
+            unifier_.unify(result_type, body_type, clause->source_context,
+                           "in case branches (all must have same type)");
+    }
+
+    return result_type ? unifier_.resolve(result_type) : arena_.make_con(TyCon::Unit);
+}
+
+// ===== Pattern Inference =====
+
+MonoTypePtr TypeChecker::infer_pattern(PatternNode* pat, std::shared_ptr<TypeEnv> env, int level) {
+    if (!pat) return arena_.fresh_var(level);
+
+    switch (pat->get_type()) {
+        case AST_UNDERSCORE_PATTERN: {
+            // Wildcard: matches anything
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
+            return v;
+        }
+
+        case AST_PATTERN_VALUE: {
+            auto* pv = static_cast<PatternValue*>(pat);
+            // Identifier binding: fresh var, bind in env
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                auto* v = arena_.fresh_var(level);
+                uf_.add_var(v->var_id, level);
+                env->bind((*id)->name->value, v);
+                return v;
+            }
+            // Symbol literal
+            if (std::get_if<SymbolExpr*>(&pv->expr))
+                return arena_.make_con(TyCon::Symbol);
+            // Integer literal
+            if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
+                auto* an = reinterpret_cast<AstNode*>(*lit);
+                if (an->get_type() == AST_INTEGER_EXPR) return arena_.make_con(TyCon::Int);
+                if (an->get_type() == AST_FLOAT_EXPR) return arena_.make_con(TyCon::Float);
+                if (an->get_type() == AST_STRING_EXPR) return arena_.make_con(TyCon::String);
+            }
+            // Fallback
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
+            return v;
+        }
+
+        case AST_HEAD_TAILS_PATTERN: {
+            auto* htp = static_cast<HeadTailsPattern*>(pat);
+            auto* elem_type = arena_.fresh_var(level);
+            uf_.add_var(elem_type->var_id, level);
+
+            // Head patterns: each must match elem_type
+            for (auto* head_pat : htp->heads) {
+                auto* head_type = infer_pattern(head_pat, env, level);
+                unifier_.unify(elem_type, head_type, pat->source_context, "in head-tail pattern");
+            }
+
+            // Tail: must be Seq(elem_type)
+            if (htp->tail) {
+                auto* tail_type = infer_pattern(htp->tail, env, level);
+                auto* seq_type = arena_.make_app("Seq", {elem_type});
+                unifier_.unify(tail_type, seq_type, pat->source_context, "in tail pattern");
+            }
+
+            return arena_.make_app("Seq", {unifier_.resolve(elem_type)});
+        }
+
+        case AST_SEQ_PATTERN: {
+            auto* sp = static_cast<SeqPattern*>(pat);
+            auto* elem_type = arena_.fresh_var(level);
+            uf_.add_var(elem_type->var_id, level);
+            for (auto* sub : sp->patterns) {
+                auto* sub_type = infer_pattern(sub, env, level);
+                unifier_.unify(elem_type, sub_type, pat->source_context, "in sequence pattern");
+            }
+            return arena_.make_app("Seq", {unifier_.resolve(elem_type)});
+        }
+
+        case AST_TUPLE_PATTERN: {
+            auto* tp = static_cast<TuplePattern*>(pat);
+            std::vector<MonoTypePtr> elem_types;
+            for (auto* sub : tp->patterns)
+                elem_types.push_back(infer_pattern(sub, env, level));
+            return arena_.make_tuple(elem_types);
+        }
+
+        case AST_CONSTRUCTOR_PATTERN: {
+            auto* cp = static_cast<ConstructorPattern*>(pat);
+            // For now: create fresh vars for each sub-pattern and return a fresh ADT type
+            // Full ADT support comes in Phase 5
+            auto* adt_type = arena_.fresh_var(level);
+            uf_.add_var(adt_type->var_id, level);
+            for (auto* sub : cp->sub_patterns)
+                infer_pattern(sub, env, level);
+            return adt_type;
+        }
+
+        case AST_OR_PATTERN: {
+            auto* op = static_cast<OrPattern*>(pat);
+            MonoTypePtr or_type = nullptr;
+            for (auto& alt : op->patterns) {
+                auto* alt_type = infer_pattern(alt.get(), env, level);
+                if (!or_type) or_type = alt_type;
+                else unifier_.unify(or_type, alt_type, pat->source_context, "in or-pattern");
+            }
+            return or_type ? or_type : arena_.fresh_var(level);
+        }
+
+        default: {
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
+            return v;
+        }
+    }
+}
+
+// ===== Cons =====
+
+MonoTypePtr TypeChecker::infer_cons(ConsLeftExpr* node, std::shared_ptr<TypeEnv> env, int level) {
+    auto* elem_type = infer(node->left, env, level);
+    auto* seq_type = infer(node->right, env, level);
+    auto* expected_seq = arena_.make_app("Seq", {elem_type});
+    unifier_.unify(seq_type, expected_seq, node->source_context, "in cons (::) operator");
+    return unifier_.resolve(expected_seq);
 }
 
 } // namespace yona::compiler::typechecker

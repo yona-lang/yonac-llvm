@@ -61,6 +61,11 @@ private:
     MonoTypePtr infer_tuple(ast::TupleExpr* node, std::shared_ptr<TypeEnv> env, int level);
     MonoTypePtr infer_seq(ast::ValuesSequenceExpr* node, std::shared_ptr<TypeEnv> env, int level);
     MonoTypePtr infer_do(ast::DoExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_case(ast::CaseExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_cons(ast::ConsLeftExpr* node, std::shared_ptr<TypeEnv> env, int level);
+
+    /// Infer the type a pattern matches, binding variables in env.
+    MonoTypePtr infer_pattern(ast::PatternNode* pat, std::shared_ptr<TypeEnv> env, int level);
 
     // --- Generalization / Instantiation ---
 
