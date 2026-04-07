@@ -63,10 +63,19 @@
   communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 
-### Language — Metaprogramming
+### Language — Metaprogramming & Introspection
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
+- [ ] **Runtime Type Introspection** — `typeOf x` returns type tag at
+  runtime. Pattern matching on types: `case typeOf x of :int -> ...; :string -> ... end`.
+  Foundation for generic serialization, debugging, dynamic dispatch.
+- [ ] **Compile-Time Reflection** — access ADT constructor names, field
+  names/types, trait instances at compile time. Enables: auto-derive
+  (derive Show, Eq), schema generation, serialization codegen.
+- [ ] **Quasiquotes / Template Expressions** — `quote { expr }` captures
+  AST for manipulation. `splice expr` inserts computed AST into code.
+  Enables: DSLs, custom syntax extensions, code generation.
 
 ### Diagnostics
 - [ ] **Rich error explanations** — compiler flag `--explain` (or `-Wverbose`)

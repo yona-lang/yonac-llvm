@@ -478,4 +478,42 @@ TEST_CASE("No error: valid case expression") {
     CHECK(!check_has_error("case 1 of 0 -> 10; _ -> 20 end"));
 }
 
+// ===== ADT Tests =====
+
+} // close suite
+
+static std::string check_with_adt(const std::string& source) {
+    yona::parser::Parser parser;
+    std::istringstream stream(source);
+    auto result = parser.parse_input(stream);
+    if (!result.node) return "PARSE_ERROR";
+
+    yona::compiler::DiagnosticEngine diag;
+    yona::compiler::typechecker::TypeChecker checker(diag);
+    checker.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
+    auto* t = checker.check(result.node.get());
+    if (!t) return "?";
+    return yona::compiler::typechecker::pretty_print(checker.zonk(t));
+}
+
+TEST_SUITE("TypeChecker") { // reopen
+
+TEST_CASE("ADT: Some constructor applied") {
+    CHECK(check_with_adt("Some 42") == "Option Int");
+}
+
+TEST_CASE("ADT: None is polymorphic") {
+    auto s = check_with_adt("None");
+    // None : forall a. Option a — instantiated with a fresh var
+    CHECK(s.substr(0, 6) == "Option");
+}
+
+TEST_CASE("ADT: constructor used in let binding") {
+    CHECK(check_with_adt("let opt = Some 42 in opt") == "Option Int");
+}
+
+TEST_CASE("ADT: Some applied to string") {
+    CHECK(check_with_adt("Some \"hello\"") == "Option String");
+}
+
 } // TypeChecker

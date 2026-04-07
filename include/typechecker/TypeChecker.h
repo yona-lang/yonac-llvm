@@ -42,6 +42,10 @@ public:
     /// Access arena (for tests).
     TypeArena& arena() { return arena_; }
 
+    /// Register ADT definitions for constructor type inference.
+    void register_adt(const std::string& type_name, const std::vector<std::string>& type_params,
+                       const std::vector<std::pair<std::string, int>>& constructors);
+
 private:
     /// Main recursive inference. Returns inferred monotype.
     MonoTypePtr infer(ast::AstNode* node, std::shared_ptr<TypeEnv> env, int level);
@@ -97,6 +101,14 @@ private:
 
     /// Root environment with builtins.
     std::shared_ptr<TypeEnv> root_env_;
+
+    /// ADT constructor registry: constructor name → (ADT name, arity, type param names)
+    struct ConstructorInfo {
+        std::string adt_name;
+        int arity;
+        std::vector<std::string> type_params; ///< from the ADT definition
+    };
+    std::unordered_map<std::string, ConstructorInfo> constructor_registry_;
 
     /// Type map: AST node → inferred monotype.
     std::unordered_map<ast::AstNode*, MonoTypePtr> type_map_;

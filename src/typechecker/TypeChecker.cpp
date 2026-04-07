@@ -35,7 +35,25 @@ void TypeChecker::record(AstNode* node, MonoTypePtr type) {
 }
 
 MonoTypePtr TypeChecker::zonk(MonoTypePtr type) {
-    return unifier_.resolve(type);
+    type = unifier_.resolve(type);
+    if (!type) return nullptr;
+    switch (type->tag) {
+        case MonoType::Var: return type; // unresolved var
+        case MonoType::Con: return type;
+        case MonoType::Arrow:
+            return arena_.make_arrow(zonk(type->param_type), zonk(type->return_type));
+        case MonoType::App: {
+            std::vector<MonoTypePtr> args;
+            for (auto* a : type->args) args.push_back(zonk(a));
+            return arena_.make_app(type->type_name, args);
+        }
+        case MonoType::MTuple: {
+            std::vector<MonoTypePtr> elems;
+            for (auto* e : type->elements) elems.push_back(zonk(e));
+            return arena_.make_tuple(elems);
+        }
+        default: return type;
+    }
 }
 
 // ===== Main Dispatch =====
@@ -512,13 +530,31 @@ MonoTypePtr TypeChecker::infer_pattern(PatternNode* pat, std::shared_ptr<TypeEnv
 
         case AST_CONSTRUCTOR_PATTERN: {
             auto* cp = static_cast<ConstructorPattern*>(pat);
-            // For now: create fresh vars for each sub-pattern and return a fresh ADT type
-            // Full ADT support comes in Phase 5
-            auto* adt_type = arena_.fresh_var(level);
-            uf_.add_var(adt_type->var_id, level);
+            auto ctor_it = constructor_registry_.find(cp->constructor_name);
+            if (ctor_it != constructor_registry_.end()) {
+                auto& info = ctor_it->second;
+                // Instantiate ADT type params with fresh vars
+                std::vector<MonoTypePtr> type_arg_vars;
+                for (size_t i = 0; i < info.type_params.size(); i++) {
+                    auto* v = arena_.fresh_var(level);
+                    uf_.add_var(v->var_id, level);
+                    type_arg_vars.push_back(v);
+                }
+                // Bind sub-patterns — each gets the corresponding type arg
+                for (size_t i = 0; i < cp->sub_patterns.size(); i++) {
+                    auto* sub_type = infer_pattern(cp->sub_patterns[i], env, level);
+                    if (i < type_arg_vars.size())
+                        unifier_.unify(sub_type, type_arg_vars[i], pat->source_context,
+                                       "in constructor pattern '" + cp->constructor_name + "'");
+                }
+                return arena_.make_app(info.adt_name, type_arg_vars);
+            }
+            // Unknown constructor — fresh var
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
             for (auto* sub : cp->sub_patterns)
                 infer_pattern(sub, env, level);
-            return adt_type;
+            return v;
         }
 
         case AST_OR_PATTERN: {
@@ -548,6 +584,52 @@ MonoTypePtr TypeChecker::infer_cons(ConsLeftExpr* node, std::shared_ptr<TypeEnv>
     auto* expected_seq = arena_.make_app("Seq", {elem_type});
     unifier_.unify(seq_type, expected_seq, node->source_context, "in cons (::) operator");
     return unifier_.resolve(expected_seq);
+}
+
+// ===== ADT Registration =====
+
+void TypeChecker::register_adt(const std::string& type_name,
+                                const std::vector<std::string>& type_params,
+                                const std::vector<std::pair<std::string, int>>& constructors) {
+    for (auto& [ctor_name, arity] : constructors) {
+        constructor_registry_[ctor_name] = {type_name, arity, type_params};
+
+        // Register constructor as a function in root env:
+        // For arity 0: constructor is a value of type ADT
+        // For arity N: constructor is a function a1 -> ... -> aN -> ADT(params...)
+        std::vector<TypeId> quant_vars;
+        std::vector<MonoTypePtr> param_vars;
+        for (auto& tp : type_params) {
+            auto* v = arena_.fresh_var(0);
+            uf_.add_var(v->var_id, 0);
+            quant_vars.push_back(v->var_id);
+            param_vars.push_back(v);
+        }
+
+        MonoTypePtr result_type = param_vars.empty()
+            ? arena_.make_app(type_name, {})
+            : arena_.make_app(type_name, param_vars);
+
+        if (arity == 0) {
+            root_env_->bind_scheme(ctor_name, TypeScheme(quant_vars, result_type));
+        } else {
+            // Build curried function: a -> b -> ... -> ADT(params)
+            // Each constructor arg gets a fresh var (polymorphic)
+            MonoTypePtr fn_type = result_type;
+            for (int i = arity - 1; i >= 0; i--) {
+                MonoTypePtr arg_type;
+                if (i < (int)param_vars.size())
+                    arg_type = param_vars[i];
+                else {
+                    arg_type = arena_.fresh_var(0);
+                    uf_.add_var(arg_type->var_id, 0);
+                    quant_vars.push_back(arg_type->var_id);
+                }
+                fn_type = arena_.make_arrow(arg_type, fn_type);
+            }
+            root_env_->bind_scheme(ctor_name, TypeScheme(quant_vars, fn_type));
+        }
+    }
 }
 
 } // namespace yona::compiler::typechecker
