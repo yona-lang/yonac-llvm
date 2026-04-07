@@ -84,8 +84,10 @@
 - [x] **Phase 1: Break codegen_case** (461 lines → 5 pattern helpers)
 - [x] **Phase 2: Extract RuntimeDecls** — 76 rt_* pointers → `RuntimeDecls` struct
 - [x] **Phase 2: Define constants** — ARENA_DEFAULT_SIZE, CLOSURE_FIELD_*
-- [x] Phase 2-3: Generator dedup + class split + runtime split deferred (low ROI
-  after Phase 1-2 cleanup; revisit when adding effect system)
+- [x] **Phase 3: Split Codegen class** — TypeRegistry, ImportState, SymbolTable,
+  DebugState structs extracted. Member count reduced from ~80 to ~30 direct.
+- [x] **Phase 3: Split compiled_runtime.c** — exceptions.c (86 lines), async.c
+  (176 lines), closures.c (70 lines). Main file 2341→2015 lines.
 
 ### Tooling
 - [ ] Package manager / build system
