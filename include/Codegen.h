@@ -370,6 +370,35 @@ private:
     TypedValue codegen_apply(ApplyExpr* node);
     TypedValue codegen_lambda_alias(LambdaAlias* node);
 
+    // codegen_apply helpers (extracted for readability)
+    struct ApplyChain {
+        std::string fn_name;
+        std::string module_fqn;
+        std::vector<ApplyExpr*> chain;
+    };
+    ApplyChain flatten_apply_chain(ApplyExpr* node);
+
+    struct EvaluatedArgs {
+        std::vector<TypedValue> all_args;
+        std::vector<std::string> arg_lambda_names;
+    };
+    EvaluatedArgs evaluate_apply_args(const std::vector<ApplyExpr*>& chain);
+    void precompile_function_args(EvaluatedArgs& args);
+    void wrap_function_args_in_closures(std::vector<TypedValue>& all_args);
+
+    TypedValue codegen_adt_construct(const std::string& fn_name, const std::vector<TypedValue>& all_args);
+    std::unordered_map<std::string, CompiledFunction>::iterator
+        resolve_apply_function(const std::string& fn_name, const std::vector<TypedValue>& all_args);
+    TypedValue codegen_higher_order_call(const std::string& fn_name, const std::vector<TypedValue>& all_args);
+    TypedValue codegen_extern_call(ApplyExpr* node, const std::string& fn_name,
+                                    const std::vector<TypedValue>& all_args);
+    TypedValue codegen_partial_apply(const std::string& fn_name, CompiledFunction& cf,
+                                      const std::vector<TypedValue>& all_args);
+    TypedValue codegen_curry_apply(const std::string& fn_name, CompiledFunction& cf,
+                                    const std::vector<TypedValue>& all_args);
+    TypedValue emit_direct_call(const std::string& fn_name, CompiledFunction& cf,
+                                 const std::vector<TypedValue>& all_args);
+
     // Compile a deferred function with known argument types
     CompiledFunction compile_function(const std::string& name,
                                        const DeferredFunction& def,
