@@ -1,0 +1,44 @@
+#ifndef YONA_TYPECHECKER_TYPE_ARENA_H
+#define YONA_TYPECHECKER_TYPE_ARENA_H
+
+/// Arena allocator for MonoType nodes.
+///
+/// All types created during inference are allocated here.
+/// Stable pointers: deque never invalidates existing elements.
+
+#include "InferType.h"
+#include <deque>
+
+namespace yona::compiler::typechecker {
+
+class TypeArena {
+public:
+    /// Create a fresh unification variable at the given level.
+    MonoTypePtr fresh_var(int level);
+
+    /// Create a built-in type constructor.
+    MonoTypePtr make_con(TyCon con);
+
+    /// Create a function type.
+    MonoTypePtr make_arrow(MonoTypePtr param, MonoTypePtr ret);
+
+    /// Create a named type application (e.g., Option Int).
+    MonoTypePtr make_app(const std::string& name, std::vector<MonoTypePtr> args);
+
+    /// Create a tuple type.
+    MonoTypePtr make_tuple(std::vector<MonoTypePtr> elems);
+
+    /// Allocate and return a stable pointer to a MonoType.
+    MonoTypePtr alloc(MonoType t);
+
+    /// Number of types allocated.
+    size_t size() const { return storage_.size(); }
+
+private:
+    std::deque<MonoType> storage_;
+    TypeId next_id_ = 0;
+};
+
+} // namespace yona::compiler::typechecker
+
+#endif // YONA_TYPECHECKER_TYPE_ARENA_H
