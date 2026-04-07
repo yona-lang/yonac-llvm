@@ -38,10 +38,11 @@
   Resume via raw function pointer indirect call. Zero overhead when not used.
   See [docs/effects.md](effects.md).
 - [ ] **Anonymous/Inline Sum Types** — `Int | String` as type annotations,
-  function return types, and ADT field types. Runtime: tagged union with
-  type-based pattern matching. Requires: parser for `T1 | T2` in type
-  positions, codegen for tagged value creation and type-dispatch at case
-  sites. `SumType` already exists in types.h but is unused.
+  function return types, and ADT field types. Parser already handles
+  `T1 | T2` via `parse_sum_type()` → `SumType`. Missing: codegen support
+  (tagged tuple `{type_tag, value}`), `yona_type_to_ctype` mapping,
+  type-based pattern matching (`case x of (n : Int) -> ...`).
+  Requires type checker for sound dispatch.
 - [ ] **Refinement Types** — compile-time invariant verification.
   `type NonEmpty a = { seq : [a] | length seq > 0 }`, `type Port = { n : Int | 0 < n && n < 65536 }`.
   Total functions like `head : NonEmpty a -> a` with no runtime check.
