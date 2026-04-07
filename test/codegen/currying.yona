@@ -1,1 +1,1 @@
-let adder n = \x -> x + n in adder 10 32
+let adder n = (\x -> x + n) in adder 5 10

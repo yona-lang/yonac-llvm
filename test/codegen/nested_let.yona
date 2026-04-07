@@ -1,0 +1,3 @@
+let x = 1 in
+let y = let z = x + 1 in z * 2 in
+y + x

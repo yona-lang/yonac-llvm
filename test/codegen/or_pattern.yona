@@ -1,0 +1,5 @@
+let classify x = case x of
+    1 | 2 | 3 -> "small"
+    _ -> "big"
+end in
+classify 2
