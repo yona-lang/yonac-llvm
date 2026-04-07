@@ -144,9 +144,19 @@ Source → Lexer → Parser → AST → Codegen (LLVM IR) → Native Executable
 
 - [Installation Guide](INSTALL.md)
 - [Language Syntax Reference](docs/language-syntax.md)
-- [Module System](docs/module-system.md)
-- [Memory Management](docs/memory-management.md)
+
+**Feature Guides:**
+- [Algebraic Effects](docs/effects.md) — typed, composable side effects with handlers
+- [Pattern Matching](docs/pattern-matching.md) — head-tail, constructors, or-patterns, guards
+- [Transparent Async](docs/async.md) — auto-parallelization, io_uring, no async/await keywords
+- [Persistent Data Structures](docs/persistent-data-structures.md) — RBT sequences, HAMT dicts/sets
+- [Traits](docs/traits.md) — type classes with default methods, cross-module dispatch
+- [Module System](docs/module-system.md) — FQN imports, interface files, cross-module generics
+- [Memory Management](docs/memory-management.md) — atomic RC, Perceus, pool allocator, arena
+
+**Project:**
 - [Status & Roadmap](docs/todo-list.md)
+- [Benchmark Results](docs/benchmark-results.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 - [API Reference](docs/api/)
