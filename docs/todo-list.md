@@ -4,10 +4,11 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 763 assertions across 75 test cases (all passing)
+- **Tests**: 817 assertions across 75 test cases (all passing)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
+- **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
-- **Benchmarks**: 11/11 passing, 2 faster than C, 6 within 2x C
+- **Benchmarks**: 18/18 passing, 3 faster than C, 8 within 2x C
 
 ## Benchmark Results
 
@@ -28,29 +29,19 @@
 ## Remaining Work
 
 ### Performance
-- [x] **Offset-based flat seq tail** — flat seq tail now bumps an offset
-  instead of O(n) memmove. Queens: 10.3x→~5x C. Cons into offset space
-  is also O(1). Offset encoded in upper 32 bits of flags word.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 
-### Compiler Bugs
-- [x] **Recursive seq-parameter type inference** — fixed by adding inttoptr
-  coercion in case seq patterns when scrutinee is i64-typed (boxed pointer).
-- [x] **Head-tail pattern mutation** — `case s of [h|t] -> x :: s` corrupted
-  `s` because seq_tail modified it in place. Fixed by targeted rc_inc when
-  the scrutinee variable appears in the case body.
-- [x] **File I/O crash when io_uring unavailable** — `io_uring_setup` returns
-  ENOMEM in constrained environments (containers, low-memory). Fixed with
-  blocking fallback: direct result registration via `IO_OP_DIRECT_RESULT`
-  sentinel in io_ctx table, transparent to `io_await` callers.
-
 ### Language — Type System & Effects
-- [ ] **Algebraic Effect System** — first-class effects without monads.
-  `effect State s` with `get`, `put`; `handle action with ...` handlers
-  that compose. Replaces try/catch, enables typed side effects, mockable
-  testing. Positions Yona alongside Koka, Eff, OCaml 5 but compiled to
-  native via LLVM. Would naturally extend error handling, state, logging.
+- [x] **Algebraic Effect System** — `perform Effect.op args` + `handle...with...end`.
+  Static handler dispatch via CPS, handlers compiled as direct LLVM functions.
+  Resume via raw function pointer indirect call. Zero overhead when not used.
+  See [docs/effects.md](effects.md).
+- [ ] **Anonymous/Inline Sum Types** — `Int | String` as type annotations,
+  function return types, and ADT field types. Runtime: tagged union with
+  type-based pattern matching. Requires: parser for `T1 | T2` in type
+  positions, codegen for tagged value creation and type-dispatch at case
+  sites. `SumType` already exists in types.h but is unused.
 - [ ] **Refinement Types** — compile-time invariant verification.
   `type NonEmpty a = { seq : [a] | length seq > 0 }`, `type Port = { n : Int | 0 < n && n < 65536 }`.
   Total functions like `head : NonEmpty a -> a` with no runtime check.
@@ -75,19 +66,6 @@
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
-
-### Codegen Refactoring (prerequisite for effect system)
-- [x] **Phase 1: Break codegen_apply** (761 lines → 48-line dispatcher + 11 helpers)
-  resolve_function, prepare_arguments, handle_partial_application,
-  handle_higher_order_call, emit_direct_call
-- [x] **Phase 1: Break codegen_let** (252 lines → 25-line dispatcher + 4 helpers)
-- [x] **Phase 1: Break codegen_case** (461 lines → 5 pattern helpers)
-- [x] **Phase 2: Extract RuntimeDecls** — 76 rt_* pointers → `RuntimeDecls` struct
-- [x] **Phase 2: Define constants** — ARENA_DEFAULT_SIZE, CLOSURE_FIELD_*
-- [x] **Phase 3: Split Codegen class** — TypeRegistry, ImportState, SymbolTable,
-  DebugState structs extracted. Member count reduced from ~80 to ~30 direct.
-- [x] **Phase 3: Split compiled_runtime.c** — exceptions.c (86 lines), async.c
-  (176 lines), closures.c (70 lines). Main file 2341→2015 lines.
 
 ### Tooling
 - [ ] Package manager / build system
@@ -119,8 +97,12 @@
 - Cross-module return type propagation (boxed wrapper detection)
 - Exception handling (raise/try/catch via setjmp/longjmp)
 - `with` expression, `do` blocks, async codegen (PROMISE, thread pool, io_uring)
+- Algebraic effects (perform/handle with CPS, static handler dispatch)
 - Optimization levels O0-O3 via LLVM new PassManager
 - fastcc calling convention, tail call marking, function inlining hints
+- Codegen refactored: codegen_apply (11 helpers), codegen_let (4 helpers),
+  codegen_case (5 pattern helpers), RuntimeDecls struct, TypeRegistry/
+  ImportState/SymbolTable/DebugState grouping
 
 ### Performance Optimizations
 - Stream fusion (chained comprehensions → single loop)
@@ -129,6 +111,7 @@
 - Inline seq checks (is_empty as count==0 GEP+load)
 - Branch prediction hints (LIKELY/UNLIKELY on hot paths)
 - HAMT transient inserts (unique-owner in-place mutation)
+- Offset-based flat seq tail (O(1) instead of O(n) memmove)
 
 ### Data Structures
 - Persistent Seq RBT (flat <=32, head chain + back trie + tail buffer >32)
