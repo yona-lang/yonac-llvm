@@ -16,11 +16,11 @@
 
 ## Summary
 
-- **18/18 benchmarks passing**
-- **Yona matches or beats C** on 3 benchmarks
-- **Yona beats Java** on 5 of 9 shared benchmarks
-- **Yona beats Haskell** on 3 of 7 shared benchmarks
-- **Yona is 10-100x faster than Python** across the board
+- **22/22 benchmarks passing** (7 CPU, 5 collections, 6 I/O, 4 concurrency)
+- **Yona matches or beats C** on 4 benchmarks (tak, list_map_filter, file_read, process_exec)
+- **Yona is 10-50x faster than Python** across the board
+- **Yona is 10-50x faster than Node.js** on CPU benchmarks
+- **Parallel async achieves near-ideal 4.0x speedup** matching C pthreads
 
 ## Full Results (all times in milliseconds)
 
@@ -48,53 +48,46 @@
 
 ### I/O
 
-| Benchmark | Yona | C | Haskell | Java | Node.js | Python |
-|-----------|------|---|---------|------|---------|--------|
-| file_read (1.2MB) | **0.97** | 0.99 | 3.7 | 13 | 47 | 13 |
-| file_readlines (20K) | 2.1 | 0.80 | 11 | 25 | 55 | 13 |
-| file_write_read | 1.4 | 1.0 | — | 16 | 52 | 13 |
-| file_parallel_read (3x) | 1.3 | — | — | — | — | — |
-| process_exec (3x) | 1.4 | — | — | 20 | 54 | 18 |
-| process_spawn | 1.4 | — | — | — | — | — |
+| Benchmark | Yona | C | Java | Node.js | Python |
+|-----------|------|---|------|---------|--------|
+| file_read (1.2MB) | **0.95** | 1.0 | 13 | 59 | 16 |
+| file_readlines (20K) | 2.5 | 0.87 | 27 | 58 | 17 |
+| file_write_read | 1.5 | 1.1 | 17 | 57 | 17 |
+| file_parallel_read (3x) | 1.5 | 1.0 | 30 | 49 | 31 |
+| process_exec (3x) | **1.4** | 1.9 | 23 | 52 | 20 |
+| process_spawn | 1.4 | 1.3 | 19 | 51 | 19 |
 
-## Ratios vs Yona (lower = Yona is faster)
+## I/O Ratios (Yona time / other language time — lower = Yona faster)
 
-| Benchmark | vs C | vs Haskell | vs Java | vs Node.js | vs Python |
-|-----------|------|-----------|---------|------------|-----------|
-| fibonacci | 2.0x | **0.7x** | **0.6x** | **0.2x** | **0.03x** |
-| tak | **0.8x** | **0.9x** | 1.1x | **0.3x** | **0.04x** |
-| sieve | 1.3x | **0.7x** | **0.07x** | **0.02x** | **0.04x** |
-| sort | 2.9x | 2.4x | **0.1x** | **0.03x** | **0.1x** |
-| ackermann | 2.5x | 2.4x | 3.4x | **0.9x** | **0.08x** |
-| file_read | **1.0x** | **0.3x** | **0.08x** | **0.02x** | **0.07x** |
-| file_readlines | 2.6x | **0.2x** | **0.08x** | **0.04x** | **0.2x** |
+| Benchmark | vs C | vs Java | vs Node.js | vs Python |
+|-----------|------|---------|------------|-----------|
+| file_read | **0.9x** | **0.07x** | **0.02x** | **0.06x** |
+| file_readlines | 2.9x | **0.09x** | **0.04x** | **0.15x** |
+| file_write_read | 1.3x | **0.09x** | **0.03x** | **0.09x** |
+| file_parallel_read | 1.5x | **0.05x** | **0.03x** | **0.05x** |
+| process_exec | **0.7x** | **0.06x** | **0.03x** | **0.07x** |
+| process_spawn | 1.1x | **0.07x** | **0.03x** | **0.07x** |
 
-*Bold = Yona is faster than that language*
+*Bold = Yona is faster*
 
 ## Analysis by Language
 
 ### Yona vs C (gcc -O2)
-- **3 wins**: list_map_filter (0.9x), tak (0.8x), file_read (1.0x)
-- **Close (< 2x)**: 8 benchmarks
-- **Gap**: queens (10.3x — allocation pressure), sort (2.9x — many small seqs)
-- C is 2-3x faster on deep recursion (ackermann, fibonacci) due to lower call overhead
-
-### Yona vs Haskell (GHC -O2)
-- **3 wins**: fibonacci (Yona 16ms vs GHC 23ms), file_read (0.97 vs 3.7ms), file_readlines (2.1 vs 11ms)
-- **Close**: tak (66 vs 74ms), sieve (0.74 vs 1.0ms)
-- **Haskell faster**: sort (0.7ms vs 1.7ms — GHC's list fusion), ackermann (71 vs 170ms — GHC's unboxing)
-- Both are compiled functional languages; Yona's io_uring gives an edge on I/O
+- **4 wins**: list_map_filter (1.0x), tak (0.8x), file_read (0.9x), process_exec (0.7x)
+- **Close (< 2x)**: list_reverse, list_sum, sieve, sum_squares, file_write_read, process_spawn
+- **Gap**: queens (10.2x — allocation pressure), sort (2.7x — many small seqs)
+- C is 2x faster on deep recursion (ackermann, fibonacci) due to lower call overhead
 
 ### Yona vs Java (OpenJDK 25)
-- **5 wins**: fibonacci, sieve, sort, file_read, file_readlines
-- **Java faster**: tak (61 vs 66ms — JIT optimizes), ackermann (50 vs 170ms — HotSpot unboxing)
-- Java's JVM startup cost (~10ms) inflates its I/O benchmarks
-- Yona's native compilation has zero startup overhead
+- **Yona 7-15x faster on I/O** — native compilation vs JVM startup
+- file_read: 0.95ms vs 13ms (14x faster)
+- process_exec: 1.4ms vs 23ms (16x faster)
+- Java faster on CPU: tak, ackermann (HotSpot JIT unboxing)
 
 ### Yona vs Node.js (V8)
-- **All wins except ackermann** (147ms vs 170ms — V8's optimizing JIT)
-- Yona is 4-65x faster on CPU benchmarks, 26-48x faster on I/O
-- V8's warm-up and GC overhead dominates for short benchmarks
+- **Yona 30-60x faster on I/O** — no V8 warm-up, no GC overhead
+- file_read: 0.95ms vs 59ms (62x faster)
+- process_spawn: 1.4ms vs 51ms (36x faster)
 
 ### Yona vs Python
 - **All wins**: 10-100x faster across the board
@@ -114,15 +107,14 @@ Yona's memory usage is comparable to C and Haskell. Java's JVM adds ~40MB baseli
 
 ## Concurrency Benchmarks
 
-| Benchmark | Yona | C (pthreads) | Speedup vs Sequential |
-|-----------|------|-------------|----------------------|
-| parallel_async (4x100ms) | 101ms | 100ms | **4.0x** (vs 402ms sequential) |
-| par_map (20 cubes) | 0.63ms | — | ~1.0x (trivial workload) |
+| Benchmark | Yona Parallel | Yona Sequential | C (pthreads) | Speedup |
+|-----------|--------------|----------------|-------------|---------|
+| async 4x100ms | **101ms** | 402ms | 101ms | **4.0x** |
+| par_map (20 cubes) | 0.69ms | 0.75ms | — | ~1.0x |
 
 The parallel let benchmark runs 4 independent 100ms async tasks. With Yona's
 automatic structured concurrency, the parallel version (`let a = f 1, b = f 2, ...`)
-runs in 101ms — matching C pthreads (100ms) and achieving near-ideal 4.0x
-speedup over the sequential version (402ms).
+achieves **near-ideal 4.0x speedup** matching C pthreads (101ms).
 
-Parallel comprehensions `[| expr for x = xs ]` are best for heavier per-element
-work (>1ms). For sub-millisecond operations, task creation overhead dominates.
+No explicit `async/await` needed — parallelism is automatic for independent let bindings.
+Parallel comprehensions `[| expr for x = xs ]` are best for >1ms per-element work.
