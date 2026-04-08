@@ -95,9 +95,12 @@
 - [ ] **Dict/Set Iterator Instances** — streaming iterators for Dict (keys,
   values, entries) and Set (elements). Needs HAMT trie traversal iterators.
   File (listDir) also pending. String chars/split/lines already done.
-- [ ] **Tail-Call Optimized Fold** — `foldl` on large collections (>5K elements)
-  overflows the stack due to non-tail-call recursion. Need TCO for recursive
-  let-bound functions, or a built-in `foldl` in the runtime.
+- [x] **Built-in Fold** — C loop-based `foldl`/`foldr` in runtime + Prelude.
+  Handles 50K+ elements without stack overflow. General TCO blocked by
+  RC cleanup after recursive calls preventing LLVM TailCallElimination.
+- [ ] **General TCO** — tail-call optimization for user-defined recursive
+  functions. Requires moving RC cleanup before the tail call, or using
+  a trampoline. Currently RC dec after recursive calls prevents LLVM TCE.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
