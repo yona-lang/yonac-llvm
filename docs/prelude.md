@@ -28,37 +28,45 @@ flip f a b = f b a         -- swaps argument order
 compose f g x = f (g x)   -- function composition
 ```
 
+## Functions
+
+```yona
+identity x = x             -- returns its argument
+const x _ = x               -- ignores second argument
+flip f a b = f b a           -- swaps argument order
+compose f g x = f (g x)     -- function composition
+foldl fn acc seq             -- left fold (C loop, no stack overflow)
+foldr fn acc seq             -- right fold (C loop)
+```
+
 ## How It Works
 
-### Loading
+### Unified Loading
 
-The Prelude is loaded in three places:
+`load_prelude(parser, type_checker)` is the single entry point. It reads
+`Prelude.yonai` and automatically populates all subsystems:
 
-1. **Codegen constructor** (`src/Codegen.cpp`): registers ADT constructors as fallback
-2. **`load_prelude()` method**: loads `Prelude.yonai` from module search paths
-3. **Parser**: `register_prelude_constructors()` enables pattern matching
+1. **Codegen**: `register_all_imports("Prelude")` — functions available by local name
+2. **Parser**: `register_constructor()` for each ADT — enables pattern matching
+3. **Type checker**: `register_adt()` + `register_trait_method()` — type inference
+4. **Linker**: `Prelude.o` linked with executables
 
-### Auto-Loading
-
-In `cli/main.cpp`, after setting module paths:
-```cpp
-codegen.load_prelude();          // loads Prelude.yonai
-parser.register_prelude_constructors();  // enables pattern matching
-type_checker.register_adt(...)   // type inference for prelude ADTs
-```
+No manual registration in `cli/main.cpp`, `Parser.cpp`, or anywhere else.
 
 ### Coexistence with Std Modules
 
-`Std\Option` and `Std\Result` still exist with utility functions (`map`, `flatMap`, `unwrapOr`, etc.). The Prelude provides the types; the Std modules provide the functions.
+`Std\Option` and `Std\Result` provide utility functions (`map`, `flatMap`, `unwrapOr`). The Prelude provides the types; Std modules provide the functions.
 
 ## Updating the Prelude
 
+**For Yona functions/types:**
 1. Edit `lib/Prelude.yona`
-2. Recompile: `yonac lib/Prelude.yona`
-3. Move generated files: `mv Prelude.yonai lib/`
-4. If new ADT constructors added, update:
-   - `Parser::register_prelude_constructors()` in `src/Parser.cpp`
-   - `Codegen::load_prelude()` fallback in `src/Codegen.cpp`
-   - Type checker registrations in `cli/main.cpp`
-5. Rebuild compiler and test
-6. Commit both `.yona` and `.yonai`
+2. Recompile: `yonac lib/Prelude.yona && mv Prelude.yonai lib/`
+3. Rebuild compiler. Done.
+
+**For C-backed functions (foldl, foldr):**
+1. Add implementation in `src/compiled_runtime.c`
+2. Add `FN yona_Prelude__funcname ...` line to `lib/Prelude.yonai`
+3. Rebuild. Done.
+
+No other files need changes — `load_prelude()` reads .yonai automatically.

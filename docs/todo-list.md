@@ -5,6 +5,7 @@
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
 - **Tests**: 1076 assertions across 197 test cases (all passing)
+- **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases

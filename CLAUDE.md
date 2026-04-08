@@ -27,12 +27,16 @@ Replace `linux` with `macos` or omit the suffix for Windows. Replace `debug` wit
 - `--explain E0100` — show detailed explanation for an error code
 
 ### Prelude
-The following types are available in all programs without imports (defined in `lib/Prelude.yona`):
-- `type Linear a = Linear a` — linear resource wrapper
-- `type Option a = Some a | None` — optional values
-- `type Result a e = Ok a | Err e` — error handling
+Available in all programs without imports (from `lib/Prelude.yona`):
 
-To update the prelude: edit `lib/Prelude.yona`, recompile with `yonac lib/Prelude.yona`, move generated `.yonai` to `lib/`, update parser/codegen/typechecker registrations if ADTs changed, rebuild.
+**Types:** `Linear a`, `Option a` (Some/None), `Result a e` (Ok/Err), `Iterator a`
+
+**Functions:** `identity`, `const`, `flip`, `compose`, `foldl`, `foldr`
+
+**Adding to the prelude** (unified — one source of truth):
+- For C functions: add implementation in `compiled_runtime.c`, add `FN` line to `lib/Prelude.yonai`
+- For Yona functions: edit `lib/Prelude.yona`, recompile with `yonac lib/Prelude.yona`, move `.yonai` to `lib/`
+- No manual registration needed — `load_prelude()` reads `.yonai` and registers in parser, codegen, and type checker automatically
 
 ### Run tests
 ```bash
@@ -103,8 +107,10 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 - **Don't wrap `do` in `let`.** Use `do ... end` directly for side effects
 - **Use comma-separated imports:** `import a from X, b from Y in ...`
 - **Use `with` for resources:** `with open "f" as h in ... end`
-- **Use parallel comprehensions:** `[| f x for x = xs ]` not manual loops
-- **Prelude types need no import:** `Some`, `None`, `Ok`, `Err`, `Linear`
+- **Use parallel comprehensions:** `[| f x for x = xs ]` for concurrent processing
+- **Use `foldl` for aggregation:** `foldl (\a b -> a + b) 0 xs` (prelude, loop-based, no stack overflow)
+- **Use iterators for streaming:** `readLines`, `chars`, `split` return `Iterator` (O(1) memory)
+- **Prelude needs no import:** `Some`, `None`, `Ok`, `Err`, `Linear`, `Iterator`, `foldl`, `foldr`, `identity`, `const`, `flip`, `compose`
 - See `docs/style-guide.md` for the full guide
 
 ### Development Workflow
