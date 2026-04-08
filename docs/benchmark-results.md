@@ -111,3 +111,18 @@
 | sort | 8 MB | 2 MB | 50 MB | 3 MB |
 
 Yona's memory usage is comparable to C and Haskell. Java's JVM adds ~40MB baseline.
+
+## Concurrency Benchmarks
+
+| Benchmark | Yona | C (pthreads) | Speedup vs Sequential |
+|-----------|------|-------------|----------------------|
+| parallel_async (4x100ms) | 101ms | 100ms | **4.0x** (vs 402ms sequential) |
+| par_map (20 cubes) | 0.63ms | — | ~1.0x (trivial workload) |
+
+The parallel let benchmark runs 4 independent 100ms async tasks. With Yona's
+automatic structured concurrency, the parallel version (`let a = f 1, b = f 2, ...`)
+runs in 101ms — matching C pthreads (100ms) and achieving near-ideal 4.0x
+speedup over the sequential version (402ms).
+
+Parallel comprehensions `[| expr for x = xs ]` are best for heavier per-element
+work (>1ms). For sub-millisecond operations, task creation overhead dominates.

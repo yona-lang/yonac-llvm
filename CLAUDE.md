@@ -97,6 +97,16 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 - **CLI11**: Command-line argument parsing (fetched via FetchContent)
 - **doctest**: Testing framework (fetched via FetchContent)
 
+### Yona Idioms (IMPORTANT — follow these when writing Yona code)
+
+- **Don't nest let expressions.** Use multi-binding: `let x = 1, y = 2 in x + y`
+- **Don't wrap `do` in `let`.** Use `do ... end` directly for side effects
+- **Use comma-separated imports:** `import a from X, b from Y in ...`
+- **Use `with` for resources:** `with open "f" as h in ... end`
+- **Use parallel comprehensions:** `[| f x for x = xs ]` not manual loops
+- **Prelude types need no import:** `Some`, `None`, `Ok`, `Err`, `Linear`
+- See `docs/style-guide.md` for the full guide
+
 ### Development Workflow
 
 - New language features require changes across: Lexer → Parser → AST → Codegen
