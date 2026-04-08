@@ -185,6 +185,23 @@ int main(int argc, char* argv[]) {
         type_checker.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
         type_checker.register_adt("Result", {"a", "e"}, {{"Ok", 1}, {"Err", 1}});
         type_checker.register_adt("Iterator", {"a"}, {{"Iterator", 1}});
+
+        // Register prelude functions: foldl, foldr
+        // foldl : (b -> a -> b) -> b -> Seq a -> b
+        {
+            auto& arena = type_checker.arena();
+            auto* a = arena.fresh_var(0);
+            auto* b = arena.fresh_var(0);
+            auto* fn_type = arena.make_arrow(b, arena.make_arrow(a, b));
+            auto* seq_a = arena.make_app("Seq", {a});
+            auto* foldl_type = arena.make_arrow(fn_type, arena.make_arrow(b, arena.make_arrow(seq_a, b)));
+            type_checker.register_trait_method("Prelude", "foldl", foldl_type);
+            // foldr : (a -> b -> b) -> b -> Seq a -> b
+            auto* fn_type_r = arena.make_arrow(a, arena.make_arrow(b, b));
+            auto* foldr_type = arena.make_arrow(fn_type_r, arena.make_arrow(b, arena.make_arrow(seq_a, b)));
+            type_checker.register_trait_method("Prelude", "foldr", foldr_type);
+        }
+
         type_checker.check(parse_result.node.get());
         codegen.set_type_checker(&type_checker);
 

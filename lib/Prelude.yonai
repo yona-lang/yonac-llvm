@@ -46,6 +46,8 @@ FN yona_Prelude__identity 1 INT -> INT
 FN yona_Prelude__const 2 INT INT -> INT
 FN yona_Prelude__compose 3 FUNCTION FUNCTION INT -> INT
 FN yona_Prelude__flip 3 FUNCTION INT INT -> INT
+FN yona_Prelude__foldl 3 FUNCTION INT SEQ -> INT
+FN yona_Prelude__foldr 3 FUNCTION INT SEQ -> INT
 FN Closeable_Int__close 1 INT -> UNIT
 GENFN_BEGIN yona_Prelude__flip flip
 flip f a b = f b a

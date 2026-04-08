@@ -2023,6 +2023,87 @@ int64_t* yona_Std_List__reverse(int64_t* seq) {
     return r;
 }
 
+/* C loop-based foldl/foldr — no stack overflow on large sequences.
+ * fn is a closure with arity 2: fn(acc, elem) -> new_acc */
+typedef int64_t (*fold_fn_t)(int64_t* env, int64_t, int64_t);
+
+int64_t yona_Std_List__foldl(int64_t* fn, int64_t acc, int64_t* seq) {
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    while (yona_rt_seq_length(seq) > 0) {
+        int64_t elem = yona_rt_seq_head(seq);
+        acc = f(fn, acc, elem);
+        int64_t* next = yona_rt_seq_tail(seq);
+        seq = next;
+    }
+    return acc;
+}
+
+int64_t yona_Std_List__fold(int64_t* fn, int64_t acc, int64_t* seq) {
+    return yona_Std_List__foldl(fn, acc, seq);
+}
+
+int64_t yona_Std_List__foldr(int64_t* fn, int64_t acc, int64_t* seq) {
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    int64_t len = yona_rt_seq_length(seq);
+    for (int64_t i = len - 1; i >= 0; i--) {
+        int64_t elem = yona_rt_seq_get(seq, i);
+        acc = f(fn, elem, acc);
+    }
+    return acc;
+}
+
+/* C loop-based map and filter */
+int64_t* yona_Std_List__map(int64_t* fn, int64_t* seq) {
+    typedef int64_t (*map_fn_t)(int64_t* env, int64_t);
+    map_fn_t f = (map_fn_t)(intptr_t)fn[0];
+    int64_t len = yona_rt_seq_length(seq);
+    int64_t* result = yona_rt_seq_alloc(len);
+    for (int64_t i = 0; i < len; i++) {
+        int64_t elem = yona_rt_seq_get(seq, i);
+        result[i + 1] = f(fn, elem);
+    }
+    return result;
+}
+
+int64_t* yona_Std_List__filter(int64_t* fn, int64_t* seq) {
+    typedef int64_t (*pred_fn_t)(int64_t* env, int64_t);
+    pred_fn_t f = (pred_fn_t)(intptr_t)fn[0];
+    int64_t len = yona_rt_seq_length(seq);
+    int64_t* result = yona_rt_seq_alloc(len);  /* over-allocate */
+    int64_t count = 0;
+    for (int64_t i = 0; i < len; i++) {
+        int64_t elem = yona_rt_seq_get(seq, i);
+        if (f(fn, elem)) {
+            result[count + 1] = elem;
+            count++;
+        }
+    }
+    result[0] = count;  /* actual count */
+    return result;
+}
+
+int64_t yona_Std_List__sum(int64_t* seq) {
+    int64_t total = 0;
+    int64_t len = yona_rt_seq_length(seq);
+    for (int64_t i = 0; i < len; i++) total += yona_rt_seq_get(seq, i);
+    return total;
+}
+
+int64_t yona_Std_List__product(int64_t* seq) {
+    int64_t total = 1;
+    int64_t len = yona_rt_seq_length(seq);
+    for (int64_t i = 0; i < len; i++) total *= yona_rt_seq_get(seq, i);
+    return total;
+}
+
+/* Prelude aliases — always available without import */
+int64_t yona_Prelude__foldl(int64_t* fn, int64_t acc, int64_t* seq) {
+    return yona_Std_List__foldl(fn, acc, seq);
+}
+int64_t yona_Prelude__foldr(int64_t* fn, int64_t acc, int64_t* seq) {
+    return yona_Std_List__foldr(fn, acc, seq);
+}
+
 /* Std\Types — type conversions */
 int64_t yona_Std_Types__toInt(const char* s) { return (int64_t)atoll(s); }
 double yona_Std_Types__toFloat(const char* s) { return atof(s); }

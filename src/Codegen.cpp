@@ -86,6 +86,16 @@ void Codegen::load_prelude() {
     // Try to load Prelude.yonai from module search paths
     load_module_interface(std::filesystem::path("Prelude"));
 
+    // Auto-import all Prelude functions by their local names
+    for (auto& [mangled, meta] : imports_.meta) {
+        // Extract local name from mangled: "yona_Prelude__foldl" → "foldl"
+        const std::string prefix = "yona_Prelude__";
+        if (mangled.find(prefix) == 0) {
+            std::string local_name = mangled.substr(prefix.size());
+            register_import("Prelude", local_name, local_name);
+        }
+    }
+
     // Fallback: ensure core ADTs exist even without the .yonai file
     // (important for tests that run without -I lib)
     if (types_.adt_constructors.find("Linear") == types_.adt_constructors.end())

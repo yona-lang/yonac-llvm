@@ -1,3 +1,2 @@
 import readLines from Std\File, length from Std\String in
-let lengths = [length line for line = readLines "bench/data/bench_text.txt"] in
-42
+foldl (\acc line -> acc + length line) 0 [line for line = readLines "bench/data/bench_text.txt"]
