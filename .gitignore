@@ -66,3 +66,5 @@ debug_*
 !bench/**/*.yona
 a.out
 bench/history.jsonl
+bench/data/large_text.txt
+bench/data/chunk_*.txt

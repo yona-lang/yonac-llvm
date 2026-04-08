@@ -58,9 +58,19 @@
 | process_exec (3x parallel) | 1.3 | 1.2 | 27 | 54 | 26 |
 | process_spawn | 1.4 | 1.4 | 23 | 51 | 15 |
 
-Note: All I/O references use parallel execution where applicable, matching Yona's
-automatic let-parallelism. file_parallel_read 1.5x vs C is io_uring ring overhead
-on page-cached files (io_uring shines on real disk/network I/O, not cache hits).
+### I/O — Large Files (50MB, realistic workloads)
+
+| Benchmark | Yona | C | Ratio |
+|-----------|------|---|-------|
+| file_read_large (50MB) | 14.7 | 3.8 | 3.9x |
+| file_parallel_read_large (4×10MB) | 10.1 | 1.5 | 6.6x |
+| file_write_read_large (50MB r+w+r) | 51.5 | 15.9 | 3.2x |
+
+Large file reads expose the cost of Yona's `readFile` which allocates the entire
+file as one contiguous string (`malloc(50MB)` + io_uring read). C streams through
+a 64KB stack buffer. Chunked/streaming reads would close this gap.
+
+Note: All I/O references use parallel execution where applicable.
 
 ## I/O Ratios (Yona time / other language time — lower = Yona faster)
 

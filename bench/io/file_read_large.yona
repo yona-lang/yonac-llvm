@@ -1,0 +1,2 @@
+import readFile from Std\File, length from Std\String in
+length (readFile "bench/data/large_text.txt")

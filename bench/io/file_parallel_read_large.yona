@@ -1,0 +1,6 @@
+import readFile from Std\File, length from Std\String in
+let a = readFile "bench/data/chunk_1.txt",
+    b = readFile "bench/data/chunk_2.txt",
+    c = readFile "bench/data/chunk_3.txt",
+    d = readFile "bench/data/chunk_4.txt"
+in length a + length b + length c + length d
