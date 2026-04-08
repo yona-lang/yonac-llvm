@@ -60,14 +60,16 @@
 
 ### I/O — Large Files (50MB, realistic workloads)
 
-| Benchmark | Yona | C | Ratio |
-|-----------|------|---|-------|
-| file_read_large (50MB) | **15.5** | 15.5 | **1.0x** |
-| file_parallel_read_large (4×10MB) | 10.4 | — | — |
-| file_write_read_large (50MB r+w+r) | 51.5 | 15.7 | 3.3x |
+| Benchmark | Yona | C | Ratio | Analysis |
+|-----------|------|---|-------|----------|
+| file_read_large (50MB) | 14.4 | 3.8 | 3.7x | Yona: 50MB string alloc; C: 64KB streaming |
+| file_parallel_read_large (4×10MB) | 9.2 | 1.5 | 6.2x | 4 × alloc vs 4 × streaming |
+| file_write_read_large (50MB r+w+r) | 50.3 | 16.5 | 3.1x | Two 50MB allocs vs streaming |
 
-With fair comparison (both allocate full buffer + strlen), Yona **matches C exactly**
-on large file reads. The write_read gap is from double allocation (read + read-back).
+The gap is fundamental: Yona's `readFile` returns the entire file as a string
+(contiguous 50MB allocation), while idiomatic C streams through a 64KB buffer.
+O(1) string length (stored in RC header) saves ~5ms on 50MB files.
+Closing this gap requires streaming I/O (see TODO: Cooperative Suspension).
 
 Note: All I/O references use parallel execution where applicable.
 

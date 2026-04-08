@@ -121,8 +121,10 @@ static void pool_free(void* ptr, size_t total_bytes) {
 #define RC_HEADER_SIZE 2
 
 #define ENCODE_TAG(tag, cls) ((tag) | (((int64_t)(cls) + 1) << 8))
+#define ENCODE_TAG_LEN(tag, cls, len) ((tag) | (((int64_t)(cls) + 1) << 8) | ((int64_t)(len) << 16))
 #define DECODE_TAG(encoded) ((encoded) & 0xFF)
-#define DECODE_POOL_CLASS(encoded) ((int)((encoded) >> 8) - 1)
+#define DECODE_POOL_CLASS(encoded) ((int)(((encoded) >> 8) & 0xFF) - 1)
+#define DECODE_STRING_LEN(encoded) ((size_t)((encoded) >> 16))
 
 void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
     size_t total = RC_HEADER_SIZE * sizeof(int64_t) + payload_bytes;
@@ -563,6 +565,30 @@ void* yona_rt_rc_alloc_string(size_t bytes) {
     return rc_alloc(RC_TYPE_STRING, bytes);
 }
 
+/* Public: allocate an RC-managed string with known length.
+ * Length is encoded in bits 16-63 of the type_tag word for O(1) retrieval. */
+void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len) {
+    size_t total = RC_HEADER_SIZE * sizeof(int64_t) + bytes;
+    int cls = pool_class_for(total);
+    int64_t* raw = (int64_t*)pool_alloc(total);
+    raw[0] = 1;
+    raw[1] = ENCODE_TAG_LEN(RC_TYPE_STRING, cls, str_len);
+    return (void*)(raw + RC_HEADER_SIZE);
+}
+
+/* O(1) string length: reads stored length from RC header, falls back to strlen. */
+int64_t yona_rt_string_length_fast(const char* str) {
+    if (__builtin_expect(!str, 0)) return 0;
+    int64_t* header = ((int64_t*)str) - RC_HEADER_SIZE;
+    /* Check if this is an RC-managed string (refcount > 0 and reasonable) */
+    int64_t rc = header[0];
+    if (__builtin_expect(rc > 0 && rc < 1000000, 1)) {
+        size_t len = DECODE_STRING_LEN(header[1]);
+        if (__builtin_expect(len > 0, 1)) return (int64_t)len;
+    }
+    return (int64_t)strlen(str);
+}
+
 
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
@@ -585,9 +611,10 @@ void yona_rt_print_newline(void) {
 }
 
 char* yona_rt_string_concat(const char* a, const char* b) {
-    size_t len_a = strlen(a);
-    size_t len_b = strlen(b);
-    char* result = (char*)rc_alloc(RC_TYPE_STRING, len_a + len_b + 1);
+    size_t len_a = (size_t)yona_rt_string_length_fast(a);
+    size_t len_b = (size_t)yona_rt_string_length_fast(b);
+    size_t total = len_a + len_b;
+    char* result = (char*)yona_rt_rc_alloc_string_len(total + 1, total);
     memcpy(result, a, len_a);
     memcpy(result + len_a, b, len_b + 1);
     return result;
@@ -849,7 +876,7 @@ double yona_Std_Math__cos(double x) { return cos(x); }
 /* Std\String — pure string operations, no I/O */
 
 int64_t yona_Std_String__length(const char* s) {
-    return (int64_t)strlen(s);
+    return yona_rt_string_length_fast(s);
 }
 
 const char* yona_Std_String__toUpperCase(const char* s) {

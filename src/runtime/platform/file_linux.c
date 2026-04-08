@@ -141,21 +141,25 @@ static int64_t read_file_blocking(const char* path) {
     struct stat st;
     if (fstat(fd, &st) < 0) { close(fd); char* e = (char*)yona_rt_rc_alloc_string(1); e[0]='\0'; return (int64_t)(intptr_t)e; }
     size_t size = (size_t)st.st_size;
-    char* buf = (char*)yona_rt_rc_alloc_string(size + 1);
+    extern void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len);
+    char* buf = (char*)yona_rt_rc_alloc_string_len(size + 1, size);
     ssize_t n = read(fd, buf, size);
     if (n >= 0) buf[n] = '\0'; else buf[0] = '\0';
     close(fd);
     return (int64_t)(intptr_t)buf;
 }
 
-/* readFile: open, allocate buffer, submit uring read, return ID */
+/* readFile: open, allocate buffer, submit uring read, return ID.
+ * Uses rc_alloc_string_len to store the file size in the RC header,
+ * enabling O(1) string length instead of O(n) strlen. */
 int64_t yona_platform_read_file_submit(const char* path) {
     int fd = open(path, O_RDONLY);
     if (fd < 0) return 0;
     struct stat st;
     if (fstat(fd, &st) < 0) { close(fd); return 0; }
     size_t size = (size_t)st.st_size;
-    char* buf = (char*)yona_rt_rc_alloc_string(size + 1);
+    extern void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len);
+    char* buf = (char*)yona_rt_rc_alloc_string_len(size + 1, size);
 
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
     ctx->type = IO_OP_READ_FILE;

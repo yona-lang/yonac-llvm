@@ -1,21 +1,14 @@
-/* Read a 50MB file into memory and measure length.
- * Fair comparison: allocates full buffer like Yona's readFile. */
+/* Read a 50MB file — idiomatic C with 64KB buffer */
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 int main(void) {
-    const char* path = "bench/data/large_text.txt";
-    FILE* f = fopen(path, "r");
+    FILE* f = fopen("bench/data/large_text.txt", "r");
     if (!f) return 1;
-    struct stat st;
-    stat(path, &st);
-    size_t size = (size_t)st.st_size;
-    char* buf = malloc(size + 1);
-    fread(buf, 1, size, f);
-    buf[size] = '\0';
+    char buf[65536];
+    long total = 0;
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) total += n;
     fclose(f);
-    printf("%ld\n", strlen(buf));
-    free(buf);
+    printf("%ld\n", total);
     return 0;
 }

@@ -1,23 +1,20 @@
-/* Read 4 x 10MB files in parallel */
+/* Read 4 x 10MB files in parallel — idiomatic C */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <pthread.h>
 
-/* Fair comparison: each thread allocates full buffer like Yona's readFile */
 static void* read_file(void* arg) {
     const char* path = (const char*)arg;
     FILE* f = fopen(path, "r");
     if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    rewind(f);
-    char* buf = malloc(size + 1);
-    fread(buf, 1, size, f);
-    buf[size] = '\0';
+    char buf[65536];
+    long total = 0;
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) total += n;
     fclose(f);
     long* r = malloc(sizeof(long));
-    *r = strlen(buf);
-    free(buf);
+    *r = total;
     return r;
 }
 
