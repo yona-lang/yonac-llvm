@@ -37,17 +37,16 @@ static bool ir_contains(const string& ir, const string& pattern) {
 
 static string compile_and_run(const string& code) {
     parser::Parser parser;
-    parser.register_prelude_constructors();
-    istringstream stream(code);
-    auto parse_result = parser.parse_input(stream);
-    if (!parse_result.node) return "PARSE_ERROR";
 
     Codegen codegen("test_module");
-    // Add module search paths for stdlib .yonai files
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
         if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
     }
-    codegen.load_prelude();
+    codegen.load_prelude(&parser);  // unified: registers constructors + functions
+
+    istringstream stream(code);
+    auto parse_result = parser.parse_input(stream);
+    if (!parse_result.node) return "PARSE_ERROR";
     auto module = codegen.compile(parse_result.node.get());
     if (!module) return "CODEGEN_ERROR";
 

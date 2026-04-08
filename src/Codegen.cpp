@@ -8,6 +8,8 @@
 //
 
 #include "Codegen.h"
+#include "Parser.h"
+#include "typechecker/TypeChecker.h"
 #include <llvm/Linker/Linker.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Bitcode/BitcodeReader.h>
@@ -82,34 +84,79 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
 }
 Codegen::~Codegen() = default;
 
-void Codegen::load_prelude() {
-    // Try to load Prelude.yonai from module search paths
+void Codegen::load_prelude(parser::Parser* parser,
+                            typechecker::TypeChecker* type_checker) {
+    // 1. Load Prelude.yonai — populates types_.adt_constructors and imports_.meta
     load_module_interface(std::filesystem::path("Prelude"));
 
-    // Auto-import all Prelude functions by their local names
-    for (auto& [mangled, meta] : imports_.meta) {
-        // Extract local name from mangled: "yona_Prelude__foldl" → "foldl"
-        const std::string prefix = "yona_Prelude__";
-        if (mangled.find(prefix) == 0) {
-            std::string local_name = mangled.substr(prefix.size());
-            register_import("Prelude", local_name, local_name);
+    // 2. Auto-import ALL Prelude exports (same as wildcard `import Prelude in ...`)
+    register_all_imports("Prelude");
+
+    // 4. Register constructors in parser (if provided)
+    if (parser) {
+        for (auto& [name, info] : types_.adt_constructors) {
+            parser->register_constructor(name, info.type_name, info.tag, info.arity, info.field_names);
         }
     }
 
-    // Fallback: ensure core ADTs exist even without the .yonai file
-    // (important for tests that run without -I lib)
-    if (types_.adt_constructors.find("Linear") == types_.adt_constructors.end())
-        types_.adt_constructors["Linear"] = {"Linear", 0, 1, 1, 1, false, {}, {}};
-    if (types_.adt_constructors.find("Some") == types_.adt_constructors.end())
-        types_.adt_constructors["Some"] = {"Option", 0, 1, 2, 1, false, {}, {}};
-    if (types_.adt_constructors.find("None") == types_.adt_constructors.end())
-        types_.adt_constructors["None"] = {"Option", 1, 0, 2, 1, false, {}, {}};
-    if (types_.adt_constructors.find("Ok") == types_.adt_constructors.end())
-        types_.adt_constructors["Ok"] = {"Result", 0, 1, 2, 1, false, {}, {}};
-    if (types_.adt_constructors.find("Err") == types_.adt_constructors.end())
-        types_.adt_constructors["Err"] = {"Result", 1, 1, 2, 1, false, {}, {}};
-    if (types_.adt_constructors.find("Iterator") == types_.adt_constructors.end())
-        types_.adt_constructors["Iterator"] = {"Iterator", 0, 1, 1, 1, false, {}, {CType::FUNCTION}};
+    // 5. Register ADTs and function types in type checker (if provided)
+    if (type_checker) {
+        // Collect ADTs by type name
+        std::unordered_map<std::string, std::vector<std::pair<std::string, int>>> adt_ctors;
+        std::unordered_map<std::string, std::vector<std::string>> adt_params;
+        for (auto& [name, info] : types_.adt_constructors) {
+            adt_ctors[info.type_name].push_back({name, info.arity});
+        }
+        // Infer type params from arity (simple heuristic: one param per max arity)
+        for (auto& [type_name, ctors] : adt_ctors) {
+            int max_arity = 0;
+            for (auto& [_, arity] : ctors) max_arity = std::max(max_arity, arity);
+            std::vector<std::string> params;
+            for (int i = 0; i < max_arity; i++) {
+                params.push_back(std::string(1, 'a' + i));
+            }
+            // Special case: Result has 2 params
+            if (type_name == "Result") params = {"a", "e"};
+            type_checker->register_adt(type_name, params, ctors);
+        }
+
+        // Register prelude function types from .yonai meta
+        // Convert CType signatures to MonoType schemes for the type checker
+        auto& arena = type_checker->arena();
+        auto ctype_to_mono = [&](CType ct) -> typechecker::MonoTypePtr {
+            switch (ct) {
+                case CType::INT:    return arena.make_con(typechecker::TyCon::Int);
+                case CType::FLOAT:  return arena.make_con(typechecker::TyCon::Float);
+                case CType::BOOL:   return arena.make_con(typechecker::TyCon::Bool);
+                case CType::STRING: return arena.make_con(typechecker::TyCon::String);
+                case CType::SYMBOL: return arena.make_con(typechecker::TyCon::Symbol);
+                case CType::UNIT:   return arena.make_con(typechecker::TyCon::Unit);
+                case CType::SEQ: {
+                    auto* v = arena.fresh_var(0);
+                    return arena.make_app("Seq", {v});
+                }
+                default: {
+                    // FUNCTION, ADT, etc. — use a fresh type variable
+                    auto* v = arena.fresh_var(0);
+                    return v;
+                }
+            }
+        };
+
+        const std::string tc_prefix = "yona_Prelude__";
+        for (auto& [mangled, meta] : imports_.meta) {
+            if (mangled.find(tc_prefix) != 0) continue;
+            std::string local_name = mangled.substr(tc_prefix.size());
+            // Build curried function type from CType params + return
+            typechecker::MonoTypePtr fn_type = ctype_to_mono(meta.return_type);
+            for (int i = (int)meta.param_types.size() - 1; i >= 0; i--)
+                fn_type = arena.make_arrow(ctype_to_mono(meta.param_types[i]), fn_type);
+            // Register as a monomorphic binding in the type checker's root env
+            type_checker->arena(); // ensure arena is initialized
+            // Use register_trait_method for polymorphic registration
+            type_checker->register_trait_method("Prelude", local_name, fn_type);
+        }
+    }
 }
 
 // ===== DWARF Debug Info =====

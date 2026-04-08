@@ -148,13 +148,12 @@ int main(int argc, char* argv[]) {
             codegen.module_paths_.push_back(parent.string());
     }
     codegen.module_paths_.push_back(".");
-    codegen.load_prelude();
 
     llvm::Module* llvm_mod = nullptr;
 
     if (is_module) {
         parser::Parser parser;
-        parser.register_prelude_constructors();
+        codegen.load_prelude(&parser);  // registers constructors in parser
         auto result = parser.parse_module(source, filename);
         if (!result.has_value()) {
             for (auto& e : result.error())
@@ -164,11 +163,12 @@ int main(int argc, char* argv[]) {
         llvm_mod = codegen.compile_module(result.value().get());
     } else {
         parser::Parser parser;
-        parser.register_prelude_constructors();
+        typechecker::TypeChecker type_checker(diag);
+        codegen.load_prelude(&parser, &type_checker);  // registers everything
+
         istringstream stream(source);
         auto parse_result = parser.parse_input(stream);
         if (!parse_result.node) {
-            // Try the modern interface for better error messages
             auto result = parser.parse_expression(source, filename);
             if (!result.has_value()) {
                 for (auto& e : result.error())
@@ -177,29 +177,6 @@ int main(int argc, char* argv[]) {
                 diag.error(SourceLocation::unknown(), compiler::ErrorCode::E0301, "parse error");
             }
             return 1;
-        }
-        // Optional type checking (non-blocking — codegen still works if types have errors)
-        typechecker::TypeChecker type_checker(diag);
-        // Register prelude ADTs for type inference
-        type_checker.register_adt("Linear", {"a"}, {{"Linear", 1}});
-        type_checker.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
-        type_checker.register_adt("Result", {"a", "e"}, {{"Ok", 1}, {"Err", 1}});
-        type_checker.register_adt("Iterator", {"a"}, {{"Iterator", 1}});
-
-        // Register prelude functions: foldl, foldr
-        // foldl : (b -> a -> b) -> b -> Seq a -> b
-        {
-            auto& arena = type_checker.arena();
-            auto* a = arena.fresh_var(0);
-            auto* b = arena.fresh_var(0);
-            auto* fn_type = arena.make_arrow(b, arena.make_arrow(a, b));
-            auto* seq_a = arena.make_app("Seq", {a});
-            auto* foldl_type = arena.make_arrow(fn_type, arena.make_arrow(b, arena.make_arrow(seq_a, b)));
-            type_checker.register_trait_method("Prelude", "foldl", foldl_type);
-            // foldr : (a -> b -> b) -> b -> Seq a -> b
-            auto* fn_type_r = arena.make_arrow(a, arena.make_arrow(b, b));
-            auto* foldr_type = arena.make_arrow(fn_type_r, arena.make_arrow(b, arena.make_arrow(seq_a, b)));
-            type_checker.register_trait_method("Prelude", "foldr", foldr_type);
         }
 
         type_checker.check(parse_result.node.get());
@@ -326,11 +303,23 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Find Prelude.o for linking
+    string prelude_obj;
+    for (auto& dir : codegen.module_paths_) {
+        auto candidate = filesystem::path(dir) / "Prelude.o";
+        if (filesystem::exists(candidate)) {
+            prelude_obj = candidate.string();
+            break;
+        }
+    }
+
     // When LTO merged the runtime, don't link rt_obj separately (avoid dups).
     // -rdynamic exports symbols for backtrace_symbols() stack traces.
     string link_cmd = lto_active
-        ? "cc " + obj_file + " -lm -lpthread -rdynamic -o " + output_file
-        : "cc " + obj_file + " " + rt_obj + " -lm -lpthread -rdynamic -o " + output_file;
+        ? "cc " + obj_file
+        : "cc " + obj_file + " " + rt_obj;
+    if (!prelude_obj.empty()) link_cmd += " " + prelude_obj;
+    link_cmd += " -lm -lpthread -rdynamic -o " + output_file;
     int link_result = system(link_cmd.c_str());
     filesystem::remove(obj_file);
 

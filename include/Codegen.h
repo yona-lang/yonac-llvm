@@ -30,6 +30,7 @@
 #include "Diagnostic.h"
 
 namespace yona::compiler::typechecker { class TypeChecker; }
+namespace yona::parser { class Parser; }
 
 namespace yona::compiler::codegen {
 
@@ -89,9 +90,11 @@ public:
     void set_debug_info(bool enabled, const std::string& filename = "");
 
     /// Load the Prelude module interface. Call after module_paths_ is set.
-    /// Registers prelude ADTs (Linear, Option, Result) and functions.
+    /// Single entry point: registers ADTs, functions, constructors, and types
+    /// across codegen, parser, and type checker from the .yonai file.
     /// Falls back to programmatic registration if Prelude.yonai is not found.
-    void load_prelude();
+    void load_prelude(parser::Parser* parser = nullptr,
+                       typechecker::TypeChecker* type_checker = nullptr);
     void set_opt_level(int level) { opt_level_ = (level < 0) ? 0 : (level > 3) ? 3 : level; }
 
     // Module search paths for resolving imports
