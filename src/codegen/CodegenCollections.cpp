@@ -317,21 +317,11 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
     auto i64_ty = LType::getInt64Ty(*context_);
     auto ptr_ty = PointerType::get(*context_, 0);
 
-    // Iterator source: call next() in a loop until None
-    if (src.adt_type_name == "Iterator" || src.type == CType::ADT) {
-        // Check if this is an Iterator ADT
-        bool is_iterator = src.adt_type_name == "Iterator";
-        if (!is_iterator && src.type == CType::ADT) {
-            // Check named_values for Iterator type
-            if (ext->collection->get_type() == AST_IDENTIFIER_EXPR) {
-                auto* id = static_cast<IdentifierExpr*>(ext->collection);
-                auto nv = named_values_.find(id->name->value);
-                if (nv != named_values_.end() && nv->second.adt_type_name == "Iterator")
-                    is_iterator = true;
-            }
-        }
-
-        if (is_iterator) {
+    // Iterator source: call next() in a loop until None.
+    // An Iterator is an ADT wrapping a closure. Detect by CType::ADT
+    // (seq sources have CType::SEQ, so there's no ambiguity).
+    if (src.type == CType::ADT) {
+        {
             std::string var_name = extractor_var_name(node->collectionExtractor);
             auto* func = builder_->GetInsertBlock()->getParent();
 
@@ -345,9 +335,9 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
             // For non-recursive ADTs: extractvalue {tag, closure}
             Value* next_fn;
             if (iter_val->getType()->isPointerTy()) {
-                // Heap-allocated: GEP to field 0 (after tag)
+                // Heap-allocated ADT: payload[0] = tag, payload[1] = closure_ptr
                 auto* gep = builder_->CreateGEP(i64_ty, iter_val,
-                    {ConstantInt::get(i64_ty, 2)}, "iter_next_gep");
+                    {ConstantInt::get(i64_ty, 1)}, "iter_next_gep");
                 next_fn = builder_->CreateLoad(i64_ty, gep, "iter_next_fn");
                 next_fn = builder_->CreateIntToPtr(next_fn, ptr_ty);
             } else {
@@ -420,10 +410,16 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
             builder_->CreateBr(loop_bb);
 
             builder_->SetInsertPoint(done_bb);
-            // Trim result seq to actual count
-            // The seq was allocated with capacity 32 but may have fewer elements
-            // For now, just return — seq_alloc sets count from the first arg
-            // TODO: dynamic resize for iterators with >32 elements
+            // Set actual element count on the result seq.
+            // idx_phi holds the count at this point (it's live from loop_bb).
+            // Use a PHI to get the final count from whichever predecessor we came from.
+            unsigned pred_count = 0;
+            for (auto it = llvm::pred_begin(done_bb); it != llvm::pred_end(done_bb); ++it) pred_count++;
+            auto* count_phi = builder_->CreatePHI(i64_ty, pred_count, "iter_count");
+            for (auto it = llvm::pred_begin(done_bb); it != llvm::pred_end(done_bb); ++it)
+                count_phi->addIncoming(idx_phi, *it);
+            // Overwrite count at seq[0]
+            builder_->CreateStore(count_phi, result);
 
             return {builder_->CreateBitCast(result, ptr_ty), CType::SEQ,
                     body_val ? std::vector<CType>{body_val.type} : std::vector<CType>{}};

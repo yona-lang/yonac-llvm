@@ -1,0 +1,5 @@
+import lineIterator from Std\File, length from Std\String in
+let iter = lineIterator "/tmp/yona_iter_gen_lines_test.txt",
+    lengths = [length line for line = iter],
+    foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end
+in foldl (\a b -> a + b) 0 lengths
