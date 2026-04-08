@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1076 assertions across 197 test cases (all passing)
+- **Tests**: 1082 assertions across 197 test cases (all passing)
 - **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -98,9 +98,11 @@
 - [x] **Built-in Fold** — C loop-based `foldl`/`foldr` in runtime + Prelude.
   Handles 50K+ elements without stack overflow. General TCO blocked by
   RC cleanup after recursive calls preventing LLVM TailCallElimination.
-- [ ] **General TCO** — tail-call optimization for user-defined recursive
-  functions. Requires moving RC cleanup before the tail call, or using
-  a trampoline. Currently RC dec after recursive calls prevents LLVM TCE.
+- [x] **General TCO** — tail-call optimization for self-recursive functions.
+  Pre-tail-call RC cleanup: Perceus DROP moved before the call for non-pass-through
+  args. LLVM TCE converts `tail call` to loop. User-defined foldl handles 100K+ elements.
+- [ ] **Blocking Type Checker** — make type checker errors stop compilation.
+  Currently non-blocking. Requires full prelude/stdlib type registration.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.

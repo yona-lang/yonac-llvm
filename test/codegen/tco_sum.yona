@@ -1,0 +1,2 @@
+let sum acc seq = case seq of [] -> acc; [h|t] -> sum (acc + h) t end in
+sum 0 [10, 20, 30, 40, 50]

@@ -676,6 +676,44 @@ Codegen::CompiledFunction Codegen::compile_function(
         i++;
     }
 
+    // Check for self-recursive tail call in the body.
+    // If found, we'll move RC cleanup before the call so LLVM TCE works.
+    bool has_self_tail_call = false;
+    {
+        // Scan AST: is the body (or a case/if branch) a call to this function?
+        std::function<bool(AstNode*)> check_tail = [&](AstNode* n) -> bool {
+            if (!n) return false;
+            if (n->get_type() == AST_APPLY_EXPR) {
+                auto* app = static_cast<ApplyExpr*>(n);
+                if (auto* nc = dynamic_cast<NameCall*>(app->call))
+                    if (nc->name->value == name) return true;
+            }
+            if (n->get_type() == AST_CASE_EXPR) {
+                auto* ce = static_cast<CaseExpr*>(n);
+                for (auto* clause : ce->clauses)
+                    if (check_tail(clause->body)) return true;
+            }
+            if (n->get_type() == AST_IF_EXPR) {
+                auto* ie = static_cast<IfExpr*>(n);
+                return check_tail(ie->thenExpr) || check_tail(ie->elseExpr);
+            }
+            if (n->get_type() == AST_LET_EXPR)
+                return check_tail(static_cast<LetExpr*>(n)->expr);
+            return false;
+        };
+        if (!def.ast->bodies.empty()) {
+            auto* body = def.ast->bodies[0];
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+                has_self_tail_call = check_tail(bwg->expr);
+        }
+    }
+
+    // Track which params need post-body cleanup (TCO may skip some)
+    tco_fn_name_ = has_self_tail_call ? name : "";
+    tco_param_names_ = has_self_tail_call ? def.param_names : std::vector<std::string>{};
+    tco_param_ctypes_ = has_self_tail_call ? param_ctypes : std::vector<CType>{};
+    tco_cleanup_done_ = false;
+
     // Compile body
     TypedValue body_tv;
     if (!def.ast->bodies.empty()) {
@@ -806,7 +844,8 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
         if (!builder_->GetInsertBlock()->getTerminator()) {
             // Perceus callee-owns DROP for non-seq heap params.
-            if (body_tv.val) {
+            // Skip if TCO already handled cleanup before the tail call.
+            if (body_tv.val && !tco_cleanup_done_) {
                 auto ptr_ty = PointerType::get(*context_, 0);
                 for (size_t pi = 0; pi < def.param_names.size(); pi++) {
                     if (pi >= param_ctypes.size()) continue;
@@ -1589,10 +1628,38 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         return {promise, CType::PROMISE, {inner_ret}};
     }
 
-    auto* call_inst = builder_->CreateCall(cf.fn, call_args, "calltmp");
-    // Mark self-recursive calls as tail calls for TailCallElimination pass
+    // TCO: for self-recursive tail calls, emit RC cleanup BEFORE the call
+    // so LLVM's TailCallElimination can convert the call to a loop.
     auto* current_fn = builder_->GetInsertBlock()->getParent();
-    if (cf.fn == current_fn)
+    bool is_self_recursive = (cf.fn == current_fn) && !tco_fn_name_.empty();
+
+    if (is_self_recursive && !tco_cleanup_done_) {
+        // Emit Perceus DROP for heap params that are NOT passed through.
+        // Pass-through = same LLVM value in both the param and the call arg.
+        auto ptr_ty = PointerType::get(*context_, 0);
+        for (size_t pi = 0; pi < tco_param_names_.size() && pi < tco_param_ctypes_.size(); pi++) {
+            CType ct = tco_param_ctypes_[pi];
+            if (ct == CType::SEQ || !is_heap_type(ct)) continue;
+            if (pi >= current_fn->arg_size()) continue;
+            auto* param = current_fn->getArg((unsigned)pi);
+            if (param->getType()->isStructTy()) continue;
+
+            // Check if this param is passed through unchanged
+            bool is_pass_through = false;
+            if (pi < call_args.size() && call_args[pi] == param)
+                is_pass_through = true;
+
+            if (!is_pass_through) {
+                emit_rc_dec(param, ct);
+            }
+        }
+        tco_cleanup_done_ = true;
+    }
+
+    auto* call_inst = builder_->CreateCall(cf.fn, call_args, "calltmp");
+    if (is_self_recursive)
+        call_inst->setTailCall(true);
+    else if (cf.fn == current_fn)
         call_inst->setTailCall(true);
 
     // Drop seq temps whose type differs from return (callee-borrows for seqs).

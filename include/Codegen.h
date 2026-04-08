@@ -389,6 +389,12 @@ private:
     llvm::Value* current_group_ = nullptr; ///< Active task group for structured concurrency
     std::unordered_set<std::string> effect_resume_names_; ///< Names of resume fn ptr params
 
+    // TCO: self-recursive tail call optimization
+    std::string tco_fn_name_;                  ///< Current function name (if self-recursive)
+    std::vector<std::string> tco_param_names_; ///< Parameter names for RC cleanup
+    std::vector<CType> tco_param_ctypes_;      ///< Parameter CTypes
+    bool tco_cleanup_done_ = false;            ///< Pre-tail-call cleanup already emitted
+
     // Identifiers
     TypedValue codegen_identifier(IdentifierExpr* node);
     TypedValue codegen_main_node(MainNode* node);
