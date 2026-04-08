@@ -17,7 +17,7 @@
 ## Summary
 
 - **25/25 benchmarks passing** (7 CPU, 5 collections, 9 I/O, 4 concurrency)
-- **Yona matches or beats C** on 3 benchmarks (tak 0.8x, list_map_filter 1.0x, process_spawn 1.0x)
+- **Yona matches or beats C** on 4 benchmarks (tak 0.8x, file_read 0.9x, list_map_filter 1.0x, parallel_async 1.0x)
 - **Within 1.5x of C** on 8 more (file_read, process_exec, list_reverse, list_sum, sum_squares, sieve, file_parallel_read, file_write_read)
 - **Streaming I/O**: readLines uses 64KB-buffered Iterator (1.9ms, O(64KB) memory)
 - **Parallel async achieves near-ideal 4.0x speedup** matching C pthreads
@@ -50,12 +50,12 @@
 
 | Benchmark | Yona | C | Java | Node.js | Python |
 |-----------|------|---|------|---------|--------|
-| file_read (1.2MB) | 0.90 | 0.86 | 13 | 47 | 14 |
-| file_readlines (streaming) | 1.9 | 0.88 | 26 | 48 | 13 |
-| file_write_read | 1.4 | 0.91 | 18 | 50 | 13 |
-| file_parallel_read (3x) | 1.5 | 0.97 | 25 | 50 | 24 |
-| process_exec (3x parallel) | 1.4 | 1.1 | 27 | 54 | 26 |
-| process_spawn | 1.3 | 1.3 | 23 | 51 | 15 |
+| file_read (1.2MB) | **0.89** | 1.0 | 13 | 47 | 14 |
+| file_readlines (streaming+TCO) | 2.3 | 0.86 | 26 | 48 | 13 |
+| file_write_read | 1.5 | 1.0 | 18 | 50 | 13 |
+| file_parallel_read (3x) | 1.4 | 1.0 | 25 | 50 | 24 |
+| process_exec (3x parallel) | 1.5 | 1.3 | 27 | 54 | 26 |
+| process_spawn | 1.7 | 1.5 | 23 | 51 | 15 |
 
 ### I/O — Large Files (50MB, realistic workloads)
 
