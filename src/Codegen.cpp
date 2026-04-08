@@ -1360,6 +1360,7 @@ TypedValue Codegen::codegen(AstNode* node) {
         }
         case AST_RECORD_LITERAL_EXPR: {
             auto* rec = static_cast<RecordLiteralExpr*>(node);
+            set_debug_loc(rec->source_context);
             auto i64_ty = LType::getInt64Ty(*context_);
 
             // Compile each field value
