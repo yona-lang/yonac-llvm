@@ -248,7 +248,8 @@ private:
         // Sequences
         llvm::Function *seq_alloc_ = nullptr, *seq_set_ = nullptr, *seq_get_ = nullptr,
             *seq_length_ = nullptr, *seq_cons_ = nullptr, *seq_join_ = nullptr,
-            *seq_head_ = nullptr, *seq_tail_ = nullptr, *seq_is_empty_ = nullptr;
+            *seq_head_ = nullptr, *seq_tail_ = nullptr, *seq_is_empty_ = nullptr,
+            *seq_snoc_ = nullptr;
         // Sets
         llvm::Function *set_alloc_ = nullptr, *set_put_ = nullptr, *set_insert_ = nullptr,
             *set_contains_ = nullptr, *set_size_ = nullptr, *set_elements_ = nullptr,

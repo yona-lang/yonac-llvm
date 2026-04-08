@@ -346,24 +346,25 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
                     next_fn = builder_->CreateIntToPtr(next_fn, ptr_ty);
             }
 
-            // Build result seq dynamically (don't know length ahead of time)
-            auto* init_cap = ConstantInt::get(i64_ty, 32);
-            auto* result = builder_->CreateCall(rt_.seq_alloc_, {init_cap}, "iter_result");
+            // Build result seq incrementally using seq_snoc (append).
+            // Starts empty, grows dynamically — no 32-element limit.
+            auto* empty_seq = builder_->CreateCall(rt_.seq_alloc_,
+                {ConstantInt::get(i64_ty, 0)}, "iter_empty");
 
             auto* loop_bb = BasicBlock::Create(*context_, "iter.loop", func);
             auto* body_bb = BasicBlock::Create(*context_, "iter.body", func);
             auto* done_bb = BasicBlock::Create(*context_, "iter.done", func);
 
-            auto* zero = ConstantInt::get(i64_ty, 0);
             builder_->CreateBr(loop_bb);
 
             builder_->SetInsertPoint(loop_bb);
-            auto* idx_phi = builder_->CreatePHI(i64_ty, 2, "iter_idx");
-            idx_phi->addIncoming(zero, loop_bb->getSinglePredecessor()
+            // PHI for the growing seq (starts empty, grows via snoc)
+            auto* seq_phi = builder_->CreatePHI(
+                PointerType::get(i64_ty, 0), 2, "iter_seq");
+            seq_phi->addIncoming(empty_seq, loop_bb->getSinglePredecessor()
                 ? loop_bb->getSinglePredecessor() : loop_bb);
 
-            // Call next_fn() — it's a closure (() -> Option a)
-            // Closure call: fn_ptr is in the closure env
+            // Call next_fn() via closure indirect call
             auto* closure_fn_gep = builder_->CreateGEP(i64_ty, next_fn,
                 {ConstantInt::get(i64_ty, 0)}, "closure_fn_gep");
             auto* closure_fn_raw = builder_->CreateLoad(i64_ty, closure_fn_gep, "closure_fn_raw");
@@ -373,18 +374,15 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
                 llvm::FunctionType::get(i64_ty, {ptr_ty}, false),
                 closure_fn, {next_fn}, "iter_next_result");
 
-            // Check: is it Some (tag 0) or None (tag 1)?
-            // For non-recursive Option: {tag, value} struct
-            // The option_val is an i64 — if it's a heap ADT, extract tag
+            // Check Some (tag 0) or None (tag 1)
             auto* opt_ptr = builder_->CreateIntToPtr(option_val, ptr_ty);
             auto* tag_gep = builder_->CreateGEP(i64_ty, opt_ptr,
                 {ConstantInt::get(i64_ty, 0)}, "opt_tag_gep");
             auto* tag = builder_->CreateLoad(i64_ty, tag_gep, "opt_tag");
-            auto* is_some = builder_->CreateICmpEQ(tag, zero, "is_some");
+            auto* is_some = builder_->CreateICmpEQ(tag, ConstantInt::get(i64_ty, 0), "is_some");
             builder_->CreateCondBr(is_some, body_bb, done_bb);
 
             builder_->SetInsertPoint(body_bb);
-            // Extract value from Some: field at index 1
             auto* val_gep = builder_->CreateGEP(i64_ty, opt_ptr,
                 {ConstantInt::get(i64_ty, 1)}, "opt_val_gep");
             auto* elem = builder_->CreateLoad(i64_ty, val_gep, "iter_elem");
@@ -401,27 +399,21 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
             else if (body_i64->getType()->isIntegerTy() && body_i64->getType() != i64_ty)
                 body_i64 = builder_->CreateZExtOrTrunc(body_i64, i64_ty);
 
-            // Append to result via cons (builds seq incrementally)
-            builder_->CreateCall(rt_.seq_set_, {result, idx_phi, body_i64});
+            // Append element to result seq via snoc (O(1) amortized)
+            auto* new_seq = builder_->CreateCall(rt_.seq_snoc_, {seq_phi, body_i64}, "iter_snoc");
             named_values_ = saved_nv;
 
-            auto* next_idx = builder_->CreateAdd(idx_phi, ConstantInt::get(i64_ty, 1), "iter_next_idx");
-            idx_phi->addIncoming(next_idx, builder_->GetInsertBlock());
+            seq_phi->addIncoming(new_seq, builder_->GetInsertBlock());
             builder_->CreateBr(loop_bb);
 
             builder_->SetInsertPoint(done_bb);
-            // Set actual element count on the result seq.
-            // idx_phi holds the count at this point (it's live from loop_bb).
-            // Use a PHI to get the final count from whichever predecessor we came from.
-            unsigned pred_count = 0;
-            for (auto it = llvm::pred_begin(done_bb); it != llvm::pred_end(done_bb); ++it) pred_count++;
-            auto* count_phi = builder_->CreatePHI(i64_ty, pred_count, "iter_count");
+            // Result is the final seq from the PHI
+            auto* result_phi = builder_->CreatePHI(
+                PointerType::get(i64_ty, 0), 2, "iter_result");
             for (auto it = llvm::pred_begin(done_bb); it != llvm::pred_end(done_bb); ++it)
-                count_phi->addIncoming(idx_phi, *it);
-            // Overwrite count at seq[0]
-            builder_->CreateStore(count_phi, result);
+                result_phi->addIncoming(seq_phi, *it);
 
-            return {builder_->CreateBitCast(result, ptr_ty), CType::SEQ,
+            return {result_phi, CType::SEQ,
                     body_val ? std::vector<CType>{body_val.type} : std::vector<CType>{}};
         }
     }
