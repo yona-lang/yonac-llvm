@@ -545,6 +545,7 @@ Codegen::CompiledFunction Codegen::compile_function(
             preliminary_ret = ct;
         }
     }
+
     auto fn_type = llvm::FunctionType::get(ret_type, param_types, false);
     auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 
@@ -686,6 +687,28 @@ Codegen::CompiledFunction Codegen::compile_function(
     CType ret_ctype = body_tv ? body_tv.type : CType::INT;
 
     if (body_tv && body_tv.val) {
+        // Coerce non-recursive ADT structs to i64 ONLY when the body type
+        // doesn't match the predicted return type AND the predicted type is i64.
+        // This happens when a closure's infer_ret says i64 (because ADT was
+        // not detected at inference time) but the body codegen produces a struct.
+        // The coercion heap-allocates the struct ADT so it fits in i64.
+        if (body_tv.val->getType()->isStructTy() && ret_type->isIntegerTy(64)
+            && body_tv.type == CType::ADT) {
+            auto* sty = llvm::cast<llvm::StructType>(body_tv.val->getType());
+            unsigned num_fields = sty->getNumElements();
+            auto i64_ty = LType::getInt64Ty(*context_);
+            // Heap-allocate: adt_alloc(tag, num_fields - 1)
+            auto* tag_val = builder_->CreateExtractValue(body_tv.val, {0});
+            auto* adt_ptr = builder_->CreateCall(rt_.adt_alloc_,
+                {tag_val, ConstantInt::get(i64_ty, num_fields - 1)});
+            for (unsigned fi = 1; fi < num_fields; fi++) {
+                auto* field_val = builder_->CreateExtractValue(body_tv.val, {fi});
+                builder_->CreateCall(rt_.adt_set_field_,
+                    {adt_ptr, ConstantInt::get(i64_ty, fi - 1), field_val});
+            }
+            body_tv.val = builder_->CreatePtrToInt(adt_ptr, i64_ty);
+        }
+
         if (body_tv.val->getType() != ret_type) {
             // Remove the function and recreate with correct return type
             fn->eraseFromParent();
@@ -1697,6 +1720,20 @@ Value* Codegen::wrap_in_closure(Function* fn, CType ret_type) {
                 ret_val = builder_->CreateBitCast(ret_val, i64_ty);
             else if (ret_val->getType()->isIntegerTy())
                 ret_val = builder_->CreateZExtOrTrunc(ret_val, i64_ty);
+            else if (ret_val->getType()->isStructTy()) {
+                // Non-recursive ADT struct: heap-allocate and return as i64 pointer
+                auto* sty = llvm::cast<llvm::StructType>(ret_val->getType());
+                unsigned nf = sty->getNumElements();
+                auto* tag_val = builder_->CreateExtractValue(ret_val, {0});
+                auto* adt_ptr = builder_->CreateCall(rt_.adt_alloc_,
+                    {tag_val, ConstantInt::get(i64_ty, nf - 1)});
+                for (unsigned fi = 1; fi < nf; fi++) {
+                    auto* fv = builder_->CreateExtractValue(ret_val, {fi});
+                    builder_->CreateCall(rt_.adt_set_field_,
+                        {adt_ptr, ConstantInt::get(i64_ty, fi - 1), fv});
+                }
+                ret_val = builder_->CreatePtrToInt(adt_ptr, i64_ty);
+            }
         }
         builder_->CreateRet(ret_val);
 
