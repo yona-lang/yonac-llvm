@@ -563,6 +563,7 @@ void* yona_rt_rc_alloc_string(size_t bytes) {
     return rc_alloc(RC_TYPE_STRING, bytes);
 }
 
+
 void yona_rt_print_int(int64_t value) {
     printf("%ld", value);
 }

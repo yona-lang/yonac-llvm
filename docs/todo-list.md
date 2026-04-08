@@ -73,6 +73,13 @@
   io_uring ops. Cancel effect (`perform Cancel.check ()`) for cooperative
   cancellation. Parallel comprehensions `[| expr for x = source ]`.
   Std\Parallel module with pmap, pfor. See `docs/structured-concurrency.md`.
+- [ ] **Cooperative Suspension & Effect-Based Streaming** — extend the effect
+  system with cooperative suspend/resume for streaming I/O. `perform Stream.yield chunk`
+  yields data through a handler without loading entire files into memory.
+  Requires: effect handlers that can suspend across I/O boundaries (currently
+  effects are compile-time CPS with no true suspension). Enables: chunked file
+  processing, backpressure, lazy line-by-line reads, pipeline parallelism
+  (read chunk N+1 while processing chunk N via io_uring).
 - [ ] **Channels (CSP-style)** — typed channels for goroutine-style
   communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state

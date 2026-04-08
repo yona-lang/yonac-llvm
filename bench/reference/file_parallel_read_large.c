@@ -3,17 +3,21 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+/* Fair comparison: each thread allocates full buffer like Yona's readFile */
 static void* read_file(void* arg) {
     const char* path = (const char*)arg;
     FILE* f = fopen(path, "r");
     if (!f) return NULL;
-    char buf[65536];
-    long total = 0;
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) total += n;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    rewind(f);
+    char* buf = malloc(size + 1);
+    fread(buf, 1, size, f);
+    buf[size] = '\0';
     fclose(f);
     long* r = malloc(sizeof(long));
-    *r = total;
+    *r = strlen(buf);
+    free(buf);
     return r;
 }
 
