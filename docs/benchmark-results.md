@@ -52,7 +52,7 @@
 | Benchmark | Yona | C | Java | Node.js | Python |
 |-----------|------|---|------|---------|--------|
 | file_read (1.2MB) | 1.0 | 0.79 | 13 | 47 | 14 |
-| file_readlines (20K) | 2.2 | 0.81 | 26 | 48 | 13 |
+| file_readlines (20K, streaming) | 1.9 | 0.87 | 26 | 48 | 13 |
 | file_write_read | 1.6 | 0.97 | 18 | 50 | 13 |
 | file_parallel_read (3x) | 1.4 | 0.96 | 25 | 50 | 24 |
 | process_exec (3x parallel) | 1.3 | 1.2 | 27 | 54 | 26 |

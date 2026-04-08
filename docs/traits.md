@@ -87,3 +87,23 @@ with open "file.txt" as f
 end
 -- f.close() called automatically at scope exit
 ```
+
+## Multi-Parameter Traits
+
+Traits support multiple type parameters for expressing relationships between types:
+
+```yona
+trait Iterable a b
+    toIterator : a -> Iterator b
+end
+
+instance Iterable String Int
+    toIterator str = chars str
+end
+```
+
+The instance key is `"Trait:Type1:Type2"`. Multi-param traits are used for:
+- `Iterable a b` — collection `a` produces elements of type `b`
+- `Convertible a b` — type `a` can be converted to type `b`
+
+All single-parameter traits continue to work unchanged (backward compatible).
