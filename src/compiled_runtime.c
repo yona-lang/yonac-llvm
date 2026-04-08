@@ -969,35 +969,52 @@ const char* yona_Std_String__replace(const char* old, const char* new_s, const c
     return r;
 }
 
-int64_t* yona_Std_String__split(const char* delim, const char* s) {
-    size_t dlen = strlen(delim);
-    if (dlen == 0) {
-        /* Split into individual characters */
-        size_t slen = strlen(s);
-        int64_t* result = yona_rt_seq_alloc(slen);
-        for (size_t i = 0; i < slen; i++) {
-            char* ch = (char*)rc_alloc(RC_TYPE_STRING, 2);
-            ch[0] = s[i]; ch[1] = '\0';
-            result[i + 1] = (int64_t)ch;
+/* split returns an Iterator that yields substrings on demand */
+typedef struct { const char* str; const char* pos; const char* delim; size_t dlen; int done; } split_iter_state_t;
+
+static int64_t split_iter_next(int64_t* env) {
+    split_iter_state_t* st = (split_iter_state_t*)(intptr_t)env[5];
+    if (st->done) {
+        int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+        adt[0] = 1; return (int64_t)(intptr_t)adt;
+    }
+    const char* next = st->dlen > 0 ? strstr(st->pos, st->delim) : NULL;
+    size_t len;
+    if (st->dlen == 0) {
+        /* Empty delimiter: yield one character at a time */
+        if (*st->pos == '\0') {
+            st->done = 1;
+            int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+            adt[0] = 1; return (int64_t)(intptr_t)adt;
         }
-        return result;
+        len = 1;
+        next = NULL;
+    } else {
+        len = next ? (size_t)(next - st->pos) : strlen(st->pos);
     }
-    /* Count splits */
-    size_t count = 1;
-    const char* p = s;
-    while ((p = strstr(p, delim)) != NULL) { count++; p += dlen; }
-    int64_t* result = yona_rt_seq_alloc(count);
-    p = s;
-    for (size_t i = 0; i < count; i++) {
-        const char* next = strstr(p, delim);
-        size_t len = next ? (size_t)(next - p) : strlen(p);
-        char* part = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
-        memcpy(part, p, len);
-        part[len] = '\0';
-        result[i + 1] = (int64_t)part;
-        p = next ? next + dlen : p + len;
-    }
-    return result;
+    extern void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len);
+    char* part = (char*)yona_rt_rc_alloc_string_len(len + 1, len);
+    memcpy(part, st->pos, len); part[len] = '\0';
+    if (next) st->pos = next + st->dlen;
+    else if (st->dlen == 0) st->pos += 1;
+    else st->done = 1;
+    if (st->dlen == 0 && *st->pos == '\0') st->done = 1;
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+    adt[0] = 0; adt[1] = (int64_t)(intptr_t)part;
+    return (int64_t)(intptr_t)adt;
+}
+
+int64_t yona_Std_String__split(const char* delim, const char* s) {
+    split_iter_state_t* st = (split_iter_state_t*)malloc(sizeof(split_iter_state_t));
+    st->str = s; st->pos = s; st->delim = delim;
+    st->dlen = strlen(delim); st->done = 0;
+    extern void* yona_rt_closure_create(void* fn, int64_t ret, int64_t arity, int64_t caps);
+    extern void yona_rt_closure_set_cap(void* cl, int64_t idx, int64_t val);
+    int64_t* cl = (int64_t*)yona_rt_closure_create((void*)split_iter_next, 0, 0, 1);
+    yona_rt_closure_set_cap(cl, 0, (int64_t)(intptr_t)st);
+    int64_t* iter = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+    iter[0] = 0; iter[1] = (int64_t)(intptr_t)cl;
+    return (int64_t)(intptr_t)iter;
 }
 
 const char* yona_Std_String__join(const char* sep, int64_t* seq) {
@@ -1106,8 +1123,8 @@ int64_t yona_Std_String__count(const char* needle, const char* haystack) {
     return count;
 }
 
-int64_t* yona_Std_String__lines(const char* s) {
-    /* Split by newline */
+int64_t yona_Std_String__lines(const char* s) {
+    /* Split by newline — returns Iterator */
     return yona_Std_String__split("\n", s);
 }
 
@@ -1115,11 +1132,35 @@ const char* yona_Std_String__unlines(int64_t* seq) {
     return yona_Std_String__join("\n", seq);
 }
 
-int64_t* yona_Std_String__chars(const char* s) {
-    size_t len = strlen(s);
-    int64_t* seq = yona_rt_seq_alloc((int64_t)len);
-    for (size_t i = 0; i < len; i++) seq[i + 1] = (int64_t)(unsigned char)s[i];
-    return seq;
+/* chars returns an Iterator that yields each character as a single-char string */
+typedef struct { const char* str; size_t pos; size_t len; } char_iter_state_t;
+
+static int64_t char_iter_next(int64_t* env) {
+    char_iter_state_t* st = (char_iter_state_t*)(intptr_t)env[5];
+    if (st->pos >= st->len) {
+        int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+        adt[0] = 1; /* None */
+        return (int64_t)(intptr_t)adt;
+    }
+    /* Return character code as integer (consistent with charAt) */
+    int64_t ch = (int64_t)(unsigned char)st->str[st->pos++];
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+    adt[0] = 0; /* Some */
+    adt[1] = ch;
+    return (int64_t)(intptr_t)adt;
+}
+
+int64_t yona_Std_String__chars(const char* s) {
+    size_t len = yona_rt_string_length_fast(s);
+    char_iter_state_t* st = (char_iter_state_t*)malloc(sizeof(char_iter_state_t));
+    st->str = s; st->pos = 0; st->len = len;
+    extern void* yona_rt_closure_create(void* fn, int64_t ret, int64_t arity, int64_t caps);
+    extern void yona_rt_closure_set_cap(void* cl, int64_t idx, int64_t val);
+    int64_t* cl = (int64_t*)yona_rt_closure_create((void*)char_iter_next, 0, 0, 1);
+    yona_rt_closure_set_cap(cl, 0, (int64_t)(intptr_t)st);
+    int64_t* iter = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+    iter[0] = 0; iter[1] = (int64_t)(intptr_t)cl;
+    return (int64_t)(intptr_t)iter;
 }
 
 const char* yona_Std_String__fromChars(int64_t* seq) {

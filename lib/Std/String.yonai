@@ -9,7 +9,7 @@ FN yona_Std_String__startsWith 2 STRING STRING -> BOOL
 FN yona_Std_String__endsWith 2 STRING STRING -> BOOL
 FN yona_Std_String__substring 3 STRING INT INT -> STRING
 FN yona_Std_String__replace 3 STRING STRING STRING -> STRING
-FN yona_Std_String__split 2 STRING STRING -> SEQ
+FN yona_Std_String__split 2 STRING STRING -> ADT
 FN yona_Std_String__join 2 STRING SEQ -> STRING
 FN yona_Std_String__charAt 2 STRING INT -> INT
 FN yona_Std_String__padLeft 3 INT STRING STRING -> STRING
@@ -19,9 +19,9 @@ FN yona_Std_String__repeat 2 INT STRING -> STRING
 FN yona_Std_String__take 2 INT STRING -> STRING
 FN yona_Std_String__drop 2 INT STRING -> STRING
 FN yona_Std_String__count 2 STRING STRING -> INT
-FN yona_Std_String__lines 1 STRING -> SEQ
+FN yona_Std_String__lines 1 STRING -> ADT
 FN yona_Std_String__unlines 1 SEQ -> STRING
-FN yona_Std_String__chars 1 STRING -> SEQ
+FN yona_Std_String__chars 1 STRING -> ADT
 FN yona_Std_String__fromChars 1 SEQ -> STRING
 FN yona_Std_String__toInt 1 STRING -> INT
 FN yona_Std_String__toFloat 1 STRING -> FLOAT
