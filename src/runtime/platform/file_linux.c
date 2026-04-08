@@ -318,6 +318,9 @@ int64_t* yona_platform_list_dir(const char* path) {
 
 #define LINE_ITER_BUF_SIZE 65536
 
+/* Forward declarations for runtime functions used by the iterator */
+extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+
 typedef struct {
     int fd;
     char* buf;

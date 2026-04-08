@@ -1428,6 +1428,12 @@ int64_t yona_Std_File__writeFileBytes(const char* path, void* bytes) {
     return (w == (size_t)len) ? 1 : 0;
 }
 
+/* Streaming line iterator — returns Iterator ADT wrapping a buffered reader */
+int64_t yona_Std_File__lineIterator(const char* path) {
+    extern int64_t yona_rt_file_line_iterator(const char* path);
+    return yona_rt_file_line_iterator(path);
+}
+
 /* Std\Process */
 const char* yona_Std_Process__getenv(const char* name) {
     return yona_platform_getenv(name);
