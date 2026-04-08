@@ -1,5 +1,11 @@
+# Parallel exec to match Yona's let-parallelism
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
-a = subprocess.run(["echo", "hello"], capture_output=True, text=True)
-b = subprocess.run(["echo", "world"], capture_output=True, text=True)
-c = subprocess.run(["echo", "yona"], capture_output=True, text=True)
-print(len(a.stdout.strip()) + len(b.stdout.strip()) + len(c.stdout.strip()))
+
+def exec_len(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    return len(r.stdout.strip())
+
+with ThreadPoolExecutor(3) as ex:
+    futures = [ex.submit(exec_len, ["echo", w]) for w in ["hello", "world", "yona"]]
+    print(sum(f.result() for f in futures))

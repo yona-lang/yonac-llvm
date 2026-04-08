@@ -1,12 +1,24 @@
+// Parallel exec to match Yona's let-parallelism
 import java.io.*;
-class process_exec {
-    static String exec(String cmd) throws Exception {
-        Process p = Runtime.getRuntime().exec(new String[]{"sh","-c",cmd});
+import java.util.concurrent.*;
+import java.util.stream.*;
+
+public class process_exec {
+    static int execLen(String cmd) throws Exception {
+        Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
         String out = new String(p.getInputStream().readAllBytes()).trim();
-        p.waitFor(); return out;
+        p.waitFor();
+        return out.length();
     }
+
     public static void main(String[] args) throws Exception {
-        String a = exec("echo hello"), b = exec("echo world"), c = exec("echo yona");
-        System.out.println(a.length() + b.length() + c.length());
+        try (var ex = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = Stream.of("echo hello", "echo world", "echo yona")
+                .map(cmd -> ex.submit(() -> execLen(cmd)))
+                .toList();
+            int total = 0;
+            for (var f : futures) total += f.get();
+            System.out.println(total);
+        }
     }
 }

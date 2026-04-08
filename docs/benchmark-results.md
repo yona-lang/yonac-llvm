@@ -17,9 +17,10 @@
 ## Summary
 
 - **22/22 benchmarks passing** (7 CPU, 5 collections, 6 I/O, 4 concurrency)
-- **Yona matches or beats C** on 4 benchmarks (tak, list_map_filter, file_read, process_exec)
-- **Yona is 10-50x faster than Python** across the board
-- **Yona is 10-50x faster than Node.js** on CPU benchmarks
+- **Yona matches or beats C** on 2 benchmarks (tak 0.8x, list_map_filter 1.0x)
+- **Within 1.5x of C** on 7 more (file_read, process_exec, process_spawn, list_reverse, sum_squares, sieve, file_parallel_read)
+- **Yona 10-20x faster than Java** on I/O (native compilation vs JVM startup)
+- **Yona 35-50x faster than Node.js** on I/O (no V8 warm-up)
 - **Parallel async achieves near-ideal 4.0x speedup** matching C pthreads
 
 ## Full Results (all times in milliseconds)
@@ -50,43 +51,48 @@
 
 | Benchmark | Yona | C | Java | Node.js | Python |
 |-----------|------|---|------|---------|--------|
-| file_read (1.2MB) | **0.95** | 1.0 | 13 | 59 | 16 |
-| file_readlines (20K) | 2.5 | 0.87 | 27 | 58 | 17 |
-| file_write_read | 1.5 | 1.1 | 17 | 57 | 17 |
-| file_parallel_read (3x) | 1.5 | 1.0 | 30 | 49 | 31 |
-| process_exec (3x) | **1.4** | 1.9 | 23 | 52 | 20 |
-| process_spawn | 1.4 | 1.3 | 19 | 51 | 19 |
+| file_read (1.2MB) | 1.0 | 0.79 | 13 | 47 | 14 |
+| file_readlines (20K) | 2.2 | 0.81 | 26 | 48 | 13 |
+| file_write_read | 1.6 | 0.97 | 18 | 50 | 13 |
+| file_parallel_read (3x) | 1.4 | 0.96 | 25 | 50 | 24 |
+| process_exec (3x parallel) | 1.3 | 1.2 | 27 | 54 | 26 |
+| process_spawn | 1.4 | 1.4 | 23 | 51 | 15 |
+
+Note: All I/O references use parallel execution where applicable, matching Yona's
+automatic let-parallelism. file_parallel_read 1.5x vs C is io_uring ring overhead
+on page-cached files (io_uring shines on real disk/network I/O, not cache hits).
 
 ## I/O Ratios (Yona time / other language time — lower = Yona faster)
 
 | Benchmark | vs C | vs Java | vs Node.js | vs Python |
 |-----------|------|---------|------------|-----------|
-| file_read | **0.9x** | **0.07x** | **0.02x** | **0.06x** |
-| file_readlines | 2.9x | **0.09x** | **0.04x** | **0.15x** |
-| file_write_read | 1.3x | **0.09x** | **0.03x** | **0.09x** |
-| file_parallel_read | 1.5x | **0.05x** | **0.03x** | **0.05x** |
-| process_exec | **0.7x** | **0.06x** | **0.03x** | **0.07x** |
-| process_spawn | 1.1x | **0.07x** | **0.03x** | **0.07x** |
+| file_read | 1.3x | **0.08x** | **0.02x** | **0.07x** |
+| file_readlines | 2.7x | **0.08x** | **0.05x** | **0.17x** |
+| file_write_read | 1.6x | **0.09x** | **0.03x** | **0.12x** |
+| file_parallel_read | 1.5x | **0.06x** | **0.03x** | **0.06x** |
+| process_exec | 1.1x | **0.05x** | **0.02x** | **0.05x** |
+| process_spawn | 1.0x | **0.06x** | **0.03x** | **0.09x** |
 
-*Bold = Yona is faster*
+*Bold = Yona is faster. All I/O references use parallel execution where applicable.*
 
 ## Analysis by Language
 
 ### Yona vs C (gcc -O2)
-- **4 wins**: list_map_filter (1.0x), tak (0.8x), file_read (0.9x), process_exec (0.7x)
-- **Close (< 2x)**: list_reverse, list_sum, sieve, sum_squares, file_write_read, process_spawn
-- **Gap**: queens (10.2x — allocation pressure), sort (2.7x — many small seqs)
+- **2 wins**: list_map_filter (1.0x), tak (0.8x)
+- **Close (< 1.5x)**: file_read (1.3x), list_reverse (1.2x), sum_squares (1.1x), process_exec (1.1x), process_spawn (1.0x)
+- **Gap**: queens (10.1x — allocation pressure), sort (3.0x — many small seqs)
 - C is 2x faster on deep recursion (ackermann, fibonacci) due to lower call overhead
+- file_parallel_read 1.5x: io_uring ring overhead on page-cached files
 
 ### Yona vs Java (OpenJDK 25)
-- **Yona 7-15x faster on I/O** — native compilation vs JVM startup
-- file_read: 0.95ms vs 13ms (14x faster)
-- process_exec: 1.4ms vs 23ms (16x faster)
+- **Yona 10-20x faster on I/O** — native compilation vs JVM startup
+- file_read: 1.0ms vs 13ms (13x faster)
+- process_exec: 1.3ms vs 27ms (21x faster)
 - Java faster on CPU: tak, ackermann (HotSpot JIT unboxing)
 
 ### Yona vs Node.js (V8)
-- **Yona 30-60x faster on I/O** — no V8 warm-up, no GC overhead
-- file_read: 0.95ms vs 59ms (62x faster)
+- **Yona 35-50x faster on I/O** — no V8 warm-up, no GC overhead
+- file_read: 1.0ms vs 47ms (47x faster)
 - process_spawn: 1.4ms vs 51ms (36x faster)
 
 ### Yona vs Python
