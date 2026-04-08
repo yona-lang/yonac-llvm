@@ -3,6 +3,7 @@ module Prelude
 export type Linear
 export type Option
 export type Result
+export type Iterator
 export identity, const, flip, compose
 
 ## Linear resource wrapper — values of type `Linear a` must be consumed
@@ -14,6 +15,10 @@ type Option a = Some a | None
 
 ## Result of a computation — either `Ok value` or `Err error`.
 type Result a e = Ok a | Err e
+
+## Pull-based iterator — wraps a function that returns the next element
+## or `None` when exhausted. Used for streaming I/O and lazy sequences.
+type Iterator a = Iterator (() -> Option a)
 
 ## Identity function — returns its argument unchanged.
 identity x = x

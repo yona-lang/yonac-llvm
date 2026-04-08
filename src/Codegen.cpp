@@ -98,6 +98,8 @@ void Codegen::load_prelude() {
         types_.adt_constructors["Ok"] = {"Result", 0, 1, 2, 1, false, {}, {}};
     if (types_.adt_constructors.find("Err") == types_.adt_constructors.end())
         types_.adt_constructors["Err"] = {"Result", 1, 1, 2, 1, false, {}, {}};
+    if (types_.adt_constructors.find("Iterator") == types_.adt_constructors.end())
+        types_.adt_constructors["Iterator"] = {"Iterator", 0, 1, 1, 1, false, {}, {CType::FUNCTION}};
 }
 
 // ===== DWARF Debug Info =====

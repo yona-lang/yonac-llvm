@@ -184,6 +184,7 @@ int main(int argc, char* argv[]) {
         type_checker.register_adt("Linear", {"a"}, {{"Linear", 1}});
         type_checker.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
         type_checker.register_adt("Result", {"a", "e"}, {{"Ok", 1}, {"Err", 1}});
+        type_checker.register_adt("Iterator", {"a"}, {{"Iterator", 1}});
         type_checker.check(parse_result.node.get());
         codegen.set_type_checker(&type_checker);
 

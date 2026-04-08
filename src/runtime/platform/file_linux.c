@@ -310,3 +310,118 @@ int64_t* yona_platform_list_dir(const char* path) {
     }
     closedir(dir); return seq;
 }
+
+/* ===== Streaming File Line Iterator ===== */
+/* Reads a file line-by-line with 64KB buffered I/O.
+ * Returns an Iterator (closure that yields Option String).
+ * Memory: O(64KB buffer + one line) instead of O(file_size). */
+
+#define LINE_ITER_BUF_SIZE 65536
+
+typedef struct {
+    int fd;
+    char* buf;
+    size_t buf_pos;
+    size_t buf_len;
+    int eof;
+} line_iter_state_t;
+
+/* Read the next line from the buffered file iterator.
+ * Returns an Option: Some(line_string) or None (as heap ADT).
+ * Option layout: [rc, tag_encoded, tag_i64, value_i64] where tag=0 is Some, tag=1 is None. */
+static int64_t line_iter_next(int64_t* closure_env) {
+    /* closure_env layout: [fn_ptr, ret_tag, arity, num_caps, heap_mask, cap0]
+     * cap0 = pointer to line_iter_state_t */
+    line_iter_state_t* st = (line_iter_state_t*)(intptr_t)closure_env[5];
+    extern void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len);
+
+    if (st->eof) {
+        /* Return None — use the prelude None constructor.
+         * None is tag=1, arity=0. Non-recursive ADT: struct {i64 tag}
+         * But since all values are i64, return a tagged pointer. */
+        /* Allocate a small ADT: [rc, type_tag, tag_value] */
+        int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
+        adt[0] = 1;  /* tag = None */
+        return (int64_t)(intptr_t)adt;
+    }
+
+    /* Scan buffer for newline, refill if needed */
+    char line_buf[8192];
+    size_t line_len = 0;
+
+    while (1) {
+        /* Refill buffer if empty */
+        if (st->buf_pos >= st->buf_len) {
+            ssize_t n = read(st->fd, st->buf, LINE_ITER_BUF_SIZE);
+            if (n <= 0) {
+                st->eof = 1;
+                if (line_len == 0) {
+                    /* EOF with no partial line — return None */
+                    int64_t* adt = (int64_t*)rc_alloc(4, 2 * sizeof(int64_t));
+                    adt[0] = 1;
+                    return (int64_t)(intptr_t)adt;
+                }
+                break;  /* Return the partial line */
+            }
+            st->buf_len = (size_t)n;
+            st->buf_pos = 0;
+        }
+
+        /* Scan for newline in current buffer */
+        while (st->buf_pos < st->buf_len) {
+            char c = st->buf[st->buf_pos++];
+            if (c == '\n') goto line_complete;
+            if (line_len < sizeof(line_buf) - 1)
+                line_buf[line_len++] = c;
+        }
+    }
+
+line_complete:
+    line_buf[line_len] = '\0';
+
+    /* Allocate RC string for the line */
+    char* line_str = (char*)yona_rt_rc_alloc_string_len(line_len + 1, line_len);
+    memcpy(line_str, line_buf, line_len + 1);
+
+    /* Return Some(line_str) — ADT with tag=0, value=pointer */
+    int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
+    adt[0] = 0;  /* tag = Some */
+    adt[1] = (int64_t)(intptr_t)line_str;
+    return (int64_t)(intptr_t)adt;
+}
+
+/* Create a streaming line iterator for a file.
+ * Returns an Iterator ADT wrapping the next-line closure. */
+int64_t yona_rt_file_line_iterator(const char* path) {
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return 0;
+
+    /* Allocate state */
+    line_iter_state_t* st = (line_iter_state_t*)malloc(sizeof(line_iter_state_t));
+    st->fd = fd;
+    st->buf = (char*)malloc(LINE_ITER_BUF_SIZE);
+    st->buf_pos = 0;
+    st->buf_len = 0;
+    st->eof = 0;
+
+    /* Create a closure that captures the state.
+     * Closure layout: [fn_ptr, ret_tag, arity, num_caps, heap_mask, cap0, ...] */
+    extern int64_t* yona_rt_closure_create(int64_t fn_ptr, int64_t ret_tag,
+                                            int64_t arity, int64_t num_caps);
+    int64_t* closure = yona_rt_closure_create(
+        (int64_t)(intptr_t)line_iter_next,
+        0,   /* ret_tag: INT (actually Option, but i64 representation) */
+        1,   /* arity: takes 1 arg (the closure env itself) */
+        1    /* num_caps: 1 captured value (the state pointer) */
+    );
+    /* Set cap0 = state pointer */
+    extern void yona_rt_closure_set_cap(int64_t* closure, int64_t index, int64_t value);
+    yona_rt_closure_set_cap(closure, 0, (int64_t)(intptr_t)st);
+
+    /* Wrap in Iterator ADT: non-recursive, {tag=0, closure_ptr} */
+    int64_t* iter_adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
+    iter_adt[0] = 0;  /* tag = Iterator (constructor 0) */
+    iter_adt[1] = (int64_t)(intptr_t)closure;
+
+    return (int64_t)(intptr_t)iter_adt;
+}

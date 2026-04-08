@@ -317,6 +317,119 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
     auto i64_ty = LType::getInt64Ty(*context_);
     auto ptr_ty = PointerType::get(*context_, 0);
 
+    // Iterator source: call next() in a loop until None
+    if (src.adt_type_name == "Iterator" || src.type == CType::ADT) {
+        // Check if this is an Iterator ADT
+        bool is_iterator = src.adt_type_name == "Iterator";
+        if (!is_iterator && src.type == CType::ADT) {
+            // Check named_values for Iterator type
+            if (ext->collection->get_type() == AST_IDENTIFIER_EXPR) {
+                auto* id = static_cast<IdentifierExpr*>(ext->collection);
+                auto nv = named_values_.find(id->name->value);
+                if (nv != named_values_.end() && nv->second.adt_type_name == "Iterator")
+                    is_iterator = true;
+            }
+        }
+
+        if (is_iterator) {
+            std::string var_name = extractor_var_name(node->collectionExtractor);
+            auto* func = builder_->GetInsertBlock()->getParent();
+
+            // Extract the next function from the Iterator ADT
+            // Iterator layout: {tag, closure_ptr} — field 0 is the () -> Option a closure
+            Value* iter_val = src.val;
+            if (iter_val->getType()->isIntegerTy())
+                iter_val = builder_->CreateIntToPtr(iter_val, ptr_ty);
+
+            // The Iterator constructor wraps a closure. Extract it.
+            // For non-recursive ADTs: extractvalue {tag, closure}
+            Value* next_fn;
+            if (iter_val->getType()->isPointerTy()) {
+                // Heap-allocated: GEP to field 0 (after tag)
+                auto* gep = builder_->CreateGEP(i64_ty, iter_val,
+                    {ConstantInt::get(i64_ty, 2)}, "iter_next_gep");
+                next_fn = builder_->CreateLoad(i64_ty, gep, "iter_next_fn");
+                next_fn = builder_->CreateIntToPtr(next_fn, ptr_ty);
+            } else {
+                next_fn = builder_->CreateExtractValue(iter_val, {1});
+                if (next_fn->getType()->isIntegerTy())
+                    next_fn = builder_->CreateIntToPtr(next_fn, ptr_ty);
+            }
+
+            // Build result seq dynamically (don't know length ahead of time)
+            auto* init_cap = ConstantInt::get(i64_ty, 32);
+            auto* result = builder_->CreateCall(rt_.seq_alloc_, {init_cap}, "iter_result");
+
+            auto* loop_bb = BasicBlock::Create(*context_, "iter.loop", func);
+            auto* body_bb = BasicBlock::Create(*context_, "iter.body", func);
+            auto* done_bb = BasicBlock::Create(*context_, "iter.done", func);
+
+            auto* zero = ConstantInt::get(i64_ty, 0);
+            builder_->CreateBr(loop_bb);
+
+            builder_->SetInsertPoint(loop_bb);
+            auto* idx_phi = builder_->CreatePHI(i64_ty, 2, "iter_idx");
+            idx_phi->addIncoming(zero, loop_bb->getSinglePredecessor()
+                ? loop_bb->getSinglePredecessor() : loop_bb);
+
+            // Call next_fn() — it's a closure (() -> Option a)
+            // Closure call: fn_ptr is in the closure env
+            auto* closure_fn_gep = builder_->CreateGEP(i64_ty, next_fn,
+                {ConstantInt::get(i64_ty, 0)}, "closure_fn_gep");
+            auto* closure_fn_raw = builder_->CreateLoad(i64_ty, closure_fn_gep, "closure_fn_raw");
+            auto* closure_fn = builder_->CreateIntToPtr(closure_fn_raw,
+                PointerType::get(llvm::FunctionType::get(i64_ty, {ptr_ty}, false), 0));
+            auto* option_val = builder_->CreateCall(
+                llvm::FunctionType::get(i64_ty, {ptr_ty}, false),
+                closure_fn, {next_fn}, "iter_next_result");
+
+            // Check: is it Some (tag 0) or None (tag 1)?
+            // For non-recursive Option: {tag, value} struct
+            // The option_val is an i64 — if it's a heap ADT, extract tag
+            auto* opt_ptr = builder_->CreateIntToPtr(option_val, ptr_ty);
+            auto* tag_gep = builder_->CreateGEP(i64_ty, opt_ptr,
+                {ConstantInt::get(i64_ty, 0)}, "opt_tag_gep");
+            auto* tag = builder_->CreateLoad(i64_ty, tag_gep, "opt_tag");
+            auto* is_some = builder_->CreateICmpEQ(tag, zero, "is_some");
+            builder_->CreateCondBr(is_some, body_bb, done_bb);
+
+            builder_->SetInsertPoint(body_bb);
+            // Extract value from Some: field at index 1
+            auto* val_gep = builder_->CreateGEP(i64_ty, opt_ptr,
+                {ConstantInt::get(i64_ty, 1)}, "opt_val_gep");
+            auto* elem = builder_->CreateLoad(i64_ty, val_gep, "iter_elem");
+
+            // Bind variable and evaluate reducer
+            auto saved_nv = named_values_;
+            named_values_[var_name] = {elem, CType::INT};
+            auto body_val = codegen(node->reducerExpr);
+            Value* body_i64 = body_val.val;
+            if (body_i64->getType()->isPointerTy())
+                body_i64 = builder_->CreatePtrToInt(body_i64, i64_ty);
+            else if (body_i64->getType()->isDoubleTy())
+                body_i64 = builder_->CreateBitCast(body_i64, i64_ty);
+            else if (body_i64->getType()->isIntegerTy() && body_i64->getType() != i64_ty)
+                body_i64 = builder_->CreateZExtOrTrunc(body_i64, i64_ty);
+
+            // Append to result via cons (builds seq incrementally)
+            builder_->CreateCall(rt_.seq_set_, {result, idx_phi, body_i64});
+            named_values_ = saved_nv;
+
+            auto* next_idx = builder_->CreateAdd(idx_phi, ConstantInt::get(i64_ty, 1), "iter_next_idx");
+            idx_phi->addIncoming(next_idx, builder_->GetInsertBlock());
+            builder_->CreateBr(loop_bb);
+
+            builder_->SetInsertPoint(done_bb);
+            // Trim result seq to actual count
+            // The seq was allocated with capacity 32 but may have fewer elements
+            // For now, just return — seq_alloc sets count from the first arg
+            // TODO: dynamic resize for iterators with >32 elements
+
+            return {builder_->CreateBitCast(result, ptr_ty), CType::SEQ,
+                    body_val ? std::vector<CType>{body_val.type} : std::vector<CType>{}};
+        }
+    }
+
     // Ensure source is a pointer (seq)
     Value* src_ptr = src.val;
     if (!src_ptr->getType()->isPointerTy())

@@ -233,6 +233,7 @@ void Parser::register_prelude_constructors() {
     register_constructor("None", "Option", 1, 0);
     register_constructor("Ok", "Result", 0, 1);
     register_constructor("Err", "Result", 1, 1);
+    register_constructor("Iterator", "Iterator", 0, 1);
 }
 
 // Legacy interface implementation

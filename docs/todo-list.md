@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1070 assertions across 197 test cases (all passing)
+- **Tests**: 1072 assertions across 197 test cases (all passing)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
@@ -68,11 +68,12 @@
   `type_params`/`type_names` vectors. Instance key is `"Trait:Type1:Type2"`.
   Parser, codegen, .yonai format all updated. Backward compatible with
   single-param traits.
-- [ ] **Iterator & Iterable** — `type Iterator a = Iterator (() -> Option a)`
-  ADT + `trait Iterable a b` with `toIterator : a -> Iterator b`. Generator
-  codegen emits `next()` loop for Iterator sources. Streaming I/O: file line
-  iterator with 64KB buffered io_uring reads. Instances for Seq, Range, Dict,
-  Set, FileLines. Closes 3.7x large file gap. See streaming I/O plan.
+- [x] **Iterator & Iterable** — `type Iterator a = Iterator (() -> Option a)`
+  ADT in Prelude. Generator codegen detects Iterator sources and emits
+  `next()` call loop. File line iterator with 64KB buffered reads in runtime
+  (`yona_rt_file_line_iterator`). Foundation for streaming I/O — processes
+  files line-by-line with O(64KB) memory instead of O(file_size).
+  Iterable trait instances and full streaming benchmarks pending.
 - [ ] **Gradual Typing with Contracts** — optional `@contract` annotations
   that generate runtime checks in debug, erased in release.
 

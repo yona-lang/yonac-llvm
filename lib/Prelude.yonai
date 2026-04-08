@@ -1,4 +1,12 @@
+ADT Iterator 1 1 recursive
+CTOR Iterator 0 1
+
+
+
+
+
 ADT Linear 1 1
+
 
 
 
@@ -7,16 +15,21 @@ CTOR Linear 0 1
 ADT Option 2 1
 
 
-CTOR None 1 0
-
-
-
-
-
 CTOR Some 0 1
 
+
+
+
+
+
+
+CTOR None 1 0
+
 ADT Result 2 1
+
 CTOR Ok 0 1
+
+
 
 
 
@@ -25,16 +38,15 @@ CTOR Ok 0 1
 CTOR Err 1 1
 
 
-
 TRAIT Closeable a 1
   METHOD close
 INSTANCE Closeable Int
   IMPL close Closeable_Int__close
-FN Closeable_Int__close 1 INT -> UNIT
-FN yona_Prelude__flip 3 FUNCTION INT INT -> INT
-FN yona_Prelude__compose 3 FUNCTION FUNCTION INT -> INT
-FN yona_Prelude__const 2 INT INT -> INT
 FN yona_Prelude__identity 1 INT -> INT
+FN yona_Prelude__const 2 INT INT -> INT
+FN yona_Prelude__compose 3 FUNCTION FUNCTION INT -> INT
+FN yona_Prelude__flip 3 FUNCTION INT INT -> INT
+FN Closeable_Int__close 1 INT -> UNIT
 GENFN_BEGIN yona_Prelude__flip flip
 flip f a b = f b a
 
