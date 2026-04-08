@@ -91,9 +91,12 @@
   effects are compile-time CPS with no true suspension). Enables: chunked file
   processing, backpressure, lazy line-by-line reads, pipeline parallelism
   (read chunk N+1 while processing chunk N via io_uring).
-- [ ] **Stdlib Iterator Instances** — streaming iterators for: String (chars,
-  split, lines), Dict (keys, values, entries), Set (elements), File (listDir).
-  Each implements Iterable trait. Dynamic seq growth for >32 elements.
+- [ ] **Dict/Set Iterator Instances** — streaming iterators for Dict (keys,
+  values, entries) and Set (elements). Needs HAMT trie traversal iterators.
+  File (listDir) also pending. String chars/split/lines already done.
+- [ ] **Tail-Call Optimized Fold** — `foldl` on large collections (>5K elements)
+  overflows the stack due to non-tail-call recursion. Need TCO for recursive
+  let-bound functions, or a built-in `foldl` in the runtime.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
