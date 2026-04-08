@@ -91,6 +91,12 @@
   effects are compile-time CPS with no true suspension). Enables: chunked file
   processing, backpressure, lazy line-by-line reads, pipeline parallelism
   (read chunk N+1 while processing chunk N via io_uring).
+- [ ] **Stdlib Iterator Instances** — streaming iterators for: String (chars,
+  split, lines), Dict (keys, values, entries), Set (elements), File (listDir).
+  Each implements Iterable trait. Dynamic seq growth for >32 elements.
+- [ ] **Distributed Yona** — network/interprocess communication between Yona
+  systems. Actor model, message passing, distributed effects, serialization.
+  Erlang-style nodes, effect-based RPC, distributed task groups.
 - [ ] **Channels (CSP-style)** — typed channels for goroutine-style
   communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state

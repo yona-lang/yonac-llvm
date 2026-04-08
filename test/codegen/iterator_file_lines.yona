@@ -1,4 +1,3 @@
-import lineIterator from Std\File, writeFile from Std\File in
-let ok = writeFile "/tmp/yona_iter_lines_test.txt" "alpha\nbeta\ngamma\n" in
-let iter = lineIterator "/tmp/yona_iter_lines_test.txt" in
+import readLines from Std\File in
+let iter = readLines "/tmp/yona_iter_gen_lines_test.txt" in
 42

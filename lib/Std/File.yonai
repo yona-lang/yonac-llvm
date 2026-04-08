@@ -5,7 +5,6 @@ FN yona_Std_File__exists 1 STRING -> BOOL
 FN yona_Std_File__remove 1 STRING -> BOOL
 FN yona_Std_File__size 1 STRING -> INT
 FN yona_Std_File__listDir 1 STRING -> SEQ
-FN yona_Std_File__readLines 1 STRING -> SEQ
+FN yona_Std_File__readLines 1 STRING -> ADT
 IO yona_Std_File__readFileBytes 1 STRING -> BYTES
 FN yona_Std_File__writeFileBytes 2 STRING BYTES -> BOOL
-FN yona_Std_File__lineIterator 1 STRING -> ADT
