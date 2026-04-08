@@ -2260,10 +2260,11 @@ class TraitDeclNode final : public AstNode {
 private:
     void print(std::ostream &os) const override;
 public:
-    string name;           // "Show"
-    string type_param;     // "a"
+    string name;                  // "Show" or "Iterable"
+    string type_param;            // first type param "a" (backward compat)
+    vector<string> type_params;   // all type params: {"a", "b"} for multi-param traits
     vector<TraitMethodSig> methods;
-    vector<pair<string, string>> superclasses;  // Phase 3: e.g., {{"Eq", "a"}} for "Eq a => Ord a"
+    vector<pair<string, string>> superclasses;
 
     explicit TraitDeclNode(SourceContext token, string name, string type_param, vector<TraitMethodSig> methods,
                            vector<pair<string, string>> superclasses = {});
@@ -2279,11 +2280,12 @@ class InstanceDeclNode final : public AstNode {
 private:
     void print(std::ostream &os) const override;
 public:
-    string trait_name;     // "Show"
-    string type_name;      // "Int" or "Option" (for parameterized types)
-    vector<FunctionExpr*> methods;  // concrete implementations
-    vector<pair<string, string>> constraints;  // Phase 2: e.g., {{"Show", "a"}} for "Show a => Show (Option a)"
-    vector<string> type_params;    // Phase 2: type parameters, e.g., {"a"} for "(Option a)"
+    string trait_name;     // "Show" or "Iterable"
+    string type_name;      // first type arg "Int" (backward compat)
+    vector<string> type_names;  // all type args: {"Seq", "Int"} for multi-param
+    vector<FunctionExpr*> methods;
+    vector<pair<string, string>> constraints;
+    vector<string> type_params;
 
     explicit InstanceDeclNode(SourceContext token, string trait_name, string type_name, vector<FunctionExpr*> methods,
                               vector<pair<string, string>> constraints = {}, vector<string> type_params = {});

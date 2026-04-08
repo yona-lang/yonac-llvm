@@ -63,6 +63,16 @@
   errors [E0600], branch inconsistency [E0601], resource leak warnings [E0602].
   Stdlib producers registered: tcpConnect, tcpListen, tcpAccept, udpBind, spawn.
   See `docs/linear-types.md`.
+- [x] **Multi-Parameter Traits** — traits support multiple type params:
+  `trait Iterable a b`. TraitDeclNode, TraitInfo, TraitInstanceInfo all have
+  `type_params`/`type_names` vectors. Instance key is `"Trait:Type1:Type2"`.
+  Parser, codegen, .yonai format all updated. Backward compatible with
+  single-param traits.
+- [ ] **Iterator & Iterable** — `type Iterator a = Iterator (() -> Option a)`
+  ADT + `trait Iterable a b` with `toIterator : a -> Iterator b`. Generator
+  codegen emits `next()` loop for Iterator sources. Streaming I/O: file line
+  iterator with 64KB buffered io_uring reads. Instances for Seq, Range, Dict,
+  Set, FileLines. Closes 3.7x large file gap. See streaming I/O plan.
 - [ ] **Gradual Typing with Contracts** — optional `@contract` annotations
   that generate runtime checks in debug, erased in release.
 

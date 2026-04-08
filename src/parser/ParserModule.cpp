@@ -590,11 +590,15 @@ unique_ptr<TraitDeclNode> ParserImpl::parse_trait_declaration() {
     }
     string trait_name(advance().lexeme);
 
-    // Parse type parameter (lowercase identifier)
+    // Parse type parameters (one or more lowercase identifiers)
     string type_param;
-    if (check(TokenType::YIDENTIFIER) && islower(peek().lexeme[0])) {
-        type_param = string(advance().lexeme);
-    } else {
+    vector<string> type_params;
+    while (check(TokenType::YIDENTIFIER) && islower(peek().lexeme[0])) {
+        string tp(advance().lexeme);
+        if (type_param.empty()) type_param = tp;
+        type_params.push_back(tp);
+    }
+    if (type_params.empty()) {
         error(ParseError::Type::INVALID_SYNTAX, "Expected type parameter after trait name");
         return nullptr;
     }
@@ -674,7 +678,9 @@ unique_ptr<TraitDeclNode> ParserImpl::parse_trait_declaration() {
         return nullptr;
     }
 
-    return make_unique<TraitDeclNode>(loc, trait_name, type_param, std::move(methods), std::move(superclasses));
+    auto node = make_unique<TraitDeclNode>(loc, trait_name, type_param, std::move(methods), std::move(superclasses));
+    node->type_params = std::move(type_params);
+    return node;
 }
 
 unique_ptr<InstanceDeclNode> ParserImpl::parse_instance_declaration() {
@@ -746,6 +752,18 @@ unique_ptr<InstanceDeclNode> ParserImpl::parse_instance_declaration() {
             return nullptr;
         }
         type_name = string(advance().lexeme);
+        // Multi-param: collect additional uppercase type names
+        while (check(TokenType::YIDENTIFIER) && isupper(peek().lexeme[0])) {
+            // Additional type arguments for multi-param traits
+            // (don't consume lowercase — those are type_params for parameterized types)
+            break; // For now, additional types handled below
+        }
+    }
+
+    // Multi-param trait: collect remaining type names (uppercase identifiers before newline)
+    vector<string> type_names = {type_name};
+    while (check(TokenType::YIDENTIFIER) && isupper(peek().lexeme[0])) {
+        type_names.push_back(string(advance().lexeme));
     }
 
     skip_newlines();
@@ -772,8 +790,10 @@ unique_ptr<InstanceDeclNode> ParserImpl::parse_instance_declaration() {
         return nullptr;
     }
 
-    return make_unique<InstanceDeclNode>(loc, trait_name, type_name, std::move(methods),
+    auto node = make_unique<InstanceDeclNode>(loc, trait_name, type_name, std::move(methods),
                                           std::move(constraints), std::move(type_params));
+    node->type_names = std::move(type_names);
+    return node;
 }
 
 unique_ptr<RecordNode> ParserImpl::parse_record_definition() {

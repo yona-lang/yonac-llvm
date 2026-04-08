@@ -66,6 +66,7 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     TraitInfo closeable;
     closeable.name = "Closeable";
     closeable.type_param = "a";
+    closeable.type_params = {"a"};
     closeable.method_names.push_back("close");
     types_.traits["Closeable"] = closeable;
 
@@ -73,6 +74,7 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     TraitInstanceInfo closeable_int;
     closeable_int.trait_name = "Closeable";
     closeable_int.type_name = "Int";
+    closeable_int.type_names = {"Int"};
     closeable_int.method_mangled_names["close"] = "Closeable_Int__close";
     types_.trait_instances["Closeable:Int"] = closeable_int;
     // Register rt_close as the implementation
@@ -495,6 +497,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         TraitInfo ti;
         ti.name = trait->name;
         ti.type_param = trait->type_param;
+        ti.type_params = trait->type_params;
         ti.superclasses = std::vector<std::pair<std::string, std::string>>(
             trait->superclasses.begin(), trait->superclasses.end());
         for (auto& m : trait->methods) {
@@ -510,10 +513,14 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
     // Phase 2: handle constrained instances with ADT type names
     // Phase 3: fill in default methods from trait declaration
     for (auto* inst : mod->instance_declarations) {
-        std::string key = inst->trait_name + ":" + inst->type_name;
+        // Multi-param key: "Trait:Type1:Type2"
+        std::string key = inst->trait_name;
+        for (auto& tn : inst->type_names) key += ":" + tn;
+        if (inst->type_names.empty()) key += ":" + inst->type_name;
         TraitInstanceInfo tii;
         tii.trait_name = inst->trait_name;
         tii.type_name = inst->type_name;
+        tii.type_names = inst->type_names;
         tii.constraints = std::vector<std::pair<std::string, std::string>>(
             inst->constraints.begin(), inst->constraints.end());
 

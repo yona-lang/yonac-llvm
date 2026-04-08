@@ -156,7 +156,10 @@ bool Codegen::emit_interface_file(const std::string& path) {
 
     // Write trait definitions
     for (auto& [name, trait] : types_.traits) {
-        out << "TRAIT " << name << " " << trait.type_param << " " << trait.method_names.size() << "\n";
+        out << "TRAIT " << name;
+        for (auto& tp : trait.type_params) out << " " << tp;
+        if (trait.type_params.empty()) out << " " << trait.type_param;
+        out << " " << trait.method_names.size() << "\n";
         for (auto& method : trait.method_names) {
             out << "  METHOD " << method << "\n";
         }
@@ -164,7 +167,10 @@ bool Codegen::emit_interface_file(const std::string& path) {
 
     // Write trait instances
     for (auto& [key, inst] : types_.trait_instances) {
-        out << "INSTANCE " << inst.trait_name << " " << inst.type_name << "\n";
+        out << "INSTANCE " << inst.trait_name;
+        for (auto& tn : inst.type_names) out << " " << tn;
+        if (inst.type_names.empty()) out << " " << inst.type_name;
+        out << "\n";
         for (auto& [method, mangled_name] : inst.method_mangled_names) {
             out << "  IMPL " << method << " " << mangled_name << "\n";
         }
@@ -242,13 +248,21 @@ bool Codegen::load_interface_file(const std::string& path) {
                                         current_max_arity, current_is_recursive, fnames, ftypes};
             current_ctor_names.push_back(name);
         } else if (keyword == "TRAIT") {
-            std::string name, type_param;
-            int method_count;
-            iss >> name >> type_param >> method_count;
+            // Format: TRAIT name param1 [param2 ...] method_count
+            std::string name;
+            iss >> name;
+            std::vector<std::string> tokens;
+            std::string tok;
+            while (iss >> tok) tokens.push_back(tok);
+            // Last token is method_count (integer), rest are type params
             TraitInfo ti;
             ti.name = name;
-            ti.type_param = type_param;
-            // Methods will be read on subsequent lines
+            if (!tokens.empty()) {
+                for (size_t i = 0; i + 1 < tokens.size(); i++)
+                    ti.type_params.push_back(tokens[i]);
+                if (!ti.type_params.empty())
+                    ti.type_param = ti.type_params[0];
+            }
             types_.traits[name] = ti;
         } else if (keyword == "METHOD") {
             std::string method_name;
@@ -263,12 +277,19 @@ bool Codegen::load_interface_file(const std::string& path) {
                 }
             }
         } else if (keyword == "INSTANCE") {
-            std::string trait_name, type_name;
-            iss >> trait_name >> type_name;
-            std::string key = trait_name + ":" + type_name;
+            // Format: INSTANCE trait_name type1 [type2 ...]
+            std::string trait_name;
+            iss >> trait_name;
+            std::vector<std::string> type_names;
+            std::string tn;
+            while (iss >> tn) type_names.push_back(tn);
+            std::string type_name = type_names.empty() ? "" : type_names[0];
+            std::string key = trait_name;
+            for (auto& t : type_names) key += ":" + t;
             TraitInstanceInfo tii;
             tii.trait_name = trait_name;
             tii.type_name = type_name;
+            tii.type_names = type_names;
             types_.trait_instances[key] = tii;
         } else if (keyword == "IMPL") {
             std::string method_name, mangled_name;

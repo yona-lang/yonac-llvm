@@ -155,13 +155,17 @@ private:
 
     // ===== Type Registry — ADTs, traits, CFFI =====
     struct TraitInfo {
-        std::string name, type_param;
+        std::string name;
+        std::string type_param;            // first param (backward compat)
+        std::vector<std::string> type_params; // all params for multi-param traits
         std::vector<std::string> method_names;
         std::vector<std::pair<std::string, std::string>> superclasses;
         std::unordered_map<std::string, FunctionExpr*> default_impls;
     };
     struct TraitInstanceInfo {
-        std::string trait_name, type_name;
+        std::string trait_name;
+        std::string type_name;             // first type arg (backward compat)
+        std::vector<std::string> type_names; // all type args for multi-param
         std::unordered_map<std::string, std::string> method_mangled_names;
         std::vector<std::pair<std::string, std::string>> constraints;
     };

@@ -1536,8 +1536,8 @@ void FunctionDeclaration::print(std::ostream &os) const {
 // TraitDeclNode implementation
 TraitDeclNode::TraitDeclNode(SourceContext token, string name, string type_param, vector<TraitMethodSig> methods,
                              vector<pair<string, string>> superclasses)
-    : AstNode(token), name(std::move(name)), type_param(std::move(type_param)),
-      methods(std::move(methods)), superclasses(std::move(superclasses)) {}
+    : AstNode(token), name(std::move(name)), type_param(type_param),
+      type_params({type_param}), methods(std::move(methods)), superclasses(std::move(superclasses)) {}
 
 TraitDeclNode::~TraitDeclNode() {
     for (auto& m : methods) {
@@ -1565,8 +1565,8 @@ void TraitDeclNode::print(std::ostream &os) const {
 // InstanceDeclNode implementation
 InstanceDeclNode::InstanceDeclNode(SourceContext token, string trait_name, string type_name, vector<FunctionExpr*> methods,
                                    vector<pair<string, string>> constraints, vector<string> type_params)
-    : AstNode(token), trait_name(std::move(trait_name)), type_name(std::move(type_name)),
-      methods(nodes_with_parent(std::move(methods), this)),
+    : AstNode(token), trait_name(std::move(trait_name)), type_name(type_name),
+      type_names({type_name}), methods(nodes_with_parent(std::move(methods), this)),
       constraints(std::move(constraints)), type_params(std::move(type_params)) {}
 
 InstanceDeclNode::~InstanceDeclNode() {
