@@ -397,28 +397,35 @@ line_complete:
  * Returns an Iterator ADT wrapping the next-line closure. */
 int64_t yona_rt_file_line_iterator(const char* path) {
     int fd = open(path, O_RDONLY);
-    if (fd < 0) return 0;
 
     /* Allocate state */
     line_iter_state_t* st = (line_iter_state_t*)malloc(sizeof(line_iter_state_t));
-    st->fd = fd;
-    st->buf = (char*)malloc(LINE_ITER_BUF_SIZE);
-    st->buf_pos = 0;
-    st->buf_len = 0;
-    st->eof = 0;
-
+    if (fd < 0) {
+        /* File not found — empty iterator */
+        st->fd = -1;
+        st->buf = NULL;
+        st->buf_pos = 0;
+        st->buf_len = 0;
+        st->eof = 1;
+    } else {
+        st->fd = fd;
+        st->buf = (char*)malloc(LINE_ITER_BUF_SIZE);
+        st->buf_pos = 0;
+        st->buf_len = 0;
+        st->eof = 0;
+    }
     /* Create a closure that captures the state.
      * Closure layout: [fn_ptr, ret_tag, arity, num_caps, heap_mask, cap0, ...] */
-    extern int64_t* yona_rt_closure_create(int64_t fn_ptr, int64_t ret_tag,
-                                            int64_t arity, int64_t num_caps);
-    int64_t* closure = yona_rt_closure_create(
-        (int64_t)(intptr_t)line_iter_next,
-        0,   /* ret_tag: INT (actually Option, but i64 representation) */
-        1,   /* arity: takes 1 arg (the closure env itself) */
+    extern void* yona_rt_closure_create(void* fn_ptr, int64_t ret_tag,
+                                        int64_t arity, int64_t num_caps);
+    int64_t* closure = (int64_t*)yona_rt_closure_create(
+        (void*)line_iter_next,
+        0,   /* ret_tag */
+        0,   /* arity: 0 explicit args — () -> Option a */
         1    /* num_caps: 1 captured value (the state pointer) */
     );
     /* Set cap0 = state pointer */
-    extern void yona_rt_closure_set_cap(int64_t* closure, int64_t index, int64_t value);
+    extern void yona_rt_closure_set_cap(void* closure, int64_t idx, int64_t val);
     yona_rt_closure_set_cap(closure, 0, (int64_t)(intptr_t)st);
 
     /* Wrap in Iterator ADT: non-recursive, {tag=0, closure_ptr} */
