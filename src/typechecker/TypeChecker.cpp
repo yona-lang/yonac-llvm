@@ -15,6 +15,20 @@
 namespace yona::compiler::typechecker {
 using namespace yona::ast;
 
+/// Simple edit distance for "did you mean?" suggestions.
+static size_t edit_distance(const std::string& a, const std::string& b) {
+    if (a.empty()) return b.size();
+    if (b.empty()) return a.size();
+    std::vector<std::vector<size_t>> dp(a.size() + 1, std::vector<size_t>(b.size() + 1));
+    for (size_t i = 0; i <= a.size(); i++) dp[i][0] = i;
+    for (size_t j = 0; j <= b.size(); j++) dp[0][j] = j;
+    for (size_t i = 1; i <= a.size(); i++)
+        for (size_t j = 1; j <= b.size(); j++)
+            dp[i][j] = std::min({dp[i-1][j] + 1, dp[i][j-1] + 1,
+                                  dp[i-1][j-1] + (a[i-1] != b[j-1] ? 1u : 0u)});
+    return dp[a.size()][b.size()];
+}
+
 TypeChecker::TypeChecker(DiagnosticEngine& diag)
     : unifier_(arena_, uf_, diag), diag_(diag) {
     root_env_ = std::make_shared<TypeEnv>();
@@ -51,6 +65,12 @@ MonoTypePtr TypeChecker::zonk(MonoTypePtr type) {
             std::vector<MonoTypePtr> elems;
             for (auto* e : type->elements) elems.push_back(zonk(e));
             return arena_.make_tuple(elems);
+        }
+        case MonoType::MRecord: {
+            std::vector<std::pair<std::string, MonoTypePtr>> fields;
+            for (auto& [name, ft] : type->record_fields) fields.push_back({name, zonk(ft)});
+            MonoTypePtr rest = type->row_rest ? zonk(type->row_rest) : nullptr;
+            return arena_.make_record(fields, rest);
         }
         default: return type;
     }
@@ -114,6 +134,35 @@ MonoTypePtr TypeChecker::infer(AstNode* node, std::shared_ptr<TypeEnv> env, int 
             result = infer_case(static_cast<CaseExpr*>(node), env, level); break;
         case AST_CONS_LEFT_EXPR:
             result = infer_cons(static_cast<ConsLeftExpr*>(node), env, level); break;
+        case AST_RECORD_LITERAL_EXPR: {
+            auto* rec = static_cast<RecordLiteralExpr*>(node);
+            std::vector<std::pair<std::string, MonoTypePtr>> fields;
+            for (auto& [name, expr] : rec->fields) {
+                auto* field_type = infer(expr, env, level);
+                fields.push_back({name, field_type});
+            }
+            result = arena_.make_record(fields);
+            break;
+        }
+        case AST_FIELD_ACCESS_EXPR: {
+            auto* fa = static_cast<FieldAccessExpr*>(node);
+            auto* obj_type = infer(fa->identifier, env, level);
+            // Constrain obj to be a record with this field
+            auto* field_var = arena_.fresh_var(level);
+            uf_.add_var(field_var->var_id, level);
+            auto* row_var = arena_.fresh_var(level);
+            uf_.add_var(row_var->var_id, level);
+            auto* expected_record = arena_.make_record(
+                {{fa->name->value, field_var}}, row_var);
+            unifier_.unify(obj_type, expected_record, node->source_context,
+                           "in field access '." + fa->name->value + "'");
+            result = unifier_.resolve(field_var);
+            break;
+        }
+        case AST_PERFORM_EXPR:
+            result = infer_perform(static_cast<PerformExpr*>(node), env, level); break;
+        case AST_HANDLE_EXPR:
+            result = infer_handle(static_cast<HandleExpr*>(node), env, level); break;
         default:
             // Binary operators
             if (auto* binop = dynamic_cast<BinaryOpExpr*>(node)) {
@@ -144,7 +193,18 @@ MonoTypePtr TypeChecker::infer_identifier(IdentifierExpr* node,
                                            std::shared_ptr<TypeEnv> env, int level) {
     auto scheme = env->lookup(node->name->value);
     if (!scheme) {
-        diag_.error(node->source_context, "undefined variable '" + node->name->value + "'");
+        std::string msg = "undefined variable '" + node->name->value + "'";
+        // Suggest closest match
+        auto names = env->all_names();
+        std::string best;
+        size_t best_dist = 4; // max distance to suggest
+        for (auto& n : names) {
+            auto d = edit_distance(node->name->value, n);
+            if (d < best_dist) { best_dist = d; best = n; }
+        }
+        if (!best.empty())
+            msg += "; did you mean '" + best + "'?";
+        diag_.error(node->source_context, ErrorCode::E0103, msg);
         error_count_++;
         return arena_.fresh_var(level);
     }
@@ -223,7 +283,17 @@ MonoTypePtr TypeChecker::infer_apply(ApplyExpr* node, std::shared_ptr<TypeEnv> e
         if (scheme)
             callee_type = instantiate(*scheme, level);
         else {
-            diag_.error(node->source_context, "undefined function '" + nc->name->value + "'");
+            std::string msg = "undefined function '" + nc->name->value + "'";
+            auto names = env->all_names();
+            std::string best;
+            size_t best_dist = 4;
+            for (auto& n : names) {
+                auto d = edit_distance(nc->name->value, n);
+                if (d < best_dist) { best_dist = d; best = n; }
+            }
+            if (!best.empty())
+                msg += "; did you mean '" + best + "'?";
+            diag_.error(node->source_context, ErrorCode::E0104, msg);
             error_count_++;
             return arena_.fresh_var(level);
         }
@@ -377,6 +447,10 @@ void TypeChecker::collect_free_vars(MonoTypePtr type, int level, std::vector<Typ
         for (auto* a : type->args) collect_free_vars(a, level, vars);
     if (type->tag == MonoType::MTuple)
         for (auto* e : type->elements) collect_free_vars(e, level, vars);
+    if (type->tag == MonoType::MRecord) {
+        for (auto& [_, ft] : type->record_fields) collect_free_vars(ft, level, vars);
+        if (type->row_rest) collect_free_vars(type->row_rest, level, vars);
+    }
 }
 
 TypeScheme TypeChecker::generalize(MonoTypePtr type, int level) {
@@ -407,6 +481,13 @@ MonoTypePtr TypeChecker::substitute(MonoTypePtr type,
         std::vector<MonoTypePtr> new_elems;
         for (auto* e : type->elements) new_elems.push_back(substitute(e, subst));
         return arena_.make_tuple(new_elems);
+    }
+    if (type->tag == MonoType::MRecord) {
+        std::vector<std::pair<std::string, MonoTypePtr>> new_fields;
+        for (auto& [name, ft] : type->record_fields)
+            new_fields.push_back({name, substitute(ft, subst)});
+        MonoTypePtr new_rest = type->row_rest ? substitute(type->row_rest, subst) : nullptr;
+        return arena_.make_record(new_fields, new_rest);
     }
     return type;
 }
@@ -565,6 +646,28 @@ MonoTypePtr TypeChecker::infer_pattern(PatternNode* pat, std::shared_ptr<TypeEnv
             return v;
         }
 
+        case AST_TYPED_PATTERN: {
+            auto* tp = static_cast<TypedPattern*>(pat);
+            // Map type name to MonoType
+            MonoTypePtr bound_type;
+            if (tp->type_name == "Int")         bound_type = arena_.make_con(TyCon::Int);
+            else if (tp->type_name == "Float")  bound_type = arena_.make_con(TyCon::Float);
+            else if (tp->type_name == "Bool")   bound_type = arena_.make_con(TyCon::Bool);
+            else if (tp->type_name == "String") bound_type = arena_.make_con(TyCon::String);
+            else if (tp->type_name == "Symbol") bound_type = arena_.make_con(TyCon::Symbol);
+            else if (tp->type_name == "Bytes")  bound_type = arena_.make_con(TyCon::Bytes);
+            else {
+                // Unknown or ADT type — use a named App type
+                bound_type = arena_.make_app(tp->type_name, {});
+            }
+            env->bind(tp->binding_name, bound_type);
+            // The pattern matches a sum type containing this alternative
+            // Return the scrutinee type (sum) rather than the inner type
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
+            return v;
+        }
+
         case AST_OR_PATTERN: {
             auto* op = static_cast<OrPattern*>(pat);
             MonoTypePtr or_type = nullptr;
@@ -682,7 +785,7 @@ bool TypeChecker::solve_constraints() {
 
         auto it = trait_instances_.find(dc.trait_name);
         if (it == trait_instances_.end()) {
-            diag_.error(dc.loc, "no instances for trait '" + dc.trait_name + "'");
+            diag_.error(dc.loc, ErrorCode::E0106, "no instances for trait '" + dc.trait_name + "'");
             all_ok = false;
             continue;
         }
@@ -690,11 +793,157 @@ bool TypeChecker::solve_constraints() {
         for (auto& inst : it->second)
             if (inst == type_name) { found = true; break; }
         if (!found) {
-            diag_.error(dc.loc, "no instance for '" + dc.trait_name + " " + type_name + "'");
+            diag_.error(dc.loc, ErrorCode::E0105, "no instance for '" + dc.trait_name + " " + type_name + "'");
             all_ok = false;
         }
     }
     return all_ok;
+}
+
+// ===== Effect Registration =====
+
+void TypeChecker::register_effect(const std::string& effect_name, const std::string& type_param,
+                                   const std::vector<std::tuple<std::string, std::vector<MonoTypePtr>, MonoTypePtr>>& operations) {
+    (void)type_param; // type param is used for documentation; operations already carry concrete types
+    for (auto& [op_name, param_types, return_type] : operations) {
+        std::string key = effect_name + "." + op_name;
+        effect_ops_[key] = {effect_name, param_types, return_type};
+    }
+}
+
+// ===== Perform =====
+
+MonoTypePtr TypeChecker::infer_perform(PerformExpr* node, std::shared_ptr<TypeEnv> env, int level) {
+    std::string op_key = node->effect_name + "." + node->operation_name;
+
+    // Check handler scope — is this perform inside a matching handle?
+    bool handled = false;
+    for (auto it = handler_scope_stack_.rbegin(); it != handler_scope_stack_.rend(); ++it) {
+        for (auto& handled_op : *it) {
+            if (handled_op == op_key) { handled = true; break; }
+        }
+        if (handled) break;
+    }
+    if (!handled) {
+        diag_.warning(node->source_context,
+                      "effect operation '" + op_key + "' may not be handled; "
+                      "ensure a 'handle...with' block provides a handler for " + node->effect_name,
+                      WarningFlag::UnhandledEffect);
+    }
+
+    // Look up the operation's type signature
+    auto it = effect_ops_.find(op_key);
+    if (it != effect_ops_.end()) {
+        auto& info = it->second;
+        // Check argument count
+        // Filter out unit args from the perform call (matching codegen behavior)
+        size_t expected = info.param_types.size();
+        size_t actual = node->args.size();
+        if (actual != expected) {
+            diag_.error(node->source_context, ErrorCode::E0201,
+                        "effect operation '" + op_key + "' expects " +
+                        std::to_string(expected) + " argument(s), got " + std::to_string(actual));
+            error_count_++;
+        }
+        // Type-check arguments
+        for (size_t i = 0; i < node->args.size() && i < info.param_types.size(); i++) {
+            auto* arg_type = infer(node->args[i], env, level);
+            unifier_.unify(arg_type, info.param_types[i], node->source_context,
+                           "in argument " + std::to_string(i + 1) + " of perform " + op_key);
+        }
+        return info.return_type;
+    }
+
+    // Unknown effect — infer args, return fresh var
+    for (auto* arg : node->args)
+        infer(arg, env, level);
+
+    auto* v = arena_.fresh_var(level);
+    uf_.add_var(v->var_id, level);
+    return v;
+}
+
+// ===== Handle =====
+
+MonoTypePtr TypeChecker::infer_handle(HandleExpr* node, std::shared_ptr<TypeEnv> env, int level) {
+    // Collect which operations this handle block covers
+    std::vector<std::string> handled_ops;
+    for (auto* clause : node->clauses) {
+        if (!clause->is_return_clause) {
+            handled_ops.push_back(clause->effect_name + "." + clause->operation_name);
+        }
+    }
+
+    // Push handler scope, then infer body
+    handler_scope_stack_.push_back(handled_ops);
+    auto* body_type = infer(node->body, env, level);
+    handler_scope_stack_.pop_back();
+
+    // The result type of the whole handle expression.
+    // If there's a return clause, it transforms the body result — so result_type
+    // may differ from body_type. Start with a fresh var.
+    auto* result_type = arena_.fresh_var(level);
+    uf_.add_var(result_type->var_id, level);
+
+    // Check for a return clause first to establish the result type
+    bool has_return = false;
+    for (auto* clause : node->clauses) {
+        if (clause->is_return_clause) {
+            has_return = true;
+            auto clause_env = env->child();
+            clause_env->bind(clause->return_binding, body_type);
+            auto* clause_type = infer(clause->body, clause_env, level);
+            unifier_.unify(result_type, clause_type, clause->source_context,
+                           "in return handler clause");
+            break;
+        }
+    }
+    // No return clause → result is body type
+    if (!has_return)
+        unifier_.unify(result_type, body_type, node->body->source_context, "in handle body");
+
+    result_type = unifier_.resolve(result_type);
+
+    // Infer operation handler clauses
+    for (auto* clause : node->clauses) {
+        if (clause->is_return_clause) continue;
+
+        auto clause_env = env->child();
+        std::string op_key = clause->effect_name + "." + clause->operation_name;
+
+        // Bind operation argument names
+        auto op_it = effect_ops_.find(op_key);
+        for (size_t i = 0; i < clause->arg_names.size(); i++) {
+            MonoTypePtr arg_type;
+            if (op_it != effect_ops_.end() && i < op_it->second.param_types.size())
+                arg_type = op_it->second.param_types[i];
+            else {
+                arg_type = arena_.fresh_var(level);
+                uf_.add_var(arg_type->var_id, level);
+            }
+            clause_env->bind(clause->arg_names[i], arg_type);
+        }
+
+        // Bind resume: function from op's return type to result type
+        if (!clause->resume_name.empty()) {
+            MonoTypePtr resume_param;
+            if (op_it != effect_ops_.end())
+                resume_param = op_it->second.return_type;
+            else {
+                resume_param = arena_.fresh_var(level);
+                uf_.add_var(resume_param->var_id, level);
+            }
+            auto* resume_type = arena_.make_arrow(resume_param, result_type);
+            clause_env->bind(clause->resume_name, resume_type);
+        }
+
+        auto* clause_type = infer(clause->body, clause_env, level);
+        unifier_.unify(result_type, clause_type, clause->source_context,
+                       "in handler clause for " + op_key);
+        result_type = unifier_.resolve(result_type);
+    }
+
+    return result_type;
 }
 
 } // namespace yona::compiler::typechecker

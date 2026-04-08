@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 817 assertions across 75 test cases (all passing)
+- **Tests**: 1058 assertions across 197 test cases (all passing)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
@@ -37,21 +37,32 @@
   Static handler dispatch via CPS, handlers compiled as direct LLVM functions.
   Resume via raw function pointer indirect call. Zero overhead when not used.
   See [docs/effects.md](effects.md).
-- [ ] **Anonymous/Inline Sum Types** — `Int | String` as type annotations,
-  function return types, and ADT field types. Parser already handles
-  `T1 | T2` via `parse_sum_type()` → `SumType`. Missing: codegen support
-  (tagged tuple `{type_tag, value}`), `yona_type_to_ctype` mapping,
-  type-based pattern matching (`case x of (n : Int) -> ...`).
-  Requires type checker for sound dispatch.
-- [ ] **Refinement Types** — compile-time invariant verification.
-  `type NonEmpty a = { seq : [a] | length seq > 0 }`, `type Port = { n : Int | 0 < n && n < 65536 }`.
-  Total functions like `head : NonEmpty a -> a` with no runtime check.
-- [ ] **Row Polymorphism for Records** — polymorphic record access.
-  `greet : { name : String | r } -> String` works on any record with
-  a `name` field. Like Elm/PureScript/OCaml row types.
-- [ ] **Linear/Affine Types for Resources** — `type Linear File`,
-  compiler enforces exactly-once use (must close). Composable with
-  effects for safe resource management.
+- [x] **Anonymous/Inline Sum Types** — `Int | String` as type annotations,
+  function return types, and ADT field types. Parser handles `T1 | T2` via
+  `parse_sum_type()` → `SumType`. Codegen: tagged 2-tuple `(type_tag, value)`
+  via `box_as_sum()`. Type-based pattern matching: `case x of (n : Int) -> ...`.
+  `TypedPattern` AST node, `CType::SUM`, auto-boxing on typed pattern match.
+- [x] **Refinement Types** — compile-time invariant verification.
+  `type NonEmpty a = { xs : [a] | length xs > 0 }`, `type Port = { n : Int | n > 0 && n < 65536 }`.
+  RefinementChecker with FactEnv (integer intervals, non-emptiness, excluded values).
+  Built-in checks: head/tail require non-empty, division requires non-zero.
+  Pattern-match narrowing: `[h|t]` proves non-empty, integer literals set exact bounds,
+  wildcard `_` excludes all prior matched values. Guard narrowing: `n | n > 0`.
+  If-condition narrowing for all 6 comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`)
+  with `&&` compound support. Arithmetic interval propagation through `+` and `-`.
+  Variable aliasing. Parsed in type position: `{ var : Type | pred }`.
+  Refinements erased at codegen (zero runtime cost). See `docs/refinement-types.md`.
+- [x] **Row Polymorphism for Records** — anonymous record literals `{ name = "Alice", age = 30 }`,
+  compiled as tuples with compile-time field maps. Field access `r.name` is direct indexed
+  GEP (zero overhead). Row types in type checker: `MonoType::MRecord` with field list + optional
+  row variable. Row unification matches common fields, propagates extras via row vars.
+  Field access `r.name` constrains `r` to `{ name : t | r' }`. See `docs/row-polymorphism.md`.
+- [x] **Linear/Affine Types for Resources** — `type Linear a = Linear a` ADT,
+  compiler enforces single-consume via LinearityChecker. Pattern match
+  `case x of Linear fd -> ...` is the consumption point. Use-after-consume
+  errors [E0600], branch inconsistency [E0601], resource leak warnings [E0602].
+  Stdlib producers registered: tcpConnect, tcpListen, tcpAccept, udpBind, spawn.
+  See `docs/linear-types.md`.
 - [ ] **Gradual Typing with Contracts** — optional `@contract` annotations
   that generate runtime checks in debug, erased in release.
 
@@ -78,15 +89,11 @@
   Enables: DSLs, custom syntax extensions, code generation.
 
 ### Diagnostics
-- [ ] **Rich error explanations** — compiler flag `--explain` (or `-Wverbose`)
-  that expands error messages with detailed explanations, examples of correct
-  code, and links to documentation. Each error gets an error code (E0001,
-  E0002, ...) with a dedicated explanation page. Similar to Rust's
-  `--explain` / Elm's error messages. Covers: type mismatches, missing
-  imports, undefined variables, exhaustiveness warnings, effect errors,
-  trait resolution failures. Also consolidate existing error messages
-  (parser, codegen, type checker) into a unified DiagnosticEngine with
-  consistent formatting, source context display, and colored output.
+- [x] **Rich error explanations** — `yonac --explain E0100` shows detailed
+  explanation with examples. Error codes (E01xx type, E02xx effect, E03xx parse,
+  E04xx codegen) on all errors. Unified DiagnosticEngine with colored output,
+  source context display, caret underlines, and "did you mean?" suggestions.
+  Parser errors routed through DiagnosticEngine in CLI.
 
 ### Tooling
 - [ ] Package manager / build system
@@ -152,6 +159,22 @@
 - See `docs/memory-management.md` for full details.
 
 ### Type System
+- Hindley-Milner type inference with let-polymorphism (TypeChecker)
+- Union-find with path compression, occurs check, level-based generalization
+- ADT constructor type inference (polymorphic schemes)
+- Trait constraints with deferred solving and instance resolution
+- Effect type tracking: perform/handle inference, handler scope, unhandled warnings
+- Anonymous sum types: `Int | String`, typed patterns `(n : Int)`, auto-boxing
+- Refinement types: `{ n : Int | n > 0 }`, flow-sensitive fact tracking, zero-cost erasure,
+  built-in checks (head/tail non-empty, division non-zero), wildcard complement narrowing,
+  guard narrowing, arithmetic interval propagation, all 6 comparison operators in if-narrowing
+- Linear types: `type Linear a = Linear a` ADT, LinearityChecker with use-after-consume
+  detection, branch consistency, resource leak warnings, stdlib producer registry
+- Prelude module: `lib/Prelude.yona` with Linear, Option, Result types + utility
+  functions (identity, const, flip, compose). Auto-loaded without imports.
+- Row polymorphism: anonymous records `{ field = val }` as tuples, `MonoType::MRecord`
+  with row variables, row unification, field access type inference
+- "Did you mean?" suggestions via edit distance on undefined variables
 - Function type signatures, HOF return type inference, type annotations
 - Traits: concrete/constrained instances, multi-method, default methods, superclass
 - Num trait, cross-module trait dispatch, Bytes type
@@ -171,7 +194,7 @@ Test, Collection, Function, Http
 Json, Crypto, Log, Net, Bytes, Time, Path, Format, Dict, Set, Regex
 
 ### Tooling & Distribution
-- DWARF debug info, rich error messages, DiagnosticEngine
+- DWARF debug info, DiagnosticEngine with error codes and `--explain`
 - Documentation system (`##` doc comments → `scripts/gendocs.py`)
 - Benchmark suite (11 benchmarks with C references)
 - CI/CD: GitHub Actions (Linux, macOS, Windows)

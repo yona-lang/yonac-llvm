@@ -1,0 +1,1 @@
+case Ok 99 of Ok v -> v; Err e -> 0 end

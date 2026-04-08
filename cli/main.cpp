@@ -11,6 +11,7 @@
 //   yonac module.yona                 # compile module to .o + .yonai
 //   yonac -I lib main.yona            # compile with module search path
 //   yonac -Wall -Werror main.yona     # enable warnings, treat as errors
+//   yonac --explain E0100             # explain error code E0100
 
 #include <iostream>
 #include <fstream>
@@ -25,6 +26,8 @@
 #include "Codegen.h"
 #include "Diagnostic.h"
 #include "typechecker/TypeChecker.h"
+#include "typechecker/RefinementChecker.h"
+#include "typechecker/LinearityChecker.h"
 
 using namespace std;
 using namespace yona;
@@ -54,6 +57,7 @@ int main(int argc, char* argv[]) {
     bool flag_debug = false;
     int opt_level = 2;
     vector<string> include_paths;
+    string explain_code;
 
     app.add_option("input", input_file, "Input .yona file");
     app.add_option("-e,--expression", expression, "Compile expression");
@@ -68,8 +72,23 @@ int main(int argc, char* argv[]) {
     app.add_flag("--Werror", flag_werror, "Treat warnings as errors");
     app.add_flag("-w", flag_w, "Suppress all warnings");
     app.add_flag("-g,--debug", flag_debug, "Emit DWARF debug information");
+    app.add_option("--explain", explain_code, "Show detailed explanation for an error code (e.g., E0100)");
 
     CLI11_PARSE(app, argc, argv);
+
+    // --explain: print explanation and exit
+    if (!explain_code.empty()) {
+        auto code = compiler::parse_error_code(explain_code);
+        if (code) {
+            string explanation = compiler::error_explanation(*code);
+            if (!explanation.empty()) {
+                cout << explanation << endl;
+                return 0;
+            }
+        }
+        cerr << "Unknown error code: " << explain_code << endl;
+        return 1;
+    }
 
     // Get source code
     string source;
@@ -129,20 +148,23 @@ int main(int argc, char* argv[]) {
             codegen.module_paths_.push_back(parent.string());
     }
     codegen.module_paths_.push_back(".");
+    codegen.load_prelude();
 
     llvm::Module* llvm_mod = nullptr;
 
     if (is_module) {
         parser::Parser parser;
+        parser.register_prelude_constructors();
         auto result = parser.parse_module(source, filename);
         if (!result.has_value()) {
             for (auto& e : result.error())
-                diag.error(e.location, e.message);
+                diag.error(e.location, compiler::ErrorCode::E0301, e.message);
             return 1;
         }
         llvm_mod = codegen.compile_module(result.value().get());
     } else {
         parser::Parser parser;
+        parser.register_prelude_constructors();
         istringstream stream(source);
         auto parse_result = parser.parse_input(stream);
         if (!parse_result.node) {
@@ -150,16 +172,29 @@ int main(int argc, char* argv[]) {
             auto result = parser.parse_expression(source, filename);
             if (!result.has_value()) {
                 for (auto& e : result.error())
-                    diag.error(e.location, e.message);
+                    diag.error(e.location, compiler::ErrorCode::E0301, e.message);
             } else {
-                diag.error(SourceLocation::unknown(), "parse error");
+                diag.error(SourceLocation::unknown(), compiler::ErrorCode::E0301, "parse error");
             }
             return 1;
         }
         // Optional type checking (non-blocking — codegen still works if types have errors)
         typechecker::TypeChecker type_checker(diag);
+        // Register prelude ADTs for type inference
+        type_checker.register_adt("Linear", {"a"}, {{"Linear", 1}});
+        type_checker.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
+        type_checker.register_adt("Result", {"a", "e"}, {{"Ok", 1}, {"Err", 1}});
         type_checker.check(parse_result.node.get());
         codegen.set_type_checker(&type_checker);
+
+        // Refinement checking (non-blocking)
+        typechecker::RefinementChecker refinement_checker(diag);
+        refinement_checker.check(parse_result.node.get());
+
+        // Linearity checking (non-blocking)
+        typechecker::LinearityChecker linearity_checker(diag);
+        linearity_checker.check(parse_result.node.get());
+
         llvm_mod = codegen.compile(parse_result.node.get());
     }
 
@@ -182,7 +217,7 @@ int main(int argc, char* argv[]) {
     // Emit object file
     string obj_file = (is_module || emit_obj) ? output_file : (output_file + ".o");
     if (!codegen.emit_object_file(obj_file)) {
-        diag.error(SourceLocation::unknown(), "failed to emit object file");
+        diag.error(SourceLocation::unknown(), compiler::ErrorCode::E0400, "failed to emit object file");
         return 1;
     }
 
@@ -282,7 +317,7 @@ int main(int argc, char* argv[]) {
     filesystem::remove(obj_file);
 
     if (link_result != 0) {
-        diag.error(SourceLocation::unknown(), "linking failed");
+        diag.error(SourceLocation::unknown(), compiler::ErrorCode::E0401, "linking failed");
         return 1;
     }
 

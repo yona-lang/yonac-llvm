@@ -27,4 +27,9 @@ MonoTypePtr TypeArena::make_tuple(std::vector<MonoTypePtr> elems) {
     return alloc(MonoType::make_tuple(std::move(elems)));
 }
 
+MonoTypePtr TypeArena::make_record(std::vector<std::pair<std::string, MonoTypePtr>> fields,
+                                    MonoTypePtr row_rest) {
+    return alloc(MonoType::make_record(std::move(fields), row_rest));
+}
+
 } // namespace yona::compiler::typechecker

@@ -1,0 +1,5 @@
+let x = 42 in
+case x of
+    (n : Int) -> n + 1
+    (s : String) -> 0
+end

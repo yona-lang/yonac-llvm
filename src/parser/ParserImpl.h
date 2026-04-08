@@ -121,6 +121,8 @@ public:
     unique_ptr<compiler::types::Type> parse_sum_type();
     unique_ptr<compiler::types::Type> parse_product_type();
     unique_ptr<compiler::types::Type> parse_collection_type();
+    shared_ptr<compiler::types::RefinePredicate> parse_refinement_predicate(const string& default_var);
+    shared_ptr<compiler::types::RefinePredicate> parse_refinement_atom(const string& default_var);
     unique_ptr<compiler::types::Type> parse_primary_type();
     unique_ptr<TypeNameNode> parse_type_name_node();
     unique_ptr<TypeDefinition> parse_type_definition();

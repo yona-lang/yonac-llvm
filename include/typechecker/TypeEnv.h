@@ -37,6 +37,9 @@ public:
     /// Get local bindings (for error messages / debugging).
     const std::unordered_map<std::string, TypeScheme>& locals() const { return bindings_; }
 
+    /// Collect all visible names (for "did you mean?" suggestions).
+    std::vector<std::string> all_names() const;
+
 private:
     std::shared_ptr<TypeEnv> parent_;
     std::unordered_map<std::string, TypeScheme> bindings_;

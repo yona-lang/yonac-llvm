@@ -104,8 +104,28 @@ unique_ptr<PatternNode> ParserImpl::parse_pattern_primary() {
         return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(false_expr));
     }
 
-    // Tuple pattern
+    // Tuple pattern or typed pattern (name : Type)
     if (match(TokenType::YLPAREN)) {
+        // Check for typed pattern: (name : Type)
+        // Lookahead: IDENT COLON IDENT RPAREN
+        if (check(TokenType::YIDENTIFIER)) {
+            size_t saved_pos = current_;
+            string name(current().lexeme);
+            advance();
+            if (check(TokenType::YCOLON)) {
+                advance(); // consume ':'
+                if (check(TokenType::YIDENTIFIER)) {
+                    string type_name(advance().lexeme);
+                    if (check(TokenType::YRPAREN)) {
+                        advance(); // consume ')'
+                        return make_unique<TypedPattern>(loc, name, type_name);
+                    }
+                }
+            }
+            // Not a typed pattern — restore position
+            current_ = saved_pos;
+        }
+
         vector<PatternNode*> elements;
 
         if (!check(TokenType::YRPAREN)) {

@@ -1,0 +1,59 @@
+ADT Linear 1 1
+
+
+
+
+CTOR Linear 0 1
+ADT Option 2 1
+
+
+CTOR None 1 0
+
+
+
+
+
+CTOR Some 0 1
+
+ADT Result 2 1
+CTOR Ok 0 1
+
+
+
+
+
+CTOR Err 1 1
+
+
+
+TRAIT Closeable a 1
+  METHOD close
+INSTANCE Closeable Int
+  IMPL close Closeable_Int__close
+FN Closeable_Int__close 1 INT -> UNIT
+FN yona_Prelude__flip 3 FUNCTION INT INT -> INT
+FN yona_Prelude__compose 3 FUNCTION FUNCTION INT -> INT
+FN yona_Prelude__const 2 INT INT -> INT
+FN yona_Prelude__identity 1 INT -> INT
+GENFN_BEGIN yona_Prelude__flip flip
+flip f a b = f b a
+
+## Compose — applies g then f: `compose f g x = f (g x)`.
+
+GENFN_END
+GENFN_BEGIN yona_Prelude__compose compose
+compose f g x = f (g x)
+
+GENFN_END
+GENFN_BEGIN yona_Prelude__const const
+const x _ = x
+
+## Flip — reverses the order of a two-argument function's parameters.
+
+GENFN_END
+GENFN_BEGIN yona_Prelude__identity identity
+identity x = x
+
+## Constant function — ignores the second argument.
+
+GENFN_END

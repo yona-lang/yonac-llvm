@@ -200,7 +200,8 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
 bool Codegen::is_heap_type(CType ct) {
     return ct == CType::SEQ || ct == CType::SET || ct == CType::DICT ||
            ct == CType::ADT || ct == CType::FUNCTION || ct == CType::STRING ||
-           ct == CType::BYTES || ct == CType::TUPLE;
+           ct == CType::BYTES || ct == CType::TUPLE || ct == CType::SUM ||
+           ct == CType::RECORD;
 }
 
 void Codegen::emit_rc_inc(Value* val, CType type) {

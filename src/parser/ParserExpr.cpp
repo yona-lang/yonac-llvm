@@ -441,6 +441,47 @@ unique_ptr<ExprNode> ParserImpl::parse_prefix_expr() {
                 return make_unique<SetExpr>(loc, vector<ExprNode*>{});
             }
 
+            // Check for record literal: { ident = expr, ... }
+            // Lookahead: IDENT ASSIGN
+            if (check(TokenType::YIDENTIFIER)) {
+                size_t saved_pos = current_;
+                string first_name(current().lexeme);
+                // Records have lowercase field names; uppercase would be a set of constructors
+                if (!first_name.empty() && islower(first_name[0])) {
+                    advance();
+                    if (check(TokenType::YASSIGN)) {
+                        advance(); // consume '='
+                        // It's a record literal
+                        vector<pair<string, ExprNode*>> fields;
+                        auto first_val = parse_expr();
+                        if (first_val) fields.push_back({first_name, first_val.release()});
+
+                        while (match(TokenType::YCOMMA)) {
+                            skip_newlines();
+                            if (check(TokenType::YRBRACE)) break;
+                            if (!check(TokenType::YIDENTIFIER)) {
+                                error(ParseError::Type::INVALID_SYNTAX, "Expected field name in record");
+                                break;
+                            }
+                            string fname(advance().lexeme);
+                            if (!expect(TokenType::YASSIGN, "Expected '=' after field name")) break;
+                            auto fval = parse_expr();
+                            if (fval) fields.push_back({fname, fval.release()});
+                        }
+                        skip_newlines();
+                        expect(TokenType::YRBRACE, "Expected '}' after record literal");
+
+                        // Sort fields by name for deterministic layout
+                        std::sort(fields.begin(), fields.end(),
+                            [](auto& a, auto& b) { return a.first < b.first; });
+
+                        return make_unique<RecordLiteralExpr>(loc, std::move(fields));
+                    }
+                }
+                // Not a record — restore and fall through to set/dict parsing
+                current_ = saved_pos;
+            }
+
             auto first = parse_expr();
 
             if (match(TokenType::YCOLON)) {

@@ -1,0 +1,6 @@
+let x = 3.14 in
+case x of
+    (n : Int) -> 0
+    (f : Float) -> 1
+    (s : String) -> 2
+end

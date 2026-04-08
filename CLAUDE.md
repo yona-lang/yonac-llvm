@@ -24,6 +24,15 @@ Replace `linux` with `macos` or omit the suffix for Windows. Replace `debug` wit
 - `--emit-ir` — print LLVM IR instead of compiling
 - `--emit-obj` — emit object file only (don't link)
 - `-I path` — module search paths for `.yonai` files
+- `--explain E0100` — show detailed explanation for an error code
+
+### Prelude
+The following types are available in all programs without imports (defined in `lib/Prelude.yona`):
+- `type Linear a = Linear a` — linear resource wrapper
+- `type Option a = Some a | None` — optional values
+- `type Result a e = Ok a | Err e` — error handling
+
+To update the prelude: edit `lib/Prelude.yona`, recompile with `yonac lib/Prelude.yona`, move generated `.yonai` to `lib/`, update parser/codegen/typechecker registrations if ADTs changed, rebuild.
 
 ### Run tests
 ```bash

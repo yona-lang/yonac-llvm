@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <functional>
 #include "SourceLocation.h"
 #include "yona_export.h"
@@ -19,7 +20,55 @@ enum class WarningFlag {
     MissingSignature,
     IncompletePatterns,
     OverlappingPatterns,
+    UnhandledEffect,
 };
+
+/// Structured error codes for --explain support.
+/// Each code has a detailed explanation accessible via `yonac --explain E0001`.
+enum class ErrorCode {
+    // Type errors (E01xx)
+    E0100,  ///< Type mismatch
+    E0101,  ///< Infinite type (occurs check)
+    E0102,  ///< Tuple size mismatch
+    E0103,  ///< Undefined variable
+    E0104,  ///< Undefined function
+    E0105,  ///< No trait instance
+    E0106,  ///< Missing trait instances
+
+    // Effect errors (E02xx)
+    E0200,  ///< Unhandled effect operation (codegen)
+    E0201,  ///< Effect argument count mismatch
+
+    // Parse errors (E03xx)
+    E0300,  ///< Unexpected token
+    E0301,  ///< Invalid syntax
+    E0302,  ///< Invalid pattern
+
+    // Codegen errors (E04xx)
+    E0400,  ///< Failed to emit object file
+    E0401,  ///< Linking failed
+    E0402,  ///< Unsupported expression
+    E0403,  ///< Unknown field access
+    E0404,  ///< Pipe requires function
+
+    // Refinement errors (E05xx)
+    E0500,  ///< Refinement predicate not satisfied
+
+    // Linearity errors (E06xx)
+    E0600,  ///< Use after consume (linear value already consumed)
+    E0601,  ///< Branch inconsistency (consumed in one branch but not the other)
+    E0602,  ///< Resource leak (linear value not consumed at scope exit)
+};
+
+/// Return the string form of an error code (e.g., "E0100").
+YONA_API std::string error_code_str(ErrorCode code);
+
+/// Return the detailed explanation for an error code, or "" if unknown.
+/// Used by `yonac --explain E0100`.
+YONA_API std::string error_explanation(ErrorCode code);
+
+/// Parse an error code string (e.g., "E0100") back to enum. Returns nullopt on failure.
+YONA_API std::optional<ErrorCode> parse_error_code(const std::string& str);
 
 class YONA_API DiagnosticEngine {
 public:
@@ -38,6 +87,7 @@ public:
 
     // Emission
     void error(const SourceLocation& loc, const std::string& message);
+    void error(const SourceLocation& loc, ErrorCode code, const std::string& message);
     void warning(const SourceLocation& loc, const std::string& message, WarningFlag flag);
     void note(const SourceLocation& loc, const std::string& message);
 

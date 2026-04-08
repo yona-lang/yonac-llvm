@@ -30,6 +30,7 @@ struct MonoType {
         App,        ///< Named type application: App("Option", [Int])
         Arrow,      ///< Function type: Arrow(param, ret)
         MTuple,     ///< Product type: Tuple([Int, String])
+        MRecord,    ///< Record type: { name : String, age : Int | r }
     } tag;
 
     // Var
@@ -50,6 +51,10 @@ struct MonoType {
     // MTuple
     std::vector<const MonoType*> elements;
 
+    // MRecord: sorted (name, type) pairs + optional row rest variable
+    std::vector<std::pair<std::string, const MonoType*>> record_fields;
+    const MonoType* row_rest = nullptr; // row variable (Var) or nullptr (closed row)
+
     /// Create a Var type
     static MonoType make_var(TypeId id, int lvl) {
         MonoType t; t.tag = Var; t.var_id = id; t.level = lvl; return t;
@@ -69,6 +74,11 @@ struct MonoType {
     /// Create a Tuple type
     static MonoType make_tuple(std::vector<const MonoType*> elems) {
         MonoType t; t.tag = MTuple; t.elements = std::move(elems); return t;
+    }
+    /// Create a Record type (closed or open row)
+    static MonoType make_record(std::vector<std::pair<std::string, const MonoType*>> fields,
+                                 const MonoType* rest = nullptr) {
+        MonoType t; t.tag = MRecord; t.record_fields = std::move(fields); t.row_rest = rest; return t;
     }
 };
 

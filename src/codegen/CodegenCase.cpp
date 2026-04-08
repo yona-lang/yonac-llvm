@@ -270,6 +270,16 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     auto scrutinee = auto_await(codegen(node->expr));
     if (!scrutinee) return {};
 
+    // If scrutinee is not SUM but patterns are typed patterns, auto-box it
+    if (scrutinee.type != CType::SUM && !node->clauses.empty()) {
+        for (auto* clause : node->clauses) {
+            if (clause->pattern->get_type() == AST_TYPED_PATTERN) {
+                scrutinee = box_as_sum(scrutinee);
+                break;
+            }
+        }
+    }
+
     // If scrutinee is INT but patterns are ADT constructors, the value is
     // an ADT encoded as i64 (e.g., from a closure returning a heap-allocated ADT).
     // Convert it to the ADT type for pattern matching.
@@ -454,6 +464,9 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             } else {
                 builder_->CreateBr(body_bb);
             }
+        } else if (pat->get_type() == AST_TYPED_PATTERN) {
+            body_inline = codegen_pattern_typed(static_cast<TypedPattern*>(pat),
+                                                 scrutinee, body_bb, next_bb);
         } else {
             builder_->CreateBr(body_bb);
         }
@@ -510,6 +523,121 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         if (!found) phi->addIncoming(Constant::getNullValue(phi_type), *it);
     }
     return {phi, results[0].first.type, results[0].first.subtypes};
+}
+
+// ===== Sum Type Support =====
+
+int Codegen::ctype_tag(CType ct) {
+    switch (ct) {
+        case CType::INT:      return 0;
+        case CType::FLOAT:    return 1;
+        case CType::BOOL:     return 2;
+        case CType::STRING:   return 3;
+        case CType::SEQ:      return 4;
+        case CType::TUPLE:    return 5;
+        case CType::UNIT:     return 6;
+        case CType::FUNCTION: return 7;
+        case CType::SYMBOL:   return 8;
+        case CType::PROMISE:  return 9;
+        case CType::SET:      return 10;
+        case CType::DICT:     return 11;
+        case CType::ADT:      return 12;
+        case CType::BYTES:    return 13;
+        case CType::SUM:      return 14;
+    }
+    return 0;
+}
+
+CType Codegen::type_name_to_ctype(const std::string& name) {
+    if (name == "Int")      return CType::INT;
+    if (name == "Float")    return CType::FLOAT;
+    if (name == "Bool")     return CType::BOOL;
+    if (name == "String")   return CType::STRING;
+    if (name == "Seq")      return CType::SEQ;
+    if (name == "Tuple")    return CType::TUPLE;
+    if (name == "Unit")     return CType::UNIT;
+    if (name == "Function") return CType::FUNCTION;
+    if (name == "Symbol")   return CType::SYMBOL;
+    if (name == "Promise")  return CType::PROMISE;
+    if (name == "Set")      return CType::SET;
+    if (name == "Dict")     return CType::DICT;
+    if (name == "Bytes")    return CType::BYTES;
+    return CType::INT; // fallback
+}
+
+TypedValue Codegen::box_as_sum(const TypedValue& value) {
+    auto i64_ty = LType::getInt64Ty(*context_);
+    int tag = ctype_tag(value.type);
+
+    // Allocate a 2-element tuple: [tag, value]
+    auto* tuple_ptr = builder_->CreateCall(rt_.tuple_alloc_,
+        {ConstantInt::get(i64_ty, 2)}, "sum");
+
+    // Set element 0: type tag
+    builder_->CreateCall(rt_.tuple_set_,
+        {tuple_ptr, ConstantInt::get(i64_ty, 0), ConstantInt::get(i64_ty, tag)});
+
+    // Set element 1: actual value (normalized to i64)
+    Value* val_i64 = value.val;
+    if (val_i64->getType()->isPointerTy())
+        val_i64 = builder_->CreatePtrToInt(val_i64, i64_ty);
+    else if (val_i64->getType()->isDoubleTy())
+        val_i64 = builder_->CreateBitCast(val_i64, i64_ty);
+    else if (val_i64->getType()->isIntegerTy() && val_i64->getType() != i64_ty)
+        val_i64 = builder_->CreateZExtOrTrunc(val_i64, i64_ty);
+    builder_->CreateCall(rt_.tuple_set_,
+        {tuple_ptr, ConstantInt::get(i64_ty, 1), val_i64});
+
+    // Set heap mask if the value is heap-allocated (bit 1)
+    if (is_heap_type(value.type))
+        builder_->CreateCall(rt_.tuple_set_heap_mask_,
+            {tuple_ptr, ConstantInt::get(i64_ty, 2)}); // bit 1 = position 1
+
+    auto* sum_i64 = builder_->CreatePtrToInt(tuple_ptr, i64_ty, "sum_i64");
+    return {sum_i64, CType::SUM, {value.type}};
+}
+
+bool Codegen::codegen_pattern_typed(TypedPattern* pat, const TypedValue& scrutinee,
+                                     BasicBlock* body_bb, BasicBlock* next_bb) {
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    // The scrutinee is a sum value (2-tuple). Extract tag and compare.
+    Value* tuple_ptr = scrutinee.val;
+    if (tuple_ptr->getType()->isIntegerTy())
+        tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
+
+    // Read element 0: type tag (tuple header is 2 i64s, so element at offset 2)
+    auto* tag_gep = builder_->CreateGEP(i64_ty, tuple_ptr,
+        {ConstantInt::get(i64_ty, 2)}, "sum_tag_gep");
+    auto* tag_val = builder_->CreateLoad(i64_ty, tag_gep, "sum_tag");
+
+    // Compare tag with expected type
+    CType expected_ct = type_name_to_ctype(pat->type_name);
+    int expected_tag = ctype_tag(expected_ct);
+    auto* cmp = builder_->CreateICmpEQ(tag_val,
+        ConstantInt::get(i64_ty, expected_tag), "sum_tag_match");
+    builder_->CreateCondBr(cmp, body_bb, next_bb);
+
+    // In the body block, extract the value and bind it
+    builder_->SetInsertPoint(body_bb);
+    auto* val_gep = builder_->CreateGEP(i64_ty, tuple_ptr,
+        {ConstantInt::get(i64_ty, 3)}, "sum_val_gep");
+    auto* raw_val = builder_->CreateLoad(i64_ty, val_gep, "sum_val");
+
+    // Convert raw i64 back to the appropriate type
+    Value* typed_val = raw_val;
+    if (expected_ct == CType::FLOAT)
+        typed_val = builder_->CreateBitCast(raw_val, LType::getDoubleTy(*context_));
+    else if (expected_ct == CType::BOOL)
+        typed_val = builder_->CreateTrunc(raw_val, LType::getInt1Ty(*context_));
+    else if (expected_ct == CType::STRING || expected_ct == CType::FUNCTION ||
+             expected_ct == CType::BYTES || expected_ct == CType::PROMISE)
+        typed_val = builder_->CreateIntToPtr(raw_val, PointerType::get(*context_, 0));
+    else if (expected_ct == CType::SEQ || expected_ct == CType::SET || expected_ct == CType::DICT)
+        typed_val = builder_->CreateIntToPtr(raw_val, PointerType::get(i64_ty, 0));
+
+    named_values_[pat->binding_name] = {typed_val, expected_ct};
+    return true; // already positioned in body_bb
 }
 
 } // namespace yona::compiler::codegen

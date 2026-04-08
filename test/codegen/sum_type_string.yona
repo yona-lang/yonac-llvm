@@ -1,0 +1,5 @@
+let x = "hello" in
+case x of
+    (n : Int) -> 0
+    (s : String) -> 42
+end

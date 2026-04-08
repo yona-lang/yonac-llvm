@@ -96,4 +96,15 @@ void register_builtins(TypeEnv& env, TypeArena& arena) {
     env.bind("false", bool_t);
 }
 
+std::vector<std::string> TypeEnv::all_names() const {
+    std::vector<std::string> result;
+    for (auto& [name, _] : bindings_)
+        result.push_back(name);
+    if (parent_) {
+        auto parent_names = parent_->all_names();
+        result.insert(result.end(), parent_names.begin(), parent_names.end());
+    }
+    return result;
+}
+
 } // namespace yona::compiler::typechecker

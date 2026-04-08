@@ -227,6 +227,14 @@ void Parser::register_constructor(const string& name, const string& type_name, i
     impl_->constructor_registry_[name] = {type_name, tag, arity, field_names};
 }
 
+void Parser::register_prelude_constructors() {
+    register_constructor("Linear", "Linear", 0, 1);
+    register_constructor("Some", "Option", 0, 1);
+    register_constructor("None", "Option", 1, 0);
+    register_constructor("Ok", "Result", 0, 1);
+    register_constructor("Err", "Result", 1, 1);
+}
+
 // Legacy interface implementation
 ParseResult Parser::parse_input(const vector<string>& module_name) {
     string file_path = module_location(module_name);

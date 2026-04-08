@@ -80,6 +80,24 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
 }
 Codegen::~Codegen() = default;
 
+void Codegen::load_prelude() {
+    // Try to load Prelude.yonai from module search paths
+    load_module_interface(std::filesystem::path("Prelude"));
+
+    // Fallback: ensure core ADTs exist even without the .yonai file
+    // (important for tests that run without -I lib)
+    if (types_.adt_constructors.find("Linear") == types_.adt_constructors.end())
+        types_.adt_constructors["Linear"] = {"Linear", 0, 1, 1, 1, false, {}, {}};
+    if (types_.adt_constructors.find("Some") == types_.adt_constructors.end())
+        types_.adt_constructors["Some"] = {"Option", 0, 1, 2, 1, false, {}, {}};
+    if (types_.adt_constructors.find("None") == types_.adt_constructors.end())
+        types_.adt_constructors["None"] = {"Option", 1, 0, 2, 1, false, {}, {}};
+    if (types_.adt_constructors.find("Ok") == types_.adt_constructors.end())
+        types_.adt_constructors["Ok"] = {"Result", 0, 1, 2, 1, false, {}, {}};
+    if (types_.adt_constructors.find("Err") == types_.adt_constructors.end())
+        types_.adt_constructors["Err"] = {"Result", 1, 1, 2, 1, false, {}, {}};
+}
+
 // ===== DWARF Debug Info =====
 
 void Codegen::set_debug_info(bool enabled, const std::string& filename) {
@@ -177,6 +195,8 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::ADT:    return LType::getInt64Ty(*context_); // overridden per-ADT
         case CType::BYTES:  return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::SUM:    return LType::getInt64Ty(*context_); // boxed tagged value (2-tuple)
+        case CType::RECORD: return LType::getInt64Ty(*context_); // boxed tuple (ptrtoint'd)
     }
     return LType::getInt64Ty(*context_);
 }
@@ -903,6 +923,9 @@ static std::string ctype_to_string(CType ct) {
         case CType::SET: return "SET";
         case CType::DICT: return "DICT";
         case CType::ADT: return "ADT";
+        case CType::BYTES: return "BYTES";
+        case CType::SUM: return "SUM";
+        case CType::RECORD: return "RECORD";
     }
     return "INT";
 }
@@ -1286,8 +1309,75 @@ TypedValue Codegen::codegen(AstNode* node) {
                     }
                 }
             }
+            // Record field access: look up field index from the record's field map
+            if (obj.type == CType::RECORD && !obj.record_fields.empty()) {
+                for (size_t fi = 0; fi < obj.record_fields.size(); fi++) {
+                    if (obj.record_fields[fi] == field_name) {
+                        Value* tuple_ptr = obj.val;
+                        if (tuple_ptr->getType()->isIntegerTy())
+                            tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
+                        auto* gep = builder_->CreateGEP(LType::getInt64Ty(*context_), tuple_ptr,
+                            {ConstantInt::get(LType::getInt64Ty(*context_), fi + 2)}, "rec_field_gep");
+                        auto* val = builder_->CreateLoad(LType::getInt64Ty(*context_), gep, "rec_field");
+                        CType ftype = (fi < obj.subtypes.size()) ? obj.subtypes[fi] : CType::INT;
+                        if (ftype == CType::STRING || ftype == CType::FUNCTION ||
+                            ftype == CType::BYTES || ftype == CType::PROMISE)
+                            return {builder_->CreateIntToPtr(val, PointerType::get(*context_, 0)), ftype};
+                        if (ftype == CType::SEQ || ftype == CType::SET || ftype == CType::DICT)
+                            return {builder_->CreateIntToPtr(val, PointerType::get(LType::getInt64Ty(*context_), 0)), ftype};
+                        if (ftype == CType::FLOAT)
+                            return {builder_->CreateBitCast(val, LType::getDoubleTy(*context_)), ftype};
+                        if (ftype == CType::BOOL)
+                            return {builder_->CreateTrunc(val, LType::getInt1Ty(*context_)), ftype};
+                        return {val, ftype};
+                    }
+                }
+            }
             report_error(fa->source_context, "unknown field '" + field_name + "'");
             return {};
+        }
+        case AST_RECORD_LITERAL_EXPR: {
+            auto* rec = static_cast<RecordLiteralExpr*>(node);
+            auto i64_ty = LType::getInt64Ty(*context_);
+
+            // Compile each field value
+            std::vector<Value*> elems;
+            std::vector<CType> field_ctypes;
+            std::vector<std::string> field_names;
+            for (auto& [name, expr] : rec->fields) {
+                auto tv = codegen(expr);
+                if (!tv) return {};
+                Value* i64_val = tv.val;
+                if (i64_val->getType()->isPointerTy())
+                    i64_val = builder_->CreatePtrToInt(i64_val, i64_ty);
+                else if (i64_val->getType()->isDoubleTy())
+                    i64_val = builder_->CreateBitCast(i64_val, i64_ty);
+                else if (i64_val->getType()->isIntegerTy() && i64_val->getType() != i64_ty)
+                    i64_val = builder_->CreateZExtOrTrunc(i64_val, i64_ty);
+                elems.push_back(i64_val);
+                field_ctypes.push_back(tv.type);
+                field_names.push_back(name);
+            }
+
+            // Allocate as tuple
+            auto* tuple_ptr = builder_->CreateCall(rt_.tuple_alloc_,
+                {ConstantInt::get(i64_ty, elems.size())}, "record");
+            int64_t heap_mask = 0;
+            for (size_t i = 0; i < elems.size(); i++) {
+                builder_->CreateCall(rt_.tuple_set_,
+                    {tuple_ptr, ConstantInt::get(i64_ty, i), elems[i]});
+                // Only set heap_mask for non-constant heap values (constants aren't RC-managed)
+                if (is_heap_type(field_ctypes[i]) && i < 64 && !llvm::isa<llvm::Constant>(elems[i]))
+                    heap_mask |= ((int64_t)1 << i);
+            }
+            if (heap_mask != 0)
+                builder_->CreateCall(rt_.tuple_set_heap_mask_,
+                    {tuple_ptr, ConstantInt::get(i64_ty, heap_mask)});
+            auto* rec_i64 = builder_->CreatePtrToInt(tuple_ptr, i64_ty, "record_i64");
+
+            TypedValue result = {rec_i64, CType::RECORD, field_ctypes};
+            result.record_fields = field_names;
+            return result;
         }
         case AST_TUPLE_EXPR:      return codegen_tuple(static_cast<TupleExpr*>(node));
         case AST_VALUES_SEQUENCE_EXPR: return codegen_seq(static_cast<ValuesSequenceExpr*>(node));
@@ -1364,6 +1454,10 @@ static CType yona_type_to_ctype(const types::Type& t) {
         return CType::ADT;
     if (std::holds_alternative<std::shared_ptr<types::PromiseType>>(t))
         return CType::PROMISE;
+    if (std::holds_alternative<std::shared_ptr<types::SumType>>(t))
+        return CType::SUM;
+    if (std::holds_alternative<std::shared_ptr<types::RefinedType>>(t))
+        return yona_type_to_ctype(std::get<std::shared_ptr<types::RefinedType>>(t)->base_type);
     return CType::INT;
 }
 

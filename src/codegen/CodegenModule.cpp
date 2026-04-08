@@ -115,6 +115,8 @@ static CType string_to_ctype(const std::string& s) {
     if (s == "DICT") return CType::DICT;
     if (s == "ADT") return CType::ADT;
     if (s == "BYTES") return CType::BYTES;
+    if (s == "SUM") return CType::SUM;
+    if (s == "RECORD") return CType::RECORD;
     return CType::INT;
 }
 
@@ -633,6 +635,10 @@ static CType yona_type_to_ctype(const types::Type& t) {
         return CType::ADT;
     if (std::holds_alternative<std::shared_ptr<types::PromiseType>>(t))
         return CType::PROMISE;
+    if (std::holds_alternative<std::shared_ptr<types::SumType>>(t))
+        return CType::SUM;
+    if (std::holds_alternative<std::shared_ptr<types::RefinedType>>(t))
+        return yona_type_to_ctype(std::get<std::shared_ptr<types::RefinedType>>(t)->base_type);
     return CType::INT;
 }
 

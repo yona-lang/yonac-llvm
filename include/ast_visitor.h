@@ -136,6 +136,8 @@ class CallExpr;
 class GeneratorExpr;
 class CollectionExtractorExpr;
 class ConstructorPattern;
+class TypedPattern;
+class RecordLiteralExpr;
 class TraitDeclNode;
 class InstanceDeclNode;
 class EffectDeclNode;
@@ -269,6 +271,8 @@ public:
   virtual ResultType visit(PerformExpr *node) const = 0;
   virtual ResultType visit(HandleExpr *node) const = 0;
   virtual ResultType visit(HandlerClause *node) const = 0;
+  virtual ResultType visit(TypedPattern *node) const = 0;
+  virtual ResultType visit(RecordLiteralExpr *node) const = 0;
   virtual ResultType visit(ScopedNode *node) const = 0;
 
   // Default implementations for intermediate classes that dispatch to concrete types

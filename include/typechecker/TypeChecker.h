@@ -53,6 +53,11 @@ public:
     /// Register a trait instance for a concrete type.
     void register_instance(const std::string& trait_name, const std::string& type_name);
 
+    /// Register an effect declaration with its operations.
+    /// Each operation is (name, param_types, return_type).
+    void register_effect(const std::string& effect_name, const std::string& type_param,
+                          const std::vector<std::tuple<std::string, std::vector<MonoTypePtr>, MonoTypePtr>>& operations);
+
     /// Solve deferred trait constraints. Returns false on unsatisfied constraints.
     bool solve_constraints();
 
@@ -77,6 +82,8 @@ private:
     MonoTypePtr infer_do(ast::DoExpr* node, std::shared_ptr<TypeEnv> env, int level);
     MonoTypePtr infer_case(ast::CaseExpr* node, std::shared_ptr<TypeEnv> env, int level);
     MonoTypePtr infer_cons(ast::ConsLeftExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_perform(ast::PerformExpr* node, std::shared_ptr<TypeEnv> env, int level);
+    MonoTypePtr infer_handle(ast::HandleExpr* node, std::shared_ptr<TypeEnv> env, int level);
 
     /// Infer the type a pattern matches, binding variables in env.
     MonoTypePtr infer_pattern(ast::PatternNode* pat, std::shared_ptr<TypeEnv> env, int level);
@@ -134,6 +141,17 @@ private:
         std::string context;
     };
     std::vector<DeferredConstraint> deferred_constraints_;
+
+    /// Effect operation registry: "Effect.op" → (param_types, return_type)
+    struct EffectOpInfo {
+        std::string effect_name;
+        std::vector<MonoTypePtr> param_types;
+        MonoTypePtr return_type;
+    };
+    std::unordered_map<std::string, EffectOpInfo> effect_ops_;
+
+    /// Handler scope stack: each entry lists the effect operations handled at that level.
+    std::vector<std::vector<std::string>> handler_scope_stack_;
 };
 
 } // namespace yona::compiler::typechecker

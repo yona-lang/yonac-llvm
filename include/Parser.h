@@ -102,6 +102,10 @@ public:
     void register_constructor(const string& name, const string& type_name, int tag, int arity,
                               const vector<string>& field_names = {});
 
+    /// Register prelude ADT constructors (Linear, Option, Result).
+    /// Call before parsing to make prelude types available for pattern matching.
+    void register_prelude_constructors();
+
     // Legacy interface for compatibility
     ParseResult parse_input(const vector<string>& module_name);
     ParseResult parse_input(istream& stream);

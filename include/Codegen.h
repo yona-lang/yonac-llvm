@@ -38,7 +38,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTES };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTES, SUM, RECORD };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -46,6 +46,7 @@ struct TypedValue {
     CType type = CType::INT;
     std::vector<CType> subtypes; // tuple: element types; SEQ/SET: {elem_type}; DICT: {key_type, val_type}
     std::string adt_type_name;   // For CType::ADT: the ADT type name (e.g., "Option")
+    std::vector<std::string> record_fields; // For CType::RECORD: sorted field names (index = tuple position)
     bool is_io_promise = false;  // true: await via yona_rt_io_await, false: yona_rt_async_await
 
     TypedValue() = default;
@@ -86,6 +87,11 @@ public:
 
     // Enable DWARF debug info emission
     void set_debug_info(bool enabled, const std::string& filename = "");
+
+    /// Load the Prelude module interface. Call after module_paths_ is set.
+    /// Registers prelude ADTs (Linear, Option, Result) and functions.
+    /// Falls back to programmatic registration if Prelude.yonai is not found.
+    void load_prelude();
     void set_opt_level(int level) { opt_level_ = (level < 0) ? 0 : (level > 3) ? 3 : level; }
 
     // Module search paths for resolving imports
@@ -342,6 +348,17 @@ private:
                                 llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
     bool codegen_pattern_constructor(ConstructorPattern* pat, const TypedValue& scrutinee,
                                       llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+    bool codegen_pattern_typed(TypedPattern* pat, const TypedValue& scrutinee,
+                                llvm::BasicBlock* body_bb, llvm::BasicBlock* next_bb);
+
+    /// Box a value as a sum type: creates a 2-tuple (type_tag, value).
+    TypedValue box_as_sum(const TypedValue& value);
+
+    /// Convert a type name string ("Int", "String", etc.) to a CType tag integer.
+    static int ctype_tag(CType ct);
+    /// Convert a type name string to CType.
+    static CType type_name_to_ctype(const std::string& name);
+
     TypedValue codegen_do(DoExpr* node);
     TypedValue codegen_raise(RaiseExpr* node);
     TypedValue codegen_try_catch(TryCatchExpr* node);

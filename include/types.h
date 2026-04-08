@@ -24,6 +24,7 @@ struct ProductType;
 struct UnionType;
 struct RecordType;
 struct PromiseType;
+struct RefinedType;
 
 enum BuiltinType {
   Bool,
@@ -56,7 +57,7 @@ static const std::string BuiltinTypeStrings[] = {"Bool",          "Byte",       
 
 using Type = variant<BuiltinType, shared_ptr<SingleItemCollectionType>, shared_ptr<DictCollectionType>, shared_ptr<FunctionType>,
                      shared_ptr<NamedType>, shared_ptr<SumType>, shared_ptr<ProductType>, shared_ptr<RecordType>,
-                     shared_ptr<PromiseType>, nullptr_t>;
+                     shared_ptr<PromiseType>, shared_ptr<RefinedType>, nullptr_t>;
 
 struct SingleItemCollectionType final {
   enum CollectionKind { Set, Seq } kind;
@@ -96,6 +97,70 @@ struct RecordType final {
 // when Promise<T> is used where T is expected.
 struct PromiseType final {
   Type valueType;  // The type of the resolved value
+};
+
+/// A refinement predicate: `n > 0`, `length xs > 0`, `p && q`, etc.
+struct RefinePredicate {
+    enum Op {
+        Gt, Lt, Ge, Le, Eq, Ne,       // comparisons: var op literal
+        And, Or, Not,                   // boolean combinators
+        LengthGt,                       // length var > literal (collection non-emptiness)
+    } op;
+
+    string var_name;                    // the variable being constrained
+    int64_t literal = 0;                // comparison target
+    vector<shared_ptr<RefinePredicate>> children; // for And/Or/Not
+
+    static shared_ptr<RefinePredicate> make_cmp(Op op, const string& var, int64_t lit) {
+        auto p = make_shared<RefinePredicate>();
+        p->op = op; p->var_name = var; p->literal = lit;
+        return p;
+    }
+    static shared_ptr<RefinePredicate> make_and(shared_ptr<RefinePredicate> a, shared_ptr<RefinePredicate> b) {
+        auto p = make_shared<RefinePredicate>();
+        p->op = And; p->children = {std::move(a), std::move(b)};
+        return p;
+    }
+    static shared_ptr<RefinePredicate> make_or(shared_ptr<RefinePredicate> a, shared_ptr<RefinePredicate> b) {
+        auto p = make_shared<RefinePredicate>();
+        p->op = Or; p->children = {std::move(a), std::move(b)};
+        return p;
+    }
+    static shared_ptr<RefinePredicate> make_length_gt(const string& var, int64_t lit) {
+        auto p = make_shared<RefinePredicate>();
+        p->op = LengthGt; p->var_name = var; p->literal = lit;
+        return p;
+    }
+
+    /// Pretty-print for error messages
+    inline string to_string() const {
+        switch (op) {
+            case Gt: return var_name + " > " + std::to_string(literal);
+            case Lt: return var_name + " < " + std::to_string(literal);
+            case Ge: return var_name + " >= " + std::to_string(literal);
+            case Le: return var_name + " <= " + std::to_string(literal);
+            case Eq: return var_name + " == " + std::to_string(literal);
+            case Ne: return var_name + " != " + std::to_string(literal);
+            case LengthGt: return "length " + var_name + " > " + std::to_string(literal);
+            case And:
+                if (children.size() == 2) return children[0]->to_string() + " && " + children[1]->to_string();
+                return "&&";
+            case Or:
+                if (children.size() == 2) return children[0]->to_string() + " || " + children[1]->to_string();
+                return "||";
+            case Not:
+                if (!children.empty()) return "!(" + children[0]->to_string() + ")";
+                return "!";
+        }
+        return "?";
+    }
+};
+
+/// Refined type: `{ var : BaseType | predicate }`
+struct RefinedType final {
+    string var_name;                     // bound variable name
+    Type base_type;                      // the underlying type
+    shared_ptr<RefinePredicate> predicate; // the constraint
 };
 
 // Check if a type is a Promise<T>

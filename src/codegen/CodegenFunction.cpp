@@ -1766,6 +1766,10 @@ static CType yona_type_to_ctype(const types::Type& t) {
         return CType::ADT;
     if (std::holds_alternative<std::shared_ptr<types::PromiseType>>(t))
         return CType::PROMISE;
+    if (std::holds_alternative<std::shared_ptr<types::SumType>>(t))
+        return CType::SUM;
+    if (std::holds_alternative<std::shared_ptr<types::RefinedType>>(t))
+        return yona_type_to_ctype(std::get<std::shared_ptr<types::RefinedType>>(t)->base_type);
     return CType::INT;
 }
 

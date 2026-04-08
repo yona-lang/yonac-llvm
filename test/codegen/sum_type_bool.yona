@@ -1,0 +1,5 @@
+let x = true in
+case x of
+    (n : Int) -> 0
+    (b : Bool) -> if b then 99 else 0
+end

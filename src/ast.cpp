@@ -1445,6 +1445,29 @@ void ConstructorPattern::print(std::ostream &os) const {
   }
 }
 
+TypedPattern::TypedPattern(SourceContext token, string name, string type_name)
+    : PatternNode(token), binding_name(std::move(name)), type_name(std::move(type_name)) {}
+
+RecordLiteralExpr::RecordLiteralExpr(SourceContext token, vector<pair<string, ExprNode*>> fields)
+    : ExprNode(token), fields(std::move(fields)) {}
+
+RecordLiteralExpr::~RecordLiteralExpr() {
+    for (auto& [_, expr] : fields) delete expr;
+}
+
+void RecordLiteralExpr::print(std::ostream &os) const {
+    os << "{ ";
+    for (size_t i = 0; i < fields.size(); i++) {
+        if (i > 0) os << ", ";
+        os << fields[i].first << " = " << *fields[i].second;
+    }
+    os << " }";
+}
+
+void TypedPattern::print(std::ostream &os) const {
+  os << "(" << binding_name << " : " << type_name << ")";
+}
+
 TypeNode::TypeNode(SourceContext token, TypeDeclaration *declaration, vector<TypeDeclaration *> definitions)
     : AstNode(token), declaration(declaration->with_parent<TypeDeclaration>(this)), definitions(nodes_with_parent(std::move(definitions), this)) {}
 

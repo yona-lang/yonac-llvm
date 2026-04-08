@@ -178,7 +178,9 @@ enum AstNodeType {
   AST_EFFECT_DECL,
   AST_PERFORM_EXPR,
   AST_HANDLE_EXPR,
-  AST_HANDLER_CLAUSE
+  AST_HANDLER_CLAUSE,
+  AST_TYPED_PATTERN,
+  AST_RECORD_LITERAL_EXPR
 };
 
 struct expr_wrapper {
@@ -797,6 +799,23 @@ public:
   }
   [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_INSTANCE_EXPR; };
   ~RecordInstanceExpr() override;
+};
+
+/// Anonymous record literal: `{ name = "Alice", age = 30 }`
+/// Compiled as a tuple with a compile-time field map (name → index).
+class RecordLiteralExpr final : public ExprNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    vector<pair<string, ExprNode*>> fields; ///< field name → value, sorted by name
+
+    explicit RecordLiteralExpr(SourceContext token, vector<pair<string, ExprNode*>> fields);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_RECORD_LITERAL_EXPR; };
+    ~RecordLiteralExpr() override;
 };
 
 class BodyWithGuards final : public FunctionBody {
@@ -2067,6 +2086,23 @@ public:
     }
     [[nodiscard]] AstNodeType get_type() const override { return AST_CONSTRUCTOR_PATTERN; };
     ~ConstructorPattern() override;
+};
+
+/// Typed pattern: `(name : Type)` for sum type matching
+/// Matches a sum-typed value when its runtime tag equals the given type.
+class TypedPattern final : public PatternNode {
+private:
+    void print(std::ostream &os) const override;
+public:
+    string binding_name;   ///< Variable to bind the unwrapped value
+    string type_name;      ///< Type to match: "Int", "String", "Float", etc.
+
+    explicit TypedPattern(SourceContext token, string name, string type_name);
+    template<typename ResultType>
+    ResultType accept(const AstVisitor<ResultType> &visitor) const {
+        return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));
+    }
+    [[nodiscard]] AstNodeType get_type() const override { return AST_TYPED_PATTERN; };
 };
 
 class YONA_API CaseExpr final : public ExprNode {

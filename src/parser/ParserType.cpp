@@ -121,6 +121,32 @@ unique_ptr<compiler::types::Type> ParserImpl::parse_collection_type() {
     if (check(TokenType::YLBRACE)) {
         advance();
 
+        // Try refinement type: { var : Type | predicate }
+        // Lookahead: IDENT COLON ... PIPE ... RBRACE
+        if (check(TokenType::YIDENTIFIER)) {
+            size_t saved = current_;
+            string var_name(current().lexeme);
+            advance();
+            if (check(TokenType::YCOLON)) {
+                advance(); // consume ':'
+                auto base_type = parse_type();
+                if (base_type && check(TokenType::YPIPE)) {
+                    advance(); // consume '|'
+                    auto predicate = parse_refinement_predicate(var_name);
+                    if (predicate) {
+                        if (!expect(TokenType::YRBRACE, "Expected '}' after refinement type")) return nullptr;
+                        auto rt = make_shared<compiler::types::RefinedType>();
+                        rt->var_name = var_name;
+                        rt->base_type = *base_type;
+                        rt->predicate = predicate;
+                        return make_unique<compiler::types::Type>(rt);
+                    }
+                }
+            }
+            // Not a refinement — restore and fall through
+            current_ = saved;
+        }
+
         auto first_type = parse_type();
         if (!first_type) {
             error(ParseError::Type::INVALID_SYNTAX, "Expected type in collection");
@@ -325,6 +351,82 @@ unique_ptr<TypeNameNode> ParserImpl::parse_type_name() {
 
     error(ParseError::Type::INVALID_SYNTAX, "Expected type name");
     return nullptr;
+}
+
+// ===== Refinement Predicate Parser =====
+// Parses: var > 0, var < N, var != 0, length var > 0, p && q, p || q
+// Grammar:
+//   predicate   = atom (("&&" | "||") atom)*
+//   atom        = "length" IDENT ">" INTEGER
+//               | IDENT (">" | "<" | ">=" | "<=" | "==" | "!=") INTEGER
+
+shared_ptr<compiler::types::RefinePredicate> ParserImpl::parse_refinement_predicate(const string& default_var) {
+    auto left = parse_refinement_atom(default_var);
+    if (!left) return nullptr;
+
+    while (true) {
+        if (match(TokenType::YAND)) {
+            auto right = parse_refinement_atom(default_var);
+            if (!right) return nullptr;
+            left = compiler::types::RefinePredicate::make_and(left, right);
+        } else if (match(TokenType::YOR)) {
+            auto right = parse_refinement_atom(default_var);
+            if (!right) return nullptr;
+            left = compiler::types::RefinePredicate::make_or(left, right);
+        } else {
+            break;
+        }
+    }
+    return left;
+}
+
+shared_ptr<compiler::types::RefinePredicate> ParserImpl::parse_refinement_atom(const string& default_var) {
+    // "length" IDENT ">" INTEGER
+    if (check(TokenType::YIDENTIFIER) && string(current().lexeme) == "length") {
+        advance(); // consume "length"
+        string var = default_var;
+        if (check(TokenType::YIDENTIFIER)) {
+            var = string(advance().lexeme);
+        }
+        // Expect > or >=
+        compiler::types::RefinePredicate::Op op;
+        if (match(TokenType::YGT)) op = compiler::types::RefinePredicate::LengthGt;
+        else {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected '>' after 'length' in refinement");
+            return nullptr;
+        }
+        if (!check(TokenType::YINTEGER)) {
+            error(ParseError::Type::INVALID_SYNTAX, "Expected integer literal in refinement predicate");
+            return nullptr;
+        }
+        int64_t lit = get<int64_t>(advance().value);
+        return compiler::types::RefinePredicate::make_length_gt(var, lit);
+    }
+
+    // IDENT comparison INTEGER
+    string var = default_var;
+    if (check(TokenType::YIDENTIFIER)) {
+        var = string(advance().lexeme);
+    }
+
+    compiler::types::RefinePredicate::Op op;
+    if (match(TokenType::YGT))       op = compiler::types::RefinePredicate::Gt;
+    else if (match(TokenType::YLT))  op = compiler::types::RefinePredicate::Lt;
+    else if (match(TokenType::YGTE)) op = compiler::types::RefinePredicate::Ge;
+    else if (match(TokenType::YLTE)) op = compiler::types::RefinePredicate::Le;
+    else if (match(TokenType::YEQ))  op = compiler::types::RefinePredicate::Eq;
+    else if (match(TokenType::YNEQ)) op = compiler::types::RefinePredicate::Ne;
+    else {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected comparison operator in refinement predicate");
+        return nullptr;
+    }
+
+    if (!check(TokenType::YINTEGER)) {
+        error(ParseError::Type::INVALID_SYNTAX, "Expected integer literal in refinement predicate");
+        return nullptr;
+    }
+    int64_t lit = get<int64_t>(advance().value);
+    return compiler::types::RefinePredicate::make_cmp(op, var, lit);
 }
 
 } // namespace yona::parser

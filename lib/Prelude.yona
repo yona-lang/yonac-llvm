@@ -1,0 +1,28 @@
+module Prelude
+
+export type Linear
+export type Option
+export type Result
+export identity, const, flip, compose
+
+## Linear resource wrapper — values of type `Linear a` must be consumed
+## exactly once via pattern matching. Used for file handles, sockets, etc.
+type Linear a = Linear a
+
+## Optional value — either `Some value` or `None`.
+type Option a = Some a | None
+
+## Result of a computation — either `Ok value` or `Err error`.
+type Result a e = Ok a | Err e
+
+## Identity function — returns its argument unchanged.
+identity x = x
+
+## Constant function — ignores the second argument.
+const x _ = x
+
+## Flip — reverses the order of a two-argument function's parameters.
+flip f a b = f b a
+
+## Compose — applies g then f: `compose f g x = f (g x)`.
+compose f g x = f (g x)

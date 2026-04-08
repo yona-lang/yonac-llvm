@@ -28,6 +28,10 @@ public:
     /// Create a tuple type.
     MonoTypePtr make_tuple(std::vector<MonoTypePtr> elems);
 
+    /// Create a record type (closed or open row).
+    MonoTypePtr make_record(std::vector<std::pair<std::string, MonoTypePtr>> fields,
+                             MonoTypePtr row_rest = nullptr);
+
     /// Allocate and return a stable pointer to a MonoType.
     MonoTypePtr alloc(MonoType t);
 

@@ -38,7 +38,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
     if (a->tag == MonoType::Var) {
         if (b->tag == MonoType::Var && a->var_id == b->var_id) return true;
         if (occurs_in(a->var_id, b)) {
-            diag_.error(loc, "infinite type: cannot construct " +
+            diag_.error(loc, ErrorCode::E0101, "infinite type: cannot construct " +
                         pretty_print(a) + " ~ " + pretty_print(b) +
                         (context.empty() ? "" : " " + context));
             return false;
@@ -51,7 +51,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
     // Var on right: bind
     if (b->tag == MonoType::Var) {
         if (occurs_in(b->var_id, a)) {
-            diag_.error(loc, "infinite type: cannot construct " +
+            diag_.error(loc, ErrorCode::E0101, "infinite type: cannot construct " +
                         pretty_print(b) + " ~ " + pretty_print(a) +
                         (context.empty() ? "" : " " + context));
             return false;
@@ -63,7 +63,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
 
     // Both concrete: must match structurally
     if (a->tag != b->tag) {
-        diag_.error(loc, "type mismatch: expected " + pretty_print(a) +
+        diag_.error(loc, ErrorCode::E0100, "type mismatch: expected " + pretty_print(a) +
                     " but found " + pretty_print(b) +
                     (context.empty() ? "" : " " + context));
         return false;
@@ -72,7 +72,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
     switch (a->tag) {
         case MonoType::Con:
             if (a->con != b->con) {
-                diag_.error(loc, "type mismatch: expected " + pretty_print(a) +
+                diag_.error(loc, ErrorCode::E0100, "type mismatch: expected " + pretty_print(a) +
                             " but found " + pretty_print(b) +
                             (context.empty() ? "" : " " + context));
                 return false;
@@ -85,7 +85,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
 
         case MonoType::App:
             if (a->type_name != b->type_name || a->args.size() != b->args.size()) {
-                diag_.error(loc, "type mismatch: " + pretty_print(a) +
+                diag_.error(loc, ErrorCode::E0100, "type mismatch: " + pretty_print(a) +
                             " vs " + pretty_print(b) +
                             (context.empty() ? "" : " " + context));
                 return false;
@@ -97,7 +97,7 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
 
         case MonoType::MTuple:
             if (a->elements.size() != b->elements.size()) {
-                diag_.error(loc, "tuple size mismatch: " +
+                diag_.error(loc, ErrorCode::E0102, "tuple size mismatch: " +
                             std::to_string(a->elements.size()) + " vs " +
                             std::to_string(b->elements.size()) +
                             (context.empty() ? "" : " " + context));
@@ -107,6 +107,54 @@ bool Unifier::unify_inner(MonoTypePtr a, MonoTypePtr b, const SourceLocation& lo
                 if (!unify(a->elements[i], b->elements[i], loc, context)) return false;
             }
             return true;
+
+        case MonoType::MRecord: {
+            // Row unification: match common fields, propagate extras
+            // Collect fields from both sides
+            std::unordered_map<std::string, MonoTypePtr> a_fields, b_fields;
+            for (auto& [name, type] : a->record_fields) a_fields[name] = type;
+            for (auto& [name, type] : b->record_fields) b_fields[name] = type;
+
+            // Unify common fields
+            for (auto& [name, a_type] : a_fields) {
+                auto it = b_fields.find(name);
+                if (it != b_fields.end()) {
+                    if (!unify(a_type, it->second, loc, context)) return false;
+                }
+            }
+
+            // Extra fields in a but not b: b must have an open row to absorb them
+            std::vector<std::pair<std::string, MonoTypePtr>> a_extras, b_extras;
+            for (auto& [name, type] : a_fields)
+                if (b_fields.find(name) == b_fields.end()) a_extras.push_back({name, type});
+            for (auto& [name, type] : b_fields)
+                if (a_fields.find(name) == a_fields.end()) b_extras.push_back({name, type});
+
+            // If a has extras, b must have an open row variable to absorb them
+            if (!a_extras.empty() && b->row_rest) {
+                auto* extra_record = arena_.make_record(a_extras, a->row_rest);
+                if (!unify(b->row_rest, extra_record, loc, context)) return false;
+            } else if (!a_extras.empty() && !b->row_rest) {
+                diag_.error(loc, ErrorCode::E0100, "record has extra field(s) not expected" +
+                    (context.empty() ? "" : " " + context));
+                return false;
+            }
+
+            if (!b_extras.empty() && a->row_rest) {
+                auto* extra_record = arena_.make_record(b_extras, b->row_rest);
+                if (!unify(a->row_rest, extra_record, loc, context)) return false;
+            } else if (!b_extras.empty() && !a->row_rest) {
+                diag_.error(loc, ErrorCode::E0100, "record missing field(s)" +
+                    (context.empty() ? "" : " " + context));
+                return false;
+            }
+
+            // If both have row rest, unify them
+            if (a->row_rest && b->row_rest && a_extras.empty() && b_extras.empty())
+                unify(a->row_rest, b->row_rest, loc, context);
+
+            return true;
+        }
 
         default:
             return false;
@@ -125,6 +173,11 @@ bool Unifier::occurs_in(TypeId var_id, MonoTypePtr type) {
     }
     if (type->tag == MonoType::MTuple) {
         for (auto* e : type->elements) if (occurs_in(var_id, e)) return true;
+        return false;
+    }
+    if (type->tag == MonoType::MRecord) {
+        for (auto& [_, ft] : type->record_fields) if (occurs_in(var_id, ft)) return true;
+        if (type->row_rest && occurs_in(var_id, type->row_rest)) return true;
         return false;
     }
     return false;
@@ -146,6 +199,10 @@ void Unifier::adjust_levels(MonoTypePtr type, int level) {
         for (auto* a : type->args) adjust_levels(a, level);
     if (type->tag == MonoType::MTuple)
         for (auto* e : type->elements) adjust_levels(e, level);
+    if (type->tag == MonoType::MRecord) {
+        for (auto& [_, ft] : type->record_fields) adjust_levels(ft, level);
+        if (type->row_rest) adjust_levels(type->row_rest, level);
+    }
 }
 
 // Pretty-print a type for error messages
@@ -188,6 +245,18 @@ std::string pretty_print(MonoTypePtr type) {
                 s += pretty_print(type->elements[i]);
             }
             return s + ")";
+        }
+        case MonoType::MRecord: {
+            std::string s = "{ ";
+            for (size_t i = 0; i < type->record_fields.size(); i++) {
+                if (i > 0) s += ", ";
+                s += type->record_fields[i].first + " : " + pretty_print(type->record_fields[i].second);
+            }
+            if (type->row_rest) {
+                if (!type->record_fields.empty()) s += " | ";
+                s += pretty_print(type->row_rest);
+            }
+            return s + " }";
         }
         default: return "?";
     }
