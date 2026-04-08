@@ -263,6 +263,18 @@ void Codegen::declare_runtime() {
     rt_.async_call_thunk_ = decl("yona_rt_async_call_thunk", promise_ptr, {thunk_ptr_ty});
     rt_.async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
 
+    // Task groups (structured concurrency)
+    auto group_ptr = ptr; // opaque pointer to yona_task_group_t
+    rt_.group_begin_   = decl("yona_rt_group_begin", group_ptr, {});
+    rt_.group_register_ = decl("yona_rt_group_register", vd, {group_ptr, promise_ptr});
+    rt_.group_register_io_ = decl("yona_rt_group_register_io", vd, {group_ptr, i64});
+    rt_.group_await_all_ = decl("yona_rt_group_await_all", i64, {group_ptr});
+    rt_.group_end_     = decl("yona_rt_group_end", vd, {group_ptr});
+    rt_.group_cancel_  = decl("yona_rt_group_cancel", vd, {group_ptr});
+    rt_.group_is_cancelled_ = decl("yona_rt_group_is_cancelled", i64, {group_ptr});
+    rt_.async_call_grouped_ = decl("yona_rt_async_call_grouped", promise_ptr, {fn_ptr_ty, i64, group_ptr});
+    rt_.async_call_thunk_grouped_ = decl("yona_rt_async_call_thunk_grouped", promise_ptr, {thunk_ptr_ty, group_ptr});
+
     // ADT runtime (recursive types)
     auto i8 = LType::getInt8Ty(*context_);
     rt_.adt_alloc_     = decl("yona_rt_adt_alloc", ptr, {i64, i64});

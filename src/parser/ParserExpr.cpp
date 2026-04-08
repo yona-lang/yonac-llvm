@@ -384,9 +384,27 @@ unique_ptr<ExprNode> ParserImpl::parse_prefix_expr() {
             }
         }
 
-        // List/Sequence
+        // List/Sequence or parallel comprehension [| expr | var <- source |]
         case TokenType::YLBRACKET: {
             advance();
+
+            // Parallel comprehension: [| expr for var = source ]
+            // The [| opening distinguishes from regular comprehensions.
+            // Closing ] is the same as regular comprehensions (no trailing |).
+            if (match(TokenType::YPIPE)) {
+                auto body = parse_expr();
+                if (!body) { error(ParseError::Type::INVALID_SYNTAX, "Expected expression in parallel comprehension"); return nullptr; }
+                if (!match(TokenType::YFOR)) {
+                    error(ParseError::Type::INVALID_SYNTAX, "Expected 'for' in parallel comprehension [| expr for var = source ]");
+                    return nullptr;
+                }
+                auto extractor = parse_collection_extractor();
+                expect(TokenType::YRBRACKET, "Expected ']' after parallel comprehension");
+
+                auto result = make_unique<SeqGeneratorExpr>(loc, body.release(), extractor.release(), nullptr);
+                result->is_parallel = true;
+                return result;
+            }
 
             if (check(TokenType::YRBRACKET)) {
                 advance();

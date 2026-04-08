@@ -23,6 +23,27 @@ TypedValue Codegen::codegen_perform(PerformExpr* node) {
     set_debug_loc(node->source_context);
     auto i64_ty = LType::getInt64Ty(*context_);
 
+    // Built-in Cancel.check effect: check group cancellation flag
+    if (node->effect_name == "Cancel" && node->operation_name == "check") {
+        if (current_group_) {
+            auto* fn = builder_->GetInsertBlock()->getParent();
+            auto* cancelled = builder_->CreateCall(rt_.group_is_cancelled_, {current_group_}, "cancelled");
+            auto* is_cancelled = builder_->CreateICmpNE(cancelled,
+                ConstantInt::get(i64_ty, 0), "is_cancelled");
+            auto* cancel_bb = BasicBlock::Create(*context_, "cancel", fn);
+            auto* continue_bb = BasicBlock::Create(*context_, "continue", fn);
+            builder_->CreateCondBr(is_cancelled, cancel_bb, continue_bb);
+            builder_->SetInsertPoint(cancel_bb);
+            // Raise :Cancelled
+            int64_t sym_id = intern_symbol("Cancelled");
+            auto* msg = builder_->CreateGlobalStringPtr("task cancelled", "cancel_msg");
+            builder_->CreateCall(rt_.raise_, {ConstantInt::get(i64_ty, sym_id), msg});
+            builder_->CreateUnreachable();
+            builder_->SetInsertPoint(continue_bb);
+        }
+        return {ConstantInt::get(i64_ty, 0), CType::UNIT};
+    }
+
     // Find handler
     std::string op_key = node->effect_name + "." + node->operation_name;
     Function* handler_fn = nullptr;

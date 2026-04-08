@@ -143,6 +143,30 @@ static int32_t ring_await(uint64_t id) {
     }
 }
 
+/* Submit IORING_OP_ASYNC_CANCEL for a pending operation */
+static void ring_cancel(uint64_t target_id) {
+    if (!yona_ring.initialized) return;
+    pthread_mutex_lock(&yona_ring_mutex);
+    unsigned tail = *yona_ring.sq_tail;
+    unsigned mask = *yona_ring.sq_ring_mask;
+    unsigned idx = tail & mask;
+    struct io_uring_sqe *sqe = &yona_ring.sqes[idx];
+    memset(sqe, 0, sizeof(*sqe));
+    sqe->opcode = IORING_OP_ASYNC_CANCEL;
+    sqe->addr = target_id;
+    sqe->user_data = atomic_fetch_add(&yona_ring.next_id, 1);
+    yona_ring.sq_array[idx] = idx;
+    __atomic_store_n(yona_ring.sq_tail, tail + 1, __ATOMIC_RELEASE);
+    yona_uring_enter(yona_ring.ring_fd, 1, 0, 0);
+    pthread_mutex_unlock(&yona_ring_mutex);
+}
+
+/* Cancel all io_uring operations in a task group */
+static void ring_cancel_group_ios(uint64_t* io_ids, int count) {
+    for (int i = 0; i < count; i++)
+        ring_cancel(io_ids[i]);
+}
+
 /* ===== I/O context registry ===== */
 /*
  * Each submitted I/O operation registers a context struct keyed by user_data ID.

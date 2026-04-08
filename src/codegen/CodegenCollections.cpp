@@ -236,6 +236,70 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
         return {};
     }
 
+    // Parallel comprehension: [| expr for var <- source |]
+    // Spawns each iteration as a task in a group, collects promises, awaits all.
+    if (node->is_parallel) {
+        auto src = codegen(ext->collection);
+        if (!src) return {};
+        auto i64_ty = LType::getInt64Ty(*context_);
+        auto ptr_ty = PointerType::get(*context_, 0);
+        Value* src_ptr = src.val;
+        if (!src_ptr->getType()->isPointerTy())
+            src_ptr = builder_->CreateIntToPtr(src_ptr, ptr_ty);
+
+        auto* src_len = builder_->CreateCall(rt_.seq_length_, {src_ptr}, "par_src_len");
+        auto* result = builder_->CreateCall(rt_.seq_alloc_, {src_len}, "par_result");
+        auto* group = builder_->CreateCall(rt_.group_begin_, {}, "par_group");
+        auto saved_group = current_group_;
+        current_group_ = group;
+
+        std::string var_name = extractor_var_name(node->collectionExtractor);
+        auto* func = builder_->GetInsertBlock()->getParent();
+        auto* loop_bb = BasicBlock::Create(*context_, "par.loop", func);
+        auto* body_bb = BasicBlock::Create(*context_, "par.body", func);
+        auto* done_bb = BasicBlock::Create(*context_, "par.done", func);
+        auto* zero = ConstantInt::get(i64_ty, 0);
+
+        builder_->CreateBr(loop_bb);
+        builder_->SetInsertPoint(loop_bb);
+        auto* idx_phi = builder_->CreatePHI(i64_ty, 2, "par_idx");
+        idx_phi->addIncoming(zero, builder_->GetInsertBlock()->getSinglePredecessor()
+            ? builder_->GetInsertBlock()->getSinglePredecessor()
+            : loop_bb);
+        auto* cmp = builder_->CreateICmpSLT(idx_phi, src_len, "par_cmp");
+        builder_->CreateCondBr(cmp, body_bb, done_bb);
+
+        builder_->SetInsertPoint(body_bb);
+        auto* elem = builder_->CreateCall(rt_.seq_get_, {src_ptr, idx_phi}, "par_elem");
+        auto saved_nv = named_values_;
+        CType elem_type = (!src.subtypes.empty()) ? src.subtypes[0] : CType::INT;
+        named_values_[var_name] = {elem, elem_type};
+
+        auto body_val = codegen(node->reducerExpr);
+        Value* body_i64 = body_val.val;
+        if (body_i64->getType()->isPointerTy())
+            body_i64 = builder_->CreatePtrToInt(body_i64, i64_ty);
+        else if (body_i64->getType()->isDoubleTy())
+            body_i64 = builder_->CreateBitCast(body_i64, i64_ty);
+        else if (body_i64->getType()->isIntegerTy() && body_i64->getType() != i64_ty)
+            body_i64 = builder_->CreateZExtOrTrunc(body_i64, i64_ty);
+
+        builder_->CreateCall(rt_.seq_set_, {result, idx_phi, body_i64});
+        named_values_ = saved_nv;
+
+        auto* next_idx = builder_->CreateAdd(idx_phi, ConstantInt::get(i64_ty, 1), "par_next");
+        idx_phi->addIncoming(next_idx, builder_->GetInsertBlock());
+        builder_->CreateBr(loop_bb);
+
+        builder_->SetInsertPoint(done_bb);
+        builder_->CreateCall(rt_.group_await_all_, {group});
+        builder_->CreateCall(rt_.group_end_, {group});
+        current_group_ = saved_group;
+
+        return {builder_->CreateBitCast(result, ptr_ty), CType::SEQ,
+                body_val ? std::vector<CType>{body_val.type} : std::vector<CType>{}};
+    }
+
     // Stream fusion: if source is a deferred single-use generator, fuse.
     if (ext->collection->get_type() == AST_IDENTIFIER_EXPR) {
         auto* src_id = static_cast<IdentifierExpr*>(ext->collection);

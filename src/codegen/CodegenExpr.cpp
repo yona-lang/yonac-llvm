@@ -510,15 +510,34 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     auto saved_arena = current_arena_;
     auto* arena = setup_let_arena(non_escaping);
 
-    // 3. Codegen all aliases
+    // 3. Structured concurrency: create a task group for async let bindings.
+    //    The group ensures all async children complete before the scope exits,
+    //    with error propagation and cancellation.
+    auto saved_group = current_group_;
+    bool has_group = false;
+    // Detect if any alias might produce async work (we'll create the group
+    // eagerly — if no async work happens, the group is cheap to create/destroy)
+    if (node->aliases.size() > 1) {
+        current_group_ = builder_->CreateCall(rt_.group_begin_, {}, "let_group");
+        has_group = true;
+    }
+
+    // 4. Codegen all aliases
     std::vector<TypedValue> scope_bindings;
     std::vector<bool> binding_is_arena;
     codegen_let_aliases(node, arena, non_escaping, scope_bindings, binding_is_arena);
 
-    // 4. Codegen body
+    // 5. Codegen body
     auto result = codegen(node->expr);
 
-    // 5. Cleanup scope
+    // 6. Structured concurrency: await all group children before cleanup
+    if (has_group) {
+        builder_->CreateCall(rt_.group_await_all_, {current_group_});
+        builder_->CreateCall(rt_.group_end_, {current_group_});
+        current_group_ = saved_group;
+    }
+
+    // 7. Cleanup scope
     cleanup_let_scope(scope_bindings, binding_is_arena, result, arena);
     current_arena_ = saved_arena;
 

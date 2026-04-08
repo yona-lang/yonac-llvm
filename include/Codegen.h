@@ -259,6 +259,11 @@ private:
         // Async
         llvm::Function *async_call_ = nullptr, *async_call_thunk_ = nullptr,
             *async_await_ = nullptr, *io_await_ = nullptr;
+        // Task groups (structured concurrency)
+        llvm::Function *group_begin_ = nullptr, *group_register_ = nullptr,
+            *group_register_io_ = nullptr, *group_await_all_ = nullptr,
+            *group_end_ = nullptr, *group_cancel_ = nullptr, *group_is_cancelled_ = nullptr,
+            *async_call_grouped_ = nullptr, *async_call_thunk_grouped_ = nullptr;
         // Exceptions
         llvm::Function *try_begin_ = nullptr, *try_end_ = nullptr, *raise_ = nullptr,
             *get_exc_sym_ = nullptr, *get_exc_msg_ = nullptr;
@@ -373,6 +378,7 @@ private:
         std::unordered_map<std::string, llvm::Value*> handler_closures;
     };
     std::vector<HandlerContext> handler_stack_;
+    llvm::Value* current_group_ = nullptr; ///< Active task group for structured concurrency
     std::unordered_set<std::string> effect_resume_names_; ///< Names of resume fn ptr params
 
     // Identifiers

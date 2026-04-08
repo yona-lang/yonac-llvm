@@ -1510,11 +1510,14 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
 
         Value* promise;
         if (call_args.size() <= 1) {
-            // 0 or 1 arg: use yona_rt_async_call(fn, arg)
+            // 0 or 1 arg: use yona_rt_async_call(fn, arg) [or grouped variant]
             Value* arg = call_args.empty()
                 ? ConstantInt::get(i64_ty, 0)
                 : to_i64(call_args[0]);
-            promise = builder_->CreateCall(rt_.async_call_, {cf.fn, arg}, "async_call");
+            if (current_group_)
+                promise = builder_->CreateCall(rt_.async_call_grouped_, {cf.fn, arg, current_group_}, "async_call_g");
+            else
+                promise = builder_->CreateCall(rt_.async_call_, {cf.fn, arg}, "async_call");
         } else {
             // Multi-arg: generate a thunk that captures all args via globals
             auto thunk_type = llvm::FunctionType::get(i64_ty, {}, false);
@@ -1555,7 +1558,10 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                 builder_->CreateStore(call_args[ai], arg_globals[ai]);
             }
 
-            promise = builder_->CreateCall(rt_.async_call_thunk_, {thunk_fn}, "async_thunk_call");
+            if (current_group_)
+                promise = builder_->CreateCall(rt_.async_call_thunk_grouped_, {thunk_fn, current_group_}, "async_thunk_g");
+            else
+                promise = builder_->CreateCall(rt_.async_call_thunk_, {thunk_fn}, "async_thunk_call");
         }
         return {promise, CType::PROMISE, {inner_ret}};
     }

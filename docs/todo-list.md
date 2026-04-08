@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1058 assertions across 197 test cases (all passing)
+- **Tests**: 1060 assertions across 197 test cases (all passing)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
@@ -67,9 +67,12 @@
   that generate runtime checks in debug, erased in release.
 
 ### Language — Concurrency
-- [ ] **Structural Concurrency** — scoped concurrency with cancellation.
-  `with scope` blocks ensure children can't outlive parent. Extends
-  existing transparent async (io_uring, thread pool, auto-await).
+- [x] **Structured Concurrency** — automatic scoped concurrency with cancellation.
+  Let blocks auto-group async bindings. If one fails, siblings are cancelled and
+  error is propagated. Task groups in runtime with IORING_OP_ASYNC_CANCEL for
+  io_uring ops. Cancel effect (`perform Cancel.check ()`) for cooperative
+  cancellation. Parallel comprehensions `[| expr for x = source ]`.
+  Std\Parallel module with pmap, pfor. See `docs/structured-concurrency.md`.
 - [ ] **Channels (CSP-style)** — typed channels for goroutine-style
   communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
@@ -174,6 +177,8 @@
   functions (identity, const, flip, compose). Auto-loaded without imports.
 - Row polymorphism: anonymous records `{ field = val }` as tuples, `MonoType::MRecord`
   with row variables, row unification, field access type inference
+- Structured concurrency: auto-grouping let blocks, task group runtime, io_uring
+  cancellation, Cancel effect, parallel comprehensions, Std\Parallel module
 - "Did you mean?" suggestions via edit distance on undefined variables
 - Function type signatures, HOF return type inference, type annotations
 - Traits: concrete/constrained instances, multi-method, default methods, superclass

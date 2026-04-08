@@ -1611,6 +1611,7 @@ public:
   ExprNode *reducerExpr;
   CollectionExtractorExpr *collectionExtractor;
   ExprNode *stepExpression;
+  bool is_parallel = false; ///< true for parallel comprehensions [| ... |]
 
   explicit SeqGeneratorExpr(SourceContext token, ExprNode *reducerExpr, CollectionExtractorExpr *collectionExtractor, ExprNode *stepExpression);
   template<typename ResultType>

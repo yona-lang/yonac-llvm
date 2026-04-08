@@ -57,6 +57,18 @@ int64_t yona_rt_io_await(int64_t uring_id) {
     if (ctx) io_ctx_put((uint64_t)uring_id, ctx); /* put it back for real await */
 
     int32_t res = ring_await((uint64_t)uring_id);
+
+    /* Handle cancellation: clean up context and raise */
+    if (res == -125 /* ECANCELED */) {
+        ctx = io_ctx_take((uint64_t)uring_id);
+        if (ctx) {
+            if (ctx->buf) free(ctx->buf);
+            if (ctx->close_fd && ctx->fd >= 0) close(ctx->fd);
+            free(ctx);
+        }
+        return 0; /* Cancelled — caller checks group error */
+    }
+
     ctx = io_ctx_take((uint64_t)uring_id);
     if (!ctx) return (int64_t)res;
 
