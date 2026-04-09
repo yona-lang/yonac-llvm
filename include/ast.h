@@ -2063,8 +2063,10 @@ public:
     string name;
     vector<string> type_params;
     vector<AdtConstructor*> variants;
+    vector<string> derive_traits;   ///< Traits to auto-derive: ["Show", "Eq", ...]
 
-    explicit AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants);
+    explicit AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants,
+                         vector<string> derive_traits = {});
     template<typename ResultType>
     ResultType accept(const AstVisitor<ResultType> &visitor) const {
         return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

@@ -8,6 +8,7 @@
 //
 
 #include "Codegen.h"
+#include "DeriveEngine.h"
 #include "Parser.h"
 #include "typechecker/TypeChecker.h"
 #include <llvm/Linker/Linker.h>
@@ -544,6 +545,83 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         load_module_interface(std::filesystem::path(path_str));
         for (auto& name : re.names)
             register_import(re.source_module, name, name);
+    }
+
+    // ===== Auto-derive expansion =====
+    // For each ADT with a `deriving` clause, look up the registered strategy
+    // and generate + compile trait instance methods. Fully registry-driven —
+    // no hardcoded trait names here.
+    // Keep reparsed modules alive so deferred function AST pointers don't dangle.
+    std::vector<std::unique_ptr<ast::ModuleDecl>> derived_modules;
+    for (auto* adt : mod->adt_declarations) {
+        if (adt->derive_traits.empty()) continue;
+
+        // Collect constructor metadata
+        DeriveAdtInfo dai;
+        dai.type_name = adt->name;
+        dai.type_params = adt->type_params;
+        for (size_t ci = 0; ci < adt->variants.size(); ci++) {
+            auto* ctor = adt->variants[ci];
+            DeriveCtorInfo dci;
+            dci.name = ctor->name;
+            dci.tag = static_cast<int>(ci);
+            dci.arity = static_cast<int>(ctor->field_type_names.size());
+            dci.field_names = ctor->field_names;
+            for (auto& ft : ctor->field_type_names) {
+                bool is_param = false;
+                for (auto& tp : adt->type_params)
+                    if (ft.name == tp) { is_param = true; break; }
+                dci.field_type_refs.push_back(is_param ? ft.name : "");
+            }
+            dai.constructors.push_back(dci);
+        }
+        auto adt_it = types_.adt_constructors.find(adt->variants[0]->name);
+        if (adt_it != types_.adt_constructors.end()) dai.is_recursive = adt_it->second.is_recursive;
+
+        for (auto& trait_name : adt->derive_traits) {
+            auto* strategy = DeriveEngine::get_strategy(trait_name);
+            if (!strategy) {
+                if (diag_) {
+                    auto available = DeriveEngine::all_derivable_traits();
+                    std::string avail_str;
+                    for (size_t i = 0; i < available.size(); i++) {
+                        if (i > 0) avail_str += ", ";
+                        avail_str += available[i];
+                    }
+                    diag_->error(adt->source_context, compiler::ErrorCode::E0400,
+                        "unknown derivable trait '" + trait_name + "'; available: " + avail_str);
+                }
+                continue;
+            }
+
+            // Generate and compile each method from the strategy
+            for (auto& method_name : strategy->method_names) {
+                std::string method_source = strategy->generator(dai);
+                if (method_source.empty()) continue;
+
+                std::string mangled = trait_name + "_" + adt->name + "__" + method_name;
+                auto mod_result = reparse_genfn(method_name, method_source);
+                if (!mod_result) continue;
+
+                // Register the trait instance
+                std::string key = trait_name + ":" + adt->name;
+                auto& tii = types_.trait_instances[key];
+                tii.trait_name = trait_name;
+                tii.type_name = adt->name;
+                tii.type_names = {adt->name};
+                tii.method_mangled_names[method_name] = mangled;
+
+                // Compile the reparsed function
+                for (auto* fn_decl : mod_result->functions)
+                    codegen_function_def(fn_decl, mangled);
+
+                // Store GENFN source for cross-module monomorphization
+                imports_.imported_sources[mangled] = {method_source, method_name};
+
+                // Keep module alive (deferred functions hold AST pointers)
+                derived_modules.push_back(std::move(mod_result));
+            }
+        }
     }
 
     // Register trait declarations (Phase 3: with superclasses and default impls)

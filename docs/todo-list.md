@@ -144,9 +144,12 @@
 - [ ] **Runtime Type Introspection** — `typeOf x` returns type tag at
   runtime. Pattern matching on types: `case typeOf x of :int -> ...; :string -> ... end`.
   Foundation for generic serialization, debugging, dynamic dispatch.
-- [ ] **Compile-Time Reflection** — access ADT constructor names, field
-  names/types, trait instances at compile time. Enables: auto-derive
-  (derive Show, Eq), schema generation, serialization codegen.
+- [ ] **Compile-Time Evaluator** — evaluate pure functions at compile time.
+  Enables user-defined derive strategies, constant folding, static assertions.
+  Requires: subset interpreter for pure Yona expressions (no I/O, no effects).
+- [ ] **User-Defined Derives** — traits declare themselves derivable via
+  `derive` block that templates over ADT structure. Requires compile-time
+  evaluator or external codegen tool reading enriched `.yonai` metadata.
 - [ ] **Quasiquotes / Template Expressions** — `quote { expr }` captures
   AST for manipulation. `splice expr` inserts computed AST into code.
   Enables: DSLs, custom syntax extensions, code generation.

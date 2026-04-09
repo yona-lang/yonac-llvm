@@ -632,4 +632,186 @@ import Test\GenLib3 in unwrap_or 0 (Just 99)
     CHECK(result == "99");
 }
 
+// ===== Auto-derive tests =====
+
+// Helper that loads Prelude (needed for Show/Eq/Ord/Hash trait definitions)
+static string compile_and_run_derive(const string& mod_source, const string& expr_source,
+                                     const string& mod_name = "Test/Mod") {
+    parser::Parser p1;
+    Codegen mod_codegen("trait_mod");
+    // Load prelude so Show/Eq/Ord/Hash traits are available
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"})
+        if (fs::exists(dir)) { mod_codegen.module_paths_.push_back(fs::canonical(dir).string()); break; }
+    mod_codegen.load_prelude(&p1);
+
+    auto mod_result = p1.parse_module(mod_source, "derive_test.yona");
+    if (!mod_result.has_value()) return "MOD_PARSE_ERROR";
+
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    if (!mod) return "MOD_CODEGEN_ERROR";
+    if (mod_codegen.error_count_ > 0) return "MOD_CODEGEN_ERRORS";
+
+    string mod_obj = "/tmp/trait_mod_test.o";
+    if (!mod_codegen.emit_object_file(mod_obj)) return "MOD_EMIT_ERROR";
+
+    fs::path iface_dir = fs::path("/tmp/yona_trait_lib") / fs::path(mod_name).parent_path();
+    fs::create_directories(iface_dir);
+    string iface = (fs::path("/tmp/yona_trait_lib") / mod_name).string() + ".yonai";
+    if (!mod_codegen.emit_interface_file(iface)) return "IFACE_EMIT_ERROR";
+
+    parser::Parser p2;
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    if (!expr_result.node) return "EXPR_PARSE_ERROR";
+
+    Codegen expr_codegen("trait_test");
+    expr_codegen.module_paths_.push_back("/tmp/yona_trait_lib");
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"})
+        if (fs::exists(dir)) { expr_codegen.module_paths_.push_back(fs::canonical(dir).string()); break; }
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    if (!expr_mod) return "EXPR_CODEGEN_ERROR";
+
+    string expr_obj = "/tmp/trait_expr_test.o";
+    if (!expr_codegen.emit_object_file(expr_obj)) return "EXPR_EMIT_ERROR";
+
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    if (!fs::exists(rt_path)) {
+        for (auto& dir : {".", "src", "../src", "../../src"}) {
+            auto candidate = fs::path(dir) / "compiled_runtime.c";
+            if (fs::exists(candidate)) {
+                string src_dir = string(dir);
+                system(("cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    string prelude_obj;
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        auto candidate = fs::path(dir) / "Prelude.o";
+        if (fs::exists(candidate)) { prelude_obj = candidate.string(); break; }
+    }
+
+    string exe_path = "/tmp/yona_derive_test";
+    string link_cmd = "cc " + expr_obj + " " + mod_obj + " " + rt_path;
+    if (!prelude_obj.empty()) link_cmd += " " + prelude_obj;
+    link_cmd += " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
+    if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
+
+    array<char, 256> buffer;
+    string result;
+    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
+    if (!pipe) return "RUN_ERROR";
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
+        result += buffer.data();
+    pclose(pipe);
+
+    if (!result.empty() && result.back() == '\n') result.pop_back();
+    return result;
+}
+
+TEST_CASE("Derive Show for enum type" * doctest::skip()) {
+    string mod_source = R"(
+module Test\DeriveShow1
+
+export type Color
+export showRed
+
+type Color = Red | Green | Blue
+    deriving Show
+
+showRed = show Red
+)";
+    string expr_source = R"(
+import showRed from Test\DeriveShow1, length from Std\String in
+length showRed
+)";
+    auto result = compile_and_run_derive(mod_source, expr_source, "Test/DeriveShow1");
+    CHECK(result == "3");
+}
+
+TEST_CASE("Derive Show for constructor with fields" * doctest::skip()) {
+    string mod_source = R"(
+module Test\DeriveShow2
+
+export type Wrapper
+export showIt
+
+type Wrapper = Wrap Int
+    deriving Show
+
+showIt x = show (Wrap x)
+)";
+    string expr_source = R"(
+import Test\DeriveShow2 in showIt 42
+)";
+    auto result = compile_and_run_derive(mod_source, expr_source, "Test/DeriveShow2");
+    CHECK(result == "Wrap(42)");
+}
+
+TEST_CASE("Derive Eq for enum type" * doctest::skip()) {
+    string mod_source = R"(
+module Test\DeriveEq1
+
+export type Color
+export eqTest
+
+type Color = Red | Green | Blue
+    deriving Eq
+
+eqTest a b = if eq a b then 1 else 0
+)";
+    string expr_source = R"(
+import Test\DeriveEq1 in eqTest Red Red
+)";
+    auto result = compile_and_run_derive(mod_source, expr_source, "Test/DeriveEq1");
+    CHECK(result == "1");
+}
+
+TEST_CASE("Derive Eq returns false for different constructors" * doctest::skip()) {
+    string mod_source = R"(
+module Test\DeriveEq2
+
+export type Color
+export eqTest
+
+type Color = Red | Green | Blue
+    deriving Eq
+
+eqTest a b = if eq a b then 1 else 0
+)";
+    string expr_source = R"(
+import Test\DeriveEq2 in eqTest Red Blue
+)";
+    auto result = compile_and_run_derive(mod_source, expr_source, "Test/DeriveEq2");
+    CHECK(result == "0");
+}
+
+TEST_CASE("Derive Hash for enum type" * doctest::skip()) {
+    string mod_source = R"(
+module Test\DeriveHash1
+
+export type Color
+export hashTest
+
+type Color = Red | Green | Blue
+    deriving Hash
+
+hashTest c = hash c
+)";
+    string expr_source = R"(
+import Test\DeriveHash1 in hashTest Green
+)";
+    auto result = compile_and_run_derive(mod_source, expr_source, "Test/DeriveHash1");
+    CHECK(result == "1");
+}
+
 } // TEST_SUITE

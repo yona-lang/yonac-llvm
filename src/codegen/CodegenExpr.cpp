@@ -682,7 +682,9 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
             auto* node_ptr = builder_->CreateCall(rt_.adt_alloc_,
                 {ConstantInt::get(tag_ty, adt_it->second.tag),
                  ConstantInt::get(i64_ty, 0)}, "adt_node");
-            return {node_ptr, CType::ADT};
+            TypedValue result{node_ptr, CType::ADT};
+            result.adt_type_name = adt_it->second.type_name;
+            return result;
         } else {
             // Non-recursive: flat struct {i8, i64*max_arity}
             std::vector<LType*> fields = {tag_ty};
@@ -691,7 +693,9 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
             auto* struct_type = StructType::get(*context_, fields);
             Value* val = UndefValue::get(struct_type);
             val = builder_->CreateInsertValue(val, ConstantInt::get(tag_ty, adt_it->second.tag), {0});
-            return {val, CType::ADT};
+            TypedValue result{val, CType::ADT};
+            result.adt_type_name = adt_it->second.type_name;
+            return result;
         }
     }
     // Check if it's a non-zero-arity ADT constructor (used as a function reference)

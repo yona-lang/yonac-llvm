@@ -1405,9 +1405,11 @@ void AdtConstructor::print(std::ostream &os) const {
 }
 
 // AdtDeclNode implementation
-AdtDeclNode::AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants)
+AdtDeclNode::AdtDeclNode(SourceContext token, string name, vector<string> type_params, vector<AdtConstructor*> variants,
+                         vector<string> derive_traits)
     : AstNode(token), name(std::move(name)), type_params(std::move(type_params)),
-      variants(nodes_with_parent(std::move(variants), this)) {}
+      variants(nodes_with_parent(std::move(variants), this)),
+      derive_traits(std::move(derive_traits)) {}
 
 AdtDeclNode::~AdtDeclNode() {
   for (const auto p : variants)

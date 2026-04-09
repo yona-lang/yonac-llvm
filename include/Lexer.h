@@ -63,6 +63,7 @@ enum class TokenType {
     YTYPE,
     YTRAIT,
     YINSTANCE,
+    YDERIVING,   // deriving (auto-derive trait instances)
     YEXTERN,     // extern
     YFOR,        // for (generator comprehensions)
     YEFFECT,     // effect (effect declaration)

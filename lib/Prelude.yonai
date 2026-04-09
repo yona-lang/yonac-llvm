@@ -41,6 +41,52 @@ CTOR Err 1 1
 ADT FileHandle 1 1
 CTOR FileHandle 0 1
 
+TRAIT Show a 1
+  METHOD show
+INSTANCE Show Int
+  IMPL show yona_Prelude__Show_Int__show
+INSTANCE Show String
+  IMPL show yona_Prelude__Show_String__show
+INSTANCE Show Bool
+  IMPL show yona_Prelude__Show_Bool__show
+INSTANCE Show Float
+  IMPL show yona_Prelude__Show_Float__show
+INSTANCE Show Symbol
+  IMPL show yona_Prelude__Show_Symbol__show
+TRAIT Eq a 1
+  METHOD eq
+INSTANCE Eq Int
+  IMPL eq yona_Prelude__Eq_Int__eq
+INSTANCE Eq Float
+  IMPL eq yona_Prelude__Eq_Float__eq
+INSTANCE Eq String
+  IMPL eq yona_Prelude__Eq_String__eq
+INSTANCE Eq Bool
+  IMPL eq yona_Prelude__Eq_Bool__eq
+INSTANCE Eq Symbol
+  IMPL eq yona_Prelude__Eq_Symbol__eq
+TRAIT Ord a 1
+  METHOD compare
+INSTANCE Ord Int
+  IMPL compare yona_Prelude__Ord_Int__compare
+INSTANCE Ord Float
+  IMPL compare yona_Prelude__Ord_Float__compare
+INSTANCE Ord String
+  IMPL compare yona_Prelude__Ord_String__compare
+INSTANCE Ord Bool
+  IMPL compare yona_Prelude__Ord_Bool__compare
+TRAIT Hash a 1
+  METHOD hash
+INSTANCE Hash Int
+  IMPL hash yona_Prelude__Hash_Int__hash
+INSTANCE Hash Float
+  IMPL hash yona_Prelude__Hash_Float__hash
+INSTANCE Hash String
+  IMPL hash yona_Prelude__Hash_String__hash
+INSTANCE Hash Bool
+  IMPL hash yona_Prelude__Hash_Bool__hash
+INSTANCE Hash Symbol
+  IMPL hash yona_Prelude__Hash_Symbol__hash
 TRAIT Closeable a 1
   METHOD close
 INSTANCE Closeable Int
@@ -51,6 +97,25 @@ FN yona_Prelude__compose 3 FUNCTION FUNCTION INT -> INT
 FN yona_Prelude__flip 3 FUNCTION INT INT -> INT
 FN yona_Prelude__foldl 3 FUNCTION INT INT -> INT
 FN yona_Prelude__foldr 3 FUNCTION INT INT -> INT
+FN yona_Prelude__Show_Int__show 1 INT -> STRING
+FN yona_Prelude__Show_String__show 1 STRING -> STRING
+FN yona_Prelude__Show_Bool__show 1 BOOL -> STRING
+FN yona_Prelude__Show_Float__show 1 FLOAT -> STRING
+FN yona_Prelude__Eq_Int__eq 2 INT INT -> BOOL
+FN yona_Prelude__Eq_Float__eq 2 FLOAT FLOAT -> BOOL
+FN yona_Prelude__Eq_String__eq 2 STRING STRING -> BOOL
+FN yona_Prelude__Eq_Bool__eq 2 BOOL BOOL -> BOOL
+FN yona_Prelude__Eq_Symbol__eq 2 INT INT -> BOOL
+FN yona_Prelude__Ord_Int__compare 2 INT INT -> INT
+FN yona_Prelude__Ord_Float__compare 2 FLOAT FLOAT -> INT
+FN yona_Prelude__Ord_String__compare 2 STRING STRING -> INT
+FN yona_Prelude__Ord_Bool__compare 2 BOOL BOOL -> INT
+FN yona_Prelude__Hash_Int__hash 1 INT -> INT
+FN yona_Prelude__Hash_Float__hash 1 FLOAT -> INT
+FN yona_Prelude__Hash_String__hash 1 STRING -> INT
+FN yona_Prelude__Hash_Bool__hash 1 BOOL -> INT
+FN yona_Prelude__Hash_Symbol__hash 1 INT -> INT
+FN yona_Prelude__Show_Symbol__show 1 INT -> STRING
 FN Closeable_Int__close 1 INT -> UNIT
 GENFN_BEGIN yona_Prelude__flip flip
 flip f a b = f b a

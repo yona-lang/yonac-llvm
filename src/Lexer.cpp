@@ -37,6 +37,7 @@ const std::unordered_map<std::string_view, TokenType>& Lexer::get_keywords() noe
         {"type", TokenType::YTYPE},
         {"trait", TokenType::YTRAIT},
         {"instance", TokenType::YINSTANCE},
+        {"deriving", TokenType::YDERIVING},
         {"true", TokenType::YTRUE},
         {"false", TokenType::YFALSE},
     };

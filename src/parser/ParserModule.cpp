@@ -534,7 +534,34 @@ unique_ptr<AdtDeclNode> ParserImpl::parse_adt_declaration() {
         return nullptr;
     }
 
-    return make_unique<AdtDeclNode>(loc, type_name, type_params, variants);
+    // Parse optional deriving clause:
+    //   type Color = Red | Green | Blue deriving Show, Eq
+    //   type Color = Red | Green | Blue
+    //       deriving Show, Eq
+    vector<string> derive_traits;
+    skip_newlines();
+    if (match(TokenType::YDERIVING)) {
+        // Parse comma-separated trait names
+        if (match(TokenType::YLPAREN)) {
+            // Parenthesized: deriving (Show, Eq, Ord)
+            do {
+                skip_newlines();
+                if (!check(TokenType::YIDENTIFIER)) break;
+                derive_traits.push_back(string(current().lexeme));
+                advance();
+            } while (match(TokenType::YCOMMA));
+            expect(TokenType::YRPAREN, "Expected ')' after deriving list");
+        } else {
+            // Unparenthesized: deriving Show, Eq, Ord
+            do {
+                if (!check(TokenType::YIDENTIFIER)) break;
+                derive_traits.push_back(string(current().lexeme));
+                advance();
+            } while (match(TokenType::YCOMMA));
+        }
+    }
+
+    return make_unique<AdtDeclNode>(loc, type_name, type_params, variants, derive_traits);
 }
 
 unique_ptr<TraitDeclNode> ParserImpl::parse_trait_declaration() {

@@ -2437,6 +2437,101 @@ const char* yona_Std_Types__boolToString(int64_t b) {
     return r;
 }
 
+/* ===== Primitive trait instances (Show, Eq, Ord, Hash) ===== */
+
+const char* yona_Prelude__Show_Int__show(int64_t n) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
+    snprintf(r, 32, "%ld", n);
+    return r;
+}
+
+const char* yona_Prelude__Show_String__show(const char* s) {
+    /* Show for strings wraps in quotes: "hello" -> "\"hello\"" */
+    size_t len = strlen(s);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 3);
+    r[0] = '"';
+    memcpy(r + 1, s, len);
+    r[len + 1] = '"';
+    r[len + 2] = '\0';
+    return r;
+}
+
+const char* yona_Prelude__Show_Bool__show(int64_t b) {
+    const char* src = b ? "true" : "false";
+    size_t len = strlen(src);
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, len + 1);
+    memcpy(r, src, len + 1);
+    return r;
+}
+
+const char* yona_Prelude__Show_Float__show(double f) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
+    snprintf(r, 32, "%g", f);
+    return r;
+}
+
+int64_t yona_Prelude__Eq_Int__eq(int64_t a, int64_t b) { return a == b ? 1 : 0; }
+
+int64_t yona_Prelude__Eq_String__eq(const char* a, const char* b) {
+    return strcmp(a, b) == 0 ? 1 : 0;
+}
+
+int64_t yona_Prelude__Eq_Bool__eq(int64_t a, int64_t b) { return a == b ? 1 : 0; }
+
+int64_t yona_Prelude__Ord_Int__compare(int64_t a, int64_t b) {
+    return (a < b) ? -1 : (a > b) ? 1 : 0;
+}
+
+int64_t yona_Prelude__Hash_Int__hash(int64_t x) {
+    /* splitmix64 finalizer */
+    uint64_t h = (uint64_t)x;
+    h = (h ^ (h >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    h = (h ^ (h >> 27)) * 0x94d049bb133111ebULL;
+    return (int64_t)(h ^ (h >> 31));
+}
+
+int64_t yona_Prelude__Hash_String__hash(const char* s) {
+    /* FNV-1a */
+    uint64_t h = 14695981039346656037ULL;
+    for (; *s; s++)
+        h = (h ^ (uint64_t)(unsigned char)*s) * 1099511628211ULL;
+    return (int64_t)h;
+}
+
+/* Float instances */
+int64_t yona_Prelude__Eq_Float__eq(double a, double b) { return a == b ? 1 : 0; }
+int64_t yona_Prelude__Ord_Float__compare(double a, double b) {
+    return (a < b) ? -1 : (a > b) ? 1 : 0;
+}
+int64_t yona_Prelude__Hash_Float__hash(double f) {
+    uint64_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    bits = (bits ^ (bits >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    bits = (bits ^ (bits >> 27)) * 0x94d049bb133111ebULL;
+    return (int64_t)(bits ^ (bits >> 31));
+}
+
+/* Bool instances */
+int64_t yona_Prelude__Ord_Bool__compare(int64_t a, int64_t b) {
+    return (a < b) ? -1 : (a > b) ? 1 : 0;
+}
+int64_t yona_Prelude__Hash_Bool__hash(int64_t b) { return b ? 1 : 0; }
+
+/* String instances */
+int64_t yona_Prelude__Ord_String__compare(const char* a, const char* b) {
+    int r = strcmp(a, b);
+    return (r < 0) ? -1 : (r > 0) ? 1 : 0;
+}
+
+/* Symbol instances */
+const char* yona_Prelude__Show_Symbol__show(int64_t sym_id) {
+    char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
+    snprintf(r, 32, ":%ld", sym_id);
+    return r;
+}
+int64_t yona_Prelude__Eq_Symbol__eq(int64_t a, int64_t b) { return a == b ? 1 : 0; }
+int64_t yona_Prelude__Hash_Symbol__hash(int64_t s) { return s; }
+
 /* seq_head and seq_tail are in runtime/seq.c */
 
 /* Async runtime: thread pool, promises, await */
