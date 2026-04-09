@@ -1,0 +1,5 @@
+import fromSeq, head, tail, length from Std\IntArray in
+let a = fromSeq [10, 20, 30, 40, 50] in
+let h = head a in
+let t = tail a in
+h + length t

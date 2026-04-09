@@ -1,0 +1,4 @@
+import alloc, length, get, set from Std\IntArray in
+let a = alloc 5 in
+let b = set (set (set (set (set a 0 10) 1 20) 2 30) 3 40) 4 50 in
+get b 2 + length b

@@ -1,0 +1,15 @@
+FN yona_Std_IntArray__alloc 1 INT -> INT_ARRAY
+FN yona_Std_IntArray__fill 2 INT INT -> INT_ARRAY
+FN yona_Std_IntArray__length 1 INT_ARRAY -> INT
+FN yona_Std_IntArray__get 2 INT_ARRAY INT -> INT
+FN yona_Std_IntArray__set 3 INT_ARRAY INT INT -> INT_ARRAY
+FN yona_Std_IntArray__head 1 INT_ARRAY -> INT
+FN yona_Std_IntArray__tail 1 INT_ARRAY -> INT_ARRAY
+FN yona_Std_IntArray__cons 2 INT INT_ARRAY -> INT_ARRAY
+FN yona_Std_IntArray__join 2 INT_ARRAY INT_ARRAY -> INT_ARRAY
+FN yona_Std_IntArray__slice 3 INT_ARRAY INT INT -> INT_ARRAY
+FN yona_Std_IntArray__map 2 FUNCTION INT_ARRAY -> INT_ARRAY
+FN yona_Std_IntArray__foldl 3 FUNCTION INT INT_ARRAY -> INT
+FN yona_Std_IntArray__filter 2 FUNCTION INT_ARRAY -> INT_ARRAY
+FN yona_Std_IntArray__fromSeq 1 SEQ -> INT_ARRAY
+FN yona_Std_IntArray__toSeq 1 INT_ARRAY -> SEQ

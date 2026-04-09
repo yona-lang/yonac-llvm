@@ -1,0 +1,3 @@
+import fill, foldl from Std\IntArray in
+let a = fill 100 1 in
+foldl (\acc x -> acc + x) 0 a

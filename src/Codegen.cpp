@@ -251,6 +251,8 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::ADT:    return LType::getInt64Ty(*context_); // overridden per-ADT
         case CType::BYTES:  return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::INT_ARRAY: return PointerType::get(LType::getInt64Ty(*context_), 0);
+        case CType::FLOAT_ARRAY: return PointerType::get(LType::getDoubleTy(*context_), 0);
         case CType::SUM:    return LType::getInt64Ty(*context_); // boxed tagged value (2-tuple)
         case CType::RECORD: return LType::getInt64Ty(*context_); // boxed tuple (ptrtoint'd)
     }
@@ -376,6 +378,29 @@ void Codegen::declare_runtime() {
     rt_.bytes_from_seq_    = decl("yona_rt_bytes_from_seq", ptr, {ptr});
     rt_.bytes_to_seq_      = decl("yona_rt_bytes_to_seq", ptr, {ptr});
     rt_.print_bytes_       = decl("yona_rt_print_bytes", vd, {ptr});
+
+    // IntArray
+    rt_.int_array_alloc_   = decl("yona_rt_int_array_alloc", ptr, {i64});
+    rt_.int_array_length_  = decl("yona_rt_int_array_length", i64, {ptr});
+    rt_.int_array_get_     = decl("yona_rt_int_array_get", i64, {ptr, i64});
+    rt_.int_array_set_     = decl("yona_rt_int_array_set", vd, {ptr, i64, i64});
+    rt_.int_array_head_    = decl("yona_rt_int_array_head", i64, {ptr});
+    rt_.int_array_tail_    = decl("yona_rt_int_array_tail", ptr, {ptr});
+    rt_.int_array_cons_    = decl("yona_rt_int_array_cons", ptr, {i64, ptr});
+    rt_.int_array_join_    = decl("yona_rt_int_array_join", ptr, {ptr, ptr});
+    rt_.print_int_array_   = decl("yona_rt_print_int_array", vd, {ptr});
+
+    // FloatArray
+    auto dbl = LType::getDoubleTy(*context_);
+    rt_.float_array_alloc_  = decl("yona_rt_float_array_alloc", ptr, {i64});
+    rt_.float_array_length_ = decl("yona_rt_float_array_length", i64, {ptr});
+    rt_.float_array_get_    = decl("yona_rt_float_array_get", dbl, {ptr, i64});
+    rt_.float_array_set_    = decl("yona_rt_float_array_set", vd, {ptr, i64, dbl});
+    rt_.float_array_head_   = decl("yona_rt_float_array_head", dbl, {ptr});
+    rt_.float_array_tail_   = decl("yona_rt_float_array_tail", ptr, {ptr});
+    rt_.float_array_cons_   = decl("yona_rt_float_array_cons", ptr, {dbl, ptr});
+    rt_.float_array_join_   = decl("yona_rt_float_array_join", ptr, {ptr, ptr});
+    rt_.print_float_array_  = decl("yona_rt_print_float_array", vd, {ptr});
 
     rt_.box_ = decl("yona_rt_box", ptr, {ptr, i64});
     rt_.close_ = decl("yona_rt_close", vd, {i64});
@@ -1080,6 +1105,8 @@ static std::string ctype_to_string(CType ct) {
         case CType::DICT: return "DICT";
         case CType::ADT: return "ADT";
         case CType::BYTES: return "BYTES";
+        case CType::INT_ARRAY: return "INT_ARRAY";
+        case CType::FLOAT_ARRAY: return "FLOAT_ARRAY";
         case CType::SUM: return "SUM";
         case CType::RECORD: return "RECORD";
     }
@@ -1262,6 +1289,14 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
         }
         case CType::BYTES: {
             builder_->CreateCall(rt_.print_bytes_, {tv.val});
+            break;
+        }
+        case CType::INT_ARRAY: {
+            builder_->CreateCall(rt_.print_int_array_, {tv.val});
+            break;
+        }
+        case CType::FLOAT_ARRAY: {
+            builder_->CreateCall(rt_.print_float_array_, {tv.val});
             break;
         }
         default: break;

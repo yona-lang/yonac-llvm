@@ -1,0 +1,5 @@
+import fromSeq, join, foldl from Std\IntArray in
+let a = fromSeq [1, 2, 3] in
+let b = fromSeq [4, 5, 6] in
+let c = join a b in
+foldl (\acc x -> acc + x) 0 c

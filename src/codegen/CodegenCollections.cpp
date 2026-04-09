@@ -30,6 +30,8 @@ static std::string ctype_to_string(CType ct) {
         case CType::DICT: return "DICT";
         case CType::ADT: return "ADT";
         case CType::BYTES: return "BYTES";
+        case CType::INT_ARRAY: return "INT_ARRAY";
+        case CType::FLOAT_ARRAY: return "FLOAT_ARRAY";
     }
     return "INT";
 }

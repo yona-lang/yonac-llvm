@@ -1,0 +1,3 @@
+import fill, foldl, length from Std\FloatArray in
+let a = fill 10 2.5 in
+length a

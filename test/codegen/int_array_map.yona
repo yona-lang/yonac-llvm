@@ -1,0 +1,4 @@
+import fromSeq, map, foldl from Std\IntArray in
+let a = fromSeq [1, 2, 3, 4, 5] in
+let b = map (\x -> x * x) a in
+foldl (\acc x -> acc + x) 0 b

@@ -4,9 +4,9 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1118 assertions across 199 test cases (all passing)
+- **Tests**: 1139 assertions across 204 test cases (all passing)
 - **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
-- **Stdlib**: 27 modules, ~296 exported functions (12 pure Yona + 15 C runtime)
+- **Stdlib**: 29 modules, ~322 exported functions (12 pure Yona + 17 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
 - **Benchmarks**: 28/28 passing, 2 faster than C, 13 within 2x C
@@ -37,14 +37,12 @@
 ## Remaining Work
 
 ### Performance
-- [ ] **Unboxed Arrays (IntArray, FloatArray)** — contiguous typed arrays
+- [x] **Unboxed Arrays (IntArray, FloatArray)** — contiguous typed arrays
   without per-element RC. `IntArray`: flat `int64_t[]`, `FloatArray`: flat
   `double[]`. O(1) random access, SIMD auto-vectorization by LLVM, cache-
-  friendly bulk operations (map, foldl, filter, zip). Persistent semantics
-  with unique-owner CoW. Head-tail pattern matching via zero-copy slice views
-  (`[h|t]` where t is offset+length into same backing buffer). Foundation for
-  columnar data processing. Runtime: new `RC_TYPE_INT_ARRAY`/`RC_TYPE_FLOAT_ARRAY`
-  type tags, flat payload. No changes to general type system (Int stays i64).
+  friendly bulk ops (map, foldl, filter, slice, join, cons, head, tail).
+  Persistent semantics (copy-on-write set). `fromSeq`/`toSeq` conversion.
+  `Std\IntArray` (15 functions) and `Std\FloatArray` (11 functions).
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 

@@ -39,7 +39,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTES, SUM, RECORD };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTES, SUM, RECORD, INT_ARRAY, FLOAT_ARRAY };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -245,7 +245,8 @@ private:
         llvm::Function *print_int_ = nullptr, *print_float_ = nullptr,
             *print_string_ = nullptr, *print_bool_ = nullptr, *print_newline_ = nullptr,
             *print_seq_ = nullptr, *print_symbol_ = nullptr, *print_set_ = nullptr,
-            *print_dict_ = nullptr, *print_bytes_ = nullptr;
+            *print_dict_ = nullptr, *print_bytes_ = nullptr,
+            *print_int_array_ = nullptr, *print_float_array_ = nullptr;
         // Strings
         llvm::Function* string_concat_ = nullptr;
         // Sequences
@@ -289,6 +290,15 @@ private:
             *bytes_get_ = nullptr, *bytes_set_ = nullptr, *bytes_concat_ = nullptr,
             *bytes_slice_ = nullptr, *bytes_from_string_ = nullptr, *bytes_to_string_ = nullptr,
             *bytes_from_seq_ = nullptr, *bytes_to_seq_ = nullptr;
+        // IntArray / FloatArray
+        llvm::Function *int_array_alloc_ = nullptr, *int_array_length_ = nullptr,
+            *int_array_get_ = nullptr, *int_array_set_ = nullptr,
+            *int_array_head_ = nullptr, *int_array_tail_ = nullptr,
+            *int_array_cons_ = nullptr, *int_array_join_ = nullptr;
+        llvm::Function *float_array_alloc_ = nullptr, *float_array_length_ = nullptr,
+            *float_array_get_ = nullptr, *float_array_set_ = nullptr,
+            *float_array_head_ = nullptr, *float_array_tail_ = nullptr,
+            *float_array_cons_ = nullptr, *float_array_join_ = nullptr;
         // Misc
         llvm::Function *box_ = nullptr, *close_ = nullptr;
         // Arena

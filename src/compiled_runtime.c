@@ -42,6 +42,8 @@
 #define RC_TYPE_ADT     4
 #define RC_TYPE_CLOSURE 5
 #define RC_TYPE_STRING  6
+#define RC_TYPE_INT_ARRAY   18
+#define RC_TYPE_FLOAT_ARRAY 19
 
 /* ===== Size-class pool allocator ===== */
 /* Free-list pools for common allocation sizes. Avoids malloc/free overhead
@@ -527,6 +529,242 @@ void* yona_Std_Bytes__fromString(const char* s) { return yona_rt_bytes_from_stri
 const char* yona_Std_Bytes__toString(void* b)   { return yona_rt_bytes_to_string(b); }
 void* yona_Std_Bytes__fromSeq(int64_t* s)       { return yona_rt_bytes_from_seq(s); }
 int64_t* yona_Std_Bytes__toSeq(void* b)         { return yona_rt_bytes_to_seq(b); }
+
+/* ===== IntArray — contiguous unboxed int64_t[] ===== */
+/* Layout: [count: i64][elem0, elem1, ...] — no per-element RC. */
+
+int64_t* yona_rt_int_array_alloc(int64_t count) {
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_INT_ARRAY,
+        sizeof(int64_t) + (size_t)count * sizeof(int64_t));
+    buf[0] = count;
+    return buf;
+}
+
+int64_t yona_rt_int_array_length(int64_t* arr) { return arr[0]; }
+int64_t yona_rt_int_array_get(int64_t* arr, int64_t i) { return arr[1 + i]; }
+
+void yona_rt_int_array_set(int64_t* arr, int64_t i, int64_t v) {
+    arr[1 + i] = v;
+}
+
+int64_t yona_rt_int_array_head(int64_t* arr) { return arr[1]; }
+
+/* tail: returns a slice view (new array with offset data). O(n) copy for now. */
+int64_t* yona_rt_int_array_tail(int64_t* arr) {
+    int64_t len = arr[0];
+    if (len <= 1) return yona_rt_int_array_alloc(0);
+    int64_t new_len = len - 1;
+    int64_t* result = yona_rt_int_array_alloc(new_len);
+    memcpy(result + 1, arr + 2, (size_t)new_len * sizeof(int64_t));
+    return result;
+}
+
+int64_t* yona_rt_int_array_cons(int64_t elem, int64_t* arr) {
+    int64_t len = arr[0];
+    int64_t* result = yona_rt_int_array_alloc(len + 1);
+    result[1] = elem;
+    memcpy(result + 2, arr + 1, (size_t)len * sizeof(int64_t));
+    return result;
+}
+
+int64_t* yona_rt_int_array_join(int64_t* a, int64_t* b) {
+    int64_t la = a[0], lb = b[0];
+    int64_t* result = yona_rt_int_array_alloc(la + lb);
+    memcpy(result + 1, a + 1, (size_t)la * sizeof(int64_t));
+    memcpy(result + 1 + la, b + 1, (size_t)lb * sizeof(int64_t));
+    return result;
+}
+
+int64_t* yona_rt_int_array_slice(int64_t* arr, int64_t start, int64_t len) {
+    int64_t* result = yona_rt_int_array_alloc(len);
+    memcpy(result + 1, arr + 1 + start, (size_t)len * sizeof(int64_t));
+    return result;
+}
+
+int64_t* yona_rt_int_array_map(int64_t* fn, int64_t* arr) {
+    int64_t len = arr[0];
+    int64_t* result = yona_rt_int_array_alloc(len);
+    typedef int64_t (*map_fn_t)(int64_t*, int64_t);
+    map_fn_t f = (map_fn_t)(intptr_t)fn[0];
+    for (int64_t i = 0; i < len; i++)
+        result[1 + i] = f(fn, arr[1 + i]);
+    return result;
+}
+
+int64_t yona_rt_int_array_foldl(int64_t* fn, int64_t acc, int64_t* arr) {
+    int64_t len = arr[0];
+    typedef int64_t (*fold_fn_t)(int64_t*, int64_t, int64_t);
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    for (int64_t i = 0; i < len; i++)
+        acc = f(fn, acc, arr[1 + i]);
+    return acc;
+}
+
+int64_t* yona_rt_int_array_filter(int64_t* fn, int64_t* arr) {
+    int64_t len = arr[0];
+    typedef int64_t (*pred_fn_t)(int64_t*, int64_t);
+    pred_fn_t p = (pred_fn_t)(intptr_t)fn[0];
+    /* Two-pass: count matches, then fill */
+    int64_t count = 0;
+    for (int64_t i = 0; i < len; i++)
+        if (p(fn, arr[1 + i])) count++;
+    int64_t* result = yona_rt_int_array_alloc(count);
+    int64_t j = 0;
+    for (int64_t i = 0; i < len; i++)
+        if (p(fn, arr[1 + i])) result[1 + j++] = arr[1 + i];
+    return result;
+}
+
+int64_t* yona_rt_int_array_from_seq(int64_t* seq) {
+    int64_t len = seq[0];
+    int64_t* result = yona_rt_int_array_alloc(len);
+    /* Seq layout: [count, flags, elem0, elem1, ...] (flat seq) */
+    memcpy(result + 1, seq + 2, (size_t)len * sizeof(int64_t));
+    return result;
+}
+
+int64_t* yona_rt_int_array_to_seq(int64_t* arr) {
+    extern int64_t* yona_rt_seq_alloc(int64_t count);
+    int64_t len = arr[0];
+    int64_t* seq = yona_rt_seq_alloc(len);
+    memcpy(seq + 2, arr + 1, (size_t)len * sizeof(int64_t));
+    return seq;
+}
+
+void yona_rt_print_int_array(int64_t* arr) {
+    int64_t len = arr[0];
+    printf("IntArray[");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%ld", arr[1 + i]);
+    }
+    printf("]");
+}
+
+/* Std\IntArray wrappers */
+int64_t* yona_Std_IntArray__alloc(int64_t n) { return yona_rt_int_array_alloc(n); }
+int64_t* yona_Std_IntArray__fill(int64_t n, int64_t v) {
+    int64_t* arr = yona_rt_int_array_alloc(n);
+    for (int64_t i = 0; i < n; i++) arr[1 + i] = v;
+    return arr;
+}
+int64_t  yona_Std_IntArray__length(int64_t* a) { return yona_rt_int_array_length(a); }
+int64_t  yona_Std_IntArray__get(int64_t* a, int64_t i) { return yona_rt_int_array_get(a, i); }
+int64_t* yona_Std_IntArray__set(int64_t* a, int64_t i, int64_t v) {
+    /* Persistent: copy-on-write */
+    int64_t len = a[0];
+    int64_t* result = yona_rt_int_array_alloc(len);
+    memcpy(result + 1, a + 1, (size_t)len * sizeof(int64_t));
+    result[1 + i] = v;
+    return result;
+}
+int64_t  yona_Std_IntArray__head(int64_t* a) { return yona_rt_int_array_head(a); }
+int64_t* yona_Std_IntArray__tail(int64_t* a) { return yona_rt_int_array_tail(a); }
+int64_t* yona_Std_IntArray__cons(int64_t e, int64_t* a) { return yona_rt_int_array_cons(e, a); }
+int64_t* yona_Std_IntArray__join(int64_t* a, int64_t* b) { return yona_rt_int_array_join(a, b); }
+int64_t* yona_Std_IntArray__slice(int64_t* a, int64_t s, int64_t l) { return yona_rt_int_array_slice(a, s, l); }
+int64_t* yona_Std_IntArray__map(int64_t* fn, int64_t* a) { return yona_rt_int_array_map(fn, a); }
+int64_t  yona_Std_IntArray__foldl(int64_t* fn, int64_t acc, int64_t* a) { return yona_rt_int_array_foldl(fn, acc, a); }
+int64_t* yona_Std_IntArray__filter(int64_t* fn, int64_t* a) { return yona_rt_int_array_filter(fn, a); }
+int64_t* yona_Std_IntArray__fromSeq(int64_t* s) { return yona_rt_int_array_from_seq(s); }
+int64_t* yona_Std_IntArray__toSeq(int64_t* a) { return yona_rt_int_array_to_seq(a); }
+
+/* ===== FloatArray — contiguous unboxed double[] ===== */
+/* Layout: [count: i64][double0, double1, ...] */
+
+double* yona_rt_float_array_alloc(int64_t count) {
+    /* Store count as i64 before the double data */
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_FLOAT_ARRAY,
+        sizeof(int64_t) + (size_t)count * sizeof(double));
+    buf[0] = count;
+    return (double*)(buf + 1); /* return pointer to first double */
+}
+
+/* Access count from the i64 before the double data */
+static int64_t* float_array_header(double* arr) { return ((int64_t*)arr) - 1; }
+
+int64_t yona_rt_float_array_length(double* arr) { return float_array_header(arr)[0]; }
+double  yona_rt_float_array_get(double* arr, int64_t i) { return arr[i]; }
+void    yona_rt_float_array_set(double* arr, int64_t i, double v) { arr[i] = v; }
+double  yona_rt_float_array_head(double* arr) { return arr[0]; }
+
+double* yona_rt_float_array_tail(double* arr) {
+    int64_t len = yona_rt_float_array_length(arr);
+    if (len <= 1) return yona_rt_float_array_alloc(0);
+    int64_t new_len = len - 1;
+    double* result = yona_rt_float_array_alloc(new_len);
+    memcpy(result, arr + 1, (size_t)new_len * sizeof(double));
+    return result;
+}
+
+double* yona_rt_float_array_cons(double elem, double* arr) {
+    int64_t len = yona_rt_float_array_length(arr);
+    double* result = yona_rt_float_array_alloc(len + 1);
+    result[0] = elem;
+    memcpy(result + 1, arr, (size_t)len * sizeof(double));
+    return result;
+}
+
+double* yona_rt_float_array_join(double* a, double* b) {
+    int64_t la = yona_rt_float_array_length(a);
+    int64_t lb = yona_rt_float_array_length(b);
+    double* result = yona_rt_float_array_alloc(la + lb);
+    memcpy(result, a, (size_t)la * sizeof(double));
+    memcpy(result + la, b, (size_t)lb * sizeof(double));
+    return result;
+}
+
+double* yona_rt_float_array_map(int64_t* fn, double* arr) {
+    int64_t len = yona_rt_float_array_length(arr);
+    double* result = yona_rt_float_array_alloc(len);
+    typedef double (*map_fn_t)(int64_t*, double);
+    map_fn_t f = (map_fn_t)(intptr_t)fn[0];
+    for (int64_t i = 0; i < len; i++)
+        result[i] = f(fn, arr[i]);
+    return result;
+}
+
+double yona_rt_float_array_foldl(int64_t* fn, double acc, double* arr) {
+    int64_t len = yona_rt_float_array_length(arr);
+    typedef double (*fold_fn_t)(int64_t*, double, double);
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    for (int64_t i = 0; i < len; i++)
+        acc = f(fn, acc, arr[i]);
+    return acc;
+}
+
+void yona_rt_print_float_array(double* arr) {
+    int64_t len = yona_rt_float_array_length(arr);
+    printf("FloatArray[");
+    for (int64_t i = 0; i < len; i++) {
+        if (i > 0) printf(", ");
+        printf("%g", arr[i]);
+    }
+    printf("]");
+}
+
+/* Std\FloatArray wrappers */
+double* yona_Std_FloatArray__alloc(int64_t n) { return yona_rt_float_array_alloc(n); }
+double* yona_Std_FloatArray__fill(int64_t n, double v) {
+    double* arr = yona_rt_float_array_alloc(n);
+    for (int64_t i = 0; i < n; i++) arr[i] = v;
+    return arr;
+}
+int64_t yona_Std_FloatArray__length(double* a) { return yona_rt_float_array_length(a); }
+double  yona_Std_FloatArray__get(double* a, int64_t i) { return yona_rt_float_array_get(a, i); }
+double* yona_Std_FloatArray__set(double* a, int64_t i, double v) {
+    int64_t len = yona_rt_float_array_length(a);
+    double* result = yona_rt_float_array_alloc(len);
+    memcpy(result, a, (size_t)len * sizeof(double));
+    result[i] = v;
+    return result;
+}
+double  yona_Std_FloatArray__head(double* a) { return yona_rt_float_array_head(a); }
+double* yona_Std_FloatArray__tail(double* a) { return yona_rt_float_array_tail(a); }
+double* yona_Std_FloatArray__cons(double e, double* a) { return yona_rt_float_array_cons(e, a); }
+double* yona_Std_FloatArray__join(double* a, double* b) { return yona_rt_float_array_join(a, b); }
+double* yona_Std_FloatArray__map(int64_t* fn, double* a) { return yona_rt_float_array_map(fn, a); }
+double  yona_Std_FloatArray__foldl(int64_t* fn, double acc, double* a) { return yona_rt_float_array_foldl(fn, acc, a); }
 
 /* Box: heap-allocate arbitrary data (for tuples in collections) */
 void* yona_rt_box(const void* data, int64_t size) {
