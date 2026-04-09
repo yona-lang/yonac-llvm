@@ -224,7 +224,16 @@ MonoTypePtr TypeChecker::infer_let(LetExpr* node, std::shared_ptr<TypeEnv> env, 
             auto scheme = generalize(rhs_type, level);
             child_env->bind_scheme(va->identifier->name->value, scheme);
         } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+            // Recursive functions: bind name with fresh var BEFORE inferring body.
+            // This allows the body to reference itself (self-recursive calls).
+            auto* self_var = arena_.fresh_var(level + 1);
+            uf_.add_var(self_var->var_id, level + 1);
+            child_env->bind(la->name->value, self_var);
+
             auto* fn_type = infer(la->lambda, child_env, level + 1);
+            // Unify the preliminary binding with the inferred type
+            unifier_.unify(self_var, fn_type, la->lambda->source_context,
+                           "in recursive function '" + la->name->value + "'");
             auto scheme = generalize(fn_type, level);
             child_env->bind_scheme(la->name->value, scheme);
         }

@@ -180,6 +180,9 @@ int main(int argc, char* argv[]) {
         }
 
         type_checker.check(parse_result.node.get());
+        if (type_checker.has_errors() || diag.has_errors()) {
+            return 1;
+        }
         codegen.set_type_checker(&type_checker);
 
         // Refinement checking (non-blocking)

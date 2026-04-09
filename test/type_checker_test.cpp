@@ -585,6 +585,18 @@ TEST_CASE("Integration: polymorphic identity function") {
     CHECK(check_expr_str("let id = \\x -> x in id 42") == "Int");
 }
 
+// ===== Recursive Function Tests =====
+
+TEST_CASE("Inference: recursive function type") {
+    auto s = check_expr_str("let f x = if x <= 0 then 0 else f (x - 1) in f 10");
+    CHECK(s == "Int");
+}
+
+TEST_CASE("Inference: recursive foldl type") {
+    auto s = check_expr_str("let foldl fn acc s = case s of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in foldl (\\a b -> a + b) 0 [1, 2, 3]");
+    CHECK(s == "Int");
+}
+
 // ===== Record / Row Type Tests =====
 
 TEST_CASE("Inference: record literal type") {

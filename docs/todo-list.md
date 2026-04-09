@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1082 assertions across 197 test cases (all passing)
+- **Tests**: 1088 assertions across 199 test cases (all passing)
 - **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
 - **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -101,14 +101,14 @@
 - [x] **General TCO** — tail-call optimization for self-recursive functions.
   Pre-tail-call RC cleanup: Perceus DROP moved before the call for non-pass-through
   args. LLVM TCE converts `tail call` to loop. User-defined foldl handles 100K+ elements.
-- [ ] **Iterator RC Cleanup** — foldl_iterator leaks Option ADTs and line strings.
-  Need safe rc_dec for iterator-produced values after processing each element.
-  Currently 116MB for 500K lines; should be O(64KB).
+- [x] **Iterator RC Cleanup** — fixed Option ADT layout mismatch (was `[tag, value]`,
+  now `[tag, num_fields, heap_mask, field]`). foldl_iterator rc_dec's each wrapper.
+  Memory: 116MB → 2.4MB for 500K lines. Time: 53.9ms → 39.8ms.
+- [x] **Blocking Type Checker** — type checker errors stop compilation.
+  Fixed: recursive let functions (preliminary binding before body inference),
+  prelude functions (fully polymorphic type vars instead of CType mapping).
 - [ ] **Binary File I/O** — `open`/`close`/`seek`/`read`/`write` for binary files
-  with file handles. `with open "file" as fd in seek fd 1000; read fd 4096 end`.
-  Requires Closeable instance for file handle type.
-- [ ] **Blocking Type Checker** — make type checker errors stop compilation.
-  Currently non-blocking. Requires full prelude/stdlib type registration.
+  with file handles. Requires Closeable instance for file handle type.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.

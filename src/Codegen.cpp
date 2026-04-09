@@ -120,40 +120,26 @@ void Codegen::load_prelude(parser::Parser* parser,
             type_checker->register_adt(type_name, params, ctors);
         }
 
-        // Register prelude function types from .yonai meta
-        // Convert CType signatures to MonoType schemes for the type checker
+        // Register prelude functions as fully polymorphic in the type checker.
         auto& arena = type_checker->arena();
-        auto ctype_to_mono = [&](CType ct) -> typechecker::MonoTypePtr {
-            switch (ct) {
-                case CType::INT:    return arena.make_con(typechecker::TyCon::Int);
-                case CType::FLOAT:  return arena.make_con(typechecker::TyCon::Float);
-                case CType::BOOL:   return arena.make_con(typechecker::TyCon::Bool);
-                case CType::STRING: return arena.make_con(typechecker::TyCon::String);
-                case CType::SYMBOL: return arena.make_con(typechecker::TyCon::Symbol);
-                case CType::UNIT:   return arena.make_con(typechecker::TyCon::Unit);
-                case CType::SEQ: {
-                    auto* v = arena.fresh_var(0);
-                    return arena.make_app("Seq", {v});
-                }
-                default: {
-                    // FUNCTION, ADT, etc. — use a fresh type variable
-                    auto* v = arena.fresh_var(0);
-                    return v;
-                }
-            }
-        };
-
+        // CType info from .yonai is too coarse for proper HM inference, so we
+        // use fresh type variables for all params — the type checker will infer
+        // the concrete types at each call site.
         const std::string tc_prefix = "yona_Prelude__";
         for (auto& [mangled, meta] : imports_.meta) {
             if (mangled.find(tc_prefix) != 0) continue;
             std::string local_name = mangled.substr(tc_prefix.size());
-            // Build curried function type from CType params + return
-            typechecker::MonoTypePtr fn_type = ctype_to_mono(meta.return_type);
-            for (int i = (int)meta.param_types.size() - 1; i >= 0; i--)
-                fn_type = arena.make_arrow(ctype_to_mono(meta.param_types[i]), fn_type);
-            // Register as a monomorphic binding in the type checker's root env
-            type_checker->arena(); // ensure arena is initialized
-            // Use register_trait_method for polymorphic registration
+
+            // Build polymorphic function type with fresh vars for all params + return.
+            // register_trait_method will generalize (quantify free vars).
+            auto* ret_var = arena.fresh_var(0);
+            typechecker::MonoTypePtr fn_type = ret_var;
+
+            for (int i = (int)meta.param_types.size() - 1; i >= 0; i--) {
+                auto* param_var = arena.fresh_var(0);
+                fn_type = arena.make_arrow(param_var, fn_type);
+            }
+
             type_checker->register_trait_method("Prelude", local_name, fn_type);
         }
     }
