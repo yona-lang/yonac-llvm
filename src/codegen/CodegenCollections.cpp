@@ -335,9 +335,9 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
             // For non-recursive ADTs: extractvalue {tag, closure}
             Value* next_fn;
             if (iter_val->getType()->isPointerTy()) {
-                // Heap-allocated ADT: payload[0] = tag, payload[1] = closure_ptr
+                // Heap-allocated ADT: [tag, num_fields, heap_mask, closure_ptr]
                 auto* gep = builder_->CreateGEP(i64_ty, iter_val,
-                    {ConstantInt::get(i64_ty, 1)}, "iter_next_gep");
+                    {ConstantInt::get(i64_ty, 3)}, "iter_next_gep"); // ADT_HDR_SIZE=3
                 next_fn = builder_->CreateLoad(i64_ty, gep, "iter_next_fn");
                 next_fn = builder_->CreateIntToPtr(next_fn, ptr_ty);
             } else {
@@ -384,7 +384,7 @@ TypedValue Codegen::codegen_seq_generator(SeqGeneratorExpr* node) {
 
             builder_->SetInsertPoint(body_bb);
             auto* val_gep = builder_->CreateGEP(i64_ty, opt_ptr,
-                {ConstantInt::get(i64_ty, 1)}, "opt_val_gep");
+                {ConstantInt::get(i64_ty, 3)}, "opt_val_gep"); // ADT_HDR_SIZE=3
             auto* elem = builder_->CreateLoad(i64_ty, val_gep, "iter_elem");
 
             // Bind variable and evaluate reducer

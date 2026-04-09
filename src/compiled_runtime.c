@@ -830,6 +830,32 @@ void yona_rt_print_set(int64_t* set) {
  */
 #define ADT_HDR_SIZE 3  /* tag, num_fields, heap_mask */
 
+/* Helper: allocate a None Option ADT */
+static inline int64_t* make_none(void) {
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, ADT_HDR_SIZE * sizeof(int64_t));
+    adt[0] = 1; adt[1] = 0; adt[2] = 0;
+    return adt;
+}
+
+/* Helper: allocate a Some(value) Option ADT.
+ * heap_mask is 0 — the element is NOT owned by the wrapper.
+ * Callers must rc_dec the element separately. This allows extracting
+ * the element and freeing the wrapper without a use-after-free. */
+static inline int64_t* make_some(int64_t value, int is_heap) {
+    (void)is_heap; /* element ownership is caller's responsibility */
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + 1) * sizeof(int64_t));
+    adt[0] = 0; adt[1] = 1; adt[2] = 0; adt[3] = value;
+    return adt;
+}
+
+/* Helper: allocate an Iterator ADT wrapping a closure */
+static inline int64_t* make_iterator(int64_t* closure) {
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + 1) * sizeof(int64_t));
+    adt[0] = 0; adt[1] = 1; adt[2] = 0; /* heap_mask=0: closure managed separately */
+    adt[3] = (int64_t)(intptr_t)closure;
+    return adt;
+}
+
 void* yona_rt_adt_alloc(int64_t tag, int64_t num_fields) {
     int64_t* node = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + num_fields) * sizeof(int64_t));
     node[0] = tag;
@@ -974,18 +1000,13 @@ typedef struct { const char* str; const char* pos; const char* delim; size_t dle
 
 static int64_t split_iter_next(int64_t* env) {
     split_iter_state_t* st = (split_iter_state_t*)(intptr_t)env[5];
-    if (st->done) {
-        int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-        adt[0] = 1; return (int64_t)(intptr_t)adt;
-    }
+    if (st->done) return (int64_t)(intptr_t)make_none();
     const char* next = st->dlen > 0 ? strstr(st->pos, st->delim) : NULL;
     size_t len;
     if (st->dlen == 0) {
-        /* Empty delimiter: yield one character at a time */
         if (*st->pos == '\0') {
             st->done = 1;
-            int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-            adt[0] = 1; return (int64_t)(intptr_t)adt;
+            return (int64_t)(intptr_t)make_none();
         }
         len = 1;
         next = NULL;
@@ -999,9 +1020,7 @@ static int64_t split_iter_next(int64_t* env) {
     else if (st->dlen == 0) st->pos += 1;
     else st->done = 1;
     if (st->dlen == 0 && *st->pos == '\0') st->done = 1;
-    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-    adt[0] = 0; adt[1] = (int64_t)(intptr_t)part;
-    return (int64_t)(intptr_t)adt;
+    return (int64_t)(intptr_t)make_some((int64_t)(intptr_t)part, 1);
 }
 
 int64_t yona_Std_String__split(const char* delim, const char* s) {
@@ -1012,9 +1031,7 @@ int64_t yona_Std_String__split(const char* delim, const char* s) {
     extern void yona_rt_closure_set_cap(void* cl, int64_t idx, int64_t val);
     int64_t* cl = (int64_t*)yona_rt_closure_create((void*)split_iter_next, 0, 0, 1);
     yona_rt_closure_set_cap(cl, 0, (int64_t)(intptr_t)st);
-    int64_t* iter = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-    iter[0] = 0; iter[1] = (int64_t)(intptr_t)cl;
-    return (int64_t)(intptr_t)iter;
+    return (int64_t)(intptr_t)make_iterator(cl);
 }
 
 const char* yona_Std_String__join(const char* sep, int64_t* seq) {
@@ -1137,17 +1154,9 @@ typedef struct { const char* str; size_t pos; size_t len; } char_iter_state_t;
 
 static int64_t char_iter_next(int64_t* env) {
     char_iter_state_t* st = (char_iter_state_t*)(intptr_t)env[5];
-    if (st->pos >= st->len) {
-        int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-        adt[0] = 1; /* None */
-        return (int64_t)(intptr_t)adt;
-    }
-    /* Return character code as integer (consistent with charAt) */
+    if (st->pos >= st->len) return (int64_t)(intptr_t)make_none();
     int64_t ch = (int64_t)(unsigned char)st->str[st->pos++];
-    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-    adt[0] = 0; /* Some */
-    adt[1] = ch;
-    return (int64_t)(intptr_t)adt;
+    return (int64_t)(intptr_t)make_some(ch, 0);
 }
 
 int64_t yona_Std_String__chars(const char* s) {
@@ -1158,9 +1167,7 @@ int64_t yona_Std_String__chars(const char* s) {
     extern void yona_rt_closure_set_cap(void* cl, int64_t idx, int64_t val);
     int64_t* cl = (int64_t*)yona_rt_closure_create((void*)char_iter_next, 0, 0, 1);
     yona_rt_closure_set_cap(cl, 0, (int64_t)(intptr_t)st);
-    int64_t* iter = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
-    iter[0] = 0; iter[1] = (int64_t)(intptr_t)cl;
-    return (int64_t)(intptr_t)iter;
+    return (int64_t)(intptr_t)make_iterator(cl);
 }
 
 const char* yona_Std_String__fromChars(int64_t* seq) {
@@ -2031,17 +2038,22 @@ typedef int64_t (*fold_fn_t)(int64_t* env, int64_t, int64_t);
 
 /* Fold over an Iterator: call next() in a loop until None */
 static int64_t foldl_iterator(fold_fn_t f, int64_t* fn, int64_t acc, int64_t* iter_adt) {
-    /* Iterator ADT layout: [tag=0, closure_ptr] */
-    int64_t* closure = (int64_t*)(intptr_t)iter_adt[1];
+    /* Iterator ADT layout: [tag, num_fields, heap_mask, closure_ptr] */
+    int64_t* closure = (int64_t*)(intptr_t)iter_adt[ADT_HDR_SIZE];
     typedef int64_t (*next_fn_t)(int64_t*);
     next_fn_t next = (next_fn_t)(intptr_t)closure[0];
 
     while (1) {
         int64_t option = next(closure);
         int64_t* opt_ptr = (int64_t*)(intptr_t)option;
-        /* Option layout: [tag, value] — tag=0 is Some, tag!=0 is None */
-        if (opt_ptr[0] != 0) break;  /* None */
-        acc = f(fn, acc, opt_ptr[1]);
+        /* Option ADT layout: [tag, num_fields, heap_mask, field0] */
+        if (opt_ptr[0] != 0) {
+            yona_rt_rc_dec(opt_ptr);  /* free None */
+            break;
+        }
+        int64_t elem = opt_ptr[ADT_HDR_SIZE];  /* field0 */
+        yona_rt_rc_dec(opt_ptr);  /* free Some wrapper (heap_mask=0, doesn't touch elem) */
+        acc = f(fn, acc, elem);
     }
     return acc;
 }

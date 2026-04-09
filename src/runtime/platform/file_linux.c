@@ -339,12 +339,11 @@ static int64_t line_iter_next(int64_t* closure_env) {
     extern void* yona_rt_rc_alloc_string_len(size_t bytes, size_t str_len);
 
     if (st->eof) {
-        /* Return None — use the prelude None constructor.
-         * None is tag=1, arity=0. Non-recursive ADT: struct {i64 tag}
-         * But since all values are i64, return a tagged pointer. */
-        /* Allocate a small ADT: [rc, type_tag, tag_value] */
-        int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
+        /* Return None: ADT layout [tag, num_fields, heap_mask] */
+        int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 3 * sizeof(int64_t));
         adt[0] = 1;  /* tag = None */
+        adt[1] = 0;  /* num_fields = 0 */
+        adt[2] = 0;  /* heap_mask = 0 */
         return (int64_t)(intptr_t)adt;
     }
 
@@ -360,8 +359,8 @@ static int64_t line_iter_next(int64_t* closure_env) {
                 st->eof = 1;
                 if (line_len == 0) {
                     /* EOF with no partial line — return None */
-                    int64_t* adt = (int64_t*)rc_alloc(4, 2 * sizeof(int64_t));
-                    adt[0] = 1;
+                    int64_t* adt = (int64_t*)rc_alloc(4, 3 * sizeof(int64_t));
+                    adt[0] = 1; adt[1] = 0; adt[2] = 0;
                     return (int64_t)(intptr_t)adt;
                 }
                 break;  /* Return the partial line */
@@ -386,10 +385,12 @@ line_complete:
     char* line_str = (char*)yona_rt_rc_alloc_string_len(line_len + 1, line_len);
     memcpy(line_str, line_buf, line_len + 1);
 
-    /* Return Some(line_str) — ADT with tag=0, value=pointer */
-    int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
+    /* Return Some(line_str) — ADT layout [tag, num_fields, heap_mask, field0] */
+    int64_t* adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 4 * sizeof(int64_t));
     adt[0] = 0;  /* tag = Some */
-    adt[1] = (int64_t)(intptr_t)line_str;
+    adt[1] = 1;  /* num_fields = 1 */
+    adt[2] = 1;  /* heap_mask = bit 0 (field 0 is heap-allocated string) */
+    adt[3] = (int64_t)(intptr_t)line_str;
     return (int64_t)(intptr_t)adt;
 }
 
@@ -428,10 +429,12 @@ int64_t yona_rt_file_line_iterator(const char* path) {
     extern void yona_rt_closure_set_cap(void* closure, int64_t idx, int64_t val);
     yona_rt_closure_set_cap(closure, 0, (int64_t)(intptr_t)st);
 
-    /* Wrap in Iterator ADT: non-recursive, {tag=0, closure_ptr} */
-    int64_t* iter_adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 2 * sizeof(int64_t));
-    iter_adt[0] = 0;  /* tag = Iterator (constructor 0) */
-    iter_adt[1] = (int64_t)(intptr_t)closure;
+    /* Wrap in Iterator ADT: [tag=0, num_fields=1, heap_mask=1, closure_ptr] */
+    int64_t* iter_adt = (int64_t*)rc_alloc(4 /* RC_TYPE_ADT */, 4 * sizeof(int64_t));
+    iter_adt[0] = 0;  /* tag = Iterator */
+    iter_adt[1] = 1;  /* num_fields */
+    iter_adt[2] = 0;  /* heap_mask=0: closure managed separately */
+    iter_adt[3] = (int64_t)(intptr_t)closure;
 
     return (int64_t)(intptr_t)iter_adt;
 }
