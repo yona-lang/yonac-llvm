@@ -1,0 +1,5 @@
+import fromSeq, map, foldl from Std\IntArray in
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
+let arr = fromSeq (build 10000 []) in
+let doubled = map (\x -> x * 2) arr in
+foldl (\a b -> a + b) 0 doubled

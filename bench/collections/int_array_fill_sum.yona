@@ -1,0 +1,3 @@
+import fill, foldl from Std\IntArray in
+let a = fill 10000 7 in
+foldl (\acc x -> acc + x) 0 a

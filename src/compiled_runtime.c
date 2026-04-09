@@ -616,18 +616,22 @@ int64_t* yona_rt_int_array_filter(int64_t* fn, int64_t* arr) {
 }
 
 int64_t* yona_rt_int_array_from_seq(int64_t* seq) {
-    int64_t len = seq[0];
+    extern int64_t yona_rt_seq_length(int64_t* seq);
+    extern int64_t yona_rt_seq_get(int64_t* seq, int64_t index);
+    int64_t len = yona_rt_seq_length(seq);
     int64_t* result = yona_rt_int_array_alloc(len);
-    /* Seq layout: [count, flags, elem0, elem1, ...] (flat seq) */
-    memcpy(result + 1, seq + 2, (size_t)len * sizeof(int64_t));
+    for (int64_t i = 0; i < len; i++)
+        result[1 + i] = yona_rt_seq_get(seq, i);
     return result;
 }
 
 int64_t* yona_rt_int_array_to_seq(int64_t* arr) {
     extern int64_t* yona_rt_seq_alloc(int64_t count);
+    extern int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem);
     int64_t len = arr[0];
-    int64_t* seq = yona_rt_seq_alloc(len);
-    memcpy(seq + 2, arr + 1, (size_t)len * sizeof(int64_t));
+    int64_t* seq = yona_rt_seq_alloc(0);
+    for (int64_t i = 0; i < len; i++)
+        seq = yona_rt_seq_snoc(seq, arr[1 + i]);
     return seq;
 }
 

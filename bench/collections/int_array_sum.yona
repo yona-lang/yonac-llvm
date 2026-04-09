@@ -1,0 +1,5 @@
+import fromSeq, foldl from Std\IntArray in
+let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
+let seq = build 10000 [] in
+let arr = fromSeq seq in
+foldl (\a b -> a + b) 0 arr
