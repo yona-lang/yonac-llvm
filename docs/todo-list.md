@@ -37,6 +37,14 @@
 ## Remaining Work
 
 ### Performance
+- [ ] **Unboxed Arrays (IntArray, FloatArray)** — contiguous typed arrays
+  without per-element RC. `IntArray`: flat `int64_t[]`, `FloatArray`: flat
+  `double[]`. O(1) random access, SIMD auto-vectorization by LLVM, cache-
+  friendly bulk operations (map, foldl, filter, zip). Persistent semantics
+  with unique-owner CoW. Head-tail pattern matching via zero-copy slice views
+  (`[h|t]` where t is offset+length into same backing buffer). Foundation for
+  columnar data processing. Runtime: new `RC_TYPE_INT_ARRAY`/`RC_TYPE_FLOAT_ARRAY`
+  type tags, flat payload. No changes to general type system (Int stays i64).
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 
