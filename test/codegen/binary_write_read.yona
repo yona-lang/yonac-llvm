@@ -1,4 +1,4 @@
-import openFile, readBytes, writeBytes, closeFileHandle from Std\File, fromString, length from Std\Bytes in
+import openFile, readBytes, writeBytes, closeFileHandle from Std\File, fromString, length from Std\ByteArray in
 let wh = openFile "/tmp/yona_binary_test.bin" "w" in
 let _ = writeBytes wh (fromString "hello binary") in
 let _ = closeFileHandle wh in

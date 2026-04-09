@@ -187,7 +187,7 @@ int64_t yona_Std_Net__recvBytes(int64_t fd, int64_t max_bytes) {
     if (max_bytes <= 0) max_bytes = 4096;
     /* Allocate Bytes buffer: [length][data...] with RC header */
     extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
-    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + (size_t)max_bytes);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTE_ARRAY */, sizeof(int64_t) + (size_t)max_bytes);
     buf[0] = 0; /* length set by completer */
 
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));

@@ -250,7 +250,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::DICT:   return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::PROMISE: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::ADT:    return LType::getInt64Ty(*context_); // overridden per-ADT
-        case CType::BYTES:  return PointerType::get(LType::getInt8Ty(*context_), 0);
+        case CType::BYTE_ARRAY:  return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::INT_ARRAY: return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::FLOAT_ARRAY: return PointerType::get(LType::getDoubleTy(*context_), 0);
         case CType::SUM:    return LType::getInt64Ty(*context_); // boxed tagged value (2-tuple)
@@ -367,17 +367,17 @@ void Codegen::declare_runtime() {
 
     // Resource cleanup (with expression)
     // Bytes
-    rt_.bytes_alloc_       = decl("yona_rt_bytes_alloc", ptr, {i64});
-    rt_.bytes_length_      = decl("yona_rt_bytes_length", i64, {ptr});
-    rt_.bytes_get_         = decl("yona_rt_bytes_get", i64, {ptr, i64});
-    rt_.bytes_set_         = decl("yona_rt_bytes_set", vd, {ptr, i64, i64});
-    rt_.bytes_concat_      = decl("yona_rt_bytes_concat", ptr, {ptr, ptr});
-    rt_.bytes_slice_       = decl("yona_rt_bytes_slice", ptr, {ptr, i64, i64});
-    rt_.bytes_from_string_ = decl("yona_rt_bytes_from_string", ptr, {ptr});
-    rt_.bytes_to_string_   = decl("yona_rt_bytes_to_string", ptr, {ptr});
-    rt_.bytes_from_seq_    = decl("yona_rt_bytes_from_seq", ptr, {ptr});
-    rt_.bytes_to_seq_      = decl("yona_rt_bytes_to_seq", ptr, {ptr});
-    rt_.print_bytes_       = decl("yona_rt_print_bytes", vd, {ptr});
+    rt_.byte_array_alloc_       = decl("yona_rt_byte_array_alloc", ptr, {i64});
+    rt_.byte_array_length_      = decl("yona_rt_byte_array_length", i64, {ptr});
+    rt_.byte_array_get_         = decl("yona_rt_byte_array_get", i64, {ptr, i64});
+    rt_.byte_array_set_         = decl("yona_rt_byte_array_set", vd, {ptr, i64, i64});
+    rt_.byte_array_concat_      = decl("yona_rt_byte_array_concat", ptr, {ptr, ptr});
+    rt_.byte_array_slice_       = decl("yona_rt_byte_array_slice", ptr, {ptr, i64, i64});
+    rt_.byte_array_from_string_ = decl("yona_rt_byte_array_from_string", ptr, {ptr});
+    rt_.byte_array_to_string_   = decl("yona_rt_byte_array_to_string", ptr, {ptr});
+    rt_.byte_array_from_seq_    = decl("yona_rt_byte_array_from_seq", ptr, {ptr});
+    rt_.byte_array_to_seq_      = decl("yona_rt_byte_array_to_seq", ptr, {ptr});
+    rt_.print_byte_array_       = decl("yona_rt_print_byte_array", vd, {ptr});
 
     // IntArray
     rt_.int_array_alloc_   = decl("yona_rt_int_array_alloc", ptr, {i64});
@@ -1104,7 +1104,7 @@ static std::string ctype_to_string(CType ct) {
         case CType::SET: return "SET";
         case CType::DICT: return "DICT";
         case CType::ADT: return "ADT";
-        case CType::BYTES: return "BYTES";
+        case CType::BYTE_ARRAY: return "BYTE_ARRAY";
         case CType::INT_ARRAY: return "INT_ARRAY";
         case CType::FLOAT_ARRAY: return "FLOAT_ARRAY";
         case CType::SUM: return "SUM";
@@ -1287,8 +1287,8 @@ void Codegen::codegen_print_value(const TypedValue& tv) {
             builder_->CreateCall(rt_.print_string_, {builder_->CreateGlobalStringPtr("<adt>")});
             break;
         }
-        case CType::BYTES: {
-            builder_->CreateCall(rt_.print_bytes_, {tv.val});
+        case CType::BYTE_ARRAY: {
+            builder_->CreateCall(rt_.print_byte_array_, {tv.val});
             break;
         }
         case CType::INT_ARRAY: {
@@ -1512,7 +1512,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                         auto* val = builder_->CreateLoad(LType::getInt64Ty(*context_), gep, "rec_field");
                         CType ftype = (fi < obj.subtypes.size()) ? obj.subtypes[fi] : CType::INT;
                         if (ftype == CType::STRING || ftype == CType::FUNCTION ||
-                            ftype == CType::BYTES || ftype == CType::PROMISE)
+                            ftype == CType::BYTE_ARRAY || ftype == CType::PROMISE)
                             return {builder_->CreateIntToPtr(val, PointerType::get(*context_, 0)), ftype};
                         if (ftype == CType::SEQ || ftype == CType::SET || ftype == CType::DICT)
                             return {builder_->CreateIntToPtr(val, PointerType::get(LType::getInt64Ty(*context_), 0)), ftype};

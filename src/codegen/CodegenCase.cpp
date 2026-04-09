@@ -542,7 +542,7 @@ int Codegen::ctype_tag(CType ct) {
         case CType::SET:      return 10;
         case CType::DICT:     return 11;
         case CType::ADT:      return 12;
-        case CType::BYTES:    return 13;
+        case CType::BYTE_ARRAY:    return 13;
         case CType::SUM:      return 14;
     }
     return 0;
@@ -561,7 +561,7 @@ CType Codegen::type_name_to_ctype(const std::string& name) {
     if (name == "Promise")  return CType::PROMISE;
     if (name == "Set")      return CType::SET;
     if (name == "Dict")     return CType::DICT;
-    if (name == "Bytes")    return CType::BYTES;
+    if (name == "ByteArray")    return CType::BYTE_ARRAY;
     return CType::INT; // fallback
 }
 
@@ -631,7 +631,7 @@ bool Codegen::codegen_pattern_typed(TypedPattern* pat, const TypedValue& scrutin
     else if (expected_ct == CType::BOOL)
         typed_val = builder_->CreateTrunc(raw_val, LType::getInt1Ty(*context_));
     else if (expected_ct == CType::STRING || expected_ct == CType::FUNCTION ||
-             expected_ct == CType::BYTES || expected_ct == CType::PROMISE)
+             expected_ct == CType::BYTE_ARRAY || expected_ct == CType::PROMISE)
         typed_val = builder_->CreateIntToPtr(raw_val, PointerType::get(*context_, 0));
     else if (expected_ct == CType::SEQ || expected_ct == CType::SET || expected_ct == CType::DICT)
         typed_val = builder_->CreateIntToPtr(raw_val, PointerType::get(i64_ty, 0));

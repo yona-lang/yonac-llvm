@@ -140,7 +140,7 @@ Write a byte buffer to a file. Returns `true` on success.
 
 ```yona
 import writeFileBytes from Std\File in
-import fromSeq from Std\Bytes in
+import fromSeq from Std\ByteArray in
 writeFileBytes "out.bin" (fromSeq [0, 1, 2, 3])
 ```
 

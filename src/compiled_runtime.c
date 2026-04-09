@@ -395,7 +395,7 @@ void yona_rt_arena_destroy(void* arena_ptr) {
 }
 
 #define RC_TYPE_BOX     7
-#define RC_TYPE_BYTES   8
+#define RC_TYPE_BYTE_ARRAY   8
 /* ===== Persistent Seq ===== */
 #include "runtime/seq.c"
 
@@ -415,19 +415,19 @@ void yona_rt_arena_destroy(void* arena_ptr) {
  */
 
 /* Allocate a Bytes buffer of the given size (uninitialized) */
-void* yona_rt_bytes_alloc(int64_t size) {
-    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)size);
+void* yona_rt_byte_array_alloc(int64_t size) {
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTE_ARRAY, sizeof(int64_t) + (size_t)size);
     buf[0] = size;
     return buf;
 }
 
 /* Get length of a Bytes buffer */
-int64_t yona_rt_bytes_length(void* bytes) {
+int64_t yona_rt_byte_array_length(void* bytes) {
     return ((int64_t*)bytes)[0];
 }
 
 /* Get byte at index (returns 0-255) */
-int64_t yona_rt_bytes_get(void* bytes, int64_t index) {
+int64_t yona_rt_byte_array_get(void* bytes, int64_t index) {
     int64_t len = ((int64_t*)bytes)[0];
     if (index < 0 || index >= len) return 0;
     uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
@@ -435,7 +435,7 @@ int64_t yona_rt_bytes_get(void* bytes, int64_t index) {
 }
 
 /* Set byte at index */
-void yona_rt_bytes_set(void* bytes, int64_t index, int64_t value) {
+void yona_rt_byte_array_set(void* bytes, int64_t index, int64_t value) {
     int64_t len = ((int64_t*)bytes)[0];
     if (index < 0 || index >= len) return;
     uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
@@ -443,10 +443,10 @@ void yona_rt_bytes_set(void* bytes, int64_t index, int64_t value) {
 }
 
 /* Concatenate two Bytes buffers */
-void* yona_rt_bytes_concat(void* a, void* b) {
+void* yona_rt_byte_array_concat(void* a, void* b) {
     int64_t len_a = ((int64_t*)a)[0];
     int64_t len_b = ((int64_t*)b)[0];
-    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)(len_a + len_b));
+    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTE_ARRAY, sizeof(int64_t) + (size_t)(len_a + len_b));
     result[0] = len_a + len_b;
     uint8_t* dest = (uint8_t*)(result + 1);
     memcpy(dest, (uint8_t*)((int64_t*)a + 1), (size_t)len_a);
@@ -455,12 +455,12 @@ void* yona_rt_bytes_concat(void* a, void* b) {
 }
 
 /* Slice: bytes[start..start+len] */
-void* yona_rt_bytes_slice(void* bytes, int64_t start, int64_t len) {
+void* yona_rt_byte_array_slice(void* bytes, int64_t start, int64_t len) {
     int64_t total = ((int64_t*)bytes)[0];
     if (start < 0) start = 0;
     if (start + len > total) len = total - start;
-    if (len <= 0) return yona_rt_bytes_alloc(0);
-    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)len);
+    if (len <= 0) return yona_rt_byte_array_alloc(0);
+    int64_t* result = (int64_t*)rc_alloc(RC_TYPE_BYTE_ARRAY, sizeof(int64_t) + (size_t)len);
     result[0] = len;
     uint8_t* src = (uint8_t*)((int64_t*)bytes + 1) + start;
     memcpy((uint8_t*)(result + 1), src, (size_t)len);
@@ -468,16 +468,16 @@ void* yona_rt_bytes_slice(void* bytes, int64_t start, int64_t len) {
 }
 
 /* Convert String to Bytes (copies, no null terminator in output) */
-void* yona_rt_bytes_from_string(const char* s) {
+void* yona_rt_byte_array_from_string(const char* s) {
     size_t len = strlen(s);
-    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + len);
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTE_ARRAY, sizeof(int64_t) + len);
     buf[0] = (int64_t)len;
     memcpy((uint8_t*)(buf + 1), s, len);
     return buf;
 }
 
 /* Convert Bytes to String (adds null terminator) */
-const char* yona_rt_bytes_to_string(void* bytes) {
+const char* yona_rt_byte_array_to_string(void* bytes) {
     int64_t len = ((int64_t*)bytes)[0];
     char* s = (char*)rc_alloc(RC_TYPE_STRING, (size_t)len + 1);
     memcpy(s, (uint8_t*)((int64_t*)bytes + 1), (size_t)len);
@@ -486,9 +486,9 @@ const char* yona_rt_bytes_to_string(void* bytes) {
 }
 
 /* Create Bytes from a list of integers (each 0-255) */
-void* yona_rt_bytes_from_seq(int64_t* seq) {
+void* yona_rt_byte_array_from_seq(int64_t* seq) {
     int64_t len = seq[0];
-    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTES, sizeof(int64_t) + (size_t)len);
+    int64_t* buf = (int64_t*)rc_alloc(RC_TYPE_BYTE_ARRAY, sizeof(int64_t) + (size_t)len);
     buf[0] = len;
     uint8_t* data = (uint8_t*)(buf + 1);
     for (int64_t i = 0; i < len; i++)
@@ -497,7 +497,7 @@ void* yona_rt_bytes_from_seq(int64_t* seq) {
 }
 
 /* Convert Bytes to a list of integers (each 0-255) */
-int64_t* yona_rt_bytes_to_seq(void* bytes) {
+int64_t* yona_rt_byte_array_to_seq(void* bytes) {
     int64_t len = ((int64_t*)bytes)[0];
     int64_t* seq = yona_rt_seq_alloc(len);
     uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
@@ -507,7 +507,7 @@ int64_t* yona_rt_bytes_to_seq(void* bytes) {
 }
 
 /* Print Bytes as hex for debugging */
-void yona_rt_print_bytes(void* bytes) {
+void yona_rt_print_byte_array(void* bytes) {
     int64_t len = ((int64_t*)bytes)[0];
     uint8_t* data = (uint8_t*)((int64_t*)bytes + 1);
     printf("<<");
@@ -519,16 +519,16 @@ void yona_rt_print_bytes(void* bytes) {
 }
 
 /* Std\Bytes module aliases */
-void* yona_Std_Bytes__alloc(int64_t s)          { return yona_rt_bytes_alloc(s); }
-int64_t yona_Std_Bytes__length(void* b)         { return yona_rt_bytes_length(b); }
-int64_t yona_Std_Bytes__get(void* b, int64_t i) { return yona_rt_bytes_get(b, i); }
-void yona_Std_Bytes__set(void* b, int64_t i, int64_t v) { yona_rt_bytes_set(b, i, v); }
-void* yona_Std_Bytes__concat(void* a, void* b)  { return yona_rt_bytes_concat(a, b); }
-void* yona_Std_Bytes__slice(void* b, int64_t s, int64_t l) { return yona_rt_bytes_slice(b, s, l); }
-void* yona_Std_Bytes__fromString(const char* s) { return yona_rt_bytes_from_string(s); }
-const char* yona_Std_Bytes__toString(void* b)   { return yona_rt_bytes_to_string(b); }
-void* yona_Std_Bytes__fromSeq(int64_t* s)       { return yona_rt_bytes_from_seq(s); }
-int64_t* yona_Std_Bytes__toSeq(void* b)         { return yona_rt_bytes_to_seq(b); }
+void* yona_Std_ByteArray__alloc(int64_t s)          { return yona_rt_byte_array_alloc(s); }
+int64_t yona_Std_ByteArray__length(void* b)         { return yona_rt_byte_array_length(b); }
+int64_t yona_Std_ByteArray__get(void* b, int64_t i) { return yona_rt_byte_array_get(b, i); }
+void yona_Std_ByteArray__set(void* b, int64_t i, int64_t v) { yona_rt_byte_array_set(b, i, v); }
+void* yona_Std_ByteArray__concat(void* a, void* b)  { return yona_rt_byte_array_concat(a, b); }
+void* yona_Std_ByteArray__slice(void* b, int64_t s, int64_t l) { return yona_rt_byte_array_slice(b, s, l); }
+void* yona_Std_ByteArray__fromString(const char* s) { return yona_rt_byte_array_from_string(s); }
+const char* yona_Std_ByteArray__toString(void* b)   { return yona_rt_byte_array_to_string(b); }
+void* yona_Std_ByteArray__fromSeq(int64_t* s)       { return yona_rt_byte_array_from_seq(s); }
+int64_t* yona_Std_ByteArray__toSeq(void* b)         { return yona_rt_byte_array_to_seq(b); }
 
 /* ===== IntArray — contiguous unboxed int64_t[] ===== */
 /* Layout: [count: i64][elem0, elem1, ...] — no per-element RC. */
@@ -1839,8 +1839,8 @@ int64_t yona_Std_File__readFileBytes(const char* path) {
     extern int64_t yona_platform_read_file_bytes_submit(const char* path);
     int64_t id = yona_platform_read_file_bytes_submit(path);
     if (id > 0) return id;
-    extern void* yona_rt_bytes_from_string(const char* s);
-    void* bytes = yona_rt_bytes_from_string(yona_platform_read_file(path));
+    extern void* yona_rt_byte_array_from_string(const char* s);
+    void* bytes = yona_rt_byte_array_from_string(yona_platform_read_file(path));
     return io_register_direct_result(bytes);
 }
 

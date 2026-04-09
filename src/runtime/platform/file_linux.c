@@ -242,7 +242,7 @@ int64_t yona_platform_read_file_bytes_submit(const char* path) {
     size_t size = (size_t)st.st_size;
 
     extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
-    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + size);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTE_ARRAY */, sizeof(int64_t) + size);
     buf[0] = 0; /* length set by completer */
 
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
@@ -271,7 +271,7 @@ int64_t yona_platform_read_file_bytes_submit(const char* path) {
 /* pread from open fd at given offset. Does NOT close fd. */
 int64_t yona_platform_read_fd_bytes_submit(int fd, int64_t count, int64_t offset) {
     extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
-    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + (size_t)count);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTE_ARRAY */, sizeof(int64_t) + (size_t)count);
     buf[0] = 0; /* length set by completer */
 
     io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
@@ -542,7 +542,7 @@ static int64_t chunk_iter_next(int64_t* env) {
 
     /* Submit non-blocking pread via io_uring */
     extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
-    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */,
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTE_ARRAY */,
                                        sizeof(int64_t) + (size_t)st->chunk_size);
     buf[0] = 0;
 

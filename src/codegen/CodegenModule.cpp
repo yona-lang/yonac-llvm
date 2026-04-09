@@ -38,7 +38,7 @@ std::string Codegen::ctype_to_type_name(CType ct) {
         case CType::FUNCTION: return "Function";
         case CType::PROMISE: return "Promise";
         case CType::ADT: return "ADT";
-        case CType::BYTES: return "Bytes";
+        case CType::BYTE_ARRAY: return "ByteArray";
         case CType::INT_ARRAY: return "IntArray";
         case CType::FLOAT_ARRAY: return "FloatArray";
     }
@@ -116,7 +116,7 @@ static CType string_to_ctype(const std::string& s) {
     if (s == "SET") return CType::SET;
     if (s == "DICT") return CType::DICT;
     if (s == "ADT") return CType::ADT;
-    if (s == "BYTES") return CType::BYTES;
+    if (s == "BYTE_ARRAY") return CType::BYTE_ARRAY;
     if (s == "INT_ARRAY") return CType::INT_ARRAY;
     if (s == "FLOAT_ARRAY") return CType::FLOAT_ARRAY;
     if (s == "SUM") return CType::SUM;

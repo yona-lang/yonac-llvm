@@ -1,4 +1,4 @@
-import openFile, readBytes, writeBytes, closeFileHandle from Std\File, length from Std\Bytes in
+import openFile, readBytes, writeBytes, closeFileHandle from Std\File, length from Std\ByteArray in
 let rh = openFile "bench/data/bench_binary.bin" "r" in
 let data = readBytes rh 5242880 in
 let _ = closeFileHandle rh in

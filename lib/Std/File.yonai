@@ -6,11 +6,11 @@ FN yona_Std_File__remove 1 STRING -> BOOL
 FN yona_Std_File__size 1 STRING -> INT
 FN yona_Std_File__listDir 1 STRING -> SEQ
 FN yona_Std_File__readLines 1 STRING -> ADT
-IO yona_Std_File__readFileBytes 1 STRING -> BYTES
-FN yona_Std_File__writeFileBytes 2 STRING BYTES -> BOOL
+IO yona_Std_File__readFileBytes 1 STRING -> BYTE_ARRAY
+FN yona_Std_File__writeFileBytes 2 STRING BYTE_ARRAY -> BOOL
 FN yona_Std_File__openFile 2 STRING STRING -> INT
 FN yona_Std_File__closeFileHandle 1 INT -> UNIT
-IO yona_Std_File__readBytes 2 INT INT -> BYTES
+IO yona_Std_File__readBytes 2 INT INT -> BYTE_ARRAY
 IO yona_Std_File__writeBytes 2 INT INT -> INT
 FN yona_Std_File__seek 3 INT INT STRING -> INT
 FN yona_Std_File__tell 1 INT -> INT

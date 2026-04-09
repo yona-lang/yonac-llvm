@@ -882,7 +882,7 @@ MonoTypePtr TypeChecker::infer_pattern(PatternNode* pat, std::shared_ptr<TypeEnv
             else if (tp->type_name == "Bool")   bound_type = arena_.make_con(TyCon::Bool);
             else if (tp->type_name == "String") bound_type = arena_.make_con(TyCon::String);
             else if (tp->type_name == "Symbol") bound_type = arena_.make_con(TyCon::Symbol);
-            else if (tp->type_name == "Bytes")  bound_type = arena_.make_con(TyCon::Bytes);
+            else if (tp->type_name == "ByteArray")  bound_type = arena_.make_con(TyCon::ByteArray);
             else {
                 // Unknown or ADT type — use a named App type
                 bound_type = arena_.make_app(tp->type_name, {});

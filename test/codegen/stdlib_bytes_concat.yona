@@ -1,1 +1,1 @@
-import fromString, concat, toString from Std\Bytes in toString (concat (fromString "hello ") (fromString "world"))
+import fromString, concat, toString from Std\ByteArray in toString (concat (fromString "hello ") (fromString "world"))

@@ -226,7 +226,7 @@ std::string pretty_print(MonoTypePtr type) {
                 case TyCon::Tuple: return "Tuple";
                 case TyCon::Function: return "Function";
                 case TyCon::Promise: return "Promise";
-                case TyCon::Bytes: return "Bytes";
+                case TyCon::ByteArray: return "ByteArray";
             }
             return "?";
         }

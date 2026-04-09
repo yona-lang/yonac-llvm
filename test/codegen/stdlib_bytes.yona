@@ -1,1 +1,1 @@
-import fromString, toString, length from Std\Bytes in let b = fromString "hello" in (length b) + (length (fromString (toString b)))
+import fromString, toString, length from Std\ByteArray in let b = fromString "hello" in (length b) + (length (fromString (toString b)))

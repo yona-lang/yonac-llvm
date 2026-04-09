@@ -18,7 +18,7 @@ using TypeId = uint32_t;
 /// Built-in type constructors.
 enum class TyCon {
     Int, Float, Bool, String, Char, Byte, Symbol, Unit,
-    Seq, Set, Dict, Tuple, Function, Promise, Bytes
+    Seq, Set, Dict, Tuple, Function, Promise, ByteArray
 };
 
 /// A monomorphic type node in the inference system.

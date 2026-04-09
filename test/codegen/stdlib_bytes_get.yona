@@ -1,1 +1,1 @@
-import fromString, get from Std\Bytes in get (fromString "ABC") 1
+import fromString, get from Std\ByteArray in get (fromString "ABC") 1

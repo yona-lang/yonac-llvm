@@ -1238,7 +1238,7 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
                     (a == CType::STRING || a == CType::BOOL ||
                      a == CType::SYMBOL || a == CType::SEQ ||
                      a == CType::SET || a == CType::DICT ||
-                     a == CType::BYTES)) continue;
+                     a == CType::BYTE_ARRAY)) continue;
                 types_differ = true;
                 break;
             }

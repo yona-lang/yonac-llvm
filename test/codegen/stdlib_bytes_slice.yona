@@ -1,1 +1,1 @@
-import fromString, slice, toString from Std\Bytes in toString (slice (fromString "hello world") 6 5)
+import fromString, slice, toString from Std\ByteArray in toString (slice (fromString "hello world") 6 5)

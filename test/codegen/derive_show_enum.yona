@@ -1,0 +1,9 @@
+module TestDeriveShow
+
+export type Color
+export showColor
+
+type Color = Red | Green | Blue
+    deriving Show
+
+showColor c = show c
