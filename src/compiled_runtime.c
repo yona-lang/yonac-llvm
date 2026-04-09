@@ -2024,22 +2024,51 @@ int64_t* yona_Std_List__reverse(int64_t* seq) {
 }
 
 /* C loop-based foldl/foldr — no stack overflow on large sequences.
- * fn is a closure with arity 2: fn(acc, elem) -> new_acc */
+ * fn is a closure with arity 2: fn(acc, elem) -> new_acc
+ * collection can be Seq (RC_TYPE_SEQ) or Iterator (RC_TYPE_ADT).
+ * Detection via RC type tag in header[1] & 0xFF. */
 typedef int64_t (*fold_fn_t)(int64_t* env, int64_t, int64_t);
 
-int64_t yona_Std_List__foldl(int64_t* fn, int64_t acc, int64_t* seq) {
-    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
-    while (yona_rt_seq_length(seq) > 0) {
-        int64_t elem = yona_rt_seq_head(seq);
-        acc = f(fn, acc, elem);
-        int64_t* next = yona_rt_seq_tail(seq);
-        seq = next;
+/* Fold over an Iterator: call next() in a loop until None */
+static int64_t foldl_iterator(fold_fn_t f, int64_t* fn, int64_t acc, int64_t* iter_adt) {
+    /* Iterator ADT layout: [tag=0, closure_ptr] */
+    int64_t* closure = (int64_t*)(intptr_t)iter_adt[1];
+    typedef int64_t (*next_fn_t)(int64_t*);
+    next_fn_t next = (next_fn_t)(intptr_t)closure[0];
+
+    while (1) {
+        int64_t option = next(closure);
+        int64_t* opt_ptr = (int64_t*)(intptr_t)option;
+        /* Option layout: [tag, value] — tag=0 is Some, tag!=0 is None */
+        if (opt_ptr[0] != 0) break;  /* None */
+        acc = f(fn, acc, opt_ptr[1]);
     }
     return acc;
 }
 
-int64_t yona_Std_List__fold(int64_t* fn, int64_t acc, int64_t* seq) {
-    return yona_Std_List__foldl(fn, acc, seq);
+/* Fold over a Seq: head/tail loop */
+static int64_t foldl_seq(fold_fn_t f, int64_t* fn, int64_t acc, int64_t* seq) {
+    while (yona_rt_seq_length(seq) > 0) {
+        int64_t elem = yona_rt_seq_head(seq);
+        acc = f(fn, acc, elem);
+        seq = yona_rt_seq_tail(seq);
+    }
+    return acc;
+}
+
+/* Polymorphic foldl: works on both Seq and Iterator */
+int64_t yona_Std_List__foldl(int64_t* fn, int64_t acc, int64_t* collection) {
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    /* Check RC type tag: header is at ptr - RC_HEADER_SIZE */
+    int64_t* header = collection - RC_HEADER_SIZE;
+    int64_t type_tag = header[1] & 0xFF;
+    if (type_tag == RC_TYPE_ADT)
+        return foldl_iterator(f, fn, acc, collection);
+    return foldl_seq(f, fn, acc, collection);
+}
+
+int64_t yona_Std_List__fold(int64_t* fn, int64_t acc, int64_t* collection) {
+    return yona_Std_List__foldl(fn, acc, collection);
 }
 
 int64_t yona_Std_List__foldr(int64_t* fn, int64_t acc, int64_t* seq) {

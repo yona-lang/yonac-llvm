@@ -1,4 +1,4 @@
 import readFile, writeFile from Std\File, length from Std\String in
-let data = readFile "bench/data/large_text.txt",
-    ok = writeFile "/tmp/yona_bench_large_write.txt" data
-in if ok then length (readFile "/tmp/yona_bench_large_write.txt") else 0
+let data = readFile "bench/data/large_text.txt" in
+let written = writeFile "/tmp/yona_bench_large_write.txt" data in
+if written then length (readFile "/tmp/yona_bench_large_write.txt") else 0

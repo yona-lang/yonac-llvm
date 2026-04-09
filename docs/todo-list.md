@@ -101,6 +101,12 @@
 - [x] **General TCO** — tail-call optimization for self-recursive functions.
   Pre-tail-call RC cleanup: Perceus DROP moved before the call for non-pass-through
   args. LLVM TCE converts `tail call` to loop. User-defined foldl handles 100K+ elements.
+- [ ] **Iterator RC Cleanup** — foldl_iterator leaks Option ADTs and line strings.
+  Need safe rc_dec for iterator-produced values after processing each element.
+  Currently 116MB for 500K lines; should be O(64KB).
+- [ ] **Binary File I/O** — `open`/`close`/`seek`/`read`/`write` for binary files
+  with file handles. `with open "file" as fd in seek fd 1000; read fd 4096 end`.
+  Requires Closeable instance for file handle type.
 - [ ] **Blocking Type Checker** — make type checker errors stop compilation.
   Currently non-blocking. Requires full prelude/stdlib type registration.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona

@@ -61,14 +61,14 @@
 
 | Benchmark | Yona | C | Ratio | Analysis |
 |-----------|------|---|-------|----------|
-| file_read_large (50MB) | 14.5 | 3.5 | 4.2x | Yona: 50MB string alloc; C: 64KB streaming |
-| file_parallel_read_large (4×10MB) | 10.6 | 1.6 | 6.7x | 4 × alloc vs 4 × streaming |
-| file_write_read_large (50MB r+w+r) | 48.1 | 15.3 | 3.1x | Two 50MB allocs vs streaming |
+| file_read_large (50MB) | 13.6 | 3.3 | 4.1x | readFile: 50MB alloc; C: 64KB buffer |
+| file_readlines_large (50MB stream) | 51.9 | 14.6 | 3.5x | foldl over Iterator, 500K lines |
+| file_parallel_read_large (4×10MB) | 10.4 | 1.6 | 6.6x | 4 × alloc vs 4 × buffer |
+| file_write_read_large (50MB r+w+r) | 51.3 | 15.5 | 3.3x | Two 50MB allocs vs buffer |
 
-The gap is fundamental: Yona's `readFile` returns the entire file as a string
-(contiguous 50MB allocation), while idiomatic C streams through a 64KB buffer.
-O(1) string length (stored in RC header) saves ~5ms on 50MB files.
-Closing this gap requires streaming I/O (see TODO: Cooperative Suspension).
+`file_read_large` gap: `readFile` allocates 50MB contiguously; C streams 64KB.
+`file_readlines_large`: true streaming with `foldl` over Iterator (O(64KB) I/O buffer).
+Both 3-4x gaps are from per-line string allocations (RC alloc overhead vs stack buffer).
 
 Note: All I/O references use parallel execution where applicable.
 
