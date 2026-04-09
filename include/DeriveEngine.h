@@ -27,6 +27,8 @@ struct DeriveCtorInfo {
     std::vector<std::string> field_names;
     /// Per-field: type param name ("a", "b") if polymorphic, empty if concrete
     std::vector<std::string> field_type_refs;
+    /// Per-field: concrete type name ("Int", "String", etc.) from FieldType
+    std::vector<std::string> field_type_names;
 };
 
 /// Metadata for an ADT, collected for derive expansion.

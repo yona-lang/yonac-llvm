@@ -547,6 +547,10 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             register_import(re.source_module, name, name);
     }
 
+    // Ensure Prelude trait instance methods (Show_Int__show, etc.) are declared
+    // as extern functions before derive expansion can call them.
+    register_trait_externs();
+
     // ===== Auto-derive expansion =====
     // For each ADT with a `deriving` clause, look up the registered strategy
     // and generate + compile trait instance methods. Fully registry-driven —
@@ -572,6 +576,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 for (auto& tp : adt->type_params)
                     if (ft.name == tp) { is_param = true; break; }
                 dci.field_type_refs.push_back(is_param ? ft.name : "");
+                dci.field_type_names.push_back(ft.name);
             }
             dai.constructors.push_back(dci);
         }

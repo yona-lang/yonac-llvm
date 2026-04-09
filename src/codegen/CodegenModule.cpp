@@ -491,6 +491,20 @@ void Codegen::register_import(const std::string& mod_fqn,
         cf.param_types = meta.param_types;
         compiled_functions_[import_name] = cf;
         named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
+    } else if (meta_it != imports_.meta.end() && meta_it->second.param_types.empty()) {
+        // Zero-arity function: create extern declaration so it can be called.
+        // Don't set named_values_ — let codegen_identifier find it in compiled_functions_
+        // and return it as a callable function reference.
+        auto& meta = meta_it->second;
+        auto* ret_ty = llvm_type(meta.return_type);
+        auto* fn_type = llvm::FunctionType::get(ret_ty, {}, false);
+        auto* fn = module_->getFunction(mangled);
+        if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
+        CompiledFunction cf;
+        cf.fn = fn;
+        cf.return_type = meta.return_type;
+        compiled_functions_[import_name] = cf;
+        imports_.extern_functions[import_name] = mangled;
     } else {
         named_values_[import_name] = {nullptr, CType::FUNCTION};
         imports_.extern_functions[import_name] = mangled;

@@ -700,10 +700,10 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
         if (fs::exists(candidate)) { prelude_obj = candidate.string(); break; }
     }
 
-    string exe_path = "/tmp/yona_derive_test";
+    string exe_path = "/tmp/yona_derive_test_exe";
     string link_cmd = "cc " + expr_obj + " " + mod_obj + " " + rt_path;
     if (!prelude_obj.empty()) link_cmd += " " + prelude_obj;
-    link_cmd += " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
+    link_cmd += " -lm -lpthread -rdynamic -o " + exe_path;
     if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
 
     array<char, 256> buffer;
@@ -718,7 +718,7 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
     return result;
 }
 
-TEST_CASE("Derive Show for enum type" * doctest::skip()) {
+TEST_CASE("Derive Show for enum type") {
     string mod_source = R"(
 module Test\DeriveShow1
 
@@ -738,7 +738,7 @@ length showRed
     CHECK(result == "3");
 }
 
-TEST_CASE("Derive Show for constructor with fields" * doctest::skip()) {
+TEST_CASE("Derive Show for constructor with fields") {
     string mod_source = R"(
 module Test\DeriveShow2
 
@@ -757,7 +757,7 @@ import Test\DeriveShow2 in showIt 42
     CHECK(result == "Wrap(42)");
 }
 
-TEST_CASE("Derive Eq for enum type" * doctest::skip()) {
+TEST_CASE("Derive Eq for enum type") {
     string mod_source = R"(
 module Test\DeriveEq1
 
@@ -776,7 +776,7 @@ import Test\DeriveEq1 in eqTest Red Red
     CHECK(result == "1");
 }
 
-TEST_CASE("Derive Eq returns false for different constructors" * doctest::skip()) {
+TEST_CASE("Derive Eq returns false for different constructors") {
     string mod_source = R"(
 module Test\DeriveEq2
 
@@ -795,7 +795,7 @@ import Test\DeriveEq2 in eqTest Red Blue
     CHECK(result == "0");
 }
 
-TEST_CASE("Derive Hash for enum type" * doctest::skip()) {
+TEST_CASE("Derive Hash for enum type") {
     string mod_source = R"(
 module Test\DeriveHash1
 
