@@ -47,13 +47,23 @@ void register_builtins(TypeEnv& env, TypeArena& arena) {
     auto* str_t   = arena.make_con(TyCon::String);
     auto* unit_t  = arena.make_con(TyCon::Unit);
 
-    // Arithmetic: Int -> Int -> Int
-    for (auto& op : {"+", "-", "*", "/", "%"})
-        env.bind_scheme(op, make_binop_scheme(arena, int_t, int_t));
+    // Arithmetic: a -> a -> a (polymorphic — works for Int and Float)
+    {
+        auto* a = arena.fresh_var(0);
+        auto* fn = arena.make_arrow(a, arena.make_arrow(a, a));
+        TypeScheme arith_scheme({a->var_id}, fn);
+        for (auto& op : {"+", "-", "*", "/", "%"})
+            env.bind_scheme(op, arith_scheme);
+    }
 
-    // Comparison: Int -> Int -> Bool
-    for (auto& op : {"==", "!=", "<", ">", "<=", ">="})
-        env.bind_scheme(op, make_binop_scheme(arena, int_t, bool_t));
+    // Comparison: a -> a -> Bool (polymorphic)
+    {
+        auto* a = arena.fresh_var(0);
+        auto* fn = arena.make_arrow(a, arena.make_arrow(a, bool_t));
+        TypeScheme cmp_scheme({a->var_id}, fn);
+        for (auto& op : {"==", "!=", "<", ">", "<=", ">="})
+            env.bind_scheme(op, cmp_scheme);
+    }
 
     // Logical: Bool -> Bool -> Bool
     for (auto& op : {"&&", "||"})
@@ -70,12 +80,19 @@ void register_builtins(TypeEnv& env, TypeArena& arena) {
         env.bind_scheme("::", TypeScheme({a->var_id}, fn));
     }
 
-    // Pipe: a -> (a -> b) -> b
+    // Pipe right: a -> (a -> b) -> b
     {
         auto* a = arena.fresh_var(0);
         auto* b = arena.fresh_var(0);
         auto* fn = arena.make_arrow(a, arena.make_arrow(arena.make_arrow(a, b), b));
         env.bind_scheme("|>", TypeScheme({a->var_id, b->var_id}, fn));
+    }
+    // Pipe left: (a -> b) -> a -> b
+    {
+        auto* a = arena.fresh_var(0);
+        auto* b = arena.fresh_var(0);
+        auto* fn = arena.make_arrow(arena.make_arrow(a, b), arena.make_arrow(a, b));
+        env.bind_scheme("<|", TypeScheme({a->var_id, b->var_id}, fn));
     }
 
     // Negate: Int -> Int

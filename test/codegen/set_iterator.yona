@@ -1,0 +1,4 @@
+import iterator from Std\Set in
+let s = {1, 2, 3, 4, 5} in
+let iter = iterator s in
+foldl (\acc x -> acc + x) 0 iter

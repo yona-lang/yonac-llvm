@@ -16,6 +16,8 @@
 #include <setjmp.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
 #define YONA_HAS_BACKTRACE 1
@@ -817,6 +819,173 @@ void yona_rt_print_set(int64_t* set) {
     printf("}");
 }
 
+/* Forward declarations for ADT helpers used by iterators */
+static inline int64_t* make_none(void);
+static inline int64_t* make_some(int64_t value, int is_heap);
+static inline int64_t* make_iterator(int64_t* closure);
+
+/* ===== Dict/Set Streaming Iterators ===== */
+/* Stack-based HAMT trie traversal. Yields entries one at a time via Iterator. */
+
+/* Max HAMT depth: 64-bit hash / 5 bits per level = 13 levels.
+ * Each stack frame tracks position within a node's data and children. */
+#define HAMT_ITER_MAX_DEPTH 14
+
+typedef struct {
+    hamt_node_t* node;
+    int data_idx;   /* next data entry to yield */
+    int child_idx;  /* next child node to descend into */
+    int data_count;
+    int node_count;
+} hamt_stack_frame_t;
+
+typedef struct {
+    hamt_stack_frame_t stack[HAMT_ITER_MAX_DEPTH];
+    int depth;      /* current stack depth (0 = done) */
+    int mode;       /* 0 = entries (key,val tuples), 1 = keys only, 2 = values only */
+    int64_t* root;  /* RC ref to root dict/set — kept alive during iteration */
+} hamt_iter_state_t;
+
+static void hamt_iter_push(hamt_iter_state_t* st, hamt_node_t* node) {
+    if (!node || st->depth >= HAMT_ITER_MAX_DEPTH) return;
+    hamt_stack_frame_t* f = &st->stack[st->depth++];
+    f->node = node;
+    f->data_idx = 0;
+    f->child_idx = 0;
+    f->data_count = __builtin_popcountll((uint64_t)node->datamap);
+    f->node_count = __builtin_popcountll((uint64_t)node->nodemap);
+}
+
+/* Advance to next entry. Returns 1 if found (key/val set), 0 if exhausted. */
+static int hamt_iter_advance(hamt_iter_state_t* st, int64_t* out_key, int64_t* out_val) {
+    while (st->depth > 0) {
+        hamt_stack_frame_t* f = &st->stack[st->depth - 1];
+        /* Yield data entries first */
+        if (f->data_idx < f->data_count) {
+            *out_key = f->node->payload[f->data_idx * 2];
+            *out_val = f->node->payload[f->data_idx * 2 + 1];
+            f->data_idx++;
+            return 1;
+        }
+        /* Descend into child nodes */
+        if (f->child_idx < f->node_count) {
+            int dc = f->data_count;
+            hamt_node_t* child = (hamt_node_t*)(intptr_t)f->node->payload[dc * 2 + f->child_idx];
+            f->child_idx++;
+            hamt_iter_push(st, child);
+            continue;
+        }
+        /* Node exhausted — pop */
+        st->depth--;
+    }
+    return 0;
+}
+
+/* Dict entries iterator: yields (key, value) tuples */
+static int64_t dict_entries_iter_next(int64_t* env) {
+    hamt_iter_state_t* st = (hamt_iter_state_t*)(intptr_t)env[5];
+    int64_t key, val;
+    if (!hamt_iter_advance(st, &key, &val)) {
+        return (int64_t)(intptr_t)make_none();
+    }
+    /* Build a 2-tuple: heap-allocated [key, val] */
+    int64_t* tup = (int64_t*)rc_alloc(RC_TYPE_ADT, 2 * sizeof(int64_t));
+    tup[0] = key;
+    tup[1] = val;
+    return (int64_t)(intptr_t)make_some((int64_t)(intptr_t)tup, 1);
+}
+
+/* Dict keys iterator: yields keys */
+static int64_t dict_keys_iter_next(int64_t* env) {
+    hamt_iter_state_t* st = (hamt_iter_state_t*)(intptr_t)env[5];
+    int64_t key, val;
+    if (!hamt_iter_advance(st, &key, &val))
+        return (int64_t)(intptr_t)make_none();
+    return (int64_t)(intptr_t)make_some(key, 0);
+}
+
+/* Dict values iterator: yields values */
+static int64_t dict_values_iter_next(int64_t* env) {
+    hamt_iter_state_t* st = (hamt_iter_state_t*)(intptr_t)env[5];
+    int64_t key, val;
+    if (!hamt_iter_advance(st, &key, &val))
+        return (int64_t)(intptr_t)make_none();
+    return (int64_t)(intptr_t)make_some(val, 0);
+}
+
+/* Set elements iterator: yields elements (keys with val=1) */
+static int64_t set_elements_iter_next(int64_t* env) {
+    hamt_iter_state_t* st = (hamt_iter_state_t*)(intptr_t)env[5];
+    int64_t key, val;
+    if (!hamt_iter_advance(st, &key, &val))
+        return (int64_t)(intptr_t)make_none();
+    return (int64_t)(intptr_t)make_some(key, 0);
+}
+
+static int64_t hamt_make_iterator(int64_t* collection, void* next_fn) {
+    extern void* yona_rt_closure_create(void* fn, int64_t ret, int64_t arity, int64_t caps);
+    extern void yona_rt_closure_set_cap(void* cl, int64_t idx, int64_t val);
+    hamt_iter_state_t* st = (hamt_iter_state_t*)malloc(sizeof(hamt_iter_state_t));
+    st->depth = 0;
+    st->root = collection;
+    /* Keep the root alive during iteration */
+    if (collection) yona_rt_rc_inc(collection);
+    hamt_iter_push(st, (hamt_node_t*)collection);
+    int64_t* cl = (int64_t*)yona_rt_closure_create(next_fn, 0, 0, 1);
+    yona_rt_closure_set_cap(cl, 0, (int64_t)(intptr_t)st);
+    return (int64_t)(intptr_t)make_iterator(cl);
+}
+
+/* Dict\entries : Dict -> Iterator (Int, Int) */
+int64_t yona_Std_Dict__entries(int64_t* dict) {
+    return hamt_make_iterator(dict, (void*)dict_entries_iter_next);
+}
+
+/* Dict\keys_iter : Dict -> Iterator Int (streaming, unlike keys which collects) */
+int64_t yona_Std_Dict__keysIter(int64_t* dict) {
+    return hamt_make_iterator(dict, (void*)dict_keys_iter_next);
+}
+
+/* Dict\values : Dict -> Iterator Int */
+int64_t yona_Std_Dict__values(int64_t* dict) {
+    return hamt_make_iterator(dict, (void*)dict_values_iter_next);
+}
+
+/* Set\iterator : Set -> Iterator Int */
+int64_t yona_Std_Set__iterator(int64_t* set) {
+    hamt_node_t* hamt = set_ensure_hamt(set);
+    return hamt_make_iterator((int64_t*)hamt, (void*)set_elements_iter_next);
+}
+
+/* Dict\forEach : (Int -> Int -> ()) -> Dict -> () */
+int64_t yona_Std_Dict__forEach(int64_t* fn, int64_t* dict) {
+    hamt_iter_state_t st;
+    st.depth = 0;
+    st.root = dict;
+    hamt_iter_push(&st, (hamt_node_t*)dict);
+    int64_t key, val;
+    typedef int64_t (*callback_fn_t)(int64_t*, int64_t, int64_t);
+    callback_fn_t cb = (callback_fn_t)(intptr_t)fn[0];
+    while (hamt_iter_advance(&st, &key, &val))
+        cb(fn, key, val);
+    return 0; /* unit */
+}
+
+/* Set\forEach : (Int -> ()) -> Set -> () */
+int64_t yona_Std_Set__forEach(int64_t* fn, int64_t* set) {
+    hamt_node_t* hamt = set_ensure_hamt(set);
+    hamt_iter_state_t st;
+    st.depth = 0;
+    st.root = (int64_t*)hamt;
+    hamt_iter_push(&st, hamt);
+    int64_t key, val;
+    typedef int64_t (*callback_fn_t)(int64_t*, int64_t);
+    callback_fn_t cb = (callback_fn_t)(intptr_t)fn[0];
+    while (hamt_iter_advance(&st, &key, &val))
+        cb(fn, key);
+    return 0; /* unit */
+}
+
 /* ===== ADT runtime (recursive types) ===== */
 /* Heap-allocated ADT nodes: [tag (i8), field0 (i64), field1 (i64), ...] */
 /* Used for recursive types like List a = Cons a (List a) | Nil        */
@@ -1443,6 +1612,108 @@ int64_t yona_Std_File__writeFileBytes(const char* path, void* bytes) {
     size_t w = fwrite(data, 1, (size_t)len, f);
     fclose(f);
     return (w == (size_t)len) ? 1 : 0;
+}
+
+/* ===== Std\File — handle-based binary I/O ===== */
+
+/* Helper: extract fd from FileHandle ADT (passed as i64 pointer-as-int) */
+static int fh_fd(int64_t handle_i64) {
+    int64_t* handle = (int64_t*)(intptr_t)handle_i64;
+    return (int)handle[3]; /* ADT_HDR_SIZE=3, field 0 = fd */
+}
+
+/* openFile: open file and return FileHandle ADT wrapping the fd.
+ * mode: "r" (read), "w" (write/create/truncate), "rw" (read-write/create), "a" (append/create)
+ * Returns FileHandle ADT: [tag=0, num_fields=1, heap_mask=0, fd] */
+int64_t yona_Std_File__openFile(const char* path, const char* mode) {
+    int flags = O_RDONLY;
+    if (strcmp(mode, "w") == 0) flags = O_WRONLY | O_CREAT | O_TRUNC;
+    else if (strcmp(mode, "rw") == 0) flags = O_RDWR | O_CREAT;
+    else if (strcmp(mode, "a") == 0) flags = O_WRONLY | O_CREAT | O_APPEND;
+
+    int fd = open(path, flags, 0644);
+    if (fd < 0) {
+        extern void yona_rt_raise(int64_t tag, const char* msg);
+        yona_rt_raise(0, "cannot open file");
+        return 0;
+    }
+
+    /* Wrap in FileHandle ADT: [tag=0, num_fields=1, heap_mask=0, fd] */
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, 4 * sizeof(int64_t));
+    adt[0] = 0;         /* tag = FileHandle */
+    adt[1] = 1;         /* num_fields */
+    adt[2] = 0;         /* heap_mask = 0 (fd is not heap) */
+    adt[3] = (int64_t)fd;
+    return (int64_t)(intptr_t)adt;
+}
+
+/* closeFileHandle: extract fd from FileHandle ADT and close it */
+int64_t yona_Std_File__closeFileHandle(int64_t handle_i64) {
+    int fd = fh_fd(handle_i64);
+    close(fd);
+    return 0;
+}
+
+/* readBytes: read up to count bytes from FileHandle at current position.
+ * Uses io_uring pread with userspace position tracking. */
+int64_t yona_Std_File__readBytes(int64_t handle, int64_t count) {
+    int fd = fh_fd(handle);
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    if (pos < 0) pos = 0;
+    extern int64_t yona_platform_read_fd_bytes_submit(int fd, int64_t count, int64_t offset);
+    int64_t id = yona_platform_read_fd_bytes_submit(fd, count, (int64_t)pos);
+    lseek(fd, pos + count, SEEK_SET);
+    return id;
+}
+
+/* writeBytes: write Bytes to FileHandle via io_uring pwrite. Returns bytes written. */
+int64_t yona_Std_File__writeBytes(int64_t handle, int64_t bytes_i64) {
+    int fd = fh_fd(handle);
+    void* bytes = (void*)(intptr_t)bytes_i64;
+    int64_t* b = (int64_t*)bytes;
+    int64_t len = b[0];
+    off_t pos = lseek(fd, 0, SEEK_CUR);
+    if (pos < 0) pos = 0;
+    extern int64_t yona_platform_write_fd_bytes_submit(int fd, void* bytes, int64_t offset);
+    int64_t id = yona_platform_write_fd_bytes_submit(fd, bytes, (int64_t)pos);
+    lseek(fd, pos + len, SEEK_SET);
+    return id;
+}
+
+/* seek: set file position. whence: "set", "cur", "end" */
+int64_t yona_Std_File__seek(int64_t handle, int64_t offset, int64_t whence_i64) {
+    int fd = fh_fd(handle);
+    const char* whence = (const char*)(intptr_t)whence_i64;
+    int w = SEEK_SET;
+    if (strcmp(whence, "cur") == 0) w = SEEK_CUR;
+    else if (strcmp(whence, "end") == 0) w = SEEK_END;
+    off_t result = lseek(fd, (off_t)offset, w);
+    return (int64_t)result;
+}
+
+/* tell: get current file position */
+int64_t yona_Std_File__tell(int64_t handle) {
+    int fd = fh_fd(handle);
+    return (int64_t)lseek(fd, 0, SEEK_CUR);
+}
+
+/* flush: fsync */
+int64_t yona_Std_File__flush(int64_t handle) {
+    int fd = fh_fd(handle);
+    return fsync(fd) == 0 ? 1 : 0;
+}
+
+/* truncate: ftruncate */
+int64_t yona_Std_File__truncate(int64_t handle, int64_t length) {
+    int fd = fh_fd(handle);
+    return ftruncate(fd, (off_t)length) == 0 ? 1 : 0;
+}
+
+/* readChunks: create streaming binary chunk iterator from FileHandle */
+int64_t yona_Std_File__readChunks(int64_t handle, int64_t chunk_size) {
+    int fd = fh_fd(handle);
+    extern int64_t yona_rt_file_chunk_iterator(int64_t fd, int64_t chunk_size);
+    return yona_rt_file_chunk_iterator((int64_t)fd, chunk_size);
 }
 
 /* Std\Process */

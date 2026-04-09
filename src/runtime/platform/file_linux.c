@@ -119,6 +119,20 @@ int64_t yona_rt_io_await(int64_t uring_id) {
             result = (int64_t)(intptr_t)bytes_buf;
             break;
         }
+        case IO_OP_READ_FD_BYTES: {
+            int64_t* bytes_buf = (int64_t*)(intptr_t)ctx->buf;
+            bytes_buf[0] = (res > 0) ? (int64_t)res : 0;
+            /* Don't close fd — caller owns the handle */
+            result = (int64_t)(intptr_t)bytes_buf;
+            break;
+        }
+        case IO_OP_WRITE_FD_BYTES: {
+            /* Unpin the write buffer */
+            if (ctx->buf) yona_rt_rc_dec(ctx->buf);
+            /* Don't close fd — caller owns the handle */
+            result = (res >= 0) ? (int64_t)res : -1;
+            break;
+        }
         default:
             result = (int64_t)res;
             break;
@@ -248,6 +262,75 @@ int64_t yona_platform_read_file_bytes_submit(const char* path) {
 
     uint64_t id = ring_submit_sqe(&sqe);
     if (id == 0) { close(fd); free(ctx); return 0; }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+/* ===== Handle-based binary I/O submit functions ===== */
+
+/* pread from open fd at given offset. Does NOT close fd. */
+int64_t yona_platform_read_fd_bytes_submit(int fd, int64_t count, int64_t offset) {
+    extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */, sizeof(int64_t) + (size_t)count);
+    buf[0] = 0; /* length set by completer */
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_READ_FD_BYTES;
+    ctx->fd = fd;
+    ctx->buf = (char*)buf;
+    ctx->buf_size = (size_t)count;
+    ctx->close_fd = 0; /* caller owns the handle */
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_READ;
+    sqe.fd = fd;
+    sqe.addr = (unsigned long)(uint8_t*)(buf + 1);
+    sqe.len = (unsigned)count;
+    sqe.off = (uint64_t)offset; /* pread semantics */
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) {
+        /* Fallback: blocking pread */
+        ssize_t n = pread(fd, (uint8_t*)(buf + 1), (size_t)count, (off_t)offset);
+        buf[0] = (n > 0) ? n : 0;
+        return io_register_direct_result(buf);
+    }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+/* pwrite to open fd at given offset. Does NOT close fd. */
+int64_t yona_platform_write_fd_bytes_submit(int fd, void* bytes, int64_t offset) {
+    int64_t* b = (int64_t*)bytes;
+    int64_t len = b[0];
+    uint8_t* data = (uint8_t*)(b + 1);
+
+    /* Pin the bytes buffer — rc_inc so it stays alive during async I/O */
+    yona_rt_rc_inc(bytes);
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_WRITE_FD_BYTES;
+    ctx->fd = fd;
+    ctx->buf = (char*)bytes; /* rc_dec'd in completer */
+    ctx->buf_size = (size_t)len;
+    ctx->close_fd = 0;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_WRITE;
+    sqe.fd = fd;
+    sqe.addr = (unsigned long)data;
+    sqe.len = (unsigned)len;
+    sqe.off = (uint64_t)offset; /* pwrite semantics */
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) {
+        /* Fallback: blocking pwrite */
+        ssize_t n = pwrite(fd, data, (size_t)len, (off_t)offset);
+        yona_rt_rc_dec(bytes);
+        return io_register_direct_result((void*)(intptr_t)(n >= 0 ? n : -1));
+    }
     io_ctx_put(id, ctx);
     return (int64_t)id;
 }
@@ -436,5 +519,88 @@ int64_t yona_rt_file_line_iterator(const char* path) {
     iter_adt[2] = 0;  /* heap_mask=0: closure managed separately */
     iter_adt[3] = (int64_t)(intptr_t)closure;
 
+    return (int64_t)(intptr_t)iter_adt;
+}
+
+/* ===== Binary Chunk Iterator ===== */
+/* Reads fixed-size chunks from an open fd using pread. */
+
+typedef struct {
+    int fd;
+    int64_t position;
+    int64_t chunk_size;
+    int eof;
+} chunk_iter_state_t;
+
+static int64_t chunk_iter_next(int64_t* env) {
+    chunk_iter_state_t* st = (chunk_iter_state_t*)(intptr_t)env[5];
+    if (st->eof) {
+        int64_t* none = (int64_t*)rc_alloc(4, 3 * sizeof(int64_t));
+        none[0] = 1; none[1] = 0; none[2] = 0;
+        return (int64_t)(intptr_t)none;
+    }
+
+    /* Submit non-blocking pread via io_uring */
+    extern void* rc_alloc(int64_t type_tag, size_t payload_bytes);
+    int64_t* buf = (int64_t*)rc_alloc(8 /* RC_TYPE_BYTES */,
+                                       sizeof(int64_t) + (size_t)st->chunk_size);
+    buf[0] = 0;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_READ;
+    sqe.fd = st->fd;
+    sqe.addr = (unsigned long)(uint8_t*)(buf + 1);
+    sqe.len = (unsigned)st->chunk_size;
+    sqe.off = (uint64_t)st->position;
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    ssize_t n;
+    if (id == 0) {
+        /* Fallback: blocking pread */
+        n = pread(st->fd, (uint8_t*)(buf + 1), (size_t)st->chunk_size,
+                  (off_t)st->position);
+    } else {
+        n = (ssize_t)ring_await(id);
+    }
+
+    if (n <= 0) {
+        st->eof = 1;
+        yona_rt_rc_dec(buf);
+        int64_t* none = (int64_t*)rc_alloc(4, 3 * sizeof(int64_t));
+        none[0] = 1; none[1] = 0; none[2] = 0;
+        return (int64_t)(intptr_t)none;
+    }
+    buf[0] = n;
+    st->position += n;
+
+    /* Some(bytes) */
+    int64_t* some = (int64_t*)rc_alloc(4, 4 * sizeof(int64_t));
+    some[0] = 0; some[1] = 1; some[2] = 1; /* tag=Some, 1 field, heap_mask=1 */
+    some[3] = (int64_t)(intptr_t)buf;
+    return (int64_t)(intptr_t)some;
+}
+
+/* readChunks: create a streaming binary chunk iterator for an open fd.
+ * Does NOT close the fd — caller owns the handle. */
+int64_t yona_rt_file_chunk_iterator(int64_t fd, int64_t chunk_size) {
+    chunk_iter_state_t* st = (chunk_iter_state_t*)malloc(sizeof(chunk_iter_state_t));
+    st->fd = (int)fd;
+    st->position = 0;
+    st->chunk_size = chunk_size;
+    st->eof = 0;
+
+    extern void* yona_rt_closure_create(void* fn_ptr, int64_t ret_tag,
+                                        int64_t arity, int64_t num_caps);
+    int64_t* closure = (int64_t*)yona_rt_closure_create(
+        (void*)chunk_iter_next, 0, 0, 1);
+    extern void yona_rt_closure_set_cap(void* closure, int64_t idx, int64_t val);
+    yona_rt_closure_set_cap(closure, 0, (int64_t)(intptr_t)st);
+
+    int64_t* iter_adt = (int64_t*)rc_alloc(4, 4 * sizeof(int64_t));
+    iter_adt[0] = 0;
+    iter_adt[1] = 1;
+    iter_adt[2] = 0;
+    iter_adt[3] = (int64_t)(intptr_t)closure;
     return (int64_t)(intptr_t)iter_adt;
 }

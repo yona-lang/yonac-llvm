@@ -180,8 +180,9 @@ int main(int argc, char* argv[]) {
         }
 
         type_checker.check(parse_result.node.get());
-        // TODO: make blocking once type checker handles all AST nodes
-        // (tuples, mutual recursion, pipe operators, floats produce false positives)
+        if (type_checker.has_direct_errors()) {
+            return 1;
+        }
         codegen.set_type_checker(&type_checker);
 
         // Refinement checking (non-blocking)

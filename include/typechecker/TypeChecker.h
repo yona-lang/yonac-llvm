@@ -92,6 +92,10 @@ private:
     /// Infer the type a pattern matches, binding variables in env.
     MonoTypePtr infer_pattern(ast::PatternNode* pat, std::shared_ptr<TypeEnv> env, int level);
 
+    /// Bind iteration variables from a collection extractor into env.
+    void bind_collection_extractor(ast::CollectionExtractorExpr* ce,
+                                    std::shared_ptr<TypeEnv> env, int level);
+
     // --- Generalization / Instantiation ---
 
     /// Generalize a type at the given level: free vars with level > given become quantified.

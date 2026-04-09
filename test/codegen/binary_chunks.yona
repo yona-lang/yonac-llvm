@@ -1,0 +1,9 @@
+import openFile, writeBytes, readChunks, closeFileHandle from Std\File, fromString, length from Std\Bytes in
+let wh = openFile "/tmp/yona_binary_chunks.bin" "w" in
+let _ = writeBytes wh (fromString "hello world, this is a test of chunked reading") in
+let _ = closeFileHandle wh in
+let rh = openFile "/tmp/yona_binary_chunks.bin" "r" in
+let iter = readChunks rh 10 in
+let total = foldl (\acc chunk -> acc + length chunk) 0 iter in
+let _ = closeFileHandle rh in
+total

@@ -38,6 +38,9 @@ CTOR Ok 0 1
 CTOR Err 1 1
 
 
+ADT FileHandle 1 1
+CTOR FileHandle 0 1
+
 TRAIT Closeable a 1
   METHOD close
 INSTANCE Closeable Int

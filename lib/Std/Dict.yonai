@@ -3,3 +3,7 @@ FN yona_Std_Dict__get 3 DICT INT INT -> INT
 FN yona_Std_Dict__contains 2 DICT INT -> BOOL
 FN yona_Std_Dict__size 1 DICT -> INT
 FN yona_Std_Dict__keys 1 DICT -> SEQ
+FN yona_Std_Dict__entries 1 DICT -> INT
+FN yona_Std_Dict__keysIter 1 DICT -> INT
+FN yona_Std_Dict__values 1 DICT -> INT
+FN yona_Std_Dict__forEach 2 FUNCTION DICT -> UNIT

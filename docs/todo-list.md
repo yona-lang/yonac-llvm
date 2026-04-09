@@ -4,28 +4,35 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1088 assertions across 199 test cases (all passing)
+- **Tests**: 1118 assertions across 199 test cases (all passing)
 - **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
-- **Stdlib**: 27 modules, ~290 exported functions (12 pure Yona + 15 C runtime)
+- **Stdlib**: 27 modules, ~296 exported functions (12 pure Yona + 15 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
-- **Benchmarks**: 18/18 passing, 3 faster than C, 8 within 2x C
+- **Benchmarks**: 28/28 passing, 2 faster than C, 13 within 2x C
 
 ## Benchmark Results
 
 | Benchmark | Yona | C | Time | Yona MB | C MB | Mem |
 |-----------|------|---|------|---------|------|-----|
-| list_map_filter | 0.85ms | 0.81ms | **1.0x** | 2.6 | 2.9 | 0.9x |
-| tak | 66ms | 77ms | **0.8x** | 2.1 | 2.0 | 1.1x |
-| sum_squares | 0.60ms | 0.52ms | 1.2x | 2.2 | 2.0 | 1.1x |
-| sieve | 0.76ms | 0.56ms | 1.4x | 2.9 | 2.0 | 1.5x |
-| list_reverse | 0.96ms | 0.68ms | 1.4x | 2.9 | 2.4 | 1.2x |
-| list_sum | 1.0ms | 0.66ms | 1.6x | 2.7 | 2.4 | 1.1x |
-| dict_build | 1.4ms | 0.70ms | 2.0x | 3.1 | 2.2 | 1.4x |
-| set_build | 1.5ms | 0.72ms | 2.1x | 3.2 | 2.2 | 1.5x |
-| fibonacci | 16ms | 8.0ms | 2.0x | 2.1 | 2.0 | 1.1x |
-| ackermann | 166ms | 65ms | 2.6x | 2.2 | 2.3 | 1.0x |
-| queens | 14ms | 1.3ms | 10.8x | 42.7 | 2.0 | 21x |
+| tak | 66ms | 78ms | **0.9x** | 2.3 | 2.0 | 1.2x |
+| list_map_filter | 0.81ms | 0.78ms | **1.0x** | 2.8 | 2.9 | 1.0x |
+| binary_read_chunks | 0.90ms | 0.85ms | 1.1x | 2.4 | 2.3 | 1.0x |
+| sum_squares | 0.56ms | 0.51ms | 1.1x | 2.3 | 2.1 | 1.1x |
+| file_read | 0.88ms | 0.77ms | 1.1x | 3.5 | 3.2 | 1.1x |
+| process_exec | 1.2ms | 1.1ms | 1.1x | 3.9 | 3.9 | 1.0x |
+| process_spawn | 1.3ms | 1.2ms | 1.1x | 3.8 | 3.8 | 1.0x |
+| binary_write_read | 3.6ms | 3.1ms | 1.2x | 12.3 | 7.2 | 1.7x |
+| list_sum | 0.81ms | 0.69ms | 1.2x | 2.8 | 2.4 | 1.2x |
+| list_reverse | 0.84ms | 0.64ms | 1.3x | 3.0 | 2.4 | 1.3x |
+| sieve | 0.70ms | 0.52ms | 1.4x | 3.0 | 2.1 | 1.4x |
+| file_write_read | 1.5ms | 0.93ms | 1.7x | 4.7 | 3.0 | 1.6x |
+| dict_build | 1.3ms | 0.72ms | 1.9x | 3.3 | 2.3 | 1.4x |
+| fibonacci | 15ms | 7.7ms | 1.9x | 2.1 | 2.1 | 1.0x |
+| set_build | 1.4ms | 0.65ms | 2.2x | 3.4 | 2.2 | 1.5x |
+| ackermann | 161ms | 65ms | 2.5x | 2.5 | 2.2 | 1.1x |
+| sort | 1.6ms | 0.56ms | 2.8x | 7.9 | 2.1 | 3.8x |
+| queens | 14ms | 1.4ms | 9.6x | 42.9 | 2.0 | 21x |
 
 ## Remaining Work
 
@@ -92,9 +99,10 @@
   effects are compile-time CPS with no true suspension). Enables: chunked file
   processing, backpressure, lazy line-by-line reads, pipeline parallelism
   (read chunk N+1 while processing chunk N via io_uring).
-- [ ] **Dict/Set Iterator Instances** — streaming iterators for Dict (keys,
-  values, entries) and Set (elements). Needs HAMT trie traversal iterators.
-  File (listDir) also pending. String chars/split/lines already done.
+- [x] **Dict/Set Iterator Instances** — streaming iterators for Dict (entries,
+  keysIter, values) and Set (iterator). Stack-based HAMT trie traversal
+  (14-level stack, no recursion). forEach for both. O(1) memory per element.
+  File (listDir) pending. String chars/split/lines already done.
 - [x] **Built-in Fold** — C loop-based `foldl`/`foldr` in runtime + Prelude.
   Handles 50K+ elements without stack overflow. General TCO blocked by
   RC cleanup after recursive calls preventing LLVM TailCallElimination.
@@ -104,18 +112,30 @@
 - [x] **Iterator RC Cleanup** — fixed Option ADT layout mismatch (was `[tag, value]`,
   now `[tag, num_fields, heap_mask, field]`). foldl_iterator rc_dec's each wrapper.
   Memory: 116MB → 2.4MB for 500K lines. Time: 53.9ms → 39.8ms.
-- [ ] **Blocking Type Checker** — type checker partially done: recursive let
-  functions (preliminary binding), prelude functions (polymorphic). NOT yet
-  blocking — false positives on: tuple destructuring, mutual recursion,
-  pipe operators, float arithmetic. Need to handle all AST node types.
-- [ ] **Binary File I/O** — `open`/`close`/`seek`/`read`/`write` for binary files
-  with file handles. Requires Closeable instance for file handle type.
+- [x] **Blocking Type Checker** — Hindley-Milner inference handles all AST node
+  types. Blocking enabled: type errors stop compilation in both CLI and test
+  harness. Polymorphic arithmetic (`a → a → a`), generators with bound iteration
+  variables, mutual recursion across nested lets (pre-scan + pre-bind), pipe
+  operators, imports, pattern destructuring. E2E rejection test fixtures for
+  invalid programs (6 cases). 199 tests, 1100 assertions all passing.
+- [x] **Binary File I/O** — `FileHandle` ADT in Prelude wrapping fd.
+  `openFile` returns `Linear FileHandle`, `Closeable FileHandle` instance for
+  `with` expression RAII. Handle-based: `readBytes`, `writeBytes` (io_uring pread/pwrite
+  with userspace position tracking), `seek`, `tell`, `flush`, `truncate`.
+  `readChunks` returns streaming `Iterator Bytes` for chunked binary reads.
+  All I/O uses explicit offsets (pread/pwrite) — safe for concurrent access.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
 - [ ] **Channels (CSP-style)** — typed channels for goroutine-style
   communication: `let ch = channel 10 in send ch msg; recv ch`.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
+- [ ] **Serialization System** — structured binary/text serialization for Yona
+  values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
+  Possible approaches: derive-based (requires compile-time reflection),
+  trait-based (`trait Serialize a`, `trait Deserialize a`), or built-in
+  codec for a wire format (MessagePack, CBOR, or custom). Foundation for
+  distributed Yona (message passing), persistence, and interop.
 
 ### Language — Metaprogramming & Introspection
 - [ ] **Multi-Stage Programming** — compile-time computation.
@@ -202,7 +222,8 @@
 - See `docs/memory-management.md` for full details.
 
 ### Type System
-- Hindley-Milner type inference with let-polymorphism (TypeChecker)
+- Hindley-Milner type inference with let-polymorphism (TypeChecker), blocking mode enabled
+- All AST node types handled: generators, imports, mutual recursion, effects, records
 - Union-find with path compression, occurs check, level-based generalization
 - ADT constructor type inference (polymorphic schemes)
 - Trait constraints with deferred solving and instance resolution

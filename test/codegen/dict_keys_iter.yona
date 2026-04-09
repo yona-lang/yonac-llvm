@@ -1,0 +1,4 @@
+import keysIter from Std\Dict in
+let d = {1: 10, 2: 20, 3: 30} in
+let iter = keysIter d in
+foldl (\acc x -> acc + x) 0 iter

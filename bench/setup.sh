@@ -34,6 +34,12 @@ with open('$DATA_DIR/chunk_${i}.txt', 'w') as f:
     fi
 done
 
+# 5MB binary file for binary I/O benchmarks
+if [ ! -f "$DATA_DIR/bench_binary.bin" ]; then
+    echo "  bench_binary.bin (5MB)..."
+    dd if=/dev/urandom of="$DATA_DIR/bench_binary.bin" bs=1M count=5 2>/dev/null
+fi
+
 # Summary
 echo "Done."
-ls -lh "$DATA_DIR"/*.txt
+ls -lh "$DATA_DIR"/*

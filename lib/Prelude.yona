@@ -4,6 +4,7 @@ export type Linear
 export type Option
 export type Result
 export type Iterator
+export type FileHandle
 export identity, const, flip, compose
 
 ## Linear resource wrapper — values of type `Linear a` must be consumed
@@ -19,6 +20,10 @@ type Result a e = Ok a | Err e
 ## Pull-based iterator — wraps a function that returns the next element
 ## or `None` when exhausted. Used for streaming I/O and lazy sequences.
 type Iterator a = Iterator (() -> Option a)
+
+## Opaque file handle wrapping a file descriptor. Must be closed after use.
+## Use `with h = openFile path mode in ... end` for automatic cleanup.
+type FileHandle = FileHandle Int
 
 ## Identity function — returns its argument unchanged.
 identity x = x

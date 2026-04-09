@@ -1,0 +1,5 @@
+import values, put from Std\Dict in
+let build n d = if n <= 0 then d else build (n - 1) (put d n (n * 10)) in
+let d = build 50 {} in
+let iter = values d in
+foldl (\acc x -> acc + x) 0 iter

@@ -61,6 +61,8 @@ LinearityChecker::LinearityChecker(DiagnosticEngine& diag) : diag_(diag) {
     register_producer("udpBind");
     // Process module
     register_producer("spawn");
+    // File module
+    register_producer("openFile");
 }
 
 void LinearityChecker::register_producer(const std::string& fn_name) {

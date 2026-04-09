@@ -1,0 +1,4 @@
+import entries from Std\Dict in
+let d = {10: 100, 20: 200, 30: 300} in
+let iter = entries d in
+foldl (\acc entry -> acc + 1) 0 iter

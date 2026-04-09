@@ -163,6 +163,182 @@ MonoTypePtr TypeChecker::infer(AstNode* node, std::shared_ptr<TypeEnv> env, int 
             result = infer_perform(static_cast<PerformExpr*>(node), env, level); break;
         case AST_HANDLE_EXPR:
             result = infer_handle(static_cast<HandleExpr*>(node), env, level); break;
+
+        // === Phase 1: Quick wins ===
+
+        case AST_BYTE_EXPR:
+            result = arena_.make_con(TyCon::Int); break;  // byte as Int
+        case AST_CHARACTER_EXPR:
+            result = arena_.make_con(TyCon::Int); break;  // char code as Int
+
+        case AST_RANGE_SEQUENCE_EXPR:
+            // [start..end] or [start..end..step] — all Int, returns Seq Int
+            result = arena_.make_app("Seq", {arena_.make_con(TyCon::Int)}); break;
+
+        case AST_LOGICAL_NOT_OP_EXPR: {
+            auto* e = static_cast<LogicalNotOpExpr*>(node);
+            auto* t = infer(e->expr, env, level);
+            unifier_.unify(t, arena_.make_con(TyCon::Bool), node->source_context, "in logical not");
+            result = arena_.make_con(TyCon::Bool);
+            break;
+        }
+
+        case AST_RAISE_EXPR: {
+            // raise expr — type of the raise is a fresh var (bottom/never returns)
+            auto* re = static_cast<RaiseExpr*>(node);
+            infer(re->value, env, level);
+            result = arena_.fresh_var(level);
+            uf_.add_var(result->var_id, level);
+            break;
+        }
+
+        case AST_IMPORT_EXPR: {
+            auto* imp = static_cast<ImportExpr*>(node);
+            auto import_env = env->child();
+            // Bind imported names as fresh type variables
+            for (auto* clause : imp->clauses) {
+                if (auto* fi = dynamic_cast<FunctionsImport*>(clause)) {
+                    for (auto* fa : fi->aliases) {
+                        // Use alias name if set, otherwise original name
+                        std::string bind_name = (fa->alias && !fa->alias->value.empty())
+                            ? fa->alias->value : fa->name->value;
+                        auto* v = arena_.fresh_var(level);
+                        uf_.add_var(v->var_id, level);
+                        import_env->bind(bind_name, v);
+                    }
+                }
+                // Wildcard module import: bind nothing specific (names resolved at codegen)
+            }
+            result = infer(imp->expr, import_env, level);
+            break;
+        }
+
+        case AST_EXTERN_DECL: {
+            // extern name : Type in body — type is body type
+            auto* ext = static_cast<ExternDeclExpr*>(node);
+            auto child_env = env->child();
+            // Bind the extern name as a fresh polymorphic var
+            auto* extern_var = arena_.fresh_var(level);
+            uf_.add_var(extern_var->var_id, level);
+            child_env->bind(ext->name, extern_var);
+            result = infer(ext->body, child_env, level);
+            break;
+        }
+
+        // === Phase 1: Generators ===
+
+        case AST_SEQ_GENERATOR_EXPR: {
+            auto* gen = static_cast<SeqGeneratorExpr*>(node);
+            auto gen_env = env->child();
+            bind_collection_extractor(gen->collectionExtractor, gen_env, level);
+            auto* body_type = infer(gen->reducerExpr, gen_env, level);
+            result = arena_.make_app("Seq", {body_type});
+            break;
+        }
+
+        case AST_SET_GENERATOR_EXPR: {
+            auto* gen = static_cast<SetGeneratorExpr*>(node);
+            auto gen_env = env->child();
+            bind_collection_extractor(gen->collectionExtractor, gen_env, level);
+            auto* body_type = infer(gen->reducerExpr, gen_env, level);
+            result = arena_.make_app("Set", {body_type});
+            break;
+        }
+
+        case AST_DICT_GENERATOR_EXPR: {
+            auto* gen = static_cast<DictGeneratorExpr*>(node);
+            auto gen_env = env->child();
+            bind_collection_extractor(gen->collectionExtractor, gen_env, level);
+            auto* key_type = infer(gen->reducerExpr->key, gen_env, level);
+            auto* val_type = infer(gen->reducerExpr->value, gen_env, level);
+            result = arena_.make_app("Dict", {key_type, val_type});
+            break;
+        }
+
+        case AST_SET_EXPR: {
+            auto* se = static_cast<SetExpr*>(node);
+            if (se->values.empty()) {
+                result = arena_.make_app("Set", {arena_.fresh_var(level)});
+            } else {
+                auto* elem_type = infer(se->values[0], env, level);
+                for (size_t i = 1; i < se->values.size(); i++) {
+                    auto* t = infer(se->values[i], env, level);
+                    unifier_.unify(elem_type, t, node->source_context,
+                                   "in set literal (all elements must have same type)");
+                }
+                result = arena_.make_app("Set", {unifier_.resolve(elem_type)});
+            }
+            break;
+        }
+
+        case AST_DICT_EXPR: {
+            auto* de = static_cast<DictExpr*>(node);
+            auto* key_var = arena_.fresh_var(level);
+            uf_.add_var(key_var->var_id, level);
+            auto* val_var = arena_.fresh_var(level);
+            uf_.add_var(val_var->var_id, level);
+            for (auto& [k, v] : de->values) {
+                auto* kt = infer(k, env, level);
+                auto* vt = infer(v, env, level);
+                unifier_.unify(key_var, kt, node->source_context, "in dict literal key");
+                unifier_.unify(val_var, vt, node->source_context, "in dict literal value");
+            }
+            result = arena_.make_app("Dict", {unifier_.resolve(key_var), unifier_.resolve(val_var)});
+            break;
+        }
+
+        // === Phase 2: Control flow completions ===
+
+        case AST_WITH_EXPR: {
+            auto* we = static_cast<WithExpr*>(node);
+            infer(we->contextExpr, env, level);
+            auto child_env = env->child();
+            auto* ctx_var = arena_.fresh_var(level);
+            uf_.add_var(ctx_var->var_id, level);
+            child_env->bind(we->name->value, ctx_var);
+            result = infer(we->bodyExpr, child_env, level);
+            break;
+        }
+
+        case AST_TRY_CATCH_EXPR: {
+            auto* tc = static_cast<TryCatchExpr*>(node);
+            auto* try_type = infer(tc->tryExpr, env, level);
+            if (tc->catchExpr) {
+                for (auto* cp : tc->catchExpr->patterns) {
+                    // Extract body from the catch pattern's variant
+                    if (auto* pwog = std::get_if<PatternWithoutGuards*>(&cp->pattern)) {
+                        if (*pwog && (*pwog)->expr) {
+                            auto* catch_type = infer((*pwog)->expr, env, level);
+                            unifier_.unify(try_type, catch_type, node->source_context,
+                                           "in try/catch (all branches must have same type)");
+                        }
+                    }
+                }
+            }
+            result = unifier_.resolve(try_type);
+            break;
+        }
+
+        case AST_CONS_RIGHT_EXPR: {
+            // Same as cons left but reversed: seq :> elem
+            auto* cr = static_cast<ConsRightExpr*>(node);
+            auto* seq_type = infer(cr->left, env, level);
+            auto* elem_type = infer(cr->right, env, level);
+            auto* expected_seq = arena_.make_app("Seq", {elem_type});
+            unifier_.unify(seq_type, expected_seq, node->source_context, "in cons right (:>)");
+            result = unifier_.resolve(expected_seq);
+            break;
+        }
+
+        case AST_FIELD_UPDATE_EXPR: {
+            auto* fu = static_cast<FieldUpdateExpr*>(node);
+            auto* obj_type = infer(fu->identifier, env, level);
+            for (auto& [name, expr] : fu->updates)
+                infer(expr, env, level);
+            result = obj_type; // update returns same type as original
+            break;
+        }
+
         default:
             // Binary operators
             if (auto* binop = dynamic_cast<BinaryOpExpr*>(node)) {
@@ -213,29 +389,70 @@ MonoTypePtr TypeChecker::infer_identifier(IdentifierExpr* node,
 
 // ===== Let Binding =====
 
+/// Pre-scan nested let expressions and bind all lambda alias names with fresh
+/// type vars. This enables mutual recursion across nested let blocks —
+/// `let f = ... g ... in let g = ... f ... in expr` — matching the codegen's
+/// deferred compilation behavior.
+static void prescan_let_lambdas(AstNode* node, std::shared_ptr<TypeEnv> env,
+                                 TypeArena& arena, UnionFind& uf, int level) {
+    auto* let_node = dynamic_cast<LetExpr*>(node);
+    if (!let_node) return;
+
+    for (auto* alias : let_node->aliases) {
+        if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+            // Only pre-bind if not already bound (avoids overwriting)
+            if (!env->lookup(la->name->value)) {
+                auto* v = arena.fresh_var(level + 1);
+                uf.add_var(v->var_id, level + 1);
+                env->bind(la->name->value, v);
+            }
+        }
+    }
+    // Recurse into the body to find nested lets
+    prescan_let_lambdas(let_node->expr, env, arena, uf, level);
+}
+
 MonoTypePtr TypeChecker::infer_let(LetExpr* node, std::shared_ptr<TypeEnv> env, int level) {
     auto child_env = env->child();
 
+    // Pass 0: Pre-scan this and nested let blocks for all lambda names.
+    // Enables mutual recursion across nested lets.
+    prescan_let_lambdas(node, child_env, arena_, uf_, level);
+
+    // Pass 1: Pre-bind all LambdaAlias names with fresh type vars.
+    // This enables mutual recursion within the same let block.
+    struct LambdaPrelim { LambdaAlias* la; MonoTypePtr var; };
+    std::vector<LambdaPrelim> lambda_prelims;
+    for (auto* alias : node->aliases) {
+        if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+            // Retrieve the pre-scanned binding
+            auto existing = child_env->lookup(la->name->value);
+            auto* self_var = existing ? existing->body : arena_.fresh_var(level + 1);
+            if (!existing) uf_.add_var(self_var->var_id, level + 1);
+            child_env->bind(la->name->value, self_var);
+            lambda_prelims.push_back({la, self_var});
+        }
+    }
+
+    // Pass 2: Infer all alias types.
+    size_t lambda_idx = 0;
     for (auto* alias : node->aliases) {
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
-            // Infer RHS at level+1 for generalization
             auto* rhs_type = infer(va->expr, child_env, level + 1);
-            // Generalize: vars at level+1 become quantified
             auto scheme = generalize(rhs_type, level);
             child_env->bind_scheme(va->identifier->name->value, scheme);
-        } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
-            // Recursive functions: bind name with fresh var BEFORE inferring body.
-            // This allows the body to reference itself (self-recursive calls).
-            auto* self_var = arena_.fresh_var(level + 1);
-            uf_.add_var(self_var->var_id, level + 1);
-            child_env->bind(la->name->value, self_var);
-
-            auto* fn_type = infer(la->lambda, child_env, level + 1);
-            // Unify the preliminary binding with the inferred type
-            unifier_.unify(self_var, fn_type, la->lambda->source_context,
-                           "in recursive function '" + la->name->value + "'");
+        } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
+            auto* rhs_type = infer(pa->expr, child_env, level + 1);
+            auto* pat_type = infer_pattern(pa->pattern, child_env, level + 1);
+            unifier_.unify(rhs_type, pat_type, pa->source_context,
+                           "in pattern destructuring");
+        } else if (dynamic_cast<LambdaAlias*>(alias)) {
+            auto& prelim = lambda_prelims[lambda_idx++];
+            auto* fn_type = infer(prelim.la->lambda, child_env, level + 1);
+            unifier_.unify(prelim.var, fn_type, prelim.la->lambda->source_context,
+                           "in recursive function '" + prelim.la->name->value + "'");
             auto scheme = generalize(fn_type, level);
-            child_env->bind_scheme(la->name->value, scheme);
+            child_env->bind_scheme(prelim.la->name->value, scheme);
         }
     }
 
@@ -371,7 +588,8 @@ std::string TypeChecker::op_name(AstNodeType type) {
         case AST_LOGICAL_OR_EXPR: return "||";
         case AST_JOIN_EXPR: return "++";
         case AST_CONS_LEFT_EXPR: return "::";
-        case AST_PIPE_LEFT_EXPR: return "|>";
+        case AST_PIPE_LEFT_EXPR: return "<|";
+        case AST_PIPE_RIGHT_EXPR: return "|>";
         default: return "?";
     }
 }
@@ -688,11 +906,92 @@ MonoTypePtr TypeChecker::infer_pattern(PatternNode* pat, std::shared_ptr<TypeEnv
             return or_type ? or_type : arena_.fresh_var(level);
         }
 
+        case AST_DICT_PATTERN: {
+            auto* dp = static_cast<DictPattern*>(pat);
+            auto* key_var = arena_.fresh_var(level);
+            uf_.add_var(key_var->var_id, level);
+            auto* val_var = arena_.fresh_var(level);
+            uf_.add_var(val_var->var_id, level);
+            for (auto& [key_pat, val_pat] : dp->keyValuePairs) {
+                auto* kt = infer_pattern(key_pat, env, level);
+                auto* vt = infer_pattern(val_pat, env, level);
+                unifier_.unify(key_var, kt, pat->source_context, "in dict pattern key");
+                unifier_.unify(val_var, vt, pat->source_context, "in dict pattern value");
+            }
+            return arena_.make_app("Dict", {unifier_.resolve(key_var), unifier_.resolve(val_var)});
+        }
+
+        case AST_RECORD_PATTERN: {
+            auto* rp = static_cast<RecordPattern*>(pat);
+            for (auto& [name_expr, sub_pat] : rp->items) {
+                auto* sub_type = infer_pattern(sub_pat, env, level);
+                if (name_expr && sub_pat->get_type() == AST_PATTERN_VALUE) {
+                    auto* pv = static_cast<PatternValue*>(sub_pat);
+                    if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                        env->bind((*id)->name->value, sub_type);
+                }
+            }
+            auto* v = arena_.fresh_var(level);
+            uf_.add_var(v->var_id, level);
+            return v;
+        }
+
+        case AST_AS_DATA_STRUCTURE_PATTERN: {
+            auto* asp = static_cast<AsDataStructurePattern*>(pat);
+            auto* inner_type = infer_pattern(static_cast<PatternNode*>(asp->pattern), env, level);
+            if (asp->identifier)
+                env->bind(asp->identifier->name->value, inner_type);
+            return inner_type;
+        }
+
         default: {
             auto* v = arena_.fresh_var(level);
             uf_.add_var(v->var_id, level);
             return v;
         }
+    }
+}
+
+// ===== Collection Extractor Binding =====
+
+void TypeChecker::bind_collection_extractor(CollectionExtractorExpr* ce,
+                                             std::shared_ptr<TypeEnv> env, int level) {
+    if (!ce) return;
+
+    if (auto* vce = dynamic_cast<ValueCollectionExtractorExpr*>(ce)) {
+        // Infer collection type to get element type
+        auto* elem_type = arena_.fresh_var(level);
+        uf_.add_var(elem_type->var_id, level);
+        if (vce->collection) {
+            auto* col_type = infer(vce->collection, env, level);
+            // Collection should be Seq(elem_type) — unify
+            auto* expected = arena_.make_app("Seq", {elem_type});
+            unifier_.unify(col_type, expected, ce->source_context,
+                           "in generator collection");
+        }
+        // Bind the iteration variable
+        if (auto* id = std::get_if<IdentifierExpr*>(&vce->expr))
+            env->bind((*id)->name->value, elem_type);
+        // Infer guard condition if present
+        if (vce->condition)
+            infer(vce->condition, env, level);
+    } else if (auto* kvce = dynamic_cast<KeyValueCollectionExtractorExpr*>(ce)) {
+        auto* key_type = arena_.fresh_var(level);
+        uf_.add_var(key_type->var_id, level);
+        auto* val_type = arena_.fresh_var(level);
+        uf_.add_var(val_type->var_id, level);
+        if (kvce->collection) {
+            auto* col_type = infer(kvce->collection, env, level);
+            auto* expected = arena_.make_app("Dict", {key_type, val_type});
+            unifier_.unify(col_type, expected, ce->source_context,
+                           "in dict generator collection");
+        }
+        if (auto* id = std::get_if<IdentifierExpr*>(&kvce->keyExpr))
+            env->bind((*id)->name->value, key_type);
+        if (auto* id = std::get_if<IdentifierExpr*>(&kvce->valueExpr))
+            env->bind((*id)->name->value, val_type);
+        if (kvce->condition)
+            infer(kvce->condition, env, level);
     }
 }
 

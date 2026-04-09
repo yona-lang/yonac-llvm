@@ -81,6 +81,14 @@ Codegen::Codegen(const std::string& module_name, compiler::DiagnosticEngine* dia
     types_.trait_instances["Closeable:Int"] = closeable_int;
     // Register rt_close as the implementation
     compiled_functions_["Closeable_Int__close"] = {rt_.close_, CType::UNIT, {CType::INT}};
+
+    // Closeable FileHandle — for binary file handles
+    TraitInstanceInfo closeable_fh;
+    closeable_fh.trait_name = "Closeable";
+    closeable_fh.type_name = "FileHandle";
+    closeable_fh.type_names = {"FileHandle"};
+    closeable_fh.method_mangled_names["close"] = "yona_Std_File__closeFileHandle";
+    types_.trait_instances["Closeable:FileHandle"] = closeable_fh;
 }
 Codegen::~Codegen() = default;
 

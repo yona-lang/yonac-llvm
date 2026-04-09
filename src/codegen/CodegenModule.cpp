@@ -206,6 +206,7 @@ bool Codegen::load_interface_file(const std::string& path) {
     int current_max_arity = 0;
     bool current_is_recursive = false;
     std::vector<std::string> current_ctor_names;
+    std::string last_instance_key;  // tracks most recently registered INSTANCE
 
     while (std::getline(in, line)) {
         if (line.empty()) continue;
@@ -291,15 +292,15 @@ bool Codegen::load_interface_file(const std::string& path) {
             tii.type_name = type_name;
             tii.type_names = type_names;
             types_.trait_instances[key] = tii;
+            last_instance_key = key;
         } else if (keyword == "IMPL") {
             std::string method_name, mangled_name;
             iss >> method_name >> mangled_name;
-            // Add to the last registered instance
-            if (!types_.trait_instances.empty()) {
-                for (auto& [key, inst] : types_.trait_instances) {
-                    inst.method_mangled_names[method_name] = mangled_name;
-                    break;
-                }
+            // Add to the most recently registered INSTANCE
+            if (!last_instance_key.empty()) {
+                auto it = types_.trait_instances.find(last_instance_key);
+                if (it != types_.trait_instances.end())
+                    it->second.method_mangled_names[method_name] = mangled_name;
             }
         } else if (keyword == "FN" || keyword == "AFN" || keyword == "IO") {
             bool is_thread_async = (keyword == "AFN");

@@ -1,0 +1,11 @@
+import openFile, readBytes, writeBytes, closeFileHandle from Std\File, length from Std\Bytes in
+let rh = openFile "bench/data/bench_binary.bin" "r" in
+let data = readBytes rh 5242880 in
+let _ = closeFileHandle rh in
+let wh = openFile "/tmp/yona_bench_binary_wr.bin" "w" in
+let _ = writeBytes wh data in
+let _ = closeFileHandle wh in
+let rh2 = openFile "/tmp/yona_bench_binary_wr.bin" "r" in
+let data2 = readBytes rh2 5242880 in
+let _ = closeFileHandle rh2 in
+length data2
