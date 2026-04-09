@@ -36,8 +36,12 @@ public:
     /// Resolve all union-find links in a type (zonk).
     MonoTypePtr zonk(MonoTypePtr type);
 
-    /// Has errors?
+    /// Has errors? Includes both direct type checker errors and unifier errors.
     bool has_errors() const { return error_count_ > 0 || diag_.has_errors(); }
+
+    /// Has direct type checker errors only? (undefined vars, missing traits)
+    /// Does not include unifier errors from partial inference.
+    bool has_direct_errors() const { return error_count_ > 0; }
 
     /// Access arena (for tests).
     TypeArena& arena() { return arena_; }

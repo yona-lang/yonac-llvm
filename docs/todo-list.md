@@ -104,9 +104,10 @@
 - [x] **Iterator RC Cleanup** — fixed Option ADT layout mismatch (was `[tag, value]`,
   now `[tag, num_fields, heap_mask, field]`). foldl_iterator rc_dec's each wrapper.
   Memory: 116MB → 2.4MB for 500K lines. Time: 53.9ms → 39.8ms.
-- [x] **Blocking Type Checker** — type checker errors stop compilation.
-  Fixed: recursive let functions (preliminary binding before body inference),
-  prelude functions (fully polymorphic type vars instead of CType mapping).
+- [ ] **Blocking Type Checker** — type checker partially done: recursive let
+  functions (preliminary binding), prelude functions (polymorphic). NOT yet
+  blocking — false positives on: tuple destructuring, mutual recursion,
+  pipe operators, float arithmetic. Need to handle all AST node types.
 - [ ] **Binary File I/O** — `open`/`close`/`seek`/`read`/`write` for binary files
   with file handles. Requires Closeable instance for file handle type.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona

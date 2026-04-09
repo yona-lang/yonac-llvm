@@ -42,11 +42,12 @@ static string compile_and_run(const string& code) {
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
         if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
     }
-    codegen.load_prelude(&parser);  // unified: registers constructors + functions
+    codegen.load_prelude(&parser);
 
     istringstream stream(code);
     auto parse_result = parser.parse_input(stream);
     if (!parse_result.node) return "PARSE_ERROR";
+
     auto module = codegen.compile(parse_result.node.get());
     if (!module) return "CODEGEN_ERROR";
 
