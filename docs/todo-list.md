@@ -9,30 +9,40 @@
 - **Stdlib**: 29 modules, ~322 exported functions (12 pure Yona + 17 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
-- **Benchmarks**: 28/28 passing, 2 faster than C, 13 within 2x C
+- **Benchmarks**: 31/31 passing, 4 at C parity, 18 within 2x C
 
 ## Benchmark Results
 
 | Benchmark | Yona | C | Time | Yona MB | C MB | Mem |
 |-----------|------|---|------|---------|------|-----|
-| tak | 66ms | 78ms | **0.9x** | 2.3 | 2.0 | 1.2x |
-| list_map_filter | 0.81ms | 0.78ms | **1.0x** | 2.8 | 2.9 | 1.0x |
-| binary_read_chunks | 0.90ms | 0.85ms | 1.1x | 2.4 | 2.3 | 1.0x |
-| sum_squares | 0.56ms | 0.51ms | 1.1x | 2.3 | 2.1 | 1.1x |
-| file_read | 0.88ms | 0.77ms | 1.1x | 3.5 | 3.2 | 1.1x |
-| process_exec | 1.2ms | 1.1ms | 1.1x | 3.9 | 3.9 | 1.0x |
-| process_spawn | 1.3ms | 1.2ms | 1.1x | 3.8 | 3.8 | 1.0x |
-| binary_write_read | 3.6ms | 3.1ms | 1.2x | 12.3 | 7.2 | 1.7x |
-| list_sum | 0.81ms | 0.69ms | 1.2x | 2.8 | 2.4 | 1.2x |
-| list_reverse | 0.84ms | 0.64ms | 1.3x | 3.0 | 2.4 | 1.3x |
-| sieve | 0.70ms | 0.52ms | 1.4x | 3.0 | 2.1 | 1.4x |
-| file_write_read | 1.5ms | 0.93ms | 1.7x | 4.7 | 3.0 | 1.6x |
-| dict_build | 1.3ms | 0.72ms | 1.9x | 3.3 | 2.3 | 1.4x |
-| fibonacci | 15ms | 7.7ms | 1.9x | 2.1 | 2.1 | 1.0x |
-| set_build | 1.4ms | 0.65ms | 2.2x | 3.4 | 2.2 | 1.5x |
-| ackermann | 161ms | 65ms | 2.5x | 2.5 | 2.2 | 1.1x |
-| sort | 1.6ms | 0.56ms | 2.8x | 7.9 | 2.1 | 3.8x |
-| queens | 14ms | 1.4ms | 9.6x | 42.9 | 2.0 | 21x |
+| tak | 66ms | 77ms | **0.9x** | 2.3 | 2.0 | 1.2x |
+| list_map_filter | 0.80ms | 0.84ms | **1.0x** | 2.8 | 2.9 | 1.0x |
+| process_spawn | 1.3ms | 1.3ms | **1.0x** | 3.8 | 3.8 | 1.0x |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.7 | 2.2 | 1.2x |
+| int_array_fill_sum | 0.58ms | 0.55ms | 1.1x | 2.4 | 2.2 | 1.1x |
+| file_read | 0.90ms | 0.81ms | 1.1x | 3.5 | 3.2 | 1.1x |
+| binary_read_chunks | 0.93ms | 0.75ms | 1.2x | 2.4 | 2.3 | 1.0x |
+| binary_write_read | 3.7ms | 3.0ms | 1.2x | 12.4 | 7.1 | 1.7x |
+| sum_squares | 0.67ms | 0.51ms | 1.3x | 2.3 | 2.1 | 1.1x |
+| list_sum | 0.86ms | 0.64ms | 1.3x | 3.0 | 2.4 | 1.3x |
+| list_reverse | 0.87ms | 0.65ms | 1.3x | 3.1 | 2.4 | 1.3x |
+| process_exec | 1.4ms | 1.1ms | 1.3x | 3.9 | 3.9 | 1.0x |
+| sieve | 0.77ms | 0.54ms | 1.4x | 3.0 | 2.0 | 1.5x |
+| file_write_read | 1.5ms | 0.93ms | 1.6x | 4.6 | 3.0 | 1.5x |
+| file_parallel_read | 1.4ms | 0.90ms | 1.6x | 5.7 | 5.3 | 1.1x |
+| dict_build | 1.3ms | 0.67ms | 1.9x | 3.3 | 2.4 | 1.4x |
+| set_build | 1.3ms | 0.66ms | 2.0x | 3.3 | 2.1 | 1.6x |
+| fibonacci | 16ms | 7.8ms | 2.0x | 2.3 | 2.0 | 1.2x |
+| ackermann | 164ms | 64ms | 2.5x | 2.6 | 2.3 | 1.1x |
+| file_readlines | 2.2ms | 0.82ms | 2.6x | 7.2 | 2.1 | 3.4x |
+| file_readlines_large | 39ms | 15ms | 2.6x | 2.4 | 2.0 | 1.2x |
+| sort | 1.6ms | 0.53ms | 3.0x | 8.1 | 2.1 | 3.9x |
+| file_write_read_large | 49ms | 16ms | 3.2x | 107 | 2.1 | 51x |
+| int_array_map | 1.9ms | 0.54ms | 3.6x | 2.7 | 2.4 | 1.1x |
+| int_array_sum | 1.9ms | 0.52ms | 3.7x | 2.6 | 2.3 | 1.1x |
+| file_read_large | 14ms | 3.4ms | 4.0x | 55 | 2.2 | 25x |
+| file_parallel_read_large | 8.5ms | 1.4ms | 5.9x | 37 | 2.2 | 17x |
+| queens | 13ms | 1.3ms | 9.9x | 43 | 2.0 | 21x |
 
 ## Remaining Work
 
