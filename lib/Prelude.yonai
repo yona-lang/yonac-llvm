@@ -87,6 +87,22 @@ INSTANCE Hash Bool
   IMPL hash yona_Prelude__Hash_Bool__hash
 INSTANCE Hash Symbol
   IMPL hash yona_Prelude__Hash_Symbol__hash
+TRAIT Array a 2
+  METHOD alength
+  METHOD aget
+  METHOD afoldl
+INSTANCE Array ByteArray
+  IMPL alength yona_Prelude__Array_ByteArray__alength
+  IMPL aget yona_Prelude__Array_ByteArray__aget
+  IMPL afoldl yona_Prelude__Array_ByteArray__afoldl
+INSTANCE Array IntArray
+  IMPL alength yona_Prelude__Array_IntArray__alength
+  IMPL aget yona_Prelude__Array_IntArray__aget
+  IMPL afoldl yona_Prelude__Array_IntArray__afoldl
+INSTANCE Array FloatArray
+  IMPL alength yona_Prelude__Array_FloatArray__alength
+  IMPL aget yona_Prelude__Array_FloatArray__aget
+  IMPL afoldl yona_Prelude__Array_FloatArray__afoldl
 TRAIT Closeable a 1
   METHOD close
 INSTANCE Closeable Int
@@ -116,6 +132,15 @@ FN yona_Prelude__Hash_String__hash 1 STRING -> INT
 FN yona_Prelude__Hash_Bool__hash 1 BOOL -> INT
 FN yona_Prelude__Hash_Symbol__hash 1 INT -> INT
 FN yona_Prelude__Show_Symbol__show 1 INT -> STRING
+FN yona_Prelude__Array_ByteArray__alength 1 INT -> INT
+FN yona_Prelude__Array_ByteArray__aget 2 INT INT -> INT
+FN yona_Prelude__Array_ByteArray__afoldl 3 FUNCTION INT INT -> INT
+FN yona_Prelude__Array_IntArray__alength 1 INT -> INT
+FN yona_Prelude__Array_IntArray__aget 2 INT INT -> INT
+FN yona_Prelude__Array_IntArray__afoldl 3 FUNCTION INT INT -> INT
+FN yona_Prelude__Array_FloatArray__alength 1 INT -> INT
+FN yona_Prelude__Array_FloatArray__aget 2 INT INT -> FLOAT
+FN yona_Prelude__Array_FloatArray__afoldl 3 FUNCTION FLOAT INT -> FLOAT
 FN Closeable_Int__close 1 INT -> UNIT
 GENFN_BEGIN yona_Prelude__flip flip
 flip f a b = f b a

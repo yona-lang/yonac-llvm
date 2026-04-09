@@ -1,10 +1,9 @@
 # Std.ByteArray
 
-Bytes -- mutable byte buffers for binary data.
-
-Provides allocation, indexing, slicing, and conversion between bytes,
-strings, and sequences. Useful for binary I/O, network protocols,
-and interop with C libraries.
+Contiguous unboxed byte array. Provides allocation, indexing, slicing,
+bulk operations (foldl, map), and conversion between byte arrays,
+strings, and sequences. Used for binary I/O, network protocols,
+and interop with C libraries. Implements the `Array` trait.
 
 ## Functions
 
@@ -146,3 +145,48 @@ Convert a byte buffer to a sequence of integers.
 import fromString, toSeq from Std\ByteArray in
 toSeq (fromString "Hi")   # => [72, 105]
 ```
+
+### `head`
+
+```
+head : ByteArray -> Int
+```
+
+First byte value. O(1).
+
+### `tail`
+
+```
+tail : ByteArray -> ByteArray
+```
+
+All bytes except the first. Returns a new array.
+
+### `join`
+
+```
+join : ByteArray -> ByteArray -> ByteArray
+```
+
+Concatenate two byte arrays (alias for `concat`).
+
+### `foldl`
+
+```
+foldl : (Int -> Int -> Int) -> Int -> ByteArray -> Int
+```
+
+Left fold over all bytes. Single-pass, cache-friendly.
+
+```yona
+import fromString, foldl from Std\ByteArray in
+foldl (\acc b -> acc + b) 0 (fromString "ABC")   -- 65+66+67 = 198
+```
+
+### `map`
+
+```
+map : (Int -> Int) -> ByteArray -> ByteArray
+```
+
+Apply a function to each byte, returning a new array.

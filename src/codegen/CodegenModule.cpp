@@ -420,7 +420,6 @@ void Codegen::register_trait_externs() {
                 std::vector<LType*> param_types;
                 for (size_t i = 0; i < meta.param_types.size(); i++) {
                     if (meta.param_types[i] == CType::ADT) {
-                        // Use the instance's ADT type for correct struct layout
                         param_types.push_back(adt_llvm_type(inst.type_name));
                     } else {
                         param_types.push_back(llvm_type(meta.param_types[i]));

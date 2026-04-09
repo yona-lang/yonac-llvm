@@ -529,6 +529,32 @@ void* yona_Std_ByteArray__fromString(const char* s) { return yona_rt_byte_array_
 const char* yona_Std_ByteArray__toString(void* b)   { return yona_rt_byte_array_to_string(b); }
 void* yona_Std_ByteArray__fromSeq(int64_t* s)       { return yona_rt_byte_array_from_seq(s); }
 int64_t* yona_Std_ByteArray__toSeq(void* b)         { return yona_rt_byte_array_to_seq(b); }
+int64_t yona_Std_ByteArray__head(void* b)            { return yona_rt_byte_array_get(b, 0); }
+void* yona_Std_ByteArray__tail(void* b) {
+    int64_t len = yona_rt_byte_array_length(b);
+    return (len <= 1) ? yona_rt_byte_array_alloc(0) : yona_rt_byte_array_slice(b, 1, len - 1);
+}
+void* yona_Std_ByteArray__join(void* a, void* b)    { return yona_rt_byte_array_concat(a, b); }
+int64_t yona_Std_ByteArray__foldl(int64_t* fn, int64_t acc, void* b) {
+    int64_t len = yona_rt_byte_array_length(b);
+    typedef int64_t (*fold_fn_t)(int64_t*, int64_t, int64_t);
+    fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
+    uint8_t* data = (uint8_t*)((int64_t*)b + 1);
+    for (int64_t i = 0; i < len; i++)
+        acc = f(fn, acc, (int64_t)data[i]);
+    return acc;
+}
+void* yona_Std_ByteArray__map(int64_t* fn, void* b) {
+    int64_t len = yona_rt_byte_array_length(b);
+    void* result = yona_rt_byte_array_alloc(len);
+    typedef int64_t (*map_fn_t)(int64_t*, int64_t);
+    map_fn_t f = (map_fn_t)(intptr_t)fn[0];
+    uint8_t* src = (uint8_t*)((int64_t*)b + 1);
+    uint8_t* dst = (uint8_t*)((int64_t*)result + 1);
+    for (int64_t i = 0; i < len; i++)
+        dst[i] = (uint8_t)f(fn, (int64_t)src[i]);
+    return result;
+}
 
 /* ===== IntArray — contiguous unboxed int64_t[] ===== */
 /* Layout: [count: i64][elem0, elem1, ...] — no per-element RC. */
@@ -2773,6 +2799,40 @@ const char* yona_Prelude__Show_Symbol__show(int64_t sym_id) {
 }
 int64_t yona_Prelude__Eq_Symbol__eq(int64_t a, int64_t b) { return a == b ? 1 : 0; }
 int64_t yona_Prelude__Hash_Symbol__hash(int64_t s) { return s; }
+
+/* ===== Array trait instance wrappers ===== */
+/* Thin wrappers with unique mangled names for trait dispatch.
+ * All params are i64 (boxed) since trait dispatch goes through codegen_apply. */
+
+int64_t yona_Prelude__Array_ByteArray__alength(int64_t arr) {
+    return yona_rt_byte_array_length((void*)(intptr_t)arr);
+}
+int64_t yona_Prelude__Array_ByteArray__aget(int64_t arr, int64_t i) {
+    return yona_rt_byte_array_get((void*)(intptr_t)arr, i);
+}
+int64_t yona_Prelude__Array_ByteArray__afoldl(int64_t* fn, int64_t acc, int64_t arr) {
+    return yona_Std_ByteArray__foldl(fn, acc, (void*)(intptr_t)arr);
+}
+
+int64_t yona_Prelude__Array_IntArray__alength(int64_t arr) {
+    return yona_rt_int_array_length((int64_t*)(intptr_t)arr);
+}
+int64_t yona_Prelude__Array_IntArray__aget(int64_t arr, int64_t i) {
+    return yona_rt_int_array_get((int64_t*)(intptr_t)arr, i);
+}
+int64_t yona_Prelude__Array_IntArray__afoldl(int64_t* fn, int64_t acc, int64_t arr) {
+    return yona_rt_int_array_foldl(fn, acc, (int64_t*)(intptr_t)arr);
+}
+
+double yona_Prelude__Array_FloatArray__alength(int64_t arr) {
+    return (double)yona_rt_float_array_length((double*)(intptr_t)arr);
+}
+double yona_Prelude__Array_FloatArray__aget(int64_t arr, int64_t i) {
+    return yona_rt_float_array_get((double*)(intptr_t)arr, i);
+}
+double yona_Prelude__Array_FloatArray__afoldl(int64_t* fn, double acc, int64_t arr) {
+    return yona_rt_float_array_foldl(fn, acc, (double*)(intptr_t)arr);
+}
 
 /* seq_head and seq_tail are in runtime/seq.c */
 
