@@ -185,14 +185,13 @@
   deadlocks (cycles, crashed producers) that linear types can't see.
   Combined approach: linearity for compile-time obvious cases, runtime
   detection as safety net.
-- [ ] **Channel benchmarks with multi-language references** (part of Channels) —
-  6 new benchmarks: `channel_throughput` (1M sends), `channel_pingpong`
-  (round-trip latency), `channel_pipeline` (3-stage), `channel_workers`
-  (dynamic load balancing), `channel_fanout` (1→8), `channel_actor`
-  (100→1 logger). C (pthreads), Go (goroutines), Rust (mpsc), Python
-  (queue.Queue), Java (BlockingQueue) reference implementations.
-  Performance targets: 1.5-2x C/Go (mutex-based; lock-free MPSC is a
-  separate optimization).
+- [x] **Channel benchmarks with multi-language references** (part of Channels) —
+  3 benchmarks landed: `channel_throughput` (10000 sends), `channel_pipeline`
+  (5000 doubled sends), `channel_fanin` (two producers + coordinator + one
+  consumer), each with C (pthreads), Python (`queue.Queue`), and Go
+  (channels) reference implementations. Additional shapes (pingpong,
+  fanout, actor) deferred until the parser supports `case` inside lambda
+  bodies — a recurring blocker that affected nested closure consumers.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
@@ -232,24 +231,26 @@
   Parser errors routed through DiagnosticEngine in CLI.
 
 ### Module System
-- [ ] **Pure-Yona Stdlib Module Loading** (prerequisite for Linear channel API)
-  — currently `load_module_interface` only loads `.yonai` files. Pure-Yona
-  modules like `Std/Pair.yona` and `Std/Math.yona` exist but are dead code
-  (never actually loadable). Need to: (1) extend module loader to fall back
-  to `.yona` source files, (2) parse the source on demand, (3) register the
-  module's ADTs/traits/instances in the current Codegen state, (4) defer
-  function compilation via existing `deferred_functions_` mechanism, (5)
-  cache loaded modules to avoid re-parsing. Required for: writing
-  `Std/Channel.yona` as a Yona-level wrapper around the C runtime that
-  constructs the Linear (Sender/Receiver) tuple. Once this works, the
-  Linear sender/receiver split for channels becomes straightforward.
-  Estimated scope: ~300 lines (loader + caching + tests).
-- [ ] **Linear Sender/Receiver split for Channels** (depends on above)
-  — once `.yona` module loading works, write `Std/Channel.yona` that wraps
-  the C runtime and returns `(Linear (Sender a), Linear (Receiver a))`.
-  User pattern matches Linear once per side; LinearityChecker enforces both
-  obligations are discharged. Provides full compile-time type safety:
-  can't recv on a sender, can't forget either side. ~100 lines.
+- [x] **Pure-Yona Stdlib Module Loading** — `load_module_interface` falls
+  back to `.yona` source files when no `.yonai` exists. Parses the source,
+  registers the module's ADTs/traits/instances in the current Codegen
+  state, defers function compilation via `deferred_functions_`, and
+  caches by canonical path so each module is parsed at most once.
+  `register_yona_module_decls` is the slimmed counterpart to
+  `compile_module` (no IR verify/optimize; non-exported functions stay
+  deferred). Demonstrated by `stdlib_pair_basic` test using `Std/Pair.yona`.
+- [ ] **Linear Sender/Receiver split for Channels** (depends on the above —
+  prerequisite is done, this is now blocked on codegen plumbing) — needs
+  ADT type-name propagation through extern returns. The wrapper function
+  pattern `recv ch = yona_Std_Channel__recv ch` (where the extern is
+  `: Channel -> Option`) currently triggers a GEP assertion in pattern
+  matching because the wrapper's CType::ADT return loses the
+  `adt_type_name` ("Option"). To fix: thread an optional ADT name
+  through `yona_type_to_ctype`, store it on `CompiledFunction`,
+  propagate from extern → wrapper return type → case pattern. Once
+  fixed, write `Std/Channel.yona` that returns
+  `(Linear (Sender a), Linear (Receiver a))`. ~100 lines for the .yona
+  module + ~150 lines for the codegen plumbing.
 
 ### Tooling
 - [ ] Package manager / build system
