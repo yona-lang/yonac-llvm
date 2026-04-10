@@ -63,10 +63,16 @@ LinearityChecker::LinearityChecker(DiagnosticEngine& diag) : diag_(diag) {
     register_producer("spawn");
     // File module
     register_producer("openFile");
+    // Channel module — returns (Sender, Receiver) tuple of linear values
+    register_tuple_producer("channel");
 }
 
 void LinearityChecker::register_producer(const std::string& fn_name) {
     producer_functions_.insert(fn_name);
+}
+
+void LinearityChecker::register_tuple_producer(const std::string& fn_name) {
+    tuple_producer_functions_.insert(fn_name);
 }
 
 void LinearityChecker::check(AstNode* node) {
@@ -174,6 +180,45 @@ void LinearityChecker::check_let(LetExpr* node, LinearEnv& env) {
         } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
             // Check if lambda body captures any linear values
             check_node(la->lambda, env);
+        } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
+            check_node(pa->expr, env);
+            // Tuple destructuring: let (a, b) = expr in ...
+            // If expr is a call to a tuple_producer function, mark all
+            // pattern names as linear obligations.
+            if (pa->expr->get_type() == AST_APPLY_EXPR) {
+                auto* apply = static_cast<ApplyExpr*>(pa->expr);
+                std::string fn_name;
+                auto* cur = apply;
+                while (cur) {
+                    if (auto* nc = dynamic_cast<NameCall*>(cur->call)) {
+                        fn_name = nc->name->value;
+                        break;
+                    }
+                    if (auto* ec = dynamic_cast<ExprCall*>(cur->call)) {
+                        if (ec->expr->get_type() == AST_APPLY_EXPR)
+                            cur = static_cast<ApplyExpr*>(ec->expr);
+                        else {
+                            if (ec->expr->get_type() == AST_IDENTIFIER_EXPR)
+                                fn_name = static_cast<IdentifierExpr*>(ec->expr)->name->value;
+                            break;
+                        }
+                    } else break;
+                }
+                if (!fn_name.empty() && tuple_producer_functions_.count(fn_name)) {
+                    // Walk the pattern and mark each identifier name as linear
+                    if (pa->pattern && pa->pattern->get_type() == AST_TUPLE_PATTERN) {
+                        auto* tp = static_cast<TuplePattern*>(pa->pattern);
+                        for (auto* sub : tp->patterns) {
+                            if (sub->get_type() == AST_PATTERN_VALUE) {
+                                auto* pv = static_cast<PatternValue*>(sub);
+                                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                                    env.create((*id)->name->value, pa->source_context);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     check_node(node->expr, env);

@@ -231,6 +231,26 @@
   source context display, caret underlines, and "did you mean?" suggestions.
   Parser errors routed through DiagnosticEngine in CLI.
 
+### Module System
+- [ ] **Pure-Yona Stdlib Module Loading** (prerequisite for Linear channel API)
+  — currently `load_module_interface` only loads `.yonai` files. Pure-Yona
+  modules like `Std/Pair.yona` and `Std/Math.yona` exist but are dead code
+  (never actually loadable). Need to: (1) extend module loader to fall back
+  to `.yona` source files, (2) parse the source on demand, (3) register the
+  module's ADTs/traits/instances in the current Codegen state, (4) defer
+  function compilation via existing `deferred_functions_` mechanism, (5)
+  cache loaded modules to avoid re-parsing. Required for: writing
+  `Std/Channel.yona` as a Yona-level wrapper around the C runtime that
+  constructs the Linear (Sender/Receiver) tuple. Once this works, the
+  Linear sender/receiver split for channels becomes straightforward.
+  Estimated scope: ~300 lines (loader + caching + tests).
+- [ ] **Linear Sender/Receiver split for Channels** (depends on above)
+  — once `.yona` module loading works, write `Std/Channel.yona` that wraps
+  the C runtime and returns `(Linear (Sender a), Linear (Receiver a))`.
+  User pattern matches Linear once per side; LinearityChecker enforces both
+  obligations are discharged. Provides full compile-time type safety:
+  can't recv on a sender, can't forget either side. ~100 lines.
+
 ### Tooling
 - [ ] Package manager / build system
 - [ ] LSP server

@@ -67,6 +67,12 @@ public:
     /// Register a function as a "producer" — its return value is Linear.
     void register_producer(const std::string& fn_name);
 
+    /// Register a function as a "tuple producer" — returns a tuple of linear
+    /// values. When destructured via `let (a, b) = fn ... in ...`, all
+    /// destructured names are tracked as linear obligations. Used for
+    /// channel which returns (Sender, Receiver).
+    void register_tuple_producer(const std::string& fn_name);
+
     /// Check an AST tree for linearity violations.
     void check(ast::AstNode* node);
 
@@ -90,6 +96,9 @@ private:
 
     /// Functions whose return values become linear obligations.
     std::unordered_set<std::string> producer_functions_;
+
+    /// Functions returning tuples of linear values (e.g., channel).
+    std::unordered_set<std::string> tuple_producer_functions_;
 };
 
 } // namespace yona::compiler::typechecker
