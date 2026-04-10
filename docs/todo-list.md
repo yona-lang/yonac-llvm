@@ -58,6 +58,16 @@
   `Std\IntArray` (15 functions) and `Std\FloatArray` (11 functions).
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
+- [ ] **Explore JIT compilation potential** — research task. Investigate
+  whether Yona could benefit from a JIT (LLVM ORC, Cranelift, or custom)
+  for: (1) REPL/interactive use (compile expressions on the fly without
+  full AOT pipeline), (2) hot-path specialization (detect monomorphic call
+  sites at runtime, generate specialized code), (3) inlining across module
+  boundaries beyond LTO, (4) profile-guided optimization at runtime.
+  Trade-offs: JIT adds startup latency, code cache memory, complexity.
+  Yona's AOT pipeline already produces fast code; JIT only wins if there's
+  a specific runtime adaptation benefit. Output: design doc with concrete
+  proposal or recommendation to defer.
 
 ### Language — Type System & Effects
 - [x] **Algebraic Effect System** — `perform Effect.op args` + `handle...with...end`.
@@ -173,6 +183,16 @@
   Enables ergonomic task spawning: `let p = spawn (\() -> producer ch),
   c = spawn (\() -> consumer ch) in (p, c)` auto-parallelizes via existing
   structured concurrency. ~20 lines C wrapper + .yonai declaration.
+- [ ] **Channel deadlock detection** (part of Channels) — two-tier safety:
+  (1) Linear sender/receiver split: `channel : Int -> (Linear Sender a,
+  Linear Receiver a)` so the LinearityChecker enforces that the sender is
+  passed to a spawned producer task (or closed) at compile time. Forgetting
+  `spawn` produces a linearity error. (2) Runtime deadlock detection in
+  `recv`: before `cond_wait`, check if all tasks in the group are blocked
+  and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
+  deadlocks (cycles, crashed producers) that linear types can't see.
+  Combined approach: linearity for compile-time obvious cases, runtime
+  detection as safety net.
 - [ ] **Channel benchmarks with multi-language references** (part of Channels) —
   6 new benchmarks: `channel_throughput` (1M sends), `channel_pingpong`
   (round-trip latency), `channel_pipeline` (3-stage), `channel_workers`
@@ -222,6 +242,16 @@
 ### Tooling
 - [ ] Package manager / build system
 - [ ] LSP server
+
+### Benchmarks
+- [ ] **Erlang/OTP reference implementations** — add Erlang reference impls
+  for concurrency benchmarks (parallel_async, sequential_async, par_map,
+  channel_throughput, channel_pingpong, channel_pipeline, channel_workers,
+  channel_actor). Erlang is the gold standard for actor-model concurrency
+  with cheap processes (~300B/process), built-in mailboxes, and preemptive
+  scheduling — directly comparable to Yona's structured concurrency +
+  channels. Should also add: fibonacci, ackermann, tak, sieve, sort,
+  queens, list_sum (for non-concurrency comparison). Files: `bench/reference/*.erl`.
 
 ### Distribution
 - [ ] Windows installer (NSIS/WiX)
