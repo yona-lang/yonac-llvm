@@ -810,8 +810,11 @@ static CType yona_type_to_ctype(const types::Type& t) {
         return CType::DICT;
     if (std::holds_alternative<std::shared_ptr<types::ProductType>>(t))
         return CType::TUPLE;
-    if (std::holds_alternative<std::shared_ptr<types::NamedType>>(t))
+    if (std::holds_alternative<std::shared_ptr<types::NamedType>>(t)) {
+        auto& nt = std::get<std::shared_ptr<types::NamedType>>(t);
+        if (nt->name == "Channel") return CType::CHANNEL;
         return CType::ADT;
+    }
     if (std::holds_alternative<std::shared_ptr<types::PromiseType>>(t))
         return CType::PROMISE;
     if (std::holds_alternative<std::shared_ptr<types::SumType>>(t))

@@ -1,0 +1,20 @@
+import channel, send, recv, close from Std\Channel in
+import spawn from Std\Task in
+let producer = (\work coord lo hi ->
+    let push n = if n > hi then send coord 1
+                 else let _ = send work n in push (n + 1)
+    in push lo) in
+let work = channel 32 in
+let coord = channel 4 in
+let waiter acc = case recv coord of
+    Some _ -> if acc + 1 >= 2 then close work else waiter (acc + 1)
+    None   -> 0
+end in
+let _ = spawn (\() -> producer work coord 1 2500) in
+let _ = spawn (\() -> producer work coord 2501 5000) in
+let _ = spawn (\() -> waiter 0) in
+let consume acc = case recv work of
+    Some v -> consume (acc + v)
+    None   -> acc
+end in
+consume 0

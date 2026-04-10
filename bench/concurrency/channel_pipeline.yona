@@ -1,0 +1,13 @@
+import channel, send, recv, close from Std\Channel in
+import spawn from Std\Task in
+let producer = (\ch ->
+    let push n = if n > 5000 then close ch
+                 else let _ = send ch (n * 2) in push (n + 1)
+    in push 1) in
+let ch = channel 32 in
+let _ = spawn (\() -> producer ch) in
+let consume acc = case recv ch of
+    Some v -> consume (acc + v)
+    None   -> acc
+end in
+consume 0
