@@ -148,6 +148,24 @@ int main(int argc, char* argv[]) {
             codegen.module_paths_.push_back(parent.string());
     }
     codegen.module_paths_.push_back(".");
+    // Auto-discover lib/ for Prelude and stdlib (relative to cwd, exe, or common locations)
+    for (auto& candidate : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        if (filesystem::exists(filesystem::path(candidate) / "Prelude.yonai")) {
+            codegen.module_paths_.push_back(filesystem::canonical(candidate).string());
+            break;
+        }
+    }
+    // Also check relative to executable
+    if (argc > 0) {
+        auto exe_dir = filesystem::path(argv[0]).parent_path();
+        for (auto& rel : {"../lib", "../../lib", "../../../lib"}) {
+            auto candidate = exe_dir / rel;
+            if (filesystem::exists(candidate / "Prelude.yonai")) {
+                codegen.module_paths_.push_back(filesystem::canonical(candidate).string());
+                break;
+            }
+        }
+    }
 
     llvm::Module* llvm_mod = nullptr;
 
