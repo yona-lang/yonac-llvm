@@ -374,7 +374,36 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
                 if (ci < 64) heap_mask |= ((int64_t)1 << ci);
             }
             Value* cap_i64 = capture_tvs[ci].val;
-            if (cap_i64->getType()->isPointerTy())
+            // Non-recursive ADT struct values can't fit in an i64 capture slot.
+            // Box them to a heap-allocated ADT (using the recursive layout) so
+            // the closure can store a pointer.
+            if (capture_tvs[ci].type == CType::ADT && cap_i64->getType()->isStructTy()) {
+                auto* struct_ty = cap_i64->getType();
+                int num_fields = struct_ty->getStructNumElements() - 1; // minus tag
+                // Extract tag
+                Value* tag_val = builder_->CreateExtractValue(cap_i64, {0});
+                if (tag_val->getType() != i64_ty)
+                    tag_val = builder_->CreateZExtOrTrunc(tag_val, i64_ty);
+                // Allocate heap ADT with the same structure
+                auto* heap_adt = builder_->CreateCall(rt_.adt_alloc_,
+                    {tag_val, ConstantInt::get(i64_ty, num_fields)}, "boxed_adt");
+                // Copy fields
+                for (int fi = 0; fi < num_fields; fi++) {
+                    Value* field = builder_->CreateExtractValue(cap_i64, {(unsigned)(fi + 1)});
+                    if (field->getType() != i64_ty) {
+                        if (field->getType()->isPointerTy())
+                            field = builder_->CreatePtrToInt(field, i64_ty);
+                        else if (field->getType()->isIntegerTy())
+                            field = builder_->CreateZExtOrTrunc(field, i64_ty);
+                    }
+                    builder_->CreateCall(rt_.adt_set_field_,
+                        {heap_adt, ConstantInt::get(i64_ty, fi), field});
+                }
+                cap_i64 = builder_->CreatePtrToInt(heap_adt, i64_ty);
+                // Mark this capture as heap so rc_dec frees it
+                if (ci < 64) heap_mask |= ((int64_t)1 << ci);
+            }
+            else if (cap_i64->getType()->isPointerTy())
                 cap_i64 = builder_->CreatePtrToInt(cap_i64, i64_ty);
             else if (cap_i64->getType()->isDoubleTy())
                 cap_i64 = builder_->CreateBitCast(cap_i64, i64_ty);

@@ -182,7 +182,13 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
     auto tag_ty = LType::getInt64Ty(*context_);
     auto i64_ty = LType::getInt64Ty(*context_);
 
-    if (ctor_it->second.is_recursive) {
+    // Use heap layout if either: (a) the constructor is recursive, or
+    // (b) the scrutinee is a pointer (e.g., it was loaded from a closure
+    // capture, where struct values are boxed to heap before storage).
+    bool use_heap_layout = ctor_it->second.is_recursive ||
+                           (scrutinee.val && scrutinee.val->getType()->isPointerTy());
+
+    if (use_heap_layout) {
         auto scr_tag = builder_->CreateCall(rt_.adt_get_tag_, {scrutinee.val});
         builder_->CreateCondBr(
             builder_->CreateICmpEQ(scr_tag, ConstantInt::get(i64_ty, tag)),
