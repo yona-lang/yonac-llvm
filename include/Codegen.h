@@ -39,7 +39,7 @@ using namespace yona::ast;
 // Codegen type tag — tracks what kind of value an expression produces.
 // Propagates through all expressions so the codegen always knows the
 // correct LLVM type to use.
-enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTE_ARRAY, SUM, RECORD, INT_ARRAY, FLOAT_ARRAY };
+enum class CType { INT, FLOAT, BOOL, STRING, SEQ, TUPLE, UNIT, FUNCTION, SYMBOL, PROMISE, SET, DICT, ADT, BYTE_ARRAY, SUM, RECORD, INT_ARRAY, FLOAT_ARRAY, CHANNEL };
 
 // A typed value: LLVM value + its codegen type + optional subtype info
 struct TypedValue {
@@ -299,6 +299,11 @@ private:
             *float_array_get_ = nullptr, *float_array_set_ = nullptr,
             *float_array_head_ = nullptr, *float_array_tail_ = nullptr,
             *float_array_cons_ = nullptr, *float_array_join_ = nullptr;
+        // Channels
+        llvm::Function *channel_new_ = nullptr, *channel_send_ = nullptr,
+            *channel_recv_ = nullptr, *channel_try_recv_ = nullptr,
+            *channel_close_ = nullptr, *channel_is_closed_ = nullptr,
+            *channel_length_ = nullptr, *channel_capacity_ = nullptr;
         // Misc
         llvm::Function *box_ = nullptr, *close_ = nullptr;
         // Arena

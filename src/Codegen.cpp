@@ -276,6 +276,7 @@ LType* Codegen::llvm_type(CType ct) {
         case CType::BYTE_ARRAY:  return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::INT_ARRAY: return PointerType::get(LType::getInt64Ty(*context_), 0);
         case CType::FLOAT_ARRAY: return PointerType::get(LType::getDoubleTy(*context_), 0);
+        case CType::CHANNEL: return PointerType::get(LType::getInt8Ty(*context_), 0);
         case CType::SUM:    return LType::getInt64Ty(*context_); // boxed tagged value (2-tuple)
         case CType::RECORD: return LType::getInt64Ty(*context_); // boxed tuple (ptrtoint'd)
     }
@@ -412,6 +413,16 @@ void Codegen::declare_runtime() {
     rt_.int_array_cons_    = decl("yona_rt_int_array_cons", ptr, {i64, ptr});
     rt_.int_array_join_    = decl("yona_rt_int_array_join", ptr, {ptr, ptr});
     rt_.print_int_array_   = decl("yona_rt_print_int_array", vd, {ptr});
+
+    // Channels
+    rt_.channel_new_      = decl("yona_rt_channel_new", ptr, {i64});
+    rt_.channel_send_     = decl("yona_rt_channel_send", vd, {ptr, i64});
+    rt_.channel_recv_     = decl("yona_rt_channel_recv", i64, {ptr});
+    rt_.channel_try_recv_ = decl("yona_rt_channel_try_recv", i64, {ptr});
+    rt_.channel_close_    = decl("yona_rt_channel_close", vd, {ptr});
+    rt_.channel_is_closed_ = decl("yona_rt_channel_is_closed", i64, {ptr});
+    rt_.channel_length_   = decl("yona_rt_channel_length", i64, {ptr});
+    rt_.channel_capacity_ = decl("yona_rt_channel_capacity", i64, {ptr});
 
     // FloatArray
     auto dbl = LType::getDoubleTy(*context_);
@@ -1130,6 +1141,7 @@ static std::string ctype_to_string(CType ct) {
         case CType::BYTE_ARRAY: return "BYTE_ARRAY";
         case CType::INT_ARRAY: return "INT_ARRAY";
         case CType::FLOAT_ARRAY: return "FLOAT_ARRAY";
+        case CType::CHANNEL: return "CHANNEL";
         case CType::SUM: return "SUM";
         case CType::RECORD: return "RECORD";
     }

@@ -201,7 +201,8 @@ bool Codegen::is_heap_type(CType ct) {
     return ct == CType::SEQ || ct == CType::SET || ct == CType::DICT ||
            ct == CType::ADT || ct == CType::FUNCTION || ct == CType::STRING ||
            ct == CType::BYTE_ARRAY || ct == CType::TUPLE || ct == CType::SUM ||
-           ct == CType::RECORD || ct == CType::INT_ARRAY || ct == CType::FLOAT_ARRAY;
+           ct == CType::RECORD || ct == CType::INT_ARRAY || ct == CType::FLOAT_ARRAY ||
+           ct == CType::CHANNEL;
 }
 
 void Codegen::emit_rc_inc(Value* val, CType type) {

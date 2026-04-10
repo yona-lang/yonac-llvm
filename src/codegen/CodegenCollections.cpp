@@ -32,6 +32,7 @@ static std::string ctype_to_string(CType ct) {
         case CType::BYTE_ARRAY: return "BYTE_ARRAY";
         case CType::INT_ARRAY: return "INT_ARRAY";
         case CType::FLOAT_ARRAY: return "FLOAT_ARRAY";
+        case CType::CHANNEL: return "CHANNEL";
     }
     return "INT";
 }

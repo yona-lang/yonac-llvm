@@ -41,6 +41,7 @@ std::string Codegen::ctype_to_type_name(CType ct) {
         case CType::BYTE_ARRAY: return "ByteArray";
         case CType::INT_ARRAY: return "IntArray";
         case CType::FLOAT_ARRAY: return "FloatArray";
+        case CType::CHANNEL: return "Channel";
     }
     return "Int";
 }
@@ -119,6 +120,7 @@ static CType string_to_ctype(const std::string& s) {
     if (s == "BYTE_ARRAY") return CType::BYTE_ARRAY;
     if (s == "INT_ARRAY") return CType::INT_ARRAY;
     if (s == "FLOAT_ARRAY") return CType::FLOAT_ARRAY;
+    if (s == "CHANNEL") return CType::CHANNEL;
     if (s == "SUM") return CType::SUM;
     if (s == "RECORD") return CType::RECORD;
     return CType::INT;

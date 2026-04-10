@@ -326,6 +326,10 @@ void yona_rt_rc_dec(void* ptr) {
                 if (yona_regex_free_code)
                     yona_regex_free_code(code);
             }
+        } else if (type_tag == 20 /* RC_TYPE_CHANNEL */) {
+            /* Channel: signal waiters, destroy mutex/condvars, free buffer. */
+            extern void yona_rt_channel_destroy(void* ch);
+            yona_rt_channel_destroy(ptr);
         }
         if (pool_cls >= 0)
             pool_free(header, pool_sizes[pool_cls]);
@@ -2870,6 +2874,9 @@ int64_t yona_Prelude__Array_String__get(int64_t arr, int64_t i) {
 
 /* Async runtime: thread pool, promises, await */
 #include "runtime/async.c"
+
+/* Channels: bounded MPMC for inter-task communication */
+#include "runtime/channel.c"
 
 /* Closures: partial application, env-passing convention */
 #include "runtime/closures.c"

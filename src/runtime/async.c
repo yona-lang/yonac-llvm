@@ -253,6 +253,26 @@ yona_promise_t* yona_rt_async_call_thunk_grouped(yona_thunk_t thunk, yona_task_g
     return submit_task(NULL, thunk, 0, group);
 }
 
+/* Spawn a Yona closure as a task. The closure layout is:
+ *   [fn_ptr, ret_tag, arity, num_caps, heap_mask, caps...]
+ * The function pointer takes the closure (env) as its first argument.
+ * For zero-arity closures (thunks), we call fn(closure). */
+extern int64_t yona_rt_closure_apply_thunk(int64_t* closure);
+
+static int64_t spawn_closure_dispatch(int64_t closure_int) {
+    int64_t* closure = (int64_t*)(intptr_t)closure_int;
+    /* Call the closure as a thunk: fn(closure) */
+    typedef int64_t (*thunk_fn_t)(int64_t*);
+    thunk_fn_t fn = (thunk_fn_t)(intptr_t)closure[0];
+    return fn(closure);
+}
+
+yona_promise_t* yona_rt_async_spawn_closure(int64_t* closure, yona_task_group_t* group) {
+    /* Submit using the dispatch wrapper. Pass closure as the int64 arg. */
+    return submit_task((yona_async_fn_t)spawn_closure_dispatch,
+                       NULL, (int64_t)(intptr_t)closure, group);
+}
+
 yona_promise_t* yona_rt_async_call_grouped(yona_async_fn_t fn, int64_t arg, yona_task_group_t* group) {
     return submit_task(fn, NULL, arg, group);
 }

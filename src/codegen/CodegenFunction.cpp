@@ -1354,6 +1354,11 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
             ext_result = builder_->CreateIntToPtr(ext_result,
                 PointerType::get(*context_, 0), "ptr_conv");
         }
+    } else if (ret_ctype == CType::ADT && ext_result->getType()->isIntegerTy()) {
+        // Non-boxed call but ADT return: convert i64 to ptr for downstream
+        // pattern matching to use the heap layout path.
+        ext_result = builder_->CreateIntToPtr(ext_result,
+            PointerType::get(*context_, 0), "adt_ptr_conv");
     }
     return {ext_result, ret_ctype};
 }

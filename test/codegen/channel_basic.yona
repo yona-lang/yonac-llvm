@@ -1,0 +1,8 @@
+import channel, send, recv, close from Std\Channel in
+let ch = channel 16 in
+let _ = send ch 42 in
+let _ = close ch in
+case recv ch of
+    Some v -> v
+    None -> 0
+end
