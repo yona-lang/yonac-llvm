@@ -155,14 +155,32 @@
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
-- [ ] **Channels (CSP-style)** — typed bounded channels for concurrent
-  communication. `let ch = channel 16 in send ch msg; recv ch`. Send blocks
-  when full (backpressure), recv blocks when empty (cooperative wait).
-  Integrated with task groups for structured concurrency. Foundation for:
-  Stream Sugar, distributed Yona, actor patterns. Runtime: bounded ring
-  buffer + condition variables. Linear types ensure channels are closed.
-  Scope: ~500 lines runtime + codegen. Self-contained, no effect system
-  changes needed.
+- [ ] **Channels (CSP-style)** — typed bounded channels for inter-task
+  communication. New `CType::CHANNEL` + `RC_TYPE_CHANNEL` (mirrors IntArray
+  pattern). API: `channel : Int -> Channel a`, `send : Channel a -> a -> ()`
+  (blocks if full), `recv : Channel a -> Option a` (blocks until value or
+  drained-and-closed; returns `None` to signal end-of-stream), `tryRecv`
+  (non-blocking), `close`, `isClosed`. `Closeable Channel` for `with`-based
+  RAII. Cancellation: channels register with current task group, group
+  cancel signals all condvars and waiters raise `:Cancelled`. Designed
+  for inter-task use — single-task use deadlocks (documented).
+  Plan: ~1700 lines (300 runtime, 150 codegen, 80 stdlib, 250 tests, 600
+  benchmarks, 250 docs). Files: `src/runtime/channel.c`, `lib/Std/Channel.yonai`,
+  `lib/Std/Task.yonai`, `docs/channels.md`, `docs/api/Channel.md`.
+- [ ] **Std\Task.spawn primitive** (part of Channels work) —
+  `spawn : (() -> a) -> a` declared as `IO` so it returns a PROMISE and
+  participates in let-binding auto-grouping. Wraps `yona_rt_async_call_thunk_grouped`.
+  Enables ergonomic task spawning: `let p = spawn (\() -> producer ch),
+  c = spawn (\() -> consumer ch) in (p, c)` auto-parallelizes via existing
+  structured concurrency. ~20 lines C wrapper + .yonai declaration.
+- [ ] **Channel benchmarks with multi-language references** (part of Channels) —
+  6 new benchmarks: `channel_throughput` (1M sends), `channel_pingpong`
+  (round-trip latency), `channel_pipeline` (3-stage), `channel_workers`
+  (dynamic load balancing), `channel_fanout` (1→8), `channel_actor`
+  (100→1 logger). C (pthreads), Go (goroutines), Rust (mpsc), Python
+  (queue.Queue), Java (BlockingQueue) reference implementations.
+  Performance targets: 1.5-2x C/Go (mutex-based; lock-free MPSC is a
+  separate optimization).
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
