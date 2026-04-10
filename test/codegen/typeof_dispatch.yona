@@ -1,0 +1,5 @@
+let int_match = case typeOf 42 of :int -> 1; _ -> 0 end in
+let str_match = case typeOf "hi" of :string -> 2; _ -> 0 end in
+let seq_match = case typeOf [1] of :seq -> 3; _ -> 0 end in
+let dict_match = case typeOf {1: 2} of :dict -> 4; _ -> 0 end in
+int_match + str_match + seq_match + dict_match

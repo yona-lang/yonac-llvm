@@ -1701,6 +1701,38 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     if (adt_it != types_.adt_constructors.end() && adt_it->second.arity > 0)
         return codegen_adt_construct(fn_name, all_args);
 
+    // 4b. Compile-time intrinsic: typeOf x → symbol literal based on argument's CType
+    if (fn_name == "typeOf" && all_args.size() == 1) {
+        std::string type_name;
+        switch (all_args[0].type) {
+            case CType::INT:        type_name = "int"; break;
+            case CType::FLOAT:      type_name = "float"; break;
+            case CType::BOOL:       type_name = "bool"; break;
+            case CType::STRING:     type_name = "string"; break;
+            case CType::SYMBOL:     type_name = "symbol"; break;
+            case CType::UNIT:       type_name = "unit"; break;
+            case CType::SEQ:        type_name = "seq"; break;
+            case CType::SET:        type_name = "set"; break;
+            case CType::DICT:       type_name = "dict"; break;
+            case CType::TUPLE:      type_name = "tuple"; break;
+            case CType::FUNCTION:   type_name = "function"; break;
+            case CType::PROMISE:    type_name = "promise"; break;
+            case CType::BYTE_ARRAY: type_name = "byteArray"; break;
+            case CType::INT_ARRAY:  type_name = "intArray"; break;
+            case CType::FLOAT_ARRAY: type_name = "floatArray"; break;
+            case CType::SUM:        type_name = "sum"; break;
+            case CType::RECORD:     type_name = "record"; break;
+            case CType::ADT:
+                // Use the ADT type name (e.g., "Option", "Result")
+                type_name = !all_args[0].adt_type_name.empty()
+                    ? all_args[0].adt_type_name : "adt";
+                break;
+        }
+        int64_t sym_id = intern_symbol(type_name);
+        auto* i64_ty = LType::getInt64Ty(*context_);
+        return {ConstantInt::get(i64_ty, sym_id), CType::SYMBOL};
+    }
+
     // 5. Resolve the function (compiled, deferred, or trait method)
     auto cf_it = resolve_apply_function(fn_name, all_args);
 

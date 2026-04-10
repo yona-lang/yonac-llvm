@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1145 assertions across 204 test cases (all passing)
+- **Tests**: 1157 assertions across 204 test cases (all passing)
 - **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
 - **Stdlib**: 29 modules, ~322 exported functions (12 pure Yona + 17 C runtime)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -160,9 +160,13 @@
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
-- [ ] **Runtime Type Introspection** — `typeOf x` returns type tag at
-  runtime. Pattern matching on types: `case typeOf x of :int -> ...; :string -> ... end`.
-  Foundation for generic serialization, debugging, dynamic dispatch.
+- [x] **Runtime Type Introspection** — `typeOf x` is a compile-time intrinsic
+  returning a Symbol based on the argument's CType. Zero runtime cost — emits
+  a constant symbol literal. Symbols: `:int`, `:float`, `:bool`, `:string`,
+  `:symbol`, `:seq`, `:set`, `:dict`, `:tuple`, `:function`, `:byteArray`,
+  `:intArray`, `:floatArray`, ADT type names (`:Option`, `:Result`, etc.).
+  Pattern matching on types via `case typeOf x of :int -> ...; _ -> ... end`.
+  See `docs/type-introspection.md`.
 - [ ] **Compile-Time Evaluator** — evaluate pure functions at compile time.
   Enables user-defined derive strategies, constant folding, static assertions.
   Requires: subset interpreter for pure Yona expressions (no I/O, no effects).
