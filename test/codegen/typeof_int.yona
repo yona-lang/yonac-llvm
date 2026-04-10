@@ -1,4 +1,4 @@
 case typeOf 42 of
-    :int -> 1
+    TInt -> 1
     _ -> 0
 end

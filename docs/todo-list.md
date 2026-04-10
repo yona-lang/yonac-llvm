@@ -161,11 +161,13 @@
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
 - [x] **Runtime Type Introspection** — `typeOf x` is a compile-time intrinsic
-  returning a Symbol based on the argument's CType. Zero runtime cost — emits
-  a constant symbol literal. Symbols: `:int`, `:float`, `:bool`, `:string`,
-  `:symbol`, `:seq`, `:set`, `:dict`, `:tuple`, `:function`, `:byteArray`,
-  `:intArray`, `:floatArray`, ADT type names (`:Option`, `:Result`, etc.).
-  Pattern matching on types via `case typeOf x of :int -> ...; _ -> ... end`.
+  returning a `Type` ADT value. Zero runtime cost — emits a constant ADT
+  literal. Variants: `TInt`, `TFloat`, `TBool`, `TString`, `TSymbol`, `TUnit`,
+  `TSeq`, `TSet`, `TDict`, `TTuple`, `TFunction`, `TPromise`, `TByteArray`,
+  `TIntArray`, `TFloatArray`, `TAdt String`, `TSum`, `TRecord`. Type ADT
+  in Prelude. Also added `FileMode` (Read/Write/ReadWrite/Append) and
+  `Whence` (SeekSet/SeekCur/SeekEnd) ADTs replacing string-based dispatch
+  in file I/O. Stdlib now uses ADTs over symbols/strings for type-safe APIs.
   See `docs/type-introspection.md`.
 - [ ] **Compile-Time Evaluator** — evaluate pure functions at compile time.
   Enables user-defined derive strategies, constant folding, static assertions.

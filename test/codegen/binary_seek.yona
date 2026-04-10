@@ -1,9 +1,9 @@
 import openFile, readBytes, writeBytes, seek, closeFileHandle from Std\File, fromString, get from Std\ByteArray in
-let wh = openFile "/tmp/yona_binary_seek.bin" "w" in
+let wh = openFile "/tmp/yona_binary_seek.bin" Write in
 let _ = writeBytes wh (fromString "abcdefghij") in
 let _ = closeFileHandle wh in
-let rh = openFile "/tmp/yona_binary_seek.bin" "r" in
-let _ = seek rh 5 "set" in
+let rh = openFile "/tmp/yona_binary_seek.bin" Read in
+let _ = seek rh 5 SeekSet in
 let data = readBytes rh 3 in
 let _ = closeFileHandle rh in
 get data 0

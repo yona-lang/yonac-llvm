@@ -165,13 +165,13 @@ void Codegen::load_prelude(parser::Parser* parser,
             }
         }
 
-        // Register typeOf as a built-in compile-time intrinsic: a -> Symbol
-        // The codegen intercepts calls to typeOf and emits a constant symbol
+        // Register typeOf as a built-in compile-time intrinsic: a -> Type
+        // The codegen intercepts calls to typeOf and constructs a Type ADT
         // based on the argument's compile-time CType. Zero runtime cost.
         {
             auto* arg_var = arena.fresh_var(0);
-            auto* sym_type = arena.make_con(typechecker::TyCon::Symbol);
-            auto* fn_type = arena.make_arrow(arg_var, sym_type);
+            auto* type_adt = arena.make_app("Type", {});
+            auto* fn_type = arena.make_arrow(arg_var, type_adt);
             type_checker->register_trait_method("Prelude", "typeOf", fn_type);
         }
     }

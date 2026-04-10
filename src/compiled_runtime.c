@@ -1891,13 +1891,15 @@ static int fh_fd(int64_t handle_i64) {
 }
 
 /* openFile: open file and return FileHandle ADT wrapping the fd.
- * mode: "r" (read), "w" (write/create/truncate), "rw" (read-write/create), "a" (append/create)
+ * mode is a FileMode ADT: Read=0, Write=1, ReadWrite=2, Append=3.
  * Returns FileHandle ADT: [tag=0, num_fields=1, heap_mask=0, fd] */
-int64_t yona_Std_File__openFile(const char* path, const char* mode) {
+int64_t yona_Std_File__openFile(const char* path, int64_t mode_i64) {
+    int64_t* mode_adt = (int64_t*)(intptr_t)mode_i64;
+    int64_t mode_tag = mode_adt[0];  /* recursive ADT layout: [tag, num_fields, heap_mask, ...] */
     int flags = O_RDONLY;
-    if (strcmp(mode, "w") == 0) flags = O_WRONLY | O_CREAT | O_TRUNC;
-    else if (strcmp(mode, "rw") == 0) flags = O_RDWR | O_CREAT;
-    else if (strcmp(mode, "a") == 0) flags = O_WRONLY | O_CREAT | O_APPEND;
+    if (mode_tag == 1) flags = O_WRONLY | O_CREAT | O_TRUNC;       /* Write */
+    else if (mode_tag == 2) flags = O_RDWR | O_CREAT;              /* ReadWrite */
+    else if (mode_tag == 3) flags = O_WRONLY | O_CREAT | O_APPEND; /* Append */
 
     int fd = open(path, flags, 0644);
     if (fd < 0) {
@@ -1948,13 +1950,14 @@ int64_t yona_Std_File__writeBytes(int64_t handle, int64_t bytes_i64) {
     return id;
 }
 
-/* seek: set file position. whence: "set", "cur", "end" */
+/* seek: set file position. whence is a Whence ADT: SeekSet=0, SeekCur=1, SeekEnd=2 */
 int64_t yona_Std_File__seek(int64_t handle, int64_t offset, int64_t whence_i64) {
     int fd = fh_fd(handle);
-    const char* whence = (const char*)(intptr_t)whence_i64;
+    int64_t* whence_adt = (int64_t*)(intptr_t)whence_i64;
+    int64_t whence_tag = whence_adt[0];
     int w = SEEK_SET;
-    if (strcmp(whence, "cur") == 0) w = SEEK_CUR;
-    else if (strcmp(whence, "end") == 0) w = SEEK_END;
+    if (whence_tag == 1) w = SEEK_CUR;
+    else if (whence_tag == 2) w = SEEK_END;
     off_t result = lseek(fd, (off_t)offset, w);
     return (int64_t)result;
 }

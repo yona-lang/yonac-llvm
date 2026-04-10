@@ -1,4 +1,4 @@
 case typeOf [1, 2, 3] of
-    :seq -> 1
+    TSeq -> 1
     _ -> 0
 end

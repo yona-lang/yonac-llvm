@@ -25,6 +25,19 @@ type Iterator a = Iterator (() -> Option a)
 ## Use `with h = openFile path mode in ... end` for automatic cleanup.
 type FileHandle = FileHandle Int
 
+## File open mode for openFile.
+type FileMode = Read | Write | ReadWrite | Append
+
+## Seek origin for the seek function.
+type Whence = SeekSet | SeekCur | SeekEnd
+
+## Compile-time type representation returned by typeOf.
+## Use case-of pattern matching for type-based dispatch.
+type Type = TInt | TFloat | TBool | TString | TSymbol | TUnit
+          | TSeq | TSet | TDict | TTuple | TFunction | TPromise
+          | TByteArray | TIntArray | TFloatArray
+          | TAdt String | TSum | TRecord
+
 ## Identity function — returns its argument unchanged.
 identity x = x
 

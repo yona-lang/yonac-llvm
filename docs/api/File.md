@@ -155,9 +155,11 @@ Returns a file descriptor (Int).
 
 ```yona
 import openFile, closeFileHandle from Std\File in
-let fd = openFile "data.txt" "r" in
+let fd = openFile "data.txt" Read in
 closeFileHandle fd
 ```
+
+The mode is a `FileMode` ADT (Prelude): `Read`, `Write`, `ReadWrite`, `Append`.
 
 ### `closeFileHandle`
 
@@ -191,7 +193,8 @@ Returns the number of bytes written.
 seek fd offset whence =
 ```
 
-Seek to a position in a file. `whence` is `"set"`, `"cur"`, or `"end"`.
+Seek to a position in a file. `whence` is a `Whence` ADT (Prelude):
+`SeekSet` (absolute), `SeekCur` (relative to current), `SeekEnd` (relative to end).
 Returns the new position.
 
 ```yona

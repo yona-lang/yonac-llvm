@@ -1701,36 +1701,40 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     if (adt_it != types_.adt_constructors.end() && adt_it->second.arity > 0)
         return codegen_adt_construct(fn_name, all_args);
 
-    // 4b. Compile-time intrinsic: typeOf x → symbol literal based on argument's CType
+    // 4b. Compile-time intrinsic: typeOf x → Type ADT constructor based on argument's CType
     if (fn_name == "typeOf" && all_args.size() == 1) {
-        std::string type_name;
+        std::string ctor_name;
         switch (all_args[0].type) {
-            case CType::INT:        type_name = "int"; break;
-            case CType::FLOAT:      type_name = "float"; break;
-            case CType::BOOL:       type_name = "bool"; break;
-            case CType::STRING:     type_name = "string"; break;
-            case CType::SYMBOL:     type_name = "symbol"; break;
-            case CType::UNIT:       type_name = "unit"; break;
-            case CType::SEQ:        type_name = "seq"; break;
-            case CType::SET:        type_name = "set"; break;
-            case CType::DICT:       type_name = "dict"; break;
-            case CType::TUPLE:      type_name = "tuple"; break;
-            case CType::FUNCTION:   type_name = "function"; break;
-            case CType::PROMISE:    type_name = "promise"; break;
-            case CType::BYTE_ARRAY: type_name = "byteArray"; break;
-            case CType::INT_ARRAY:  type_name = "intArray"; break;
-            case CType::FLOAT_ARRAY: type_name = "floatArray"; break;
-            case CType::SUM:        type_name = "sum"; break;
-            case CType::RECORD:     type_name = "record"; break;
-            case CType::ADT:
-                // Use the ADT type name (e.g., "Option", "Result")
-                type_name = !all_args[0].adt_type_name.empty()
-                    ? all_args[0].adt_type_name : "adt";
-                break;
+            case CType::INT:         ctor_name = "TInt"; break;
+            case CType::FLOAT:       ctor_name = "TFloat"; break;
+            case CType::BOOL:        ctor_name = "TBool"; break;
+            case CType::STRING:      ctor_name = "TString"; break;
+            case CType::SYMBOL:      ctor_name = "TSymbol"; break;
+            case CType::UNIT:        ctor_name = "TUnit"; break;
+            case CType::SEQ:         ctor_name = "TSeq"; break;
+            case CType::SET:         ctor_name = "TSet"; break;
+            case CType::DICT:        ctor_name = "TDict"; break;
+            case CType::TUPLE:       ctor_name = "TTuple"; break;
+            case CType::FUNCTION:    ctor_name = "TFunction"; break;
+            case CType::PROMISE:     ctor_name = "TPromise"; break;
+            case CType::BYTE_ARRAY:  ctor_name = "TByteArray"; break;
+            case CType::INT_ARRAY:   ctor_name = "TIntArray"; break;
+            case CType::FLOAT_ARRAY: ctor_name = "TFloatArray"; break;
+            case CType::SUM:         ctor_name = "TSum"; break;
+            case CType::RECORD:      ctor_name = "TRecord"; break;
+            case CType::ADT: {
+                // TAdt String — construct with the ADT type name as a String field
+                ctor_name = "TAdt";
+                std::string adt_name = !all_args[0].adt_type_name.empty()
+                    ? all_args[0].adt_type_name : "Unknown";
+                auto* str = builder_->CreateGlobalStringPtr(adt_name, "type_adt_name");
+                std::vector<TypedValue> ctor_args;
+                ctor_args.push_back({str, CType::STRING});
+                return codegen_adt_construct("TAdt", ctor_args);
+            }
         }
-        int64_t sym_id = intern_symbol(type_name);
-        auto* i64_ty = LType::getInt64Ty(*context_);
-        return {ConstantInt::get(i64_ty, sym_id), CType::SYMBOL};
+        // Zero-arity Type constructor — use codegen_adt_construct with no args
+        return codegen_adt_construct(ctor_name, {});
     }
 
     // 5. Resolve the function (compiled, deferred, or trait method)

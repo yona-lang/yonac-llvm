@@ -41,6 +41,37 @@ CTOR Err 1 1
 ADT FileHandle 1 1
 CTOR FileHandle 0 1
 
+ADT FileMode 4 0 recursive
+CTOR Read 0 0
+CTOR Write 1 0
+CTOR ReadWrite 2 0
+CTOR Append 3 0
+
+ADT Whence 3 0 recursive
+CTOR SeekSet 0 0
+CTOR SeekCur 1 0
+CTOR SeekEnd 2 0
+
+ADT Type 18 1 recursive
+CTOR TInt 0 0
+CTOR TFloat 1 0
+CTOR TBool 2 0
+CTOR TString 3 0
+CTOR TSymbol 4 0
+CTOR TUnit 5 0
+CTOR TSeq 6 0
+CTOR TSet 7 0
+CTOR TDict 8 0
+CTOR TTuple 9 0
+CTOR TFunction 10 0
+CTOR TPromise 11 0
+CTOR TByteArray 12 0
+CTOR TIntArray 13 0
+CTOR TFloatArray 14 0
+CTOR TAdt 15 1
+CTOR TSum 16 0
+CTOR TRecord 17 0
+
 TRAIT Show a 1
   METHOD show
 INSTANCE Show Int

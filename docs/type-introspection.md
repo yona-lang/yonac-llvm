@@ -1,82 +1,72 @@
 # Runtime Type Introspection
 
 Yona provides `typeOf` as a built-in compile-time intrinsic that returns
-a symbol representing the type of any value. This enables type-based
-pattern matching, generic dispatch, and reflection-like patterns —
-with **zero runtime cost**.
+a value of the `Type` ADT representing the type of any expression. This
+enables type-based pattern matching, generic dispatch, and reflection-like
+patterns — with **zero runtime cost** for most variants.
+
+## The Type ADT
+
+Defined in the Prelude:
+
+```yona
+type Type = TInt | TFloat | TBool | TString | TSymbol | TUnit
+          | TSeq | TSet | TDict | TTuple | TFunction | TPromise
+          | TByteArray | TIntArray | TFloatArray
+          | TAdt String | TSum | TRecord
+```
+
+`TAdt` carries the ADT type name as a `String` field — `typeOf (Some 42)`
+returns `TAdt "Option"`.
 
 ## Usage
 
 ```yona
-typeOf 42         -- :int
-typeOf 3.14       -- :float
-typeOf "hello"    -- :string
-typeOf true       -- :bool
-typeOf :foo       -- :symbol
-typeOf [1, 2, 3]  -- :seq
-typeOf {1, 2}     -- :set
-typeOf {1: 2}     -- :dict
-typeOf (1, 2)     -- :tuple
-typeOf (Some 42)  -- :Option
-typeOf None       -- :Option
-typeOf (Ok 1)     -- :Result
+typeOf 42         -- TInt
+typeOf 3.14       -- TFloat
+typeOf "hello"    -- TString
+typeOf true       -- TBool
+typeOf [1, 2, 3]  -- TSeq
+typeOf {1, 2}     -- TSet
+typeOf {1: 2}     -- TDict
+typeOf (1, 2)     -- TTuple
+typeOf (Some 42)  -- TAdt "Option"
+typeOf None       -- TAdt "Option"
+typeOf (Ok 1)     -- TAdt "Result"
 ```
-
-## Type Symbols
-
-| CType | Symbol returned |
-|-------|----------------|
-| Int | `:int` |
-| Float | `:float` |
-| Bool | `:bool` |
-| String | `:string` |
-| Symbol | `:symbol` |
-| Unit | `:unit` |
-| Seq | `:seq` |
-| Set | `:set` |
-| Dict | `:dict` |
-| Tuple | `:tuple` |
-| Function | `:function` |
-| Promise | `:promise` |
-| ByteArray | `:byteArray` |
-| IntArray | `:intArray` |
-| FloatArray | `:floatArray` |
-| ADT | The ADT type name as a symbol (e.g., `:Option`, `:Result`, `:Color`) |
-| Sum | `:sum` |
-| Record | `:record` |
 
 ## Pattern Matching
 
-Combine `typeOf` with `case` for type-based dispatch:
-
 ```yona
 case typeOf x of
-    :int    -> "an integer"
-    :string -> "a string"
-    :seq    -> "a sequence"
-    :dict   -> "a dictionary"
-    _       -> "something else"
+    TInt        -> "an integer"
+    TString     -> "a string"
+    TSeq        -> "a sequence"
+    TDict       -> "a dictionary"
+    TAdt name   -> "an ADT: " ++ name
+    _           -> "something else"
 end
 ```
+
+The compiler can warn on non-exhaustive matches since `Type` is a closed
+ADT (unlike symbols which are open).
 
 ## Implementation: Zero Runtime Cost
 
 `typeOf` is a **compile-time intrinsic**. The compiler intercepts calls
-to `typeOf x` and replaces them with a constant symbol literal based on
-the argument's compile-time type. There is no runtime type tag lookup
-and no overhead.
+to `typeOf x` and replaces them with a constant `Type` ADT value based
+on the argument's compile-time CType. There is no runtime type tag lookup
+and no overhead for primitive type variants.
 
 ```yona
 typeOf 42
 -- compiles to:
-:int   -- a single i64 constant (the interned symbol ID)
+TInt   -- a constant ADT value with tag=0
 ```
 
-This means:
-- **Zero runtime cost** — just a constant
-- **Always accurate** — the compiler knows every expression's type
-- **Works everywhere** — no need for special instrumentation
-- **No reflection metadata** — no extra storage per value
+Only `TAdt` carries dynamic data (the type name string), and even that
+is determined at compile time from the ADT's known type name — the string
+is a global constant.
 
 ## Limitation: Polymorphic Functions
 
@@ -86,8 +76,8 @@ type the function is compiled with:
 
 ```yona
 let describe x = typeOf x in
-describe 42       -- :int  (compiles describe with x: Int)
-describe "hello"  -- :int  (reuses compiled version, NOT :string)
+describe 42       -- TInt  (compiles describe with x: Int)
+describe "hello"  -- TInt  (reuses compiled version, NOT TString)
 ```
 
 This is a consequence of Yona's monomorphization-based generics. To get
@@ -95,18 +85,24 @@ correct type dispatch on each call, write the `typeOf` check at the
 call site rather than inside a shared function:
 
 ```yona
-let describe x = case typeOf x of
-    :int -> ...
-    :string -> ...
-end in ...
-
--- Or specialize via separate functions:
-let describe_int (x : Int) = ... in
-let describe_str (x : String) = ... in
+let int_match = case typeOf 42 of TInt -> 1; _ -> 0 end in
+let str_match = case typeOf "hi" of TString -> 2; _ -> 0 end in
+int_match + str_match
 ```
 
-Future work: support per-call-site monomorphization of `typeOf` in
-polymorphic functions, similar to how Rust handles `TypeId::of::<T>()`.
+## Why ADT, not Symbol?
+
+Earlier designs considered symbols (`:int`, `:string`, ...) instead of
+an ADT. The ADT approach was chosen for:
+
+- **Exhaustive pattern matching** — compiler can check all variants are handled
+- **Type safety** — `TStrung` is a compile error; `:strung` would silently fail
+- **Structured data** — `TAdt name` carries the type name as a String field
+- **Idiomatic Yona** — closed sets of values belong in ADTs, symbols are for
+  user-defined dynamic tags
+- **Future extensions** — could carry element types: `TSeq Type`, `TDict Type Type`
+
+Symbols remain available for user code that needs lightweight dynamic tags.
 
 ## Use Cases
 
