@@ -111,13 +111,22 @@
   io_uring ops. Cancel effect (`perform Cancel.check ()`) for cooperative
   cancellation. Parallel comprehensions `[| expr for x = source ]`.
   Std\Parallel module with pmap, pfor. See `docs/structured-concurrency.md`.
-- [ ] **Cooperative Suspension & Effect-Based Streaming** — extend the effect
-  system with cooperative suspend/resume for streaming I/O. `perform Stream.yield chunk`
-  yields data through a handler without loading entire files into memory.
-  Requires: effect handlers that can suspend across I/O boundaries (currently
-  effects are compile-time CPS with no true suspension). Enables: chunked file
-  processing, backpressure, lazy line-by-line reads, pipeline parallelism
-  (read chunk N+1 while processing chunk N via io_uring).
+- [ ] **Stream Sugar** (depends on Channels) — `Stream` effect-style API that
+  desugars to spawning the producer in a task and using a bounded channel.
+  `perform Stream.yield x` becomes `send chan x`; the consumer reads from
+  the channel via `foldl` or iteration. Provides backpressure (bounded channel),
+  pipeline parallelism (producer/consumer on different threads), and composable
+  pipelines. Small scope (~200 lines) once Channels exist. Solves the streaming
+  use cases (chunked file processing, lazy reads, pipeline parallelism) without
+  rewriting the effect system.
+- [ ] **Multi-Shot Effects with Stackful Coroutines** (research, deferred) —
+  extend the effect system to support multi-shot resume and true suspension
+  via heap-allocated continuations or per-effect stacks. Enables: backtracking
+  effects, generators with replay, async/await desugaring, full algebraic
+  effects à la Koka/Effekt. Requires: function coloring or stackful coroutines,
+  heap continuation frames, GC interaction. Scope: 2000+ lines. Not needed
+  for streaming use cases (Stream Sugar + Channels solve those). Defer until
+  there's a concrete use case beyond streaming.
 - [x] **Dict/Set Iterator Instances** — streaming iterators for Dict (entries,
   keysIter, values) and Set (iterator). Stack-based HAMT trie traversal
   (14-level stack, no recursion). forEach for both. O(1) memory per element.
@@ -146,8 +155,14 @@
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
-- [ ] **Channels (CSP-style)** — typed channels for goroutine-style
-  communication: `let ch = channel 10 in send ch msg; recv ch`.
+- [ ] **Channels (CSP-style)** — typed bounded channels for concurrent
+  communication. `let ch = channel 16 in send ch msg; recv ch`. Send blocks
+  when full (backpressure), recv blocks when empty (cooperative wait).
+  Integrated with task groups for structured concurrency. Foundation for:
+  Stream Sugar, distributed Yona, actor patterns. Runtime: bounded ring
+  buffer + condition variables. Linear types ensure channels are closed.
+  Scope: ~500 lines runtime + codegen. Self-contained, no effect system
+  changes needed.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
