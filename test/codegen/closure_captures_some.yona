@@ -1,0 +1,3 @@
+let x = Some 99 in
+let f = \() -> case x of Some v -> v; None -> 0 end in
+f ()

@@ -1,0 +1,3 @@
+let x = None in
+let f = \() -> case x of Some v -> v; None -> 7 end in
+f ()

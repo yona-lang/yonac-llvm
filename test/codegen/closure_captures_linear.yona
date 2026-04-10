@@ -1,0 +1,3 @@
+let x = Linear 42 in
+let f = \() -> case x of Linear v -> v end in
+f ()

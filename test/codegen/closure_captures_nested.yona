@@ -1,0 +1,4 @@
+let x = Some 5 in
+let f = \() -> case x of Some v -> v * v; None -> 0 end in
+let g = \() -> f () + 1 in
+g ()

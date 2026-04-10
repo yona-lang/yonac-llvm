@@ -1,0 +1,3 @@
+let x = Ok 100 in
+let f = \() -> case x of Ok v -> v; Err _ -> 0 end in
+f ()
