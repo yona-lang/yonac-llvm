@@ -458,6 +458,20 @@ private:
     TypedValue codegen_extern_decl(ExternDeclExpr* node);
     std::pair<std::string, std::filesystem::path> build_fqn_path(FqnExpr* fqn);
     void load_module_interface(const std::filesystem::path& mod_path);
+    /// Parse a .yona stdlib source file and register its declarations into the
+    /// current Codegen state. Functions become deferred and compile on demand
+    /// at call sites in the importing program. Used as fallback when no
+    /// pre-compiled .yonai interface exists.
+    bool load_yona_module(const std::filesystem::path& yona_path);
+    /// Register ADT/trait/instance/extern/function declarations from a parsed
+    /// module into the current Codegen state. Does NOT emit IR or run verify
+    /// (unlike compile_module). Functions are stored as deferred entries.
+    void register_yona_module_decls(ast::ModuleDecl* mod);
+    /// Loaded .yona stdlib modules — owned to keep AST nodes alive while
+    /// deferred functions reference them.
+    std::vector<std::unique_ptr<ast::ModuleDecl>> loaded_yona_modules_;
+    /// Cache: which .yona files have already been loaded (absolute paths).
+    std::unordered_set<std::string> loaded_yona_paths_;
     void register_import(const std::string& mod_fqn, const std::string& func_name, const std::string& import_name);
     void register_all_imports(const std::string& mod_fqn);
     void register_trait_externs();

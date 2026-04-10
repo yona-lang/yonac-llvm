@@ -365,7 +365,7 @@ std::pair<std::string, std::filesystem::path> Codegen::build_fqn_path(FqnExpr* f
     return {mod_fqn, mod_path};
 }
 
-// Load .yonai interface file for a module
+// Load .yonai interface file for a module, falling back to .yona source.
 void Codegen::load_module_interface(const std::filesystem::path& mod_path) {
     auto yonai_name = mod_path;
     yonai_name.replace_extension(".yonai");
@@ -375,6 +375,132 @@ void Codegen::load_module_interface(const std::filesystem::path& mod_path) {
             load_interface_file(candidate.string());
             return;
         }
+    }
+    // Fallback: pure-Yona stdlib source. Parse and register declarations.
+    auto yona_name = mod_path;
+    yona_name.replace_extension(".yona");
+    for (auto& search_path : module_paths_) {
+        auto candidate = std::filesystem::path(search_path) / yona_name;
+        if (std::filesystem::exists(candidate)) {
+            load_yona_module(candidate);
+            return;
+        }
+    }
+}
+
+bool Codegen::load_yona_module(const std::filesystem::path& yona_path) {
+    auto canonical = std::filesystem::canonical(yona_path).string();
+    if (loaded_yona_paths_.count(canonical)) return true; // already loaded
+    loaded_yona_paths_.insert(canonical);
+
+    std::ifstream in(yona_path);
+    if (!in.is_open()) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::string source = ss.str();
+
+    parser::Parser parser;
+    // Pre-register known constructors so pattern matching parses correctly.
+    for (auto& [name, info] : types_.adt_constructors)
+        parser.register_constructor(name, info.type_name, info.tag, info.arity, info.field_names);
+
+    auto result = parser.parse_module(source, yona_path.string());
+    if (!result.has_value()) {
+        if (diag_) {
+            for (auto& e : result.error())
+                diag_->error(e.location, compiler::ErrorCode::E0301,
+                             "in stdlib module " + yona_path.filename().string() + ": " + e.message);
+        }
+        return false;
+    }
+
+    auto* mod_ptr = result.value().get();
+    // Keep AST alive — deferred functions hold pointers into it.
+    loaded_yona_modules_.push_back(std::move(result.value()));
+    register_yona_module_decls(mod_ptr);
+    return true;
+}
+
+void Codegen::register_yona_module_decls(ast::ModuleDecl* mod) {
+    // ===== ADTs =====
+    for (auto* adt : mod->adt_declarations) {
+        int max_arity = 0;
+        bool is_recursive = false;
+        for (auto* ctor : adt->variants) {
+            int a = static_cast<int>(ctor->field_type_names.size());
+            if (a > max_arity) max_arity = a;
+            for (auto& ft : ctor->field_type_names) {
+                if (ft.is_function_type || ft.name == adt->name ||
+                    ft.name == "Fn" || ft.name == "fn" || ft.name == "Function") {
+                    is_recursive = true; break;
+                }
+            }
+        }
+        for (size_t ci = 0; ci < adt->variants.size(); ci++) {
+            auto* ctor = adt->variants[ci];
+            int arity = static_cast<int>(ctor->field_type_names.size());
+            std::vector<CType> ftypes;
+            for (auto& ft : ctor->field_type_names) {
+                if (ft.is_function_type) ftypes.push_back(CType::FUNCTION);
+                else if (ft.name == "Int") ftypes.push_back(CType::INT);
+                else if (ft.name == "Float") ftypes.push_back(CType::FLOAT);
+                else if (ft.name == "String") ftypes.push_back(CType::STRING);
+                else if (ft.name == "Bool") ftypes.push_back(CType::BOOL);
+                else if (ft.name == "Symbol") ftypes.push_back(CType::SYMBOL);
+                else if (ft.name == "Channel") ftypes.push_back(CType::CHANNEL);
+                else if (ft.name == adt->name) ftypes.push_back(CType::ADT);
+                else if (ft.name == "()") ftypes.push_back(CType::FUNCTION);
+                else ftypes.push_back(CType::INT);
+            }
+            // Don't overwrite if already registered (e.g., from Prelude)
+            if (types_.adt_constructors.find(ctor->name) == types_.adt_constructors.end()) {
+                types_.adt_constructors[ctor->name] = {adt->name, static_cast<int>(ci), arity,
+                    static_cast<int>(adt->variants.size()), max_arity, is_recursive,
+                    ctor->field_names, ftypes};
+            }
+        }
+    }
+
+    // ===== Trait declarations =====
+    for (auto* trait : mod->trait_declarations) {
+        if (types_.traits.count(trait->name)) continue;
+        TraitInfo ti;
+        ti.name = trait->name;
+        ti.type_param = trait->type_param;
+        ti.type_params = trait->type_params;
+        for (auto& m : trait->methods) {
+            ti.method_names.push_back(m.name);
+            if (m.default_impl) ti.default_impls[m.name] = m.default_impl;
+        }
+        types_.traits[trait->name] = ti;
+    }
+
+    // ===== Trait instances =====
+    for (auto* inst : mod->instance_declarations) {
+        std::string key = inst->trait_name;
+        for (auto& tn : inst->type_names) key += ":" + tn;
+        if (inst->type_names.empty()) key += ":" + inst->type_name;
+        if (types_.trait_instances.count(key)) continue;
+        TraitInstanceInfo tii;
+        tii.trait_name = inst->trait_name;
+        tii.type_name = inst->type_name;
+        tii.type_names = inst->type_names;
+        for (auto* method : inst->methods) {
+            std::string mangled = inst->trait_name + "_" + inst->type_name + "__" + method->name;
+            tii.method_mangled_names[method->name] = mangled;
+            codegen_function_def(method, mangled);
+        }
+        types_.trait_instances[key] = tii;
+    }
+
+    // ===== Extern declarations =====
+    for (auto* ext : mod->extern_declarations) {
+        codegen_extern_decl(ext);
+    }
+
+    // ===== Functions (all deferred — compile on demand at call sites) =====
+    for (auto* func : mod->functions) {
+        codegen_function_def(func, func->name);
     }
 }
 
@@ -457,6 +583,16 @@ void Codegen::register_import(const std::string& mod_fqn,
         return;
     }
 
+    // .yona stdlib fallback: function already registered as deferred
+    // (e.g., from a Std/X.yona file loaded by load_module_interface).
+    // Just alias the name if needed; resolution finds it via deferred_functions_.
+    auto def_it = deferred_functions_.find(func_name);
+    if (def_it != deferred_functions_.end()) {
+        if (import_name != func_name)
+            deferred_functions_[import_name] = def_it->second;
+        return;
+    }
+
     std::string mangled = mangle_name(mod_fqn, func_name);
 
     // Register as extern — the pre-compiled version from the module is the default.
@@ -517,6 +653,9 @@ void Codegen::register_import(const std::string& mod_fqn,
 
 // Register ALL exports from a loaded .yonai (wildcard import)
 void Codegen::register_all_imports(const std::string& mod_fqn) {
+    // For .yona fallback modules, deferred_functions_ already holds them by
+    // local name. No additional setup needed — call sites resolve directly.
+
     // Register all functions from imports_.meta
     for (auto& [mangled, meta] : imports_.meta) {
         // Extract function name from mangled: yona_Pkg_Mod__func -> func

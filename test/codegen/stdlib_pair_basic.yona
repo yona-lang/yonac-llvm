@@ -1,0 +1,3 @@
+import pair, first, second from Std\Pair in
+let p = pair 7 35 in
+first p + second p
