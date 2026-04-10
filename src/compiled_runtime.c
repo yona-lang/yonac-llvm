@@ -2607,7 +2607,8 @@ static int64_t foldl_seq(fold_fn_t f, int64_t* fn, int64_t acc, int64_t* seq) {
     return acc;
 }
 
-/* Polymorphic foldl: works on both Seq and Iterator */
+/* Polymorphic foldl: works on Seq, Iterator, ByteArray, IntArray, FloatArray, String.
+ * Detects collection type via RC type tag and dispatches to specialized foldl. */
 int64_t yona_Std_List__foldl(int64_t* fn, int64_t acc, int64_t* collection) {
     fold_fn_t f = (fold_fn_t)(intptr_t)fn[0];
     /* Check RC type tag: header is at ptr - RC_HEADER_SIZE */
@@ -2615,6 +2616,31 @@ int64_t yona_Std_List__foldl(int64_t* fn, int64_t acc, int64_t* collection) {
     int64_t type_tag = header[1] & 0xFF;
     if (type_tag == RC_TYPE_ADT)
         return foldl_iterator(f, fn, acc, collection);
+    if (type_tag == RC_TYPE_INT_ARRAY)
+        return yona_rt_int_array_foldl(fn, acc, collection);
+    if (type_tag == RC_TYPE_FLOAT_ARRAY) {
+        /* FloatArray uses double; we need to convert through int64 representation.
+         * Cast i64 acc to double via memcpy, fold, cast back. */
+        double dacc;
+        memcpy(&dacc, &acc, sizeof(double));
+        double dresult = yona_rt_float_array_foldl(fn, dacc, (double*)collection);
+        int64_t iresult;
+        memcpy(&iresult, &dresult, sizeof(double));
+        return iresult;
+    }
+    if (type_tag == RC_TYPE_BYTE_ARRAY) {
+        int64_t len = yona_rt_byte_array_length(collection);
+        uint8_t* data = (uint8_t*)(collection + 1);
+        for (int64_t i = 0; i < len; i++)
+            acc = f(fn, acc, (int64_t)data[i]);
+        return acc;
+    }
+    if (type_tag == RC_TYPE_STRING) {
+        const char* s = (const char*)collection;
+        for (; *s; s++)
+            acc = f(fn, acc, (int64_t)(unsigned char)*s);
+        return acc;
+    }
     return foldl_seq(f, fn, acc, collection);
 }
 
@@ -2801,37 +2827,40 @@ int64_t yona_Prelude__Eq_Symbol__eq(int64_t a, int64_t b) { return a == b ? 1 : 
 int64_t yona_Prelude__Hash_Symbol__hash(int64_t s) { return s; }
 
 /* ===== Array trait instance wrappers ===== */
-/* Thin wrappers with unique mangled names for trait dispatch.
- * All params are i64 (boxed) since trait dispatch goes through codegen_apply. */
 
-int64_t yona_Prelude__Array_ByteArray__alength(int64_t arr) {
+int64_t yona_Prelude__Array_ByteArray__length(int64_t arr) {
     return yona_rt_byte_array_length((void*)(intptr_t)arr);
 }
-int64_t yona_Prelude__Array_ByteArray__aget(int64_t arr, int64_t i) {
+int64_t yona_Prelude__Array_ByteArray__get(int64_t arr, int64_t i) {
     return yona_rt_byte_array_get((void*)(intptr_t)arr, i);
 }
-int64_t yona_Prelude__Array_ByteArray__afoldl(int64_t* fn, int64_t acc, int64_t arr) {
-    return yona_Std_ByteArray__foldl(fn, acc, (void*)(intptr_t)arr);
-}
-
-int64_t yona_Prelude__Array_IntArray__alength(int64_t arr) {
+int64_t yona_Prelude__Array_IntArray__length(int64_t arr) {
     return yona_rt_int_array_length((int64_t*)(intptr_t)arr);
 }
-int64_t yona_Prelude__Array_IntArray__aget(int64_t arr, int64_t i) {
+int64_t yona_Prelude__Array_IntArray__get(int64_t arr, int64_t i) {
     return yona_rt_int_array_get((int64_t*)(intptr_t)arr, i);
 }
-int64_t yona_Prelude__Array_IntArray__afoldl(int64_t* fn, int64_t acc, int64_t arr) {
-    return yona_rt_int_array_foldl(fn, acc, (int64_t*)(intptr_t)arr);
+int64_t yona_Prelude__Array_FloatArray__length(int64_t arr) {
+    return (int64_t)yona_rt_float_array_length((double*)(intptr_t)arr);
 }
-
-double yona_Prelude__Array_FloatArray__alength(int64_t arr) {
-    return (double)yona_rt_float_array_length((double*)(intptr_t)arr);
-}
-double yona_Prelude__Array_FloatArray__aget(int64_t arr, int64_t i) {
+double yona_Prelude__Array_FloatArray__get(int64_t arr, int64_t i) {
     return yona_rt_float_array_get((double*)(intptr_t)arr, i);
 }
-double yona_Prelude__Array_FloatArray__afoldl(int64_t* fn, double acc, int64_t arr) {
-    return yona_rt_float_array_foldl(fn, acc, (double*)(intptr_t)arr);
+int64_t yona_Prelude__Array_Seq__length(int64_t arr) {
+    extern int64_t yona_rt_seq_length(int64_t* seq);
+    return yona_rt_seq_length((int64_t*)(intptr_t)arr);
+}
+int64_t yona_Prelude__Array_Seq__get(int64_t arr, int64_t i) {
+    extern int64_t yona_rt_seq_get(int64_t* seq, int64_t index);
+    return yona_rt_seq_get((int64_t*)(intptr_t)arr, i);
+}
+int64_t yona_Prelude__Array_String__length(int64_t arr) {
+    extern int64_t yona_Std_String__length(const char* s);
+    return yona_Std_String__length((const char*)(intptr_t)arr);
+}
+int64_t yona_Prelude__Array_String__get(int64_t arr, int64_t i) {
+    const char* s = (const char*)(intptr_t)arr;
+    return (int64_t)(unsigned char)s[i];
 }
 
 /* seq_head and seq_tail are in runtime/seq.c */

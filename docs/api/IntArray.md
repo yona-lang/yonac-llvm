@@ -4,6 +4,18 @@ Contiguous unboxed array of `Int` values. No per-element reference counting —
 the array itself is a single RC-managed allocation. O(1) random access,
 cache-friendly iteration, SIMD auto-vectorizable by LLVM.
 
+Implements the `Array` trait — `length` and `get` work via trait dispatch
+without explicit imports. The Prelude's polymorphic `foldl` also works on
+IntArray via runtime type detection.
+
+```yona
+import fromSeq from Std\IntArray in
+let arr = fromSeq [1, 2, 3, 4, 5] in
+length arr               -- 5 (Array trait)
+get arr 2                -- 3 (Array trait)
+foldl (\a b -> a + b) 0 arr   -- 15 (polymorphic Prelude foldl)
+```
+
 ## Functions
 
 ### alloc

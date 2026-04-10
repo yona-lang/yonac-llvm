@@ -1,0 +1,3 @@
+import fromSeq from Std\IntArray in
+let arr = fromSeq [10, 20, 30, 40, 50] in
+length arr + get arr 2

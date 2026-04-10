@@ -151,6 +151,19 @@ void Codegen::load_prelude(parser::Parser* parser,
 
             type_checker->register_trait_method("Prelude", local_name, fn_type);
         }
+
+        // Register trait methods as polymorphic functions so the type checker
+        // accepts calls like `length arr` without an explicit import.
+        for (auto& [trait_name, trait_info] : types_.traits) {
+            for (auto& method_name : trait_info.method_names) {
+                auto* ret_var = arena.fresh_var(0);
+                typechecker::MonoTypePtr fn_type = ret_var;
+                // Trait methods have at least one parameter (the receiver)
+                auto* recv_var = arena.fresh_var(0);
+                fn_type = arena.make_arrow(recv_var, fn_type);
+                type_checker->register_trait_method(trait_name, method_name, fn_type);
+            }
+        }
     }
 }
 

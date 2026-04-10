@@ -211,6 +211,7 @@ bool Codegen::load_interface_file(const std::string& path) {
     bool current_is_recursive = false;
     std::vector<std::string> current_ctor_names;
     std::string last_instance_key;  // tracks most recently registered INSTANCE
+    std::string last_trait_name;    // tracks most recently registered TRAIT
 
     while (std::getline(in, line)) {
         if (line.empty()) continue;
@@ -269,17 +270,15 @@ bool Codegen::load_interface_file(const std::string& path) {
                     ti.type_param = ti.type_params[0];
             }
             types_.traits[name] = ti;
+            last_trait_name = name;
         } else if (keyword == "METHOD") {
             std::string method_name;
             iss >> method_name;
-            // Add to the last registered trait
-            if (!types_.traits.empty()) {
-                // Find the most recently added trait
-                for (auto& [name, trait] : types_.traits) {
-                    // Just add to it; in practice we process sequentially
-                    trait.method_names.push_back(method_name);
-                    break;
-                }
+            // Add to the most recently registered TRAIT
+            if (!last_trait_name.empty()) {
+                auto it = types_.traits.find(last_trait_name);
+                if (it != types_.traits.end())
+                    it->second.method_names.push_back(method_name);
             }
         } else if (keyword == "INSTANCE") {
             // Format: INSTANCE trait_name type1 [type2 ...]
