@@ -4,9 +4,9 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1157 assertions across 204 test cases (all passing)
-- **Benchmarks**: 25/25 passing (7 CPU, 5 collections, 9 I/O, 4 concurrency)
-- **Stdlib**: 29 modules, ~322 exported functions (12 pure Yona + 17 C runtime)
+- **Tests**: 1179 assertions across 204 test cases (all passing)
+- **Benchmarks**: 31/31 passing (8 CPU, 5 collections, 10 I/O, 4 concurrency)
+- **Stdlib**: 31 modules, ~330 exported functions (Channel, Task added)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
 - **Benchmarks**: 31/31 passing, 7 at/below C parity, 21 within 2x C
@@ -165,24 +165,16 @@
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
-- [ ] **Channels (CSP-style)** — typed bounded channels for inter-task
-  communication. New `CType::CHANNEL` + `RC_TYPE_CHANNEL` (mirrors IntArray
-  pattern). API: `channel : Int -> Channel a`, `send : Channel a -> a -> ()`
-  (blocks if full), `recv : Channel a -> Option a` (blocks until value or
-  drained-and-closed; returns `None` to signal end-of-stream), `tryRecv`
-  (non-blocking), `close`, `isClosed`. `Closeable Channel` for `with`-based
-  RAII. Cancellation: channels register with current task group, group
-  cancel signals all condvars and waiters raise `:Cancelled`. Designed
-  for inter-task use — single-task use deadlocks (documented).
-  Plan: ~1700 lines (300 runtime, 150 codegen, 80 stdlib, 250 tests, 600
-  benchmarks, 250 docs). Files: `src/runtime/channel.c`, `lib/Std/Channel.yonai`,
-  `lib/Std/Task.yonai`, `docs/channels.md`, `docs/api/Channel.md`.
-- [ ] **Std\Task.spawn primitive** (part of Channels work) —
-  `spawn : (() -> a) -> a` declared as `IO` so it returns a PROMISE and
-  participates in let-binding auto-grouping. Wraps `yona_rt_async_call_thunk_grouped`.
-  Enables ergonomic task spawning: `let p = spawn (\() -> producer ch),
-  c = spawn (\() -> consumer ch) in (p, c)` auto-parallelizes via existing
-  structured concurrency. ~20 lines C wrapper + .yonai declaration.
+- [x] **Channels (CSP-style)** — typed bounded channels for inter-task
+  communication. New `CType::CHANNEL` + `RC_TYPE_CHANNEL`. API: `channel`,
+  `send` (blocks if full), `recv` (returns `Some v` / `None`), `tryRecv`,
+  `close`, `isClosed`, `length`, `capacity`. Bounded ring buffer + mutex +
+  two condvars. Timed wait + heuristic deadlock detection. 6 E2E test
+  fixtures. See `docs/channels.md`, `docs/api/Channel.md`.
+- [x] **Std\Task.spawn primitive** — `spawn : (() -> a) -> a` declared
+  as `IO` so it returns a PROMISE and participates in let-binding
+  auto-grouping. Wraps `yona_rt_async_spawn_closure` which uses the
+  existing thread pool infrastructure.
 - [ ] **Channel deadlock detection** (part of Channels) — two-tier safety:
   (1) Linear sender/receiver split: `channel : Int -> (Linear Sender a,
   Linear Receiver a)` so the LinearityChecker enforces that the sender is

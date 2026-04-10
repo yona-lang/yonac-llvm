@@ -1,0 +1,15 @@
+import channel, send, recv, close from Std\Channel in
+import spawn from Std\Task in
+let ch = channel 8 in
+let _ = spawn (\() ->
+    let _ = send ch 1 in
+    let _ = send ch 2 in
+    let _ = send ch 3 in
+    let _ = send ch 4 in
+    let _ = send ch 5 in
+    close ch) in
+let consume acc = case recv ch of
+    Some v -> consume (acc + v)
+    None -> acc
+end in
+consume 0

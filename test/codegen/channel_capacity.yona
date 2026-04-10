@@ -1,0 +1,6 @@
+import channel, capacity, length, send from Std\Channel in
+let ch = channel 16 in
+let _ = send ch 1 in
+let _ = send ch 2 in
+let _ = send ch 3 in
+capacity ch + length ch

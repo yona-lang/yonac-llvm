@@ -1,0 +1,6 @@
+import channel, tryRecv from Std\Channel in
+let ch = channel 4 in
+case tryRecv ch of
+    Some v -> v
+    None -> 999
+end
