@@ -1,0 +1,5 @@
+import range, zip, head from Std\Stream in
+case head (zip (range 1 5) (range 10 14)) of
+    Some pair -> case pair of (a, b) -> a + b end
+    None -> 0
+end

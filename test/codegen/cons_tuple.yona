@@ -1,0 +1,6 @@
+let p = (3, 4) in
+let s = p :: [] in
+case s of
+    [h|_] -> case h of (a, b) -> a + b end
+    [] -> 0
+end

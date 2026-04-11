@@ -305,6 +305,7 @@ void Codegen::declare_runtime() {
     rt_.string_concat_ = decl("yona_rt_string_concat", ptr, {ptr, ptr});
     rt_.seq_alloc_     = decl("yona_rt_seq_alloc", i64p, {i64});
     rt_.seq_set_       = decl("yona_rt_seq_set", vd, {i64p, i64, i64});
+    rt_.seq_set_heap_  = decl("yona_rt_seq_set_heap", vd, {i64p, i64});
     rt_.seq_get_       = decl("yona_rt_seq_get", i64, {i64p, i64});
     rt_.seq_length_    = decl("yona_rt_seq_length", i64, {i64p});
     rt_.seq_cons_      = decl("yona_rt_seq_cons", i64p, {i64, i64p});
@@ -1410,47 +1411,107 @@ TypedValue Codegen::codegen(AstNode* node) {
         case AST_LOGICAL_OR_EXPR:  { auto l = codegen(static_cast<LogicalOrExpr*>(node)->left); auto r = codegen(static_cast<LogicalOrExpr*>(node)->right); return {builder_->CreateOr(l.val, r.val), CType::BOOL}; }
         case AST_LOGICAL_NOT_OP_EXPR: { auto v = codegen(static_cast<LogicalNotOpExpr*>(node)->expr); return {builder_->CreateNot(v.val), CType::BOOL}; }
         case AST_PIPE_RIGHT_EXPR: {
-            // x |> f  →  f(x)
+            // x |> f          →  f x
+            // x |> f a b      →  f a b x   (append lhs as the last argument
+            //                                of the rhs apply chain)
+            //
+            // We don't construct a synthetic ApplyExpr — its destructor
+            // would delete the borrowed children. Instead, evaluate all
+            // arguments (rhs's existing args plus pe->left) directly and
+            // dispatch through resolve_apply_function + emit_direct_call,
+            // matching codegen_apply's flow.
             auto* pe = static_cast<PipeRightExpr*>(node);
-            auto arg = codegen(pe->left);
-            if (!arg) return {};
-            // Evaluate the function side — get its name for apply lookup
+
+            // Determine the root function name. For `x |> f`, that's `f`.
+            // For `x |> f a b`, walk the rhs's call chain to its root.
             std::string fn_name;
-            if (pe->right->get_type() == AST_IDENTIFIER_EXPR)
+            std::vector<std::variant<ExprNode*, ValueExpr*>> rhs_args;
+            if (pe->right->get_type() == AST_IDENTIFIER_EXPR) {
                 fn_name = static_cast<IdentifierExpr*>(pe->right)->name->value;
-            if (!fn_name.empty()) {
-                // Use the same apply logic: find compiled/deferred function, call with arg
-                std::vector<TypedValue> all_args = {arg};
-                auto cf_it = compiled_functions_.find(fn_name);
-                if (cf_it == compiled_functions_.end()) {
-                    auto def_it = deferred_functions_.find(fn_name);
-                    if (def_it != deferred_functions_.end()) {
-                        compile_function(fn_name, def_it->second, all_args);
-                        cf_it = compiled_functions_.find(fn_name);
-                    }
+            } else if (pe->right->get_type() == AST_APPLY_EXPR) {
+                // Walk inner ExprCall chain to find the innermost NameCall
+                // and gather args in surface order (innermost first, then
+                // outer). This mirrors codegen_apply::flatten_apply_chain.
+                std::vector<ApplyExpr*> chain;
+                ApplyExpr* cur = static_cast<ApplyExpr*>(pe->right);
+                while (cur) {
+                    chain.push_back(cur);
+                    if (auto* nc = dynamic_cast<NameCall*>(cur->call)) {
+                        fn_name = nc->name->value; break;
+                    } else if (auto* ec = dynamic_cast<ExprCall*>(cur->call)) {
+                        if (auto* inner = dynamic_cast<ApplyExpr*>(ec->expr)) {
+                            cur = inner;
+                        } else break;
+                    } else break;
                 }
-                if (cf_it != compiled_functions_.end()) {
-                    return {builder_->CreateCall(cf_it->second.fn, {arg.val}), cf_it->second.return_type};
-                }
-                // Check extern functions
-                auto ext_it = imports_.extern_functions.find(fn_name);
-                if (ext_it != imports_.extern_functions.end()) {
-                    auto* ext_fn = module_->getFunction(ext_it->second);
-                    if (!ext_fn) {
-                        auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
-                        ext_fn = Function::Create(fn_type, Function::ExternalLinkage, ext_it->second, module_.get());
-                    }
-                    return {builder_->CreateCall(ext_fn, {arg.val}), CType::INT};
-                }
-                // Indirect call via named_values_
-                auto nv_it = named_values_.find(fn_name);
-                if (nv_it != named_values_.end() && nv_it->second.type == CType::FUNCTION && nv_it->second.val) {
-                    auto fn_type = llvm::FunctionType::get(arg.val->getType(), {arg.val->getType()}, false);
-                    return {builder_->CreateCall(fn_type, nv_it->second.val, {arg.val}), arg.type};
+                for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                    for (auto& a : (*it)->args) rhs_args.push_back(a);
                 }
             }
-            report_error(pe->source_context, "pipe: right side must be a function");
-            return {};
+
+            if (!fn_name.empty()) {
+                // Evaluate rhs args (allowing nullptr val for deferred
+                // FUNCTION args, which precompile_function_args / wrap step
+                // resolves), then pe->left as the final argument.
+                EvaluatedArgs eval;
+                for (auto& a : rhs_args) {
+                    last_lambda_name_.clear();
+                    TypedValue tv;
+                    if (std::holds_alternative<ExprNode*>(a)) tv = codegen(std::get<ExprNode*>(a));
+                    else tv = codegen(std::get<ValueExpr*>(a));
+                    if (tv.type != CType::FUNCTION && !tv) return {};
+                    if (tv.type == CType::PROMISE) tv = auto_await(tv);
+                    eval.all_args.push_back(tv);
+                    eval.arg_lambda_names.push_back(last_lambda_name_);
+                }
+                {
+                    last_lambda_name_.clear();
+                    auto tv = codegen(pe->left);
+                    if (tv.type != CType::FUNCTION && !tv) return {};
+                    if (tv.type == CType::PROMISE) tv = auto_await(tv);
+                    eval.all_args.push_back(tv);
+                    eval.arg_lambda_names.push_back(last_lambda_name_);
+                }
+                precompile_function_args(eval);
+                wrap_function_args_in_closures(eval.all_args);
+
+                auto& all_args = eval.all_args;
+
+                // ADT constructor as the pipe target — `[1,2,3] |> Some`.
+                auto adt_it = types_.adt_constructors.find(fn_name);
+                if (adt_it != types_.adt_constructors.end() && adt_it->second.arity > 0)
+                    return codegen_adt_construct(fn_name, all_args);
+
+                auto cf_it = resolve_apply_function(fn_name, all_args);
+                if (cf_it != compiled_functions_.end()) {
+                    auto& cf = cf_it->second;
+                    size_t func_arity = cf.param_types.size() - cf.capture_names.size();
+                    if (all_args.size() < func_arity)
+                        return codegen_partial_apply(fn_name, cf, all_args);
+                    if (all_args.size() > func_arity)
+                        return codegen_curry_apply(fn_name, cf, all_args);
+                    return emit_direct_call(fn_name, cf, all_args);
+                }
+
+                // Higher-order call via named_values_
+                auto var_it = named_values_.find(fn_name);
+                if (var_it != named_values_.end() && var_it->second.type == CType::FUNCTION && var_it->second.val)
+                    return codegen_higher_order_call(fn_name, all_args);
+            }
+
+            // rhs is some other expression (lambda literal, parens, etc.)
+            // — codegen it as a value, then call it via indirect call.
+            auto arg = codegen(pe->left);
+            auto fn = codegen(pe->right);
+            if (!arg || !fn) return {};
+            if (fn.type != CType::FUNCTION) {
+                report_error(pe->source_context, "pipe: right side must be a function");
+                return {};
+            }
+            CType ret_ct = !fn.subtypes.empty() ? fn.subtypes[0] : CType::INT;
+            auto* ret_llvm = llvm_type(ret_ct);
+            auto* fn_type = llvm::FunctionType::get(ret_llvm, {arg.val->getType()}, false);
+            return {builder_->CreateCall(fn_type, fn.val, {arg.val}, "pipe_call"), ret_ct};
         }
         case AST_PIPE_LEFT_EXPR: {
             // f <| x  →  f(x) — same logic, swapped sides

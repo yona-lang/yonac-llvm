@@ -226,9 +226,24 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                     if (ftype == CType::ADT || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::FUNCTION ||
                         ftype == CType::SET || ftype == CType::DICT ||
-                        ftype == CType::CHANNEL)
+                        ftype == CType::CHANNEL || ftype == CType::TUPLE)
                         typed_val = builder_->CreateIntToPtr(field_val,
                             PointerType::get(*context_, 0));
+                    // Extracting a heap-typed field is a Perceus DUP: the
+                    // bound name takes a new reference. The scrutinee will
+                    // be dropped later, taking its own field reference with
+                    // it via heap_mask, so without this dup the bound name
+                    // would dangle the moment the scrutinee dies.
+                    //
+                    // Only fire when the runtime subtype (carried at
+                    // construction) confirms the field is heap. The
+                    // registered field_type is permissive — `Linear a`
+                    // declares its field as ADT but accepts plain ints,
+                    // and rc_inc on a primitive segfaults the runtime.
+                    bool runtime_heap = fi < scrutinee.subtypes.size() &&
+                                        is_heap_type(scrutinee.subtypes[fi]);
+                    if (runtime_heap && typed_val->getType()->isPointerTy())
+                        emit_rc_inc(typed_val, ftype);
                     TypedValue bound{typed_val, ftype};
                     // For function-typed fields, propagate the recorded
                     // return CType (and ADT name) so call sites generate
@@ -271,9 +286,16 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                     Value* typed_val = field_val;
                     if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::ADT ||
-                        ftype == CType::CHANNEL)
+                        ftype == CType::CHANNEL || ftype == CType::TUPLE)
                         typed_val = builder_->CreateIntToPtr(field_val,
                             PointerType::get(*context_, 0));
+                    // Perceus DUP at field extraction — only fire when the
+                    // runtime subtype confirms the field is heap (see the
+                    // matching note in the heap-layout branch above).
+                    bool runtime_heap = fi < scrutinee.subtypes.size() &&
+                                        is_heap_type(scrutinee.subtypes[fi]);
+                    if (runtime_heap && typed_val->getType()->isPointerTy())
+                        emit_rc_inc(typed_val, ftype);
                     named_values_[(*id)->name->value] = {typed_val, ftype};
                 }
             }

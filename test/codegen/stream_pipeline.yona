@@ -1,2 +1,6 @@
 import naturals, map, filter, take, sum from Std\Stream in
-sum (take 5 (filter (\n -> n > 10) (map (\n -> n * n) naturals)))
+naturals
+  |> map (\n -> n * n)
+  |> filter (\n -> n > 10)
+  |> take 5
+  |> sum

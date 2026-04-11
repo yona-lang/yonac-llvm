@@ -264,6 +264,7 @@ private:
         llvm::Function* string_concat_ = nullptr;
         // Sequences
         llvm::Function *seq_alloc_ = nullptr, *seq_set_ = nullptr, *seq_get_ = nullptr,
+            *seq_set_heap_ = nullptr,
             *seq_length_ = nullptr, *seq_cons_ = nullptr, *seq_join_ = nullptr,
             *seq_head_ = nullptr, *seq_tail_ = nullptr, *seq_is_empty_ = nullptr,
             *seq_snoc_ = nullptr;

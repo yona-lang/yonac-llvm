@@ -144,8 +144,17 @@ TypedValue Codegen::codegen_seq(ValuesSequenceExpr* node) {
         } else if (store_val->getType() != i64_ty) {
             store_val = builder_->CreateZExtOrTrunc(store_val, i64_ty);
         }
+        // Storing a heap-typed element into a seq makes the seq a co-owner.
+        // rc_inc the original value before storing the i64 cast — the seq
+        // destructor will rc_dec via the heap_flag path on cleanup.
+        if (is_heap_type(tv.type) && tv.val && !isa<Constant>(tv.val) &&
+            !tv.val->getType()->isStructTy())
+            emit_rc_inc(tv.val, tv.type);
         builder_->CreateCall(rt_.seq_set_, {seq, idx, store_val});
     }
+    // Tell the seq destructor to walk elements when they're heap-typed.
+    if (n > 0 && is_heap_type(elem_type))
+        builder_->CreateCall(rt_.seq_set_heap_, {seq, ConstantInt::get(i64_ty, 1)});
     return {seq, CType::SEQ, {elem_type}};
 }
 
@@ -208,14 +217,36 @@ TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     auto elem = codegen(node->left);
     auto seq = codegen(node->right);
     if (!elem || !seq) return {};
+    auto i64_ty = LType::getInt64Ty(*context_);
     Value* seq_ptr = seq.val;
     Value* elem_val = elem.val;
+    // Storing a heap-typed element into a seq makes the seq a co-owner.
+    // rc_inc the original value before stripping its type. The seq's
+    // destructor uses the heap_flag we set below to free elements.
+    if (is_heap_type(elem.type) && elem_val && !isa<Constant>(elem_val) &&
+        !elem_val->getType()->isStructTy())
+        emit_rc_inc(elem_val, elem.type);
     // Ensure correct types for rt_seq_cons(i64, ptr)
     if (elem_val->getType()->isPointerTy())
-        elem_val = builder_->CreatePtrToInt(elem_val, LType::getInt64Ty(*context_));
+        elem_val = builder_->CreatePtrToInt(elem_val, i64_ty);
+    else if (elem_val->getType()->isStructTy()) {
+        // Box struct elements (e.g. a non-recursive ADT) so they fit in i64.
+        auto* alloca = builder_->CreateAlloca(elem_val->getType());
+        builder_->CreateStore(elem_val, alloca);
+        uint64_t sz = module_->getDataLayout().getTypeAllocSize(elem_val->getType());
+        auto* boxed = builder_->CreateCall(rt_.box_, {alloca, ConstantInt::get(i64_ty, sz)});
+        elem_val = builder_->CreatePtrToInt(boxed, i64_ty);
+    }
     if (seq_ptr->getType()->isIntegerTy())
         seq_ptr = builder_->CreateIntToPtr(seq_ptr, PointerType::get(*context_, 0));
-    return {builder_->CreateCall(rt_.seq_cons_, {elem_val, seq_ptr}, "cons"), CType::SEQ, {elem.type}};
+    auto* result = builder_->CreateCall(rt_.seq_cons_, {elem_val, seq_ptr}, "cons");
+    // Mark the new seq as containing heap elements so the destructor walks
+    // and frees them. yona_rt_seq_cons inherits the source seq's heap_flag,
+    // but on `x :: []` the right side is empty with heap_flag=0, so we
+    // need to set it explicitly when the cons-ed element is heap-typed.
+    if (is_heap_type(elem.type))
+        builder_->CreateCall(rt_.seq_set_heap_, {result, ConstantInt::get(i64_ty, 1)});
+    return {result, CType::SEQ, {elem.type}};
 }
 
 TypedValue Codegen::codegen_join(JoinExpr* node) {

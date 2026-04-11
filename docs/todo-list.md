@@ -138,31 +138,30 @@
   matches Haskell-style CAFs: `naturals = range 0 N` at module
   top-level is auto-evaluated when referenced. Test:
   `test/codegen/stdlib_naturals_caf.yona`.
-- [ ] **Pipe operator only accepts named functions, not partial applications** —
-  `range 1 6 |> map (\x -> x * 2) |> sum` fails with "pipe: right side
-  must be a function". The codegen for `|>` resolves the right operand
-  by name lookup; partial applications like `map (\x -> ...)` and lambda
-  literals aren't recognized as functions. Should evaluate the right
-  operand as an arbitrary expression that produces a callable, then
-  apply it to the left operand. Workaround: use prefix call form
-  `sum (map (\x -> ...) (range 1 6))`.
-- [ ] **Cons of tuple-typed element into Seq crashes** —
-  `(x, y) :: rest` where rest is `Seq (Tuple)` segfaults inside `toSeq`
-  on the stream returned by `zip`. Same heap-tracking story as the
-  tuple-in-ADT-field bug below — Seq element storage doesn't dup the
-  tuple element and the cons operation drops it. Needs the same family
-  of fix in seq's cons codegen path.
-- [ ] **Stream zip / tuple-in-ADT-field crashes at runtime** —
-  `zip (range 1 4) (range 10 13)` from `Std\Stream` segfaults. Yield's
-  first field is declared as `a` (a type variable) which the codegen
-  registers as CType::INT; when zip stores a tuple `(x, y)` into that
-  field the tuple pointer is stored as i64 with no heap tracking. Same
-  root family as the bug-#2 fix — generic ADT fields default to INT and
-  can't carry heap tracking. Workaround: avoid storing tuples in generic
-  ADT fields. Proper fix: extend `codegen_adt_construct` so it
-  rc_inc's heap-typed args (TUPLE/SEQ/STRING/etc.) when storing them
-  into ADT fields, and propagates the heap_mask to the boxed ADT, the
-  same way the post-bug-#2 path handles ADT-in-ADT.
+- [x] **Pipe operator accepts partial applications** — fixed.
+  `x |> f a b` now codegens by appending `x` as the final argument to
+  the rhs apply chain and dispatching through the regular apply path
+  (`resolve_apply_function` + `precompile_function_args` +
+  `wrap_function_args_in_closures` + `emit_direct_call`). Lambda literals
+  like `|> map (\x -> x * 2)` work because the inner lambda's deferred-
+  compilation flow goes through `precompile_function_args`. Also fixed
+  multi-line pipe chains: the lexer now suppresses YNEWLINE when the
+  next non-comment, non-whitespace character begins a binary continuation
+  operator (`|>`, `<|`, `++`, `==`, `!=`, `&&`, `||`, `::`, `<=`, `>=`).
+  Test: `test/codegen/stream_pipeline.yona` is now multi-line.
+- [x] **Cons of tuple-typed element into Seq** — fixed by extending
+  `codegen_seq` and `codegen_cons` to rc_inc heap-typed elements before
+  store and call `seq_set_heap` so the seq destructor walks heap fields
+  on cleanup. Test: `test/codegen/cons_tuple.yona`.
+- [x] **Stream zip / tuple-in-ADT-field** — fixed by two changes.
+  (1) `codegen_pattern_constructor` does a Perceus DUP (`rc_inc`) on
+  heap-typed field extractions, gated on the runtime subtype carried
+  through `scrutinee.subtypes` so that `Linear 42` (an int wearing an
+  ADT field type) doesn't try to rc_inc a primitive. (2) `Std\Stream`'s
+  `zip` binds the tuple to a name first to avoid the parser parsing
+  `Yield (x, y) (\_ -> ...)` as `Yield x y (\_ -> ...)` (a curried
+  3-arg form, dropping the lambda). Test:
+  `test/codegen/stream_zip.yona`.
 - [ ] **Std\IO module** — standard input/output abstractions. Today the
   built-in `print` family handles most output but there's no real `IO`
   module. Should provide: `stdin`/`stdout`/`stderr` as `FileHandle`

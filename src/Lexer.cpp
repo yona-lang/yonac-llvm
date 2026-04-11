@@ -760,8 +760,60 @@ std::expected<Token, LexError> Lexer::scan_token() {
                 }
             }
 
-            // Don't emit YNEWLINE if the previous token suppresses it
-            if (!suppresses_following_newline(last_emitted_)) {
+            // Don't emit YNEWLINE if the previous token suppresses it,
+            // or if the next non-whitespace, non-comment character begins
+            // a binary continuation operator (`|>`, `<|`, `++`, `==`,
+            // `&&`, `||`, `::`, `<=`, `>=`). This lets users break long
+            // pipe / arithmetic chains over multiple lines.
+            //
+            // We avoid single-char operators like `+`, `-`, `*`, `/`,
+            // `<`, `>`, `%` because:
+            //   * `/` collides with the comment introducer.
+            //   * `+`/`-` could begin a unary literal on the next line.
+            //   * `<`/`>` could begin a different syntactic form later.
+            // The compound forms above are unambiguous.
+            bool next_is_continuation = false;
+            if (!is_at_end()) {
+                size_t scan = current_;
+                // Skip any comments that follow the newline run.
+                while (scan < source_.length()) {
+                    char ch = source_[scan];
+                    if (ch == ' ' || ch == '\t') { scan++; continue; }
+                    if (ch == '#') {
+                        while (scan < source_.length() && source_[scan] != '\n') scan++;
+                        continue;
+                    }
+                    if (ch == '/' && scan + 1 < source_.length() && source_[scan + 1] == '*') {
+                        scan += 2;
+                        int depth = 1;
+                        while (scan < source_.length() && depth > 0) {
+                            if (source_[scan] == '/' && scan + 1 < source_.length() &&
+                                source_[scan + 1] == '*') { depth++; scan += 2; }
+                            else if (source_[scan] == '*' && scan + 1 < source_.length() &&
+                                     source_[scan + 1] == '/') { depth--; scan += 2; }
+                            else scan++;
+                        }
+                        continue;
+                    }
+                    break;
+                }
+                if (scan < source_.length()) {
+                    char c1 = source_[scan];
+                    char c2 = (scan + 1 < source_.length()) ? source_[scan + 1] : 0;
+                    if ((c1 == '|' && c2 == '>') ||  // |>
+                        (c1 == '<' && c2 == '|') ||  // <|
+                        (c1 == '+' && c2 == '+') ||  // ++
+                        (c1 == '=' && c2 == '=') ||  // ==
+                        (c1 == '!' && c2 == '=') ||  // !=
+                        (c1 == '&' && c2 == '&') ||  // &&
+                        (c1 == '|' && c2 == '|') ||  // ||
+                        (c1 == ':' && c2 == ':') ||  // ::
+                        (c1 == '<' && c2 == '=') ||  // <=
+                        (c1 == '>' && c2 == '='))    // >=
+                        next_is_continuation = true;
+                }
+            }
+            if (!suppresses_following_newline(last_emitted_) && !next_is_continuation) {
                 mark_token_start();
                 return make_token(TokenType::YNEWLINE);
             }
