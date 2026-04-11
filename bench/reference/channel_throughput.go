@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-const N = 10000
+const N = 80
 
 func main() {
 	ch := make(chan int, 64)

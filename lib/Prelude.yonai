@@ -11,7 +11,7 @@ ADT Linear 1 1
 
 
 
-CTOR Linear 0 1
+CTOR Linear 0 1 fields _:ADT
 ADT Option 2 1
 
 
@@ -40,12 +40,6 @@ CTOR Err 1 1
 
 ADT FileHandle 1 1
 CTOR FileHandle 0 1
-
-ADT Sender 1 1
-CTOR Sender 0 1
-
-ADT Receiver 1 1
-CTOR Receiver 0 1
 
 ADT FileMode 4 0 recursive
 CTOR Read 0 0

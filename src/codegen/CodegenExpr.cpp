@@ -465,13 +465,22 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
                             elem = builder_->CreateExtractValue(tuple_ptr, {(unsigned)i});
                         }
                         CType et = (i < tv.subtypes.size()) ? tv.subtypes[i] : CType::INT;
+                        // Heap-typed elements (ADT, STRING, SEQ, etc.) were stored
+                        // as i64-cast pointers; convert back so pattern matching
+                        // can dispatch on heap layout.
+                        Value* typed_elem = elem;
+                        if (et == CType::ADT || et == CType::STRING ||
+                            et == CType::FUNCTION || et == CType::SET ||
+                            et == CType::DICT || et == CType::CHANNEL)
+                            typed_elem = builder_->CreateIntToPtr(elem,
+                                PointerType::get(*context_, 0), "tuple_elem_ptr");
                         auto* sub = tp->patterns[i];
                         if (sub->get_type() == AST_PATTERN_VALUE) {
                             auto* pv = static_cast<PatternValue*>(sub);
                             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                                named_values_[(*id)->name->value] = {elem, et};
+                                named_values_[(*id)->name->value] = {typed_elem, et};
                                 if (is_heap_type(et)) {
-                                    scope_bindings.push_back({elem, et});
+                                    scope_bindings.push_back({typed_elem, et});
                                     binding_is_arena.push_back(false);
                                 }
                             }

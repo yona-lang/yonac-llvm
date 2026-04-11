@@ -923,6 +923,10 @@ Codegen::CompiledFunction Codegen::compile_function(
     cf.return_type = ret_ctype;
     cf.param_types = param_ctypes;
     cf.capture_names = def.free_vars;
+    if (body_tv && ret_ctype == CType::ADT && !body_tv.adt_type_name.empty())
+        cf.return_adt_name = body_tv.adt_type_name;
+    if (body_tv && !body_tv.subtypes.empty())
+        cf.return_subtypes = body_tv.subtypes;
     compiled_functions_[name] = cf;
     named_values_[name] = {fn, CType::FUNCTION};
 
@@ -1019,7 +1023,8 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
     auto tag_ty = LType::getInt64Ty(*context_);
     auto i64_ty = LType::getInt64Ty(*context_);
 
-    // Helper: cast value to i64 for storage
+    // Helper: cast value to i64 for storage. ADT structs (multi-i64) don't
+    // fit in a single i64 — box them to heap first and pass the pointer.
     auto to_i64 = [&](Value* arg_val) -> Value* {
         if (arg_val->getType() == i64_ty) return arg_val;
         if (arg_val->getType()->isIntegerTy())
@@ -1029,12 +1034,28 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
         if (arg_val->getType()->isDoubleTy())
             return builder_->CreateBitCast(arg_val, i64_ty);
         if (arg_val->getType()->isStructTy()) {
-            auto* alloca = builder_->CreateAlloca(arg_val->getType());
-            builder_->CreateStore(arg_val, alloca);
-            return builder_->CreateLoad(i64_ty, alloca);
+            // Non-recursive ADT struct {tag, fields...} — box to heap.
+            auto* sty = llvm::cast<llvm::StructType>(arg_val->getType());
+            unsigned num_fields = sty->getNumElements();
+            auto* tag_v = builder_->CreateExtractValue(arg_val, {0});
+            auto* boxed = builder_->CreateCall(rt_.adt_alloc_,
+                {tag_v, ConstantInt::get(i64_ty, num_fields - 1)});
+            for (unsigned fi = 1; fi < num_fields; fi++) {
+                auto* fv = builder_->CreateExtractValue(arg_val, {fi});
+                builder_->CreateCall(rt_.adt_set_field_,
+                    {boxed, ConstantInt::get(i64_ty, fi - 1), fv});
+            }
+            return builder_->CreatePtrToInt(boxed, i64_ty, "adt_field_box");
         }
         return arg_val;
     };
+
+    // Capture per-field CTypes of the supplied args for downstream pattern
+    // matching — ADT's field_types is often empty for generic fields (e.g.
+    // `type Linear a = Linear a`), so we can't rely on the registry.
+    std::vector<CType> field_subtypes;
+    for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++)
+        field_subtypes.push_back(all_args[ai].type);
 
     if (info.is_recursive) {
         // Recursive ADT: heap-allocate via runtime
@@ -1054,6 +1075,7 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
                 {node_ptr, ConstantInt::get(i64_ty, adt_heap_mask)});
         TypedValue result{node_ptr, CType::ADT};
         result.adt_type_name = info.type_name;
+        result.subtypes = field_subtypes;
         return result;
     } else {
         // Non-recursive: flat struct {i8, i64*max_arity}
@@ -1068,6 +1090,7 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
         }
         TypedValue result{val, CType::ADT};
         result.adt_type_name = info.type_name;
+        result.subtypes = field_subtypes;
         return result;
     }
 }
@@ -1360,7 +1383,11 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
         ext_result = builder_->CreateIntToPtr(ext_result,
             PointerType::get(*context_, 0), "adt_ptr_conv");
     }
-    return {ext_result, ret_ctype};
+    TypedValue result{ext_result, ret_ctype};
+    if (ret_ctype == CType::ADT && meta_it != imports_.meta.end() &&
+        !meta_it->second.return_adt_name.empty())
+        result.adt_type_name = meta_it->second.return_adt_name;
+    return result;
 }
 
 TypedValue Codegen::codegen_partial_apply(const std::string& fn_name, CompiledFunction& cf,
@@ -1709,7 +1736,12 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         emit_rc_dec(all_args[ai].val, all_args[ai].type);
     }
 
-    return {call_inst, cf.return_type};
+    TypedValue result{call_inst, cf.return_type};
+    if (cf.return_type == CType::ADT && !cf.return_adt_name.empty())
+        result.adt_type_name = cf.return_adt_name;
+    if (!cf.return_subtypes.empty())
+        result.subtypes = cf.return_subtypes;
+    return result;
 }
 
 // ===== codegen_apply — main dispatcher =====

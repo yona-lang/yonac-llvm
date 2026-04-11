@@ -1,8 +1,11 @@
 import channel, send, recv, close from Std\Channel in
-let ch = channel 16 in
-let _ = send ch 42 in
-let _ = close ch in
-case recv ch of
-    Some v -> v
-    None -> 0
-end
+let (sl, rl) = channel 16 in
+case sl of Linear sender ->
+case rl of Linear receiver ->
+    let _ = send sender 42 in
+    let _ = close sender in
+    case recv receiver of
+        Some v -> v
+        None -> 0
+    end
+end end

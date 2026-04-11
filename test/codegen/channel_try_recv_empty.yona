@@ -1,6 +1,9 @@
 import channel, tryRecv from Std\Channel in
-let ch = channel 4 in
-case tryRecv ch of
-    Some v -> v
-    None -> 999
-end
+let (sl, rl) = channel 4 in
+case sl of Linear _ ->
+case rl of Linear receiver ->
+    case tryRecv receiver of
+        Some v -> v
+        None -> 999
+    end
+end end

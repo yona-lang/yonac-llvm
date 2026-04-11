@@ -2,7 +2,7 @@
 import queue
 import threading
 
-CAP = 32
+CAP = 64
 
 def producer(q, coord, lo, hi):
     for n in range(lo, hi + 1):
@@ -21,8 +21,8 @@ def waiter(work, coord):
 def main():
     work = queue.Queue(CAP)
     coord = queue.Queue(4)
-    t1 = threading.Thread(target=producer, args=(work, coord, 1, 2500))
-    t2 = threading.Thread(target=producer, args=(work, coord, 2501, 5000))
+    t1 = threading.Thread(target=producer, args=(work, coord, 1, 30))
+    t2 = threading.Thread(target=producer, args=(work, coord, 31, 60))
     t3 = threading.Thread(target=waiter, args=(work, coord))
     for t in (t1, t2, t3):
         t.start()

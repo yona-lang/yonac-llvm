@@ -239,18 +239,31 @@
   `register_yona_module_decls` is the slimmed counterpart to
   `compile_module` (no IR verify/optimize; non-exported functions stay
   deferred). Demonstrated by `stdlib_pair_basic` test using `Std/Pair.yona`.
-- [ ] **Linear Sender/Receiver split for Channels** (depends on the above —
-  prerequisite is done, this is now blocked on codegen plumbing) — needs
-  ADT type-name propagation through extern returns. The wrapper function
-  pattern `recv ch = yona_Std_Channel__recv ch` (where the extern is
-  `: Channel -> Option`) currently triggers a GEP assertion in pattern
-  matching because the wrapper's CType::ADT return loses the
-  `adt_type_name` ("Option"). To fix: thread an optional ADT name
-  through `yona_type_to_ctype`, store it on `CompiledFunction`,
-  propagate from extern → wrapper return type → case pattern. Once
-  fixed, write `Std/Channel.yona` that returns
-  `(Linear (Sender a), Linear (Receiver a))`. ~100 lines for the .yona
-  module + ~150 lines for the codegen plumbing.
+- [x] **Linear Sender/Receiver split for Channels** — `Std/Channel.yona`
+  defines `type Sender a = Sender Channel`, `type Receiver a = Receiver Channel`,
+  and `channel n = let raw = yona_Std_Channel__channel n in (Linear (Sender raw), Linear (Receiver raw))`.
+  Users pattern-match the `Linear` once per side; afterwards a `Sender`
+  can only `send` and a `Receiver` can only `recv`/`tryRecv`. All 6
+  channel test fixtures and 3 benchmarks updated to the new pattern.
+  Required codegen plumbing landed alongside: (1) ADT type-name
+  propagation from extern returns (`yona_type_adt_name`,
+  `CompiledFunction.return_adt_name`, `ModuleFunctionMeta.return_adt_name`)
+  so wrapper functions know the ADT type of their return value;
+  (2) tuple subtype propagation through wrapper returns
+  (`CompiledFunction.return_subtypes`); (3) auto-boxing of non-recursive
+  ADT structs when stored into a tuple slot or another ADT field
+  (`codegen_tuple` and `codegen_adt_construct.to_i64`); (4) ptr restoration
+  when destructuring heap-typed tuple elements in let-PatternAlias and
+  case TuplePattern; (5) field-type fallback to scrutinee subtypes when
+  the constructor's `field_types` is empty (generic field like `Linear a`).
+- [ ] **RC corruption for Linear-extracted ADTs in spawned closures**
+  (follow-up to the above) — when a `sender` extracted from `case sl of
+  Linear sender ->` is captured by a spawned closure `(\() -> ...
+  send sender x ...)`, recursive sends drop refcount prematurely and
+  corrupt the heap at >~80 items. Workaround in current benchmarks:
+  run the producer in the main task with cap >= N. Root cause likely
+  in Perceus DUP/DROP for boxed-ADT pointers traveling through closure
+  environments combined with self-tail calls.
 
 ### Tooling
 - [ ] Package manager / build system

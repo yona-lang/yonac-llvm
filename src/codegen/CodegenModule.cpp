@@ -21,6 +21,7 @@ using LType = llvm::Type;
 
 // Forward declarations for type annotation support
 static CType yona_type_to_ctype(const types::Type& t);
+static std::string yona_type_adt_name(const types::Type& t);
 static std::pair<std::vector<CType>, CType> uncurry_type_signature(const types::Type& t);
 
 std::string Codegen::ctype_to_type_name(CType ct) {
@@ -754,7 +755,13 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
         current_type = ft->returnType;
     }
     ret_ctype = yona_type_to_ctype(current_type);
-    auto ret_llvm = llvm_type(ret_ctype);
+    std::string ret_adt_name = (ret_ctype == CType::ADT)
+        ? yona_type_adt_name(current_type) : "";
+    // For ADT returns, externs always come from the C runtime returning a
+    // heap-allocated ADT pointer (i64 cast). Use ptr in the function signature.
+    auto ret_llvm = (ret_ctype == CType::ADT)
+        ? static_cast<LType*>(PointerType::get(*context_, 0))
+        : llvm_type(ret_ctype);
 
     // Declare the extern function
     auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
@@ -769,6 +776,7 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
     cf.fn = fn;
     cf.return_type = node->is_async ? CType::PROMISE : ret_ctype;
     cf.param_types = param_ctypes;
+    cf.return_adt_name = ret_adt_name;
     compiled_functions_[node->name] = cf;
     named_values_[node->name] = {fn, CType::FUNCTION,
                                   node->is_async ? std::vector<CType>{ret_ctype} : std::vector<CType>{}};
@@ -822,6 +830,20 @@ static CType yona_type_to_ctype(const types::Type& t) {
     if (std::holds_alternative<std::shared_ptr<types::RefinedType>>(t))
         return yona_type_to_ctype(std::get<std::shared_ptr<types::RefinedType>>(t)->base_type);
     return CType::INT;
+}
+
+// Extract the ADT type name from a Yona type, if present.
+// Returns the name (e.g., "Option", "Result") for NamedType, empty otherwise.
+// Channel maps to CType::CHANNEL — not an ADT — so we exclude it.
+static std::string yona_type_adt_name(const types::Type& t) {
+    if (std::holds_alternative<std::shared_ptr<types::NamedType>>(t)) {
+        auto& nt = std::get<std::shared_ptr<types::NamedType>>(t);
+        if (nt->name == "Channel") return "";
+        return nt->name;
+    }
+    if (std::holds_alternative<std::shared_ptr<types::RefinedType>>(t))
+        return yona_type_adt_name(std::get<std::shared_ptr<types::RefinedType>>(t)->base_type);
+    return "";
 }
 
 static std::pair<std::vector<CType>, CType> uncurry_type_signature(const types::Type& t) {

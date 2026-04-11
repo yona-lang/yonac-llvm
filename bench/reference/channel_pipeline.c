@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CAP 32
-#define N 5000
+#define CAP 64
+#define N 50
 
 typedef struct {
     long buf[CAP];

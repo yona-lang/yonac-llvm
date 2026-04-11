@@ -56,6 +56,21 @@ TypedValue Codegen::codegen_tuple(TupleExpr* node) {
             i64_val = builder_->CreateBitCast(i64_val, i64_ty);
         } else if (i64_val->getType()->isIntegerTy()) {
             i64_val = builder_->CreateZExtOrTrunc(i64_val, i64_ty);
+        } else if (i64_val->getType()->isStructTy() && tv.type == CType::ADT) {
+            // Non-recursive ADT struct {tag, fields...} — box to heap so it
+            // fits in an i64 tuple slot. The boxed pointer keeps the same
+            // adt_type_name, so pattern matching downstream uses heap layout.
+            auto* sty = llvm::cast<llvm::StructType>(i64_val->getType());
+            unsigned num_fields = sty->getNumElements();
+            auto* tag_val = builder_->CreateExtractValue(i64_val, {0});
+            auto* adt_ptr = builder_->CreateCall(rt_.adt_alloc_,
+                {tag_val, ConstantInt::get(i64_ty, num_fields - 1)});
+            for (unsigned fi = 1; fi < num_fields; fi++) {
+                auto* field_val = builder_->CreateExtractValue(i64_val, {fi});
+                builder_->CreateCall(rt_.adt_set_field_,
+                    {adt_ptr, ConstantInt::get(i64_ty, fi - 1), field_val});
+            }
+            i64_val = builder_->CreatePtrToInt(adt_ptr, i64_ty, "tuple_adt_box");
         }
         elems.push_back(i64_val);
         subtypes.push_back(tv.type);

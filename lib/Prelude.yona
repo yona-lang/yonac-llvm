@@ -38,13 +38,6 @@ type Type = TInt | TFloat | TBool | TString | TSymbol | TUnit
           | TByteArray | TIntArray | TFloatArray
           | TAdt String | TSum | TRecord
 
-## Sender side of a channel. Wrap a Channel to enforce send-only access
-## at the type level. The phantom type parameter `a` is the element type.
-type Sender a = Sender Int
-
-## Receiver side of a channel.
-type Receiver a = Receiver Int
-
 ## Identity function — returns its argument unchanged.
 identity x = x
 

@@ -1,8 +1,0 @@
-FN yona_Std_Channel__channel 1 INT -> CHANNEL
-FN yona_Std_Channel__send 2 CHANNEL INT -> UNIT
-FN yona_Std_Channel__recv 1 CHANNEL -> ADT
-FN yona_Std_Channel__tryRecv 1 CHANNEL -> ADT
-FN yona_Std_Channel__close 1 CHANNEL -> UNIT
-FN yona_Std_Channel__isClosed 1 CHANNEL -> BOOL
-FN yona_Std_Channel__length 1 CHANNEL -> INT
-FN yona_Std_Channel__capacity 1 CHANNEL -> INT

@@ -148,7 +148,15 @@ bool Codegen::codegen_pattern_tuple(TuplePattern* tp, const TypedValue& scrutine
                 builder_->CreateCondBr(builder_->CreateICmpEQ(cmp_val, sym_val), match_bb, next_bb);
                 builder_->SetInsertPoint(match_bb);
             } else if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                named_values_[(*id)->name->value] = {elem, et};
+                // Heap-typed elements were stored as i64-cast pointers; restore
+                // the pointer so downstream pattern matching can use heap layout.
+                Value* typed_elem = elem;
+                if (et == CType::ADT || et == CType::STRING ||
+                    et == CType::FUNCTION || et == CType::SET ||
+                    et == CType::DICT || et == CType::CHANNEL)
+                    typed_elem = builder_->CreateIntToPtr(elem,
+                        PointerType::get(*context_, 0), "tuple_pat_elem_ptr");
+                named_values_[(*id)->name->value] = {typed_elem, et};
             } else if (auto* lit = std::get_if<LiteralExpr<void*>*>(&pv->expr)) {
                 auto* an = reinterpret_cast<AstNode*>(*lit);
                 if (an->get_type() == AST_INTEGER_EXPR) {
@@ -202,7 +210,9 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                 auto* pv = static_cast<PatternValue*>(sub_pat);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                     CType ftype = (fi < ctor_it->second.field_types.size())
-                        ? ctor_it->second.field_types[fi] : CType::INT;
+                        ? ctor_it->second.field_types[fi]
+                        : ((fi < scrutinee.subtypes.size())
+                            ? scrutinee.subtypes[fi] : CType::INT);
                     Value* typed_val = field_val;
                     if (ftype == CType::ADT || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::FUNCTION ||
@@ -226,7 +236,9 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                 auto* pv = static_cast<PatternValue*>(sub_pat);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
                     CType ftype = (fi < ctor_it->second.field_types.size())
-                        ? ctor_it->second.field_types[fi] : CType::INT;
+                        ? ctor_it->second.field_types[fi]
+                        : ((fi < scrutinee.subtypes.size())
+                            ? scrutinee.subtypes[fi] : CType::INT);
                     Value* typed_val = field_val;
                     if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::ADT)

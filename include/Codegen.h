@@ -140,6 +140,10 @@ private:
         std::vector<std::string> capture_names;
         bool is_io_async = false;  // true for AFN: call directly, await via yona_rt_io_await
         llvm::Value* closure_env = nullptr;  // for recursive closure calls: prepend this env arg
+        std::string return_adt_name;  // for ADT returns: the type name (e.g., "Option") so
+                                      // call sites can dispatch pattern matching correctly
+        std::vector<CType> return_subtypes;  // for TUPLE/SEQ returns: per-element CTypes so
+                                              // destructuring at call sites knows element layout
     };
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
@@ -192,6 +196,7 @@ private:
         bool is_async = false;
         bool is_io_async = false;
         CType async_inner_type = CType::INT;
+        std::string return_adt_name;  // for ADT returns from extern decls: the type name
     };
 
     struct EffectInfo {

@@ -1,8 +1,11 @@
 import channel, send, tryRecv from Std\Channel in
-let ch = channel 4 in
-let _ = send ch 7 in
-let _ = send ch 8 in
-case tryRecv ch of
-    Some v -> v
-    None -> 99
-end
+let (sl, rl) = channel 4 in
+case sl of Linear sender ->
+case rl of Linear receiver ->
+    let _ = send sender 7 in
+    let _ = send sender 8 in
+    case tryRecv receiver of
+        Some v -> v
+        None -> 99
+    end
+end end

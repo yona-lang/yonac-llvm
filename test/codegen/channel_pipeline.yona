@@ -1,15 +1,18 @@
 import channel, send, recv, close from Std\Channel in
 import spawn from Std\Task in
-let ch = channel 8 in
-let _ = spawn (\() ->
-    let _ = send ch 1 in
-    let _ = send ch 2 in
-    let _ = send ch 3 in
-    let _ = send ch 4 in
-    let _ = send ch 5 in
-    close ch) in
-let consume acc = case recv ch of
-    Some v -> consume (acc + v)
-    None -> acc
-end in
-consume 0
+let (sl, rl) = channel 8 in
+case sl of Linear sender ->
+case rl of Linear receiver ->
+    let _ = spawn (\() ->
+        let _ = send sender 1 in
+        let _ = send sender 2 in
+        let _ = send sender 3 in
+        let _ = send sender 4 in
+        let _ = send sender 5 in
+        close sender) in
+    let consume acc = case recv receiver of
+        Some v -> consume (acc + v)
+        None -> acc
+    end in
+    consume 0
+end end

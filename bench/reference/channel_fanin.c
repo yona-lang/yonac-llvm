@@ -4,8 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CAP 32
+#define CAP 64
 #define COORD_CAP 4
+#define LO_A 1
+#define HI_A 30
+#define LO_B 31
+#define HI_B 60
 
 typedef struct {
     long buf[CAP];
@@ -73,8 +77,8 @@ int main(void) {
     chan_init(&work, CAP);
     chan_init(&coord, COORD_CAP);
     pthread_t t1, t2, t3;
-    prod_arg_t a1 = {&work, &coord, 1, 2500};
-    prod_arg_t a2 = {&work, &coord, 2501, 5000};
+    prod_arg_t a1 = {&work, &coord, LO_A, HI_A};
+    prod_arg_t a2 = {&work, &coord, LO_B, HI_B};
     wait_arg_t aw = {&work, &coord};
     pthread_create(&t1, NULL, producer, &a1);
     pthread_create(&t2, NULL, producer, &a2);
