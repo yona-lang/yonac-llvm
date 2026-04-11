@@ -1330,7 +1330,8 @@ private:
   void print(std::ostream &os) const override;
 
 public:
-  string name;              // C function name
+  string name;              // local Yona name (also the C symbol if c_symbol is empty)
+  string c_symbol;          // optional explicit C ABI symbol from `= "..."` form
   compiler::types::Type declared_type;  // type annotation
   ExprNode *body;           // expression using the extern
   bool is_async;            // true for "extern async" — calls via thread pool

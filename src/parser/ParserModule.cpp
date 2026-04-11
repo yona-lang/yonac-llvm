@@ -86,7 +86,20 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
                 skip_newlines();
                 auto etype = parse_type();
                 if (etype) {
-                    extern_declarations.push_back(new ExternDeclExpr(eloc, ename, *etype, nullptr, is_async));
+                    auto* decl = new ExternDeclExpr(eloc, ename, *etype, nullptr, is_async);
+                    // Optional `= "C_SYMBOL"` to bind a Yona-friendly name to a
+                    // mangled C ABI symbol. Without it, ename IS the C symbol.
+                    if (match(TokenType::YASSIGN)) {
+                        skip_newlines();
+                        if (check(TokenType::YSTRING)) {
+                            auto tok = advance();
+                            decl->c_symbol = std::get<std::string>(tok.value);
+                        } else {
+                            error(ParseError::Type::INVALID_SYNTAX,
+                                "Expected string literal after '=' in extern declaration");
+                        }
+                    }
+                    extern_declarations.push_back(decl);
                 }
             }
         } else if (check(TokenType::YIDENTIFIER)) {

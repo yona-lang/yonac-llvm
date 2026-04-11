@@ -763,12 +763,17 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
         ? static_cast<LType*>(PointerType::get(*context_, 0))
         : llvm_type(ret_ctype);
 
-    // Declare the extern function
+    // The C ABI symbol may differ from the local Yona name (e.g.
+    // `extern channel_new : Int -> Channel = "yona_Std_Channel__channel"`).
+    // The LLVM function takes the ABI symbol; we register it locally under
+    // the Yona name so call sites resolve naturally.
+    const std::string& c_sym = node->c_symbol.empty() ? node->name : node->c_symbol;
+
     auto fn_type = llvm::FunctionType::get(ret_llvm, param_types, false);
-    auto* fn = module_->getFunction(node->name);
+    auto* fn = module_->getFunction(c_sym);
     if (!fn) {
         fn = Function::Create(fn_type, Function::ExternalLinkage,
-                               node->name, module_.get());
+                               c_sym, module_.get());
     }
 
     // Register as a compiled function

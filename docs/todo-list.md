@@ -239,9 +239,15 @@
   `register_yona_module_decls` is the slimmed counterpart to
   `compile_module` (no IR verify/optimize; non-exported functions stay
   deferred). Demonstrated by `stdlib_pair_basic` test using `Std/Pair.yona`.
+- [x] **Extern symbol aliasing** — `extern NAME : TYPE = "C_SYMBOL"` binds
+  a Yona-friendly local name to a mangled C ABI symbol. The local name
+  goes into the codegen registry; the LLVM extern function is created
+  under the C symbol. Used by `Std/Channel.yona` to expose the C
+  channel runtime through clean `raw_new` / `raw_send` / etc. helpers
+  instead of leaking `yona_Std_Channel__channel` into every wrapper.
 - [x] **Linear Sender/Receiver split for Channels** — `Std/Channel.yona`
   defines `type Sender a = Sender Channel`, `type Receiver a = Receiver Channel`,
-  and `channel n = let raw = yona_Std_Channel__channel n in (Linear (Sender raw), Linear (Receiver raw))`.
+  and `channel n = let raw = raw_new n in (Linear (Sender raw), Linear (Receiver raw))`.
   Users pattern-match the `Linear` once per side; afterwards a `Sender`
   can only `send` and a `Receiver` can only `recv`/`tryRecv`. All 6
   channel test fixtures and 3 benchmarks updated to the new pattern.
