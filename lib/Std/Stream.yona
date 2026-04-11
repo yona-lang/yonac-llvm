@@ -1,0 +1,394 @@
+## Std\Stream — lazy pull-based sequences with optional pipeline parallelism.
+##
+## ============================================================================
+## Overview
+## ============================================================================
+##
+## A `Stream a` is a lazy sequence: each element is paired with a thunk that
+## produces the rest of the stream when forced. There is no hidden mutable
+## state — the "what's next" lives in the recursive arguments to whatever
+## operator built the stream.
+##
+## The fundamental type is one line:
+##
+##     type Stream a = Yield a (() -> Stream a) | Nil
+##
+## A `Yield x rest` exposes the head element `x` plus a thunk `rest` that,
+## when called, produces the rest of the stream as another `Stream a`.
+## `Nil` signals the end of the sequence. This is the same shape as ML's
+## lazy stream type, OCaml's `Seq`, Clojure's `lazy-seq`, and Haskell's
+## stream-fusion stream.
+##
+## Producers (`range`, `naturals`, `iterate`, `unfold`, `fromSeq`, ...)
+## start a pipeline. Lazy combinators (`map`, `filter`, `take`, `zip`, ...)
+## transform it without running anything beyond the next forced element.
+## Terminators (`toSeq`, `foldl`, `forEach`, `sum`, `count`, ...) actually
+## pull elements through.
+##
+## ============================================================================
+## Pipeline parallelism
+## ============================================================================
+##
+## By default a stream pipeline runs entirely in the consumer's task — every
+## "force the next element" is a function call, no threads, no channels,
+## no allocation beyond the per-step closure. To split a pipeline across
+## two tasks, insert one explicit `async` operator at the boundary you want:
+##
+##     range 1 1000000
+##       |> map parse        -- runs in caller's task
+##       |> filter valid
+##       |> async            -- ↓ pipeline boundary, bounded buffer 16
+##       |> map enrich       -- runs in spawned task
+##       |> take 100
+##       |> toSeq
+##
+## `async` spawns a producer that pulls from upstream and sends into a
+## bounded channel; the downstream stream pulls from the channel.
+## Backpressure is automatic — a slow downstream blocks the channel, which
+## blocks the producer. Use `buffered N` for an explicit buffer size.
+##
+## Multiple `async` calls split the pipeline into multiple stages, each on
+## a separate worker thread. There is no implicit threading — you can read
+## the pipeline and tell exactly where workers will exist.
+##
+## ============================================================================
+## Examples
+## ============================================================================
+##
+## Sum the squares of the first 100 naturals:
+##
+##     naturals
+##       |> map (\n -> n * n)
+##       |> take 100
+##       |> sum
+##
+## Find the first prime over 1000:
+##
+##     iterate (\n -> n + 1) 2
+##       |> filter isPrime
+##       |> filter (> 1000)
+##       |> head
+##
+## Process a file in fixed-size chunks without loading it all:
+##
+##     fromIterator (readChunks file 65536)
+##       |> map decompress
+##       |> async                       -- decompress on a worker
+##       |> map parse
+##       |> forEach handleRecord
+##
+## ============================================================================
+## Future work — KNOWN LIMITATIONS, planned for v2+
+## ============================================================================
+##
+## v1 deliberately ships a small surface that exercises the full machinery.
+## The following items are PLANNED but NOT in v1; users hitting them today
+## should fall back to channels directly or to `Std\Iterator`.
+##
+## (1) RESOURCE CLEANUP / BRACKET PATTERN
+##     Problem: a producer that holds a file handle or socket has no
+##     guaranteed teardown. If the consumer abandons the stream early
+##     (`take 10` of an infinite source), the producer's task — and any
+##     resources it owns — leak until the channel is RC'd to zero, which
+##     for a channel means deadlock detection (~5s) followed by error.
+##     Plan: a `Stream.bracket : (() -> r) -> (r -> ()) -> (r -> Stream a) -> Stream a`
+##     operator that wraps acquisition + cleanup, plus a "consumer dropped"
+##     signal on the channel so the producer can short-circuit.
+##
+## (2) ERROR FORWARDING ACROSS `async`
+##     Problem: if the spawned producer in `async` raises an exception, the
+##     spawned task dies and the consumer just sees an early end-of-stream.
+##     The error is lost.
+##     Plan: send a sentinel `(:err, exception)` through the channel and
+##     re-raise it on the consumer side. Once structured-concurrency error
+##     propagation is wired through channels, this should fall out.
+##
+## (3) CANCELLATION
+##     Problem: if the consumer's task is cancelled mid-pipeline, the spawned
+##     producer keeps running until its next `send` blocks on a closed channel.
+##     Plan: hook into the structured-concurrency cancel effect; producers
+##     check `Cancel.check` between elements.
+##
+## (4) STREAM FUSION
+##     Problem: each `map`/`filter` allocates a closure per element. Long
+##     pipelines like `map . filter . map` allocate 3N closures for N
+##     elements. Sequential throughput is bounded by allocator + closure-call
+##     overhead.
+##     Plan: detect adjacent pure operators at codegen time and fuse them
+##     into a single loop, the same way comprehensions already fuse. The
+##     surface API does not change.
+##
+## (5) MULTI-CONSUMER BROADCAST
+##     Problem: a Stream is single-consumer by construction — `toSeq` drains
+##     it, and a second consumer would re-evaluate from scratch (or worse,
+##     for an `async` stream, fail silently because the channel is drained).
+##     Plan: a separate `Std\Broadcast` primitive layered over channels;
+##     not in scope for `Stream`.
+##
+## (6) ZIP TERMINATION CORNER
+##     `zip` stops when EITHER stream is exhausted. The OTHER stream's
+##     remaining producer is left dangling — same root cause as (1)/(3).
+##     Same fix.
+##
+## (7) BACKPRESSURE TUNING
+##     `async` defaults to a buffer of 16. Too small for fast producers,
+##     too big for memory-tight pipelines. `buffered N` is the manual knob;
+##     auto-tuning based on observed throughput is a v2+ research item.
+##
+## (8) PARALLEL OPERATORS (parMap, parFilter)
+##     Not the same as `async` (which is just a single-producer pipeline
+##     boundary). A `parMap k fn` would fan out N=k workers reading from
+##     a shared input channel and merging into an output channel. Belongs
+##     here once the cancellation story is settled.
+##
+## (9) FROM ITERATOR ROUND-TRIP
+##     `fromIterator` lifts an `Iterator a` (Prelude, mutable internal
+##     state) into a `Stream a`. The wrapper assumes the underlying
+##     iterator is single-use; calling `fromIterator iter` twice yields
+##     two streams that share state and corrupt each other. Document and
+##     don't fix — Iterators are inherently linear.
+##
+## (10) STRICT-EVALUATION BOUNDARIES
+##      Currently every step is lazy. Sometimes you want strict evaluation
+##      (for side effects, for benchmarking, for forcing a producer to run
+##      eagerly). `Stream.force : Stream a -> Stream a` would walk the
+##      stream and re-emit it from a buffered Seq. Trivial to add later.
+##
+## ============================================================================
+## API
+## ============================================================================
+
+module Std\Stream
+
+export type Stream
+export empty, singleton, fromSeq, range, naturals, repeat, iterate, unfold, fromIterator
+export map, filter, take, drop, takeWhile, dropWhile, zip, zipWith, concat, flatMap, scan
+export async, buffered
+export toSeq, foldl, forEach, count, sum, anyMatch, allMatch, find, head, isEmpty
+
+## A lazy sequence. `Yield x rest` exposes one element and a thunk that
+## produces the rest of the stream when forced. `Nil` is the empty stream.
+## Streams are single-consumer — once a thunk is forced its successor is
+## the only continuation, and re-forcing is undefined.
+type Stream a = Yield a (() -> Stream a) | Nil
+
+## ----- Producers ------------------------------------------------------------
+
+## The empty stream.
+empty = Nil
+
+## A stream containing exactly one element.
+singleton x = Yield x (\_ -> Nil)
+
+## Lift a finite `Seq` into a stream. Each `Yield` holds the next element
+## and a thunk that converts the tail.
+fromSeq xs = case xs of
+    []    -> Nil
+    [h|t] -> Yield h (\_ -> fromSeq t)
+end
+
+## Integers from `lo` (inclusive) to `hi` (exclusive). Empty if `lo >= hi`.
+range lo hi =
+    if lo >= hi then Nil
+    else Yield lo (\_ -> range (lo + 1) hi)
+
+## All non-negative integers, starting from 0. Practically infinite —
+## bounded at 2^30 to sidestep a current parser bug where integer literals
+## above INT32_MAX wrap to negative values. Use as `naturals ()`; the
+## unit argument is a thunk wrapper around a 0-arity import resolution
+## issue.
+naturals _ = range 0 1073741824
+
+## An infinite stream of `x`.
+repeat x = Yield x (\_ -> repeat x)
+
+## `iterate f x` produces `x, f x, f (f x), ...`. Infinite.
+iterate f x = Yield x (\_ -> iterate f (f x))
+
+## `unfold step seed` builds a stream from a state machine. Each step
+## returns either `Some (a, s')` to emit `a` and continue from `s'`, or
+## `None` to terminate.
+unfold step seed = case step seed of
+    Some pair -> case pair of
+        (x, next) -> Yield x (\_ -> unfold step next)
+    end
+    None -> Nil
+end
+
+## Adapter from `Iterator a` (Prelude — stateful, single-use) to `Stream a`.
+## The underlying iterator's state is mutated by each call; do NOT consume
+## the same iterator more than once via this adapter.
+fromIterator iter = case iter of
+    Iterator nextFn -> case nextFn () of
+        Some x -> Yield x (\_ -> fromIterator iter)
+        None   -> Nil
+    end
+end
+
+## ----- Lazy transformers ----------------------------------------------------
+
+## Apply `fn` to every element. Lazy: nothing runs until the result is forced.
+map fn s = case s of
+    Yield x rest -> Yield (fn x) (\_ -> map fn (rest ()))
+    Nil          -> Nil
+end
+
+## Keep only elements satisfying `pred`. Skipped elements are forced to
+## decide; consider this when the predicate is expensive.
+filter pred s = case s of
+    Yield x rest -> if pred x then Yield x (\_ -> filter pred (rest ()))
+                    else filter pred (rest ())
+    Nil          -> Nil
+end
+
+## Take at most `n` elements from the front of the stream.
+take n s =
+    if n <= 0 then Nil
+    else case s of
+        Yield x rest -> Yield x (\_ -> take (n - 1) (rest ()))
+        Nil          -> Nil
+    end
+
+## Drop the first `n` elements; the rest of the stream is unchanged.
+drop n s =
+    if n <= 0 then s
+    else case s of
+        Yield _ rest -> drop (n - 1) (rest ())
+        Nil          -> Nil
+    end
+
+## Take elements from the front while `pred` holds; stop at the first false.
+takeWhile pred s = case s of
+    Yield x rest -> if pred x then Yield x (\_ -> takeWhile pred (rest ()))
+                    else Nil
+    Nil          -> Nil
+end
+
+## Drop elements while `pred` holds; the rest of the stream starts at the
+## first element that fails the predicate.
+dropWhile pred s = case s of
+    Yield x rest -> if pred x then dropWhile pred (rest ())
+                    else Yield x rest
+    Nil          -> Nil
+end
+
+## Pair-wise combination of two streams. Stops when either side is exhausted.
+zip a b = case a of
+    Yield x ra -> case b of
+        Yield y rb -> Yield (x, y) (\_ -> zip (ra ()) (rb ()))
+        Nil        -> Nil
+    end
+    Nil -> Nil
+end
+
+## Like `zip` but combines elements with `fn` instead of pairing them.
+zipWith fn a b = case a of
+    Yield x ra -> case b of
+        Yield y rb -> Yield (fn x y) (\_ -> zipWith fn (ra ()) (rb ()))
+        Nil        -> Nil
+    end
+    Nil -> Nil
+end
+
+## Concatenate two streams: first all of `a`, then all of `b`.
+concat a b = case a of
+    Yield x rest -> Yield x (\_ -> concat (rest ()) b)
+    Nil          -> b
+end
+
+## Map each element to a stream and flatten the result.
+flatMap fn s = case s of
+    Yield x rest -> concat (fn x) (flatMap fn (rest ()))
+    Nil          -> Nil
+end
+
+## Like `foldl` but emits each intermediate accumulator value as a stream.
+## `scan (+) 0 [1,2,3]` yields `[1, 3, 6]`.
+scan fn z s = case s of
+    Yield x rest -> let z2 = fn z x in Yield z2 (\_ -> scan fn z2 (rest ()))
+    Nil          -> Nil
+end
+
+## ----- Pipeline parallelism -------------------------------------------------
+
+## Split the pipeline at this point: spawn a task that pulls from the
+## upstream stream and pushes into a bounded channel (default capacity 16);
+## the result is a downstream stream that pulls from that channel.
+async s = buffered 16 s
+
+## Like `async` but with an explicit buffer size.
+buffered n s =
+    import channel, send, recv, close from Std\Channel,
+           spawn from Std\Task in
+    let (sl, rl) = channel n in
+    case sl of Linear sender ->
+    case rl of Linear receiver ->
+        let drive t = case t of
+                Yield x rest -> let _ = send sender x in drive (rest ())
+                Nil          -> close sender
+            end,
+            _ = spawn (\_ -> drive s),
+            pull _ = case recv receiver of
+                Some v -> Yield v (\_ -> pull ())
+                None   -> Nil
+            end
+        in pull ()
+    end end
+
+## ----- Terminators ----------------------------------------------------------
+
+## Materialize the entire stream into a `Seq`. Linear in the number of
+## elements; do not call on infinite streams without a preceding `take`.
+toSeq s = case s of
+    Yield x rest -> x :: toSeq (rest ())
+    Nil          -> []
+end
+
+## Left fold over the stream. The accumulator is updated strictly; the
+## stream is consumed in a single pass.
+foldl fn z s = case s of
+    Yield x rest -> foldl fn (fn z x) (rest ())
+    Nil          -> z
+end
+
+## Apply `fn` to every element for its side effect. Returns unit.
+forEach fn s = case s of
+    Yield x rest -> let _ = fn x in forEach fn (rest ())
+    Nil          -> ()
+end
+
+## Count the elements in a finite stream.
+count s = foldl (\acc _ -> acc + 1) 0 s
+
+## Sum a stream of integers.
+sum s = foldl (\acc x -> acc + x) 0 s
+
+## True if any element satisfies the predicate. Short-circuits.
+anyMatch pred s = case s of
+    Yield x rest -> if pred x then true else anyMatch pred (rest ())
+    Nil          -> false
+end
+
+## True if every element satisfies the predicate. Short-circuits.
+allMatch pred s = case s of
+    Yield x rest -> if pred x then allMatch pred (rest ()) else false
+    Nil          -> true
+end
+
+## Find the first element matching `pred`, or `None`. Short-circuits.
+find pred s = case s of
+    Yield x rest -> if pred x then Some x else find pred (rest ())
+    Nil          -> None
+end
+
+## The first element of the stream, or `None` if empty.
+head s = case s of
+    Yield x _ -> Some x
+    Nil       -> None
+end
+
+## True if the stream produces no elements. Forces one step.
+isEmpty s = case s of
+    Yield _ _ -> false
+    Nil       -> true
+end

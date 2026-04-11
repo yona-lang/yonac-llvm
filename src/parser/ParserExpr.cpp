@@ -148,8 +148,17 @@ unique_ptr<ExprNode> ParserImpl::parse_expr(Precedence min_prec) {
             continue;
         }
 
-        // Check for function application by juxtaposition
-        if (min_prec <= Precedence::CALL && could_be_argument(peek().type)) {
+        // Check for function application by juxtaposition.
+        // Skip if the preceding token was an `end`/`in` keyword that
+        // syntactically closes a block expression (case/do/with/handle/let).
+        // Without this, `case x of ... end <next>` would treat `<next>` as
+        // a function argument applied to the case result, which then eats
+        // the next case clause when the surrounding context is something
+        // like `(\_ -> case x of ... end) followed-by-another-clause`.
+        bool prev_closes_block = current_ > 0 &&
+            (tokens_[current_ - 1].type == TokenType::YEND ||
+             tokens_[current_ - 1].type == TokenType::YIN);
+        if (!prev_closes_block && min_prec <= Precedence::CALL && could_be_argument(peek().type)) {
             auto prec = get_infix_precedence(peek().type);
             if (prec == Precedence::LOWEST) {
                 left = parse_juxtaposition_apply(std::move(left));

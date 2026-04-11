@@ -209,10 +209,19 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
             if (sub_pat->get_type() == AST_PATTERN_VALUE) {
                 auto* pv = static_cast<PatternValue*>(sub_pat);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                    CType ftype = (fi < ctor_it->second.field_types.size())
-                        ? ctor_it->second.field_types[fi]
-                        : ((fi < scrutinee.subtypes.size())
-                            ? scrutinee.subtypes[fi] : CType::INT);
+                    // Prefer the runtime subtype recorded at construction
+                    // time when it's more specific than the registered field
+                    // type. The .yona ADT field-type registry only records
+                    // a head identifier (e.g. "Stream a" → just "Stream"),
+                    // so generic / parameterized fields fall back to INT.
+                    // The scrutinee's subtypes carry the actual CType from
+                    // codegen_adt_construct and are accurate.
+                    CType registered = (fi < ctor_it->second.field_types.size())
+                        ? ctor_it->second.field_types[fi] : CType::INT;
+                    CType runtime_st = (fi < scrutinee.subtypes.size())
+                        ? scrutinee.subtypes[fi] : CType::INT;
+                    CType ftype = (registered == CType::INT && runtime_st != CType::INT)
+                        ? runtime_st : registered;
                     Value* typed_val = field_val;
                     if (ftype == CType::ADT || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::FUNCTION ||
@@ -236,10 +245,19 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
             if (sub_pat->get_type() == AST_PATTERN_VALUE) {
                 auto* pv = static_cast<PatternValue*>(sub_pat);
                 if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
-                    CType ftype = (fi < ctor_it->second.field_types.size())
-                        ? ctor_it->second.field_types[fi]
-                        : ((fi < scrutinee.subtypes.size())
-                            ? scrutinee.subtypes[fi] : CType::INT);
+                    // Prefer the runtime subtype recorded at construction
+                    // time when it's more specific than the registered field
+                    // type. The .yona ADT field-type registry only records
+                    // a head identifier (e.g. "Stream a" → just "Stream"),
+                    // so generic / parameterized fields fall back to INT.
+                    // The scrutinee's subtypes carry the actual CType from
+                    // codegen_adt_construct and are accurate.
+                    CType registered = (fi < ctor_it->second.field_types.size())
+                        ? ctor_it->second.field_types[fi] : CType::INT;
+                    CType runtime_st = (fi < scrutinee.subtypes.size())
+                        ? scrutinee.subtypes[fi] : CType::INT;
+                    CType ftype = (registered == CType::INT && runtime_st != CType::INT)
+                        ? runtime_st : registered;
                     Value* typed_val = field_val;
                     if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::ADT ||

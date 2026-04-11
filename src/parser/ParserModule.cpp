@@ -450,8 +450,40 @@ unique_ptr<AdtDeclNode> ParserImpl::parse_adt_declaration() {
         vector<FieldType> field_types;
         vector<string> field_names;
 
-        // Parse a single field type
+        // Parse a single field type. Handles bare identifiers, parenthesized
+        // groups (tuples and function types), and parameterized type
+        // applications like `Option a`, `Map String Int`, `Option (a, Stream a)`.
+        // Only the head identifier is preserved in the resulting FieldType;
+        // the codegen uses that to pick a CType, and the type arguments are
+        // consumed so the rest of the constructor parses correctly.
         std::function<FieldType()> parse_field_type = [&]() -> FieldType {
+            // Helper: consume one "atom" — a primary type without further
+            // application. Used for arguments to a parameterized head type.
+            std::function<void()> consume_type_atom = [&]() {
+                if (check(TokenType::YLPAREN)) {
+                    advance();  // (
+                    if (check(TokenType::YRPAREN)) { advance(); return; }
+                    // Recursively consume one or more comma/arrow-separated
+                    // sub-types until the matching ')'.
+                    int depth = 1;
+                    while (!is_at_end() && depth > 0) {
+                        if (check(TokenType::YLPAREN)) { depth++; advance(); }
+                        else if (check(TokenType::YRPAREN)) { depth--; advance(); }
+                        else advance();
+                    }
+                } else if (check(TokenType::YLBRACKET)) {
+                    advance();
+                    int depth = 1;
+                    while (!is_at_end() && depth > 0) {
+                        if (check(TokenType::YLBRACKET)) { depth++; advance(); }
+                        else if (check(TokenType::YRBRACKET)) { depth--; advance(); }
+                        else advance();
+                    }
+                } else if (check(TokenType::YIDENTIFIER)) {
+                    advance();
+                }
+            };
+
             if (check(TokenType::YLPAREN)) {
                 advance(); // consume (
 
@@ -465,13 +497,34 @@ unique_ptr<AdtDeclNode> ParserImpl::parse_adt_declaration() {
                 } else if (check(TokenType::YIDENTIFIER)) {
                     string tname(current().lexeme);
                     advance();
-                    while (check(TokenType::YIDENTIFIER) && islower(current().lexeme[0])
-                           && !check(TokenType::YARROW)) {
-                        tname += " ";
-                        tname += string(current().lexeme);
-                        advance();
+                    while ((check(TokenType::YIDENTIFIER) && islower(current().lexeme[0])
+                            && !check(TokenType::YARROW)) ||
+                           (check(TokenType::YLPAREN) && !check(TokenType::YARROW))) {
+                        if (check(TokenType::YLPAREN)) {
+                            // Type application argument: `Option (a, Stream a)`.
+                            // Consume the parenthesized group; we don't model
+                            // type arguments structurally — only the head name
+                            // matters for codegen.
+                            consume_type_atom();
+                        } else {
+                            tname += " ";
+                            tname += string(current().lexeme);
+                            advance();
+                        }
                     }
                     types.push_back(FieldType::simple(tname));
+                }
+
+                // Tuple inside parentheses: `(a, Stream a)`. We don't preserve
+                // tuple structure in FieldType (the codegen doesn't use it),
+                // but we MUST consume the trailing types so the constructor
+                // parser advances past the closing ')'.
+                while (match(TokenType::YCOMMA)) {
+                    if (check(TokenType::YLPAREN) || check(TokenType::YIDENTIFIER)) {
+                        (void)parse_field_type();  // discard — only head name matters
+                    } else {
+                        break;
+                    }
                 }
 
                 while (match(TokenType::YARROW)) {
@@ -480,11 +533,16 @@ unique_ptr<AdtDeclNode> ParserImpl::parse_adt_declaration() {
                     } else if (check(TokenType::YIDENTIFIER)) {
                         string tname(current().lexeme);
                         advance();
-                        while (check(TokenType::YIDENTIFIER) && islower(current().lexeme[0])
-                               && !check(TokenType::YARROW) && !check(TokenType::YRPAREN)) {
-                            tname += " ";
-                            tname += string(current().lexeme);
-                            advance();
+                        while ((check(TokenType::YIDENTIFIER) && islower(current().lexeme[0])
+                                && !check(TokenType::YARROW) && !check(TokenType::YRPAREN)) ||
+                               (check(TokenType::YLPAREN) && !check(TokenType::YARROW))) {
+                            if (check(TokenType::YLPAREN)) {
+                                consume_type_atom();
+                            } else {
+                                tname += " ";
+                                tname += string(current().lexeme);
+                                advance();
+                            }
                         }
                         types.push_back(FieldType::simple(tname));
                     }
@@ -505,7 +563,23 @@ unique_ptr<AdtDeclNode> ParserImpl::parse_adt_declaration() {
                 return ft;
             } else if (check(TokenType::YIDENTIFIER)) {
                 string tname(current().lexeme);
+                bool head_is_ctor = !tname.empty() && isupper(tname[0]);
                 advance();
+                // Type application: `Stream a`, `Option (Step a)`, ...
+                // Only valid when the head is a type constructor (uppercase).
+                // Lowercase heads are type variables and never take arguments.
+                // We must NOT consume a following `(` after a lowercase head,
+                // because that paren begins a separate field type.
+                while (head_is_ctor &&
+                       ((check(TokenType::YIDENTIFIER) && islower(current().lexeme[0])
+                         && !check(TokenType::YARROW)) ||
+                        check(TokenType::YLPAREN))) {
+                    if (check(TokenType::YLPAREN)) {
+                        consume_type_atom();
+                    } else {
+                        advance();  // consume the lowercase type variable
+                    }
+                }
                 return FieldType::simple(tname);
             }
             return FieldType::simple("Int");

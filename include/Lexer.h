@@ -221,6 +221,9 @@ private:
     size_t token_start_line_ = 1;
     size_t token_start_column_ = 1;
     int bracket_depth_ = 0;
+    int block_depth_ = 0;  // case/do/with/handle nesting; newlines stay
+                           // significant inside these blocks even when the
+                           // surrounding bracket_depth_ would suppress them
     TokenType last_emitted_ = TokenType::YEOF_TOKEN;
     int in_string_interp_ = 0;  // > 0 when inside {expr} in a string
 

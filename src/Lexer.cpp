@@ -233,11 +233,14 @@ void Lexer::skip_whitespace_and_comments() {
         if (is_whitespace(ch)) {
             skip_char();
         } else if (ch == '\n') {
-            // Inside brackets, newlines are whitespace
-            if (bracket_depth_ > 0) {
+            // Inside brackets, newlines are normally whitespace — but if we
+            // are also inside a `case`/`do`/`with`/`handle` block, newlines
+            // are clause separators and must reach the parser even when the
+            // surrounding parens would otherwise suppress them.
+            if (bracket_depth_ > 0 && block_depth_ == 0) {
                 skip_char();
             } else {
-                // At bracket depth 0, stop — let scan_token() handle the newline
+                // At bracket depth 0 (or inside a block), stop — let scan_token() handle the newline
                 break;
             }
         } else if (ch == '#') {
@@ -879,6 +882,20 @@ std::expected<Token, LexError> Lexer::next_token() {
     auto result = scan_token();
     if (result) {
         last_emitted_ = result.value().type;
+        // Track block depth so newlines stay significant inside
+        // case/do/with/handle bodies even within parens.
+        switch (result.value().type) {
+            case TokenType::YCASE:
+            case TokenType::YDO:
+            case TokenType::YWITH:
+            case TokenType::YHANDLE:
+                block_depth_++;
+                break;
+            case TokenType::YEND:
+                if (block_depth_ > 0) block_depth_--;
+                break;
+            default: break;
+        }
     }
     return result;
 }
@@ -889,6 +906,7 @@ std::expected<Token, LexError> Lexer::peek_token() {
     size_t saved_line = line_;
     size_t saved_column = column_;
     int saved_bracket_depth = bracket_depth_;
+    int saved_block_depth = block_depth_;
     TokenType saved_last_emitted = last_emitted_;
     int saved_string_interp = in_string_interp_;
 
@@ -899,6 +917,7 @@ std::expected<Token, LexError> Lexer::peek_token() {
     line_ = saved_line;
     column_ = saved_column;
     bracket_depth_ = saved_bracket_depth;
+    block_depth_ = saved_block_depth;
     last_emitted_ = saved_last_emitted;
     in_string_interp_ = saved_string_interp;
 

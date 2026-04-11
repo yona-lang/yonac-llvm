@@ -68,14 +68,26 @@
   that generate runtime checks in debug, erased in release.
 
 ### Language — Concurrency
-- [ ] **Stream Sugar** (depends on Channels) — `Stream` effect-style API that
-  desugars to spawning the producer in a task and using a bounded channel.
-  `perform Stream.yield x` becomes `send chan x`; the consumer reads from
-  the channel via `foldl` or iteration. Provides backpressure (bounded channel),
-  pipeline parallelism (producer/consumer on different threads), and composable
-  pipelines. Small scope (~200 lines) once Channels exist. Solves the streaming
-  use cases (chunked file processing, lazy reads, pipeline parallelism) without
-  rewriting the effect system.
+- [ ] **Stream (lazy pull-based sequence)** — `Std\Stream` module built
+  on top of channels, not effects. Type:
+
+      type Stream a = Stream (() -> Option (a, Stream a))
+
+  Each step yields the next element + the rest of the stream — pure
+  state-passing, no Cell primitive, no existentials. Operators (`map`,
+  `filter`, `take`, `drop`, `zip`, `concat`, `flatMap`, `scan`,
+  `chunksOf`, etc.) compose by closure, are lazy, and run sequentially
+  in the consumer's task by default. Pipeline parallelism is opt-in:
+  `Stream.async` spawns the upstream producer into a task and pipes
+  through a bounded channel, with `Stream.buffered N` for an explicit
+  buffer size. Producers: `range`, `naturals`, `repeat`, `iterate`,
+  `unfold`, `fromSeq`, `fromIterator`. Terminators: `toSeq`, `foldl`,
+  `forEach`, `count`, `sum`, `any`, `all`, `find`, `head`. Pure-Yona
+  library (~250 lines), no compiler/runtime changes — exercises the
+  channel + Linear sender/receiver + ADT-with-function-field +
+  recursive let infrastructure. Deferred: resource cleanup
+  (`Stream.bracket`), error forwarding across `async`, cross-operator
+  fusion, multi-consumer broadcast.
 - [ ] **Multi-Shot Effects with Stackful Coroutines** (research, deferred) —
   extend the effect system to support multi-shot resume and true suspension
   via heap-allocated continuations or per-effect stacks. Enables: backtracking
@@ -91,11 +103,43 @@
   `recv`: before `cond_wait`, check if all tasks in the group are blocked
   and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
   deadlocks (cycles, crashed producers) that linear types can't see.
-- [ ] **Parser: `case` inside lambda bodies** — currently `(\x -> case x of ...)`
-  fails to parse cleanly when the case body crosses lines. Workaround in
-  the channel benchmarks: hoist the case to a top-level let. Should fix
-  to enable pingpong/fanout/actor channel benchmarks and idiomatic
-  short-form callbacks.
+- [x] **Parser: `case` inside lambda bodies** — fixed by adding a
+  `block_depth_` counter on the lexer that tracks `case`/`do`/`with`/`handle`
+  nesting and keeps newlines significant inside those blocks even when the
+  surrounding parens would otherwise suppress them.
+- [ ] **Parser: integer literals overflow at INT32_MAX** — `1000000000000`
+  parses as `-727379968`. Literals between INT32_MAX and INT64_MAX wrap.
+  The Yona-side `Int` is i64, so this should accept the full i64 range.
+  Likely a `strtol` vs `strtoll` mistake or a sign-extend bug in the
+  number lexer. Workaround in `Std\Stream`: `naturals` is bounded at
+  2^30 instead of INT64_MAX.
+- [ ] **Codegen: ADT field types beyond head identifier** — when a field
+  is declared as `Option (a, b)` or `Stream a`, the parser preserves
+  the head identifier ("Option", "Stream") but discards the type
+  arguments. Downstream the codegen treats parameterized fields as
+  CType::INT. The recent fix in `codegen_pattern_constructor` falls
+  back to `scrutinee.subtypes` (the runtime type carried at construction)
+  but this only works when the constructor was built locally; calling a
+  function-typed field of an ADT (e.g. `(() -> Step a)`) loses the
+  return type because it's stored as `CType::FUNCTION` with no return
+  annotation. Stream v1 sidesteps this by inlining the recursion into
+  the ADT itself: `type Stream a = Yield a (() -> Stream a) | Nil`.
+  Proper fix: store full FieldType (with return-type annotation) in
+  the codegen registry so function-typed fields know their signature.
+- [ ] **Codegen: 0-arity exported value definitions** — `naturals = range 0 N`
+  at module top-level is not directly usable from importers; the imported
+  name resolves but the value isn't auto-forced. Workaround in `Std\Stream`:
+  `naturals _ = range 0 N` (takes a unit argument). Long-term: top-level
+  0-arity definitions should be either auto-evaluated at module load
+  (Haskell-style CAF) or auto-called when referenced (Yona's current
+  function semantics extended to 0 args).
+- [ ] **Std\IO module** — standard input/output abstractions. Today the
+  built-in `print` family handles most output but there's no real `IO`
+  module. Should provide: `stdin`/`stdout`/`stderr` as `FileHandle`
+  values, line-oriented read (`readLine`, `readLines : Iterator String`),
+  formatted output (`printf`/`println` with format strings), buffered
+  vs unbuffered modes, redirection helpers. Builds on the existing
+  `Std\File` runtime and the `with`/`Linear` resource pattern.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.

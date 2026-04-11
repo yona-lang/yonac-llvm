@@ -113,6 +113,29 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 - **Prelude needs no import:** `Some`, `None`, `Ok`, `Err`, `Linear`, `Iterator`, `foldl`, `foldr`, `identity`, `const`, `flip`, `compose`
 - See `docs/style-guide.md` for the full guide
 
+### Stdlib implementation rule (IMPORTANT)
+
+**Anything that can be written in Yona must be written in Yona.** Drop to C
+only when there is no way to express the operation in pure Yona — typically
+because it needs an OS syscall (file I/O, network, processes, time, signals),
+mutable state primitives the language doesn't expose (atomics, locks, channel
+buffers), bit-level layout control (byte arrays, hashing, crypto), an
+external C library binding (PCRE2, OpenSSL, libxml2), or performance-critical
+hot loops with measured wins (matrix kernels, codec inner loops). Pure data
+transformations, pattern matching, recursion, and combinator plumbing all
+belong in `.yona` files. The C runtime should be the substrate, not the
+default. When in doubt: write the Yona version first, profile if needed, and
+only then consider lowering to C.
+
+### Bug-tracking rule (IMPORTANT)
+
+**Whenever you discover a bug — parser, codegen, runtime, anything — append
+it to `docs/todo-list.md` immediately, with a one-line repro, and stop to
+ask which bug(s) to fix.** Working around a bug silently buries the
+information; a bug list with reproductions accumulates the data we need to
+prioritize compiler work. Don't keep coding past a fresh bug discovery
+without first noting it and checking which one to attack next.
+
 ### Development Workflow
 
 - New language features require changes across: Lexer → Parser → AST → Codegen
