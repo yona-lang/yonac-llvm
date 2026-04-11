@@ -546,10 +546,48 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
     // Build exported types set — constructors will be added after ADT processing
     std::unordered_set<std::string> exported_type_set(mod->exported_types.begin(), mod->exported_types.end());
 
+    // First pass: collect ADTs in this module that contain a function-typed
+    // field. Any ADT that references one of these in a field must also be
+    // heap-allocated, because the closure ABI for function fields returns
+    // a pointer (i64), and a flat-struct ADT containing such a function
+    // field would not survive a closure-returning-it round trip. We then
+    // iterate to a fixed point so mutual references like
+    // `Stream a = Stream (() -> Step a)` / `Step a = Yield a (Stream a) | Done`
+    // both end up heap-allocated.
+    std::unordered_set<std::string> heap_adts;
+    for (auto* adt : mod->adt_declarations) {
+        for (auto* ctor : adt->variants) {
+            for (auto& ft : ctor->field_type_names) {
+                if (ft.is_function_type) { heap_adts.insert(adt->name); break; }
+            }
+            if (heap_adts.count(adt->name)) break;
+        }
+    }
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (auto* adt : mod->adt_declarations) {
+            if (heap_adts.count(adt->name)) continue;
+            for (auto* ctor : adt->variants) {
+                for (auto& ft : ctor->field_type_names) {
+                    std::string head = ft.name;
+                    auto sp = head.find(' ');
+                    if (sp != std::string::npos) head = head.substr(0, sp);
+                    if (heap_adts.count(head)) {
+                        heap_adts.insert(adt->name);
+                        changed = true;
+                        break;
+                    }
+                }
+                if (heap_adts.count(adt->name)) break;
+            }
+        }
+    }
+
     // Process ADT declarations: register constructors, detect recursion
     for (auto* adt : mod->adt_declarations) {
         int max_arity = 0;
-        bool is_recursive = false;
+        bool is_recursive = heap_adts.count(adt->name) > 0;
         for (auto* ctor : adt->variants) {
             int a = static_cast<int>(ctor->field_type_names.size());
             if (a > max_arity) max_arity = a;

@@ -1,0 +1,2 @@
+import naturals, take, sum from Std\Stream in
+sum (take 10 naturals)

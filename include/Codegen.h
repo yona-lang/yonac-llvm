@@ -182,6 +182,14 @@ private:
         bool is_recursive = false;
         std::vector<std::string> field_names;
         std::vector<CType> field_types;
+        // For function-typed fields like `(() -> Stream a)`, the return
+        // type's CType. Used by pattern-extracted callable fields so the
+        // call site knows what the closure produces. Empty CType (INT) if
+        // the field is not a function or the return type is unknown.
+        std::vector<CType> field_fn_return_types;
+        // For function-typed fields whose return type is an ADT, the
+        // type name (e.g. "Stream"). Same length as field_fn_return_types.
+        std::vector<std::string> field_fn_return_adt_names;
     };
     struct CFFISignature {
         CType return_type;

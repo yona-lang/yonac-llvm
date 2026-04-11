@@ -252,7 +252,7 @@ unique_ptr<ExprNode> ParserImpl::parse_prefix_expr() {
         case TokenType::YINTEGER: {
             auto token = advance();
             auto value = get<int64_t>(token.value);
-            return make_unique<IntegerExpr>(loc, static_cast<int>(value));
+            return make_unique<IntegerExpr>(loc, value);
         }
 
         case TokenType::YFLOAT: {
@@ -753,9 +753,8 @@ unique_ptr<ExprNode> ParserImpl::parse_range_bound() {
     if (check(TokenType::YINTEGER)) {
         auto token = advance();
         auto value = get<int64_t>(token.value);
-        int int_value = static_cast<int>(value);
-        if (negative) int_value = -int_value;
-        return make_unique<IntegerExpr>(loc, int_value);
+        if (negative) value = -value;
+        return make_unique<IntegerExpr>(loc, value);
     } else if (check(TokenType::YFLOAT)) {
         auto token = advance();
         auto value = get<double>(token.value);

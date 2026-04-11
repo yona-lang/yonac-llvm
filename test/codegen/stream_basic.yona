@@ -1,0 +1,2 @@
+import range, sum from Std\Stream in
+sum (range 1 11)

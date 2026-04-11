@@ -423,10 +423,52 @@ bool Codegen::load_yona_module(const std::filesystem::path& yona_path) {
 }
 
 void Codegen::register_yona_module_decls(ast::ModuleDecl* mod) {
+    // First pass: collect names of ADTs in this module that contain a
+    // function-typed field. Any ADT that references one of these names in
+    // a field must also be heap-allocated, because the closure ABI for
+    // function fields returns a pointer (i64), and a non-recursive flat
+    // struct ADT containing such a function field would not survive a
+    // closure-returning-it round trip.
+    std::unordered_set<std::string> heap_adts;
+    for (auto* adt : mod->adt_declarations) {
+        for (auto* ctor : adt->variants) {
+            for (auto& ft : ctor->field_type_names) {
+                if (ft.is_function_type) { heap_adts.insert(adt->name); break; }
+            }
+            if (heap_adts.count(adt->name)) break;
+        }
+    }
+    // Fixpoint: any ADT that references an already-heap ADT in a field is
+    // also heap. Two passes are enough for the typical
+    // `Stream a = Stream (() -> Step a)` / `Step a = Yield a (Stream a) | Done`
+    // mutual reference; for deeper chains we just iterate.
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (auto* adt : mod->adt_declarations) {
+            if (heap_adts.count(adt->name)) continue;
+            for (auto* ctor : adt->variants) {
+                for (auto& ft : ctor->field_type_names) {
+                    // The parser stores `Stream a` as a single string with
+                    // the head followed by space-separated type variables.
+                    std::string head = ft.name;
+                    auto sp = head.find(' ');
+                    if (sp != std::string::npos) head = head.substr(0, sp);
+                    if (heap_adts.count(head)) {
+                        heap_adts.insert(adt->name);
+                        changed = true;
+                        break;
+                    }
+                }
+                if (heap_adts.count(adt->name)) break;
+            }
+        }
+    }
+
     // ===== ADTs =====
     for (auto* adt : mod->adt_declarations) {
         int max_arity = 0;
-        bool is_recursive = false;
+        bool is_recursive = heap_adts.count(adt->name) > 0;
         for (auto* ctor : adt->variants) {
             int a = static_cast<int>(ctor->field_type_names.size());
             if (a > max_arity) max_arity = a;
@@ -437,27 +479,76 @@ void Codegen::register_yona_module_decls(ast::ModuleDecl* mod) {
                 }
             }
         }
+        // Helper: name a head identifier → CType (with the same rules as
+        // the field-type loop below). Used for the return type of a
+        // function-typed field, e.g. `(() -> Stream a)` returns Stream.
+        auto name_to_ctype = [&](const std::string& name) -> CType {
+            if (name == "Int") return CType::INT;
+            if (name == "Float") return CType::FLOAT;
+            if (name == "String") return CType::STRING;
+            if (name == "Bool") return CType::BOOL;
+            if (name == "Symbol") return CType::SYMBOL;
+            if (name == "Channel") return CType::CHANNEL;
+            if (name == "()" || name == "Unit") return CType::UNIT;
+            if (name == "Seq") return CType::SEQ;
+            if (name == "Set") return CType::SET;
+            if (name == "Dict") return CType::DICT;
+            // Anything else (Stream, Option, Result, ...) is treated as ADT.
+            return CType::ADT;
+        };
+
         for (size_t ci = 0; ci < adt->variants.size(); ci++) {
             auto* ctor = adt->variants[ci];
             int arity = static_cast<int>(ctor->field_type_names.size());
             std::vector<CType> ftypes;
+            std::vector<CType> fn_rets;
+            std::vector<std::string> fn_ret_adt_names;
             for (auto& ft : ctor->field_type_names) {
-                if (ft.is_function_type) ftypes.push_back(CType::FUNCTION);
-                else if (ft.name == "Int") ftypes.push_back(CType::INT);
-                else if (ft.name == "Float") ftypes.push_back(CType::FLOAT);
-                else if (ft.name == "String") ftypes.push_back(CType::STRING);
-                else if (ft.name == "Bool") ftypes.push_back(CType::BOOL);
-                else if (ft.name == "Symbol") ftypes.push_back(CType::SYMBOL);
-                else if (ft.name == "Channel") ftypes.push_back(CType::CHANNEL);
-                else if (ft.name == adt->name) ftypes.push_back(CType::ADT);
-                else if (ft.name == "()") ftypes.push_back(CType::FUNCTION);
-                else ftypes.push_back(CType::INT);
+                if (ft.is_function_type) {
+                    ftypes.push_back(CType::FUNCTION);
+                    // Capture the function's return CType (and ADT name if
+                    // applicable) so callable fields know what they yield.
+                    if (!ft.return_types.empty()) {
+                        const auto& ret = ft.return_types[0];
+                        CType ret_ct = name_to_ctype(ret.name);
+                        // The parser concatenates type-application args into
+                        // the head string (e.g. "Stream a" for `Stream a`).
+                        // The leading word is what determines the CType.
+                        std::string head = ret.name;
+                        auto sp = head.find(' ');
+                        if (sp != std::string::npos) head = head.substr(0, sp);
+                        ret_ct = name_to_ctype(head);
+                        fn_rets.push_back(ret_ct);
+                        fn_ret_adt_names.push_back(ret_ct == CType::ADT ? head : "");
+                    } else {
+                        fn_rets.push_back(CType::INT);
+                        fn_ret_adt_names.push_back("");
+                    }
+                }
+                else if (ft.name == "Int") { ftypes.push_back(CType::INT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "Float") { ftypes.push_back(CType::FLOAT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "String") { ftypes.push_back(CType::STRING); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "Bool") { ftypes.push_back(CType::BOOL); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "Symbol") { ftypes.push_back(CType::SYMBOL); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "Channel") { ftypes.push_back(CType::CHANNEL); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == adt->name) { ftypes.push_back(CType::ADT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "()") { ftypes.push_back(CType::FUNCTION); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else { ftypes.push_back(CType::INT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
             }
             // Don't overwrite if already registered (e.g., from Prelude)
             if (types_.adt_constructors.find(ctor->name) == types_.adt_constructors.end()) {
-                types_.adt_constructors[ctor->name] = {adt->name, static_cast<int>(ci), arity,
-                    static_cast<int>(adt->variants.size()), max_arity, is_recursive,
-                    ctor->field_names, ftypes};
+                AdtInfo info;
+                info.type_name = adt->name;
+                info.tag = static_cast<int>(ci);
+                info.arity = arity;
+                info.total_variants = static_cast<int>(adt->variants.size());
+                info.max_arity = max_arity;
+                info.is_recursive = is_recursive;
+                info.field_names = ctor->field_names;
+                info.field_types = ftypes;
+                info.field_fn_return_types = fn_rets;
+                info.field_fn_return_adt_names = fn_ret_adt_names;
+                types_.adt_constructors[ctor->name] = info;
             }
         }
     }

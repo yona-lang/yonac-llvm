@@ -192,12 +192,10 @@ range lo hi =
     if lo >= hi then Nil
     else Yield lo (\_ -> range (lo + 1) hi)
 
-## All non-negative integers, starting from 0. Practically infinite —
-## bounded at 2^30 to sidestep a current parser bug where integer literals
-## above INT32_MAX wrap to negative values. Use as `naturals ()`; the
-## unit argument is a thunk wrapper around a 0-arity import resolution
-## issue.
-naturals _ = range 0 1073741824
+## All non-negative integers, starting from 0. Effectively infinite —
+## bounded at INT64_MAX. Auto-forced on reference (Yona auto-evaluates
+## 0-arity bindings when used as values).
+naturals = range 0 9223372036854775807
 
 ## An infinite stream of `x`.
 repeat x = Yield x (\_ -> repeat x)

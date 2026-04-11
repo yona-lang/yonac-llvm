@@ -674,9 +674,24 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
     // Check if it's a compiled function
     auto fit = compiled_functions_.find(node->name->value);
     if (fit != compiled_functions_.end()) return {fit->second.fn, CType::FUNCTION, {fit->second.return_type}};
-    // Check if it's a deferred function (not yet compiled — referenced as value)
+    // Check if it's a deferred function (not yet compiled — referenced as value).
+    // For 0-arity definitions like `naturals = range 0 N`, an identifier
+    // reference should auto-force the function (Haskell-style CAF / value
+    // binding). Compile and call with no args, returning the value.
     auto def_it = deferred_functions_.find(node->name->value);
     if (def_it != deferred_functions_.end()) {
+        if (def_it->second.param_names.empty()) {
+            auto cf = compile_function(node->name->value, def_it->second, {});
+            if (cf.fn) {
+                std::vector<llvm::Value*> no_args;
+                if (cf.closure_env) no_args.push_back(cf.closure_env);
+                auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");
+                TypedValue result{call, cf.return_type};
+                if (!cf.return_adt_name.empty()) result.adt_type_name = cf.return_adt_name;
+                if (!cf.return_subtypes.empty()) result.subtypes = cf.return_subtypes;
+                return result;
+            }
+        }
         last_lambda_name_ = node->name->value;
         return {nullptr, CType::FUNCTION};
     }

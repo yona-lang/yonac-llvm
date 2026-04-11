@@ -793,6 +793,13 @@ Codegen::CompiledFunction Codegen::compile_function(
                 debug_.scope = di_sp;
             }
 
+            // Update the cached compiled-function entry so any self-recursive
+            // call inside the re-codegen'd body picks up the new Function*
+            // instead of the just-erased one.
+            cf_preliminary.fn = fn;
+            cf_preliminary.return_type = body_tv.type;
+            compiled_functions_[name] = cf_preliminary;
+
             // Recompile
             named_values_.clear();
             for (auto& [k, v] : saved_values) {

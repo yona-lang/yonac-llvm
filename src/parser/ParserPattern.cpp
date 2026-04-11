@@ -55,7 +55,7 @@ unique_ptr<PatternNode> ParserImpl::parse_pattern_primary() {
     if (check(TokenType::YINTEGER)) {
         auto token = advance();
         auto value = get<int64_t>(token.value);
-        auto literal_expr = new IntegerExpr(loc, static_cast<int>(value));
+        auto literal_expr = new IntegerExpr(loc, value);
         return make_unique<PatternValue>(loc, reinterpret_cast<LiteralExpr<void*>*>(literal_expr));
     }
 

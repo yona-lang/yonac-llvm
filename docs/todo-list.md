@@ -107,32 +107,62 @@
   `block_depth_` counter on the lexer that tracks `case`/`do`/`with`/`handle`
   nesting and keeps newlines significant inside those blocks even when the
   surrounding parens would otherwise suppress them.
-- [ ] **Parser: integer literals overflow at INT32_MAX** — `1000000000000`
-  parses as `-727379968`. Literals between INT32_MAX and INT64_MAX wrap.
-  The Yona-side `Int` is i64, so this should accept the full i64 range.
-  Likely a `strtol` vs `strtoll` mistake or a sign-extend bug in the
-  number lexer. Workaround in `Std\Stream`: `naturals` is bounded at
-  2^30 instead of INT64_MAX.
-- [ ] **Codegen: ADT field types beyond head identifier** — when a field
-  is declared as `Option (a, b)` or `Stream a`, the parser preserves
-  the head identifier ("Option", "Stream") but discards the type
-  arguments. Downstream the codegen treats parameterized fields as
-  CType::INT. The recent fix in `codegen_pattern_constructor` falls
-  back to `scrutinee.subtypes` (the runtime type carried at construction)
-  but this only works when the constructor was built locally; calling a
-  function-typed field of an ADT (e.g. `(() -> Step a)`) loses the
-  return type because it's stored as `CType::FUNCTION` with no return
-  annotation. Stream v1 sidesteps this by inlining the recursion into
-  the ADT itself: `type Stream a = Yield a (() -> Stream a) | Nil`.
-  Proper fix: store full FieldType (with return-type annotation) in
-  the codegen registry so function-typed fields know their signature.
-- [ ] **Codegen: 0-arity exported value definitions** — `naturals = range 0 N`
-  at module top-level is not directly usable from importers; the imported
-  name resolves but the value isn't auto-forced. Workaround in `Std\Stream`:
-  `naturals _ = range 0 N` (takes a unit argument). Long-term: top-level
-  0-arity definitions should be either auto-evaluated at module load
-  (Haskell-style CAF) or auto-called when referenced (Yona's current
-  function semantics extended to 0 args).
+- [x] **Parser: integer literals overflow at INT32_MAX** — fixed.
+  `IntegerExpr` was templated on `LiteralExpr<int>` (32-bit) and the
+  parser was casting the lexer's int64 value to `int` before storing it.
+  The lexer always parsed via `stoll` so the bug was purely in the AST
+  node and the parser conversions. Now `IntegerExpr` uses int64_t and
+  every parser callsite passes the value through unchanged. Test:
+  `test/codegen/int_literal_int64.yona` exercises 1e12 + ~INT64_MAX.
+- [x] **Codegen: ADT field types beyond head identifier** — fixed in
+  three pieces. (1) `register_yona_module_decls` and `compile_module`
+  now do a fixpoint pass over the module's ADTs marking any ADT that
+  references another ADT-with-function-fields as recursive (heap
+  allocated), so mutual recursion like
+  `Stream a = Stream (() -> Step a)` /
+  `Step a = Yield a (Stream a) | Done` correctly forces both to use
+  the heap layout instead of the closure ABI's flat-struct return.
+  (2) `AdtInfo` now carries `field_fn_return_types` /
+  `field_fn_return_adt_names`, populated when a field is a function
+  type, so the call site knows what the closure returns.
+  (3) `codegen_pattern_constructor` propagates that return CType /
+  ADT name into the bound `TypedValue.subtypes` of function-typed
+  fields, so the higher-order call resolves the right LLVM signature.
+  (4) `compile_function`'s recreate path was leaving a stale Function*
+  in `compiled_functions_[name]`, so self-recursive calls inside a
+  re-codegen'd body were jumping to a freed function — also fixed.
+- [x] **Codegen: 0-arity exported value definitions** — fixed.
+  `codegen_identifier` now auto-forces deferred functions with zero
+  parameters: when an identifier resolves to a 0-param deferred def,
+  compile it and call it with no args, returning the result. This
+  matches Haskell-style CAFs: `naturals = range 0 N` at module
+  top-level is auto-evaluated when referenced. Test:
+  `test/codegen/stdlib_naturals_caf.yona`.
+- [ ] **Pipe operator only accepts named functions, not partial applications** —
+  `range 1 6 |> map (\x -> x * 2) |> sum` fails with "pipe: right side
+  must be a function". The codegen for `|>` resolves the right operand
+  by name lookup; partial applications like `map (\x -> ...)` and lambda
+  literals aren't recognized as functions. Should evaluate the right
+  operand as an arbitrary expression that produces a callable, then
+  apply it to the left operand. Workaround: use prefix call form
+  `sum (map (\x -> ...) (range 1 6))`.
+- [ ] **Cons of tuple-typed element into Seq crashes** —
+  `(x, y) :: rest` where rest is `Seq (Tuple)` segfaults inside `toSeq`
+  on the stream returned by `zip`. Same heap-tracking story as the
+  tuple-in-ADT-field bug below — Seq element storage doesn't dup the
+  tuple element and the cons operation drops it. Needs the same family
+  of fix in seq's cons codegen path.
+- [ ] **Stream zip / tuple-in-ADT-field crashes at runtime** —
+  `zip (range 1 4) (range 10 13)` from `Std\Stream` segfaults. Yield's
+  first field is declared as `a` (a type variable) which the codegen
+  registers as CType::INT; when zip stores a tuple `(x, y)` into that
+  field the tuple pointer is stored as i64 with no heap tracking. Same
+  root family as the bug-#2 fix — generic ADT fields default to INT and
+  can't carry heap tracking. Workaround: avoid storing tuples in generic
+  ADT fields. Proper fix: extend `codegen_adt_construct` so it
+  rc_inc's heap-typed args (TUPLE/SEQ/STRING/etc.) when storing them
+  into ADT fields, and propagates the heap_mask to the boxed ADT, the
+  same way the post-bug-#2 path handles ADT-in-ADT.
 - [ ] **Std\IO module** — standard input/output abstractions. Today the
   built-in `print` family handles most output but there's no real `IO`
   module. Should provide: `stdin`/`stdout`/`stderr` as `FileHandle`
@@ -140,6 +170,13 @@
   formatted output (`printf`/`println` with format strings), buffered
   vs unbuffered modes, redirection helpers. Builds on the existing
   `Std\File` runtime and the `with`/`Linear` resource pattern.
+- [ ] **Std\Constants module** — numeric and platform constants currently
+  hard-coded throughout the stdlib. `intMax`/`intMin` (INT64_MAX/INT64_MIN),
+  `floatMax`/`floatMin`/`floatEpsilon`, `pathSeparator`, `lineSeparator`,
+  page size, host endianness, math constants (`pi`, `e`, `tau`),
+  filesystem limits. Single source of truth so e.g. `Std\Stream.naturals`
+  doesn't have to spell out `9223372036854775807` literally. Pure-Yona
+  module, no C runtime needed.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.

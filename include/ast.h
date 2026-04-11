@@ -523,12 +523,12 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_FLOAT_EXPR; };
 };
 
-class YONA_API IntegerExpr final : public LiteralExpr<int> {
+class YONA_API IntegerExpr final : public LiteralExpr<int64_t> {
 private:
   void print(std::ostream &os) const override;
 
 public:
-  explicit IntegerExpr(SourceContext token, int value);
+  explicit IntegerExpr(SourceContext token, int64_t value);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

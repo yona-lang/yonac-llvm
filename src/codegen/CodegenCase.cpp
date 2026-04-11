@@ -229,7 +229,17 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                         ftype == CType::CHANNEL)
                         typed_val = builder_->CreateIntToPtr(field_val,
                             PointerType::get(*context_, 0));
-                    named_values_[(*id)->name->value] = {typed_val, ftype};
+                    TypedValue bound{typed_val, ftype};
+                    // For function-typed fields, propagate the recorded
+                    // return CType (and ADT name) so call sites generate
+                    // the correct closure invocation.
+                    if (ftype == CType::FUNCTION &&
+                        fi < ctor_it->second.field_fn_return_types.size()) {
+                        bound.subtypes = {ctor_it->second.field_fn_return_types[fi]};
+                        if (fi < ctor_it->second.field_fn_return_adt_names.size())
+                            bound.adt_type_name = ctor_it->second.field_fn_return_adt_names[fi];
+                    }
+                    named_values_[(*id)->name->value] = bound;
                 }
             }
         }

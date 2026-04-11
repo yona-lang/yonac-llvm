@@ -88,7 +88,7 @@ FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float
 
 void FloatExpr::print(std::ostream &os) const { os << value; }
 
-IntegerExpr::IntegerExpr(SourceContext token, const int value) : LiteralExpr<int>(token, value) {}
+IntegerExpr::IntegerExpr(SourceContext token, const int64_t value) : LiteralExpr<int64_t>(token, value) {}
 
 void IntegerExpr::print(std::ostream &os) const { os << value; }
 

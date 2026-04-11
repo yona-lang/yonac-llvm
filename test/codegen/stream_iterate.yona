@@ -1,0 +1,2 @@
+import iterate, take, toSeq from Std\Stream in
+toSeq (take 6 (iterate (\n -> n * 2) 1))

@@ -1,0 +1,2 @@
+import range, filter, take, toSeq from Std\Stream in
+toSeq (take 5 (filter (\n -> n > 100) (range 1 1000)))
