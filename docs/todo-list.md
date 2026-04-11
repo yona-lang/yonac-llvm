@@ -50,12 +50,6 @@
 ## Remaining Work
 
 ### Performance
-- [x] **Unboxed Arrays (IntArray, FloatArray)** — contiguous typed arrays
-  without per-element RC. `IntArray`: flat `int64_t[]`, `FloatArray`: flat
-  `double[]`. O(1) random access, SIMD auto-vectorization by LLVM, cache-
-  friendly bulk ops (map, foldl, filter, slice, join, cons, head, tail).
-  Persistent semantics (copy-on-write set). `fromSeq`/`toSeq` conversion.
-  `Std\IntArray` (15 functions) and `Std\FloatArray` (11 functions).
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 - [ ] **Explore JIT compilation potential** — research task. Investigate
@@ -70,57 +64,10 @@
   proposal or recommendation to defer.
 
 ### Language — Type System & Effects
-- [x] **Algebraic Effect System** — `perform Effect.op args` + `handle...with...end`.
-  Static handler dispatch via CPS, handlers compiled as direct LLVM functions.
-  Resume via raw function pointer indirect call. Zero overhead when not used.
-  See [docs/effects.md](effects.md).
-- [x] **Anonymous/Inline Sum Types** — `Int | String` as type annotations,
-  function return types, and ADT field types. Parser handles `T1 | T2` via
-  `parse_sum_type()` → `SumType`. Codegen: tagged 2-tuple `(type_tag, value)`
-  via `box_as_sum()`. Type-based pattern matching: `case x of (n : Int) -> ...`.
-  `TypedPattern` AST node, `CType::SUM`, auto-boxing on typed pattern match.
-- [x] **Refinement Types** — compile-time invariant verification.
-  `type NonEmpty a = { xs : [a] | length xs > 0 }`, `type Port = { n : Int | n > 0 && n < 65536 }`.
-  RefinementChecker with FactEnv (integer intervals, non-emptiness, excluded values).
-  Built-in checks: head/tail require non-empty, division requires non-zero.
-  Pattern-match narrowing: `[h|t]` proves non-empty, integer literals set exact bounds,
-  wildcard `_` excludes all prior matched values. Guard narrowing: `n | n > 0`.
-  If-condition narrowing for all 6 comparisons (`>`, `<`, `>=`, `<=`, `==`, `!=`)
-  with `&&` compound support. Arithmetic interval propagation through `+` and `-`.
-  Variable aliasing. Parsed in type position: `{ var : Type | pred }`.
-  Refinements erased at codegen (zero runtime cost). See `docs/refinement-types.md`.
-- [x] **Row Polymorphism for Records** — anonymous record literals `{ name = "Alice", age = 30 }`,
-  compiled as tuples with compile-time field maps. Field access `r.name` is direct indexed
-  GEP (zero overhead). Row types in type checker: `MonoType::MRecord` with field list + optional
-  row variable. Row unification matches common fields, propagates extras via row vars.
-  Field access `r.name` constrains `r` to `{ name : t | r' }`. See `docs/row-polymorphism.md`.
-- [x] **Linear/Affine Types for Resources** — `type Linear a = Linear a` ADT,
-  compiler enforces single-consume via LinearityChecker. Pattern match
-  `case x of Linear fd -> ...` is the consumption point. Use-after-consume
-  errors [E0600], branch inconsistency [E0601], resource leak warnings [E0602].
-  Stdlib producers registered: tcpConnect, tcpListen, tcpAccept, udpBind, spawn.
-  See `docs/linear-types.md`.
-- [x] **Multi-Parameter Traits** — traits support multiple type params:
-  `trait Iterable a b`. TraitDeclNode, TraitInfo, TraitInstanceInfo all have
-  `type_params`/`type_names` vectors. Instance key is `"Trait:Type1:Type2"`.
-  Parser, codegen, .yonai format all updated. Backward compatible with
-  single-param traits.
-- [x] **Iterator & Iterable** — `type Iterator a = Iterator (() -> Option a)`
-  ADT in Prelude. Generator codegen detects Iterator sources and emits
-  `next()` call loop. File line iterator with 64KB buffered reads in runtime
-  (`yona_rt_file_line_iterator`). Foundation for streaming I/O — processes
-  files line-by-line with O(64KB) memory instead of O(file_size).
-  Iterable trait instances and full streaming benchmarks pending.
 - [ ] **Gradual Typing with Contracts** — optional `@contract` annotations
   that generate runtime checks in debug, erased in release.
 
 ### Language — Concurrency
-- [x] **Structured Concurrency** — automatic scoped concurrency with cancellation.
-  Let blocks auto-group async bindings. If one fails, siblings are cancelled and
-  error is propagated. Task groups in runtime with IORING_OP_ASYNC_CANCEL for
-  io_uring ops. Cancel effect (`perform Cancel.check ()`) for cooperative
-  cancellation. Parallel comprehensions `[| expr for x = source ]`.
-  Std\Parallel module with pmap, pfor. See `docs/structured-concurrency.md`.
 - [ ] **Stream Sugar** (depends on Channels) — `Stream` effect-style API that
   desugars to spawning the producer in a task and using a bounded channel.
   `perform Stream.yield x` becomes `send chan x`; the consumer reads from
@@ -137,61 +84,18 @@
   heap continuation frames, GC interaction. Scope: 2000+ lines. Not needed
   for streaming use cases (Stream Sugar + Channels solve those). Defer until
   there's a concrete use case beyond streaming.
-- [x] **Dict/Set Iterator Instances** — streaming iterators for Dict (entries,
-  keysIter, values) and Set (iterator). Stack-based HAMT trie traversal
-  (14-level stack, no recursion). forEach for both. O(1) memory per element.
-  File (listDir) pending. String chars/split/lines already done.
-- [x] **Built-in Fold** — C loop-based `foldl`/`foldr` in runtime + Prelude.
-  Handles 50K+ elements without stack overflow. General TCO blocked by
-  RC cleanup after recursive calls preventing LLVM TailCallElimination.
-- [x] **General TCO** — tail-call optimization for self-recursive functions.
-  Pre-tail-call RC cleanup: Perceus DROP moved before the call for non-pass-through
-  args. LLVM TCE converts `tail call` to loop. User-defined foldl handles 100K+ elements.
-- [x] **Iterator RC Cleanup** — fixed Option ADT layout mismatch (was `[tag, value]`,
-  now `[tag, num_fields, heap_mask, field]`). foldl_iterator rc_dec's each wrapper.
-  Memory: 116MB → 2.4MB for 500K lines. Time: 53.9ms → 39.8ms.
-- [x] **Blocking Type Checker** — Hindley-Milner inference handles all AST node
-  types. Blocking enabled: type errors stop compilation in both CLI and test
-  harness. Polymorphic arithmetic (`a → a → a`), generators with bound iteration
-  variables, mutual recursion across nested lets (pre-scan + pre-bind), pipe
-  operators, imports, pattern destructuring. E2E rejection test fixtures for
-  invalid programs (6 cases). 199 tests, 1100 assertions all passing.
-- [x] **Binary File I/O** — `FileHandle` ADT in Prelude wrapping fd.
-  `openFile` returns `Linear FileHandle`, `Closeable FileHandle` instance for
-  `with` expression RAII. Handle-based: `readBytes`, `writeBytes` (io_uring pread/pwrite
-  with userspace position tracking), `seek`, `tell`, `flush`, `truncate`.
-  `readChunks` returns streaming `Iterator Bytes` for chunked binary reads.
-  All I/O uses explicit offsets (pread/pwrite) — safe for concurrent access.
 - [ ] **Distributed Yona** — network/interprocess communication between Yona
   systems. Actor model, message passing, distributed effects, serialization.
   Erlang-style nodes, effect-based RPC, distributed task groups.
-- [x] **Channels (CSP-style)** — typed bounded channels for inter-task
-  communication. New `CType::CHANNEL` + `RC_TYPE_CHANNEL`. API: `channel`,
-  `send` (blocks if full), `recv` (returns `Some v` / `None`), `tryRecv`,
-  `close`, `isClosed`, `length`, `capacity`. Bounded ring buffer + mutex +
-  two condvars. Timed wait + heuristic deadlock detection. 6 E2E test
-  fixtures. See `docs/channels.md`, `docs/api/Channel.md`.
-- [x] **Std\Task.spawn primitive** — `spawn : (() -> a) -> a` declared
-  as `IO` so it returns a PROMISE and participates in let-binding
-  auto-grouping. Wraps `yona_rt_async_spawn_closure` which uses the
-  existing thread pool infrastructure.
-- [ ] **Channel deadlock detection** (part of Channels) — two-tier safety:
-  (1) Linear sender/receiver split: `channel : Int -> (Linear Sender a,
-  Linear Receiver a)` so the LinearityChecker enforces that the sender is
-  passed to a spawned producer task (or closed) at compile time. Forgetting
-  `spawn` produces a linearity error. (2) Runtime deadlock detection in
+- [ ] **Channel deadlock detection** — runtime deadlock detection in
   `recv`: before `cond_wait`, check if all tasks in the group are blocked
   and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
   deadlocks (cycles, crashed producers) that linear types can't see.
-  Combined approach: linearity for compile-time obvious cases, runtime
-  detection as safety net.
-- [x] **Channel benchmarks with multi-language references** (part of Channels) —
-  3 benchmarks landed: `channel_throughput` (10000 sends), `channel_pipeline`
-  (5000 doubled sends), `channel_fanin` (two producers + coordinator + one
-  consumer), each with C (pthreads), Python (`queue.Queue`), and Go
-  (channels) reference implementations. Additional shapes (pingpong,
-  fanout, actor) deferred until the parser supports `case` inside lambda
-  bodies — a recurring blocker that affected nested closure consumers.
+- [ ] **Parser: `case` inside lambda bodies** — currently `(\x -> case x of ...)`
+  fails to parse cleanly when the case body crosses lines. Workaround in
+  the channel benchmarks: hoist the case to a top-level let. Should fix
+  to enable pingpong/fanout/actor channel benchmarks and idiomatic
+  short-form callbacks.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
@@ -204,15 +108,6 @@
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
   Hygienic macros via staging.
-- [x] **Runtime Type Introspection** — `typeOf x` is a compile-time intrinsic
-  returning a `Type` ADT value. Zero runtime cost — emits a constant ADT
-  literal. Variants: `TInt`, `TFloat`, `TBool`, `TString`, `TSymbol`, `TUnit`,
-  `TSeq`, `TSet`, `TDict`, `TTuple`, `TFunction`, `TPromise`, `TByteArray`,
-  `TIntArray`, `TFloatArray`, `TAdt String`, `TSum`, `TRecord`. Type ADT
-  in Prelude. Also added `FileMode` (Read/Write/ReadWrite/Append) and
-  `Whence` (SeekSet/SeekCur/SeekEnd) ADTs replacing string-based dispatch
-  in file I/O. Stdlib now uses ADTs over symbols/strings for type-safe APIs.
-  See `docs/type-introspection.md`.
 - [ ] **Compile-Time Evaluator** — evaluate pure functions at compile time.
   Enables user-defined derive strategies, constant folding, static assertions.
   Requires: subset interpreter for pure Yona expressions (no I/O, no effects).
@@ -222,58 +117,6 @@
 - [ ] **Quasiquotes / Template Expressions** — `quote { expr }` captures
   AST for manipulation. `splice expr` inserts computed AST into code.
   Enables: DSLs, custom syntax extensions, code generation.
-
-### Diagnostics
-- [x] **Rich error explanations** — `yonac --explain E0100` shows detailed
-  explanation with examples. Error codes (E01xx type, E02xx effect, E03xx parse,
-  E04xx codegen) on all errors. Unified DiagnosticEngine with colored output,
-  source context display, caret underlines, and "did you mean?" suggestions.
-  Parser errors routed through DiagnosticEngine in CLI.
-
-### Module System
-- [x] **Pure-Yona Stdlib Module Loading** — `load_module_interface` falls
-  back to `.yona` source files when no `.yonai` exists. Parses the source,
-  registers the module's ADTs/traits/instances in the current Codegen
-  state, defers function compilation via `deferred_functions_`, and
-  caches by canonical path so each module is parsed at most once.
-  `register_yona_module_decls` is the slimmed counterpart to
-  `compile_module` (no IR verify/optimize; non-exported functions stay
-  deferred). Demonstrated by `stdlib_pair_basic` test using `Std/Pair.yona`.
-- [x] **Extern symbol aliasing** — `extern NAME : TYPE = "C_SYMBOL"` binds
-  a Yona-friendly local name to a mangled C ABI symbol. The local name
-  goes into the codegen registry; the LLVM extern function is created
-  under the C symbol. Used by `Std/Channel.yona` to expose the C
-  channel runtime through clean `raw_new` / `raw_send` / etc. helpers
-  instead of leaking `yona_Std_Channel__channel` into every wrapper.
-- [x] **Linear Sender/Receiver split for Channels** — `Std/Channel.yona`
-  defines `type Sender a = Sender Channel`, `type Receiver a = Receiver Channel`,
-  and `channel n = let raw = raw_new n in (Linear (Sender raw), Linear (Receiver raw))`.
-  Users pattern-match the `Linear` once per side; afterwards a `Sender`
-  can only `send` and a `Receiver` can only `recv`/`tryRecv`. All 6
-  channel test fixtures and 3 benchmarks updated to the new pattern.
-  Required codegen plumbing landed alongside: (1) ADT type-name
-  propagation from extern returns (`yona_type_adt_name`,
-  `CompiledFunction.return_adt_name`, `ModuleFunctionMeta.return_adt_name`)
-  so wrapper functions know the ADT type of their return value;
-  (2) tuple subtype propagation through wrapper returns
-  (`CompiledFunction.return_subtypes`); (3) auto-boxing of non-recursive
-  ADT structs when stored into a tuple slot or another ADT field
-  (`codegen_tuple` and `codegen_adt_construct.to_i64`); (4) ptr restoration
-  when destructuring heap-typed tuple elements in let-PatternAlias and
-  case TuplePattern; (5) field-type fallback to scrutinee subtypes when
-  the constructor's `field_types` is empty (generic field like `Linear a`).
-- [x] **RC corruption for Linear-extracted ADTs** — fixed. Root cause was
-  ADT field storage: `codegen_adt_construct` (and `codegen_tuple` boxing
-  + closure capture) wrote heap-typed values into ADT fields without
-  rc_inc'ing them, and the resulting boxed ADTs had `heap_mask = 0`,
-  so the field's lifetime was tied solely to the original let binding.
-  When the wrapper `channel n = let raw = yona_Std_Channel__channel n
-  in (Linear (Sender raw), ...)` returned, `raw`'s scope cleanup
-  rc_dec'd the channel and freed it, while the boxed Sender still held
-  a (now dangling) pointer. Fix: rc_inc heap-typed args during ADT
-  construction and propagate the inner field heap_mask onto every
-  boxed copy. Channel benchmarks now run with full N=5000–10000 spawn
-  producers deterministically.
 
 ### Tooling
 - [ ] Package manager / build system
