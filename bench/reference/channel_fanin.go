@@ -13,12 +13,12 @@ func producer(work chan int, coord chan int, lo, hi int) {
 }
 
 func main() {
-	work := make(chan int, 64)
+	work := make(chan int, 32)
 	coord := make(chan int, 4)
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go func() { defer wg.Done(); producer(work, coord, 1, 30) }()
-	go func() { defer wg.Done(); producer(work, coord, 31, 60) }()
+	go func() { defer wg.Done(); producer(work, coord, 1, 2500) }()
+	go func() { defer wg.Done(); producer(work, coord, 2501, 5000) }()
 
 	go func() {
 		for i := 0; i < 2; i++ {

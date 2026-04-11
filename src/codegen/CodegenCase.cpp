@@ -216,7 +216,8 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                     Value* typed_val = field_val;
                     if (ftype == CType::ADT || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::FUNCTION ||
-                        ftype == CType::SET || ftype == CType::DICT)
+                        ftype == CType::SET || ftype == CType::DICT ||
+                        ftype == CType::CHANNEL)
                         typed_val = builder_->CreateIntToPtr(field_val,
                             PointerType::get(*context_, 0));
                     named_values_[(*id)->name->value] = {typed_val, ftype};
@@ -241,7 +242,8 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                             ? scrutinee.subtypes[fi] : CType::INT);
                     Value* typed_val = field_val;
                     if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
-                        ftype == CType::STRING || ftype == CType::ADT)
+                        ftype == CType::STRING || ftype == CType::ADT ||
+                        ftype == CType::CHANNEL)
                         typed_val = builder_->CreateIntToPtr(field_val,
                             PointerType::get(*context_, 0));
                     named_values_[(*id)->name->value] = {typed_val, ftype};

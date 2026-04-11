@@ -70,6 +70,15 @@ TypedValue Codegen::codegen_tuple(TupleExpr* node) {
                 builder_->CreateCall(rt_.adt_set_field_,
                     {adt_ptr, ConstantInt::get(i64_ty, fi - 1), field_val});
             }
+            // Carry inner field heap mask so the boxed ADT frees its heap
+            // fields on destruction.
+            int64_t inner_mask = 0;
+            for (size_t fi = 0; fi < tv.subtypes.size() && fi < 64; fi++)
+                if (is_heap_type(tv.subtypes[fi]))
+                    inner_mask |= ((int64_t)1 << fi);
+            if (inner_mask != 0)
+                builder_->CreateCall(rt_.adt_set_heap_mask_,
+                    {adt_ptr, ConstantInt::get(i64_ty, inner_mask)});
             i64_val = builder_->CreatePtrToInt(adt_ptr, i64_ty, "tuple_adt_box");
         }
         elems.push_back(i64_val);

@@ -2,10 +2,10 @@ package main
 
 import "fmt"
 
-const N = 50
+const N = 5000
 
 func main() {
-	ch := make(chan int, 64)
+	ch := make(chan int, 32)
 	go func() {
 		for n := 1; n <= N; n++ {
 			ch <- n * 2

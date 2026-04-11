@@ -256,14 +256,18 @@
   when destructuring heap-typed tuple elements in let-PatternAlias and
   case TuplePattern; (5) field-type fallback to scrutinee subtypes when
   the constructor's `field_types` is empty (generic field like `Linear a`).
-- [ ] **RC corruption for Linear-extracted ADTs in spawned closures**
-  (follow-up to the above) — when a `sender` extracted from `case sl of
-  Linear sender ->` is captured by a spawned closure `(\() -> ...
-  send sender x ...)`, recursive sends drop refcount prematurely and
-  corrupt the heap at >~80 items. Workaround in current benchmarks:
-  run the producer in the main task with cap >= N. Root cause likely
-  in Perceus DUP/DROP for boxed-ADT pointers traveling through closure
-  environments combined with self-tail calls.
+- [x] **RC corruption for Linear-extracted ADTs** — fixed. Root cause was
+  ADT field storage: `codegen_adt_construct` (and `codegen_tuple` boxing
+  + closure capture) wrote heap-typed values into ADT fields without
+  rc_inc'ing them, and the resulting boxed ADTs had `heap_mask = 0`,
+  so the field's lifetime was tied solely to the original let binding.
+  When the wrapper `channel n = let raw = yona_Std_Channel__channel n
+  in (Linear (Sender raw), ...)` returned, `raw`'s scope cleanup
+  rc_dec'd the channel and freed it, while the boxed Sender still held
+  a (now dangling) pointer. Fix: rc_inc heap-typed args during ADT
+  construction and propagate the inner field heap_mask onto every
+  boxed copy. Channel benchmarks now run with full N=5000–10000 spawn
+  producers deterministically.
 
 ### Tooling
 - [ ] Package manager / build system

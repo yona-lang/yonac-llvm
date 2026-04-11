@@ -3,7 +3,7 @@ import queue
 import threading
 
 CAP = 64
-N = 80
+N = 10000
 
 def producer(q):
     for i in range(1, N + 1):

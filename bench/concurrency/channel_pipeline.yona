@@ -1,10 +1,11 @@
 import channel, send, recv, close from Std\Channel in
-let (sl, rl) = channel 64 in
+import spawn from Std\Task in
+let (sl, rl) = channel 32 in
 case sl of Linear sender ->
 case rl of Linear receiver ->
-    let push n = if n > 50 then close sender
+    let push n = if n > 5000 then close sender
                  else let _ = send sender (n * 2) in push (n + 1),
-        _ = push 1,
+        _ = spawn (\() -> push 1),
         consume acc = case recv receiver of
             Some v -> consume (acc + v)
             None   -> acc

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 #define CAP 64
-#define N 80
+#define N 10000
 
 typedef struct {
     long buf[CAP];

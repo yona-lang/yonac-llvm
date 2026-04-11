@@ -4,12 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define CAP 64
+#define CAP 32
 #define COORD_CAP 4
 #define LO_A 1
-#define HI_A 30
-#define LO_B 31
-#define HI_B 60
+#define HI_A 2500
+#define LO_B 2501
+#define HI_B 5000
 
 typedef struct {
     long buf[CAP];

@@ -1025,7 +1025,9 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
 
     // Helper: cast value to i64 for storage. ADT structs (multi-i64) don't
     // fit in a single i64 — box them to heap first and pass the pointer.
-    auto to_i64 = [&](Value* arg_val) -> Value* {
+    // The boxed ADT inherits its inner field heap_mask from `subtypes`.
+    auto to_i64 = [&](const TypedValue& tv) -> Value* {
+        Value* arg_val = tv.val;
         if (arg_val->getType() == i64_ty) return arg_val;
         if (arg_val->getType()->isIntegerTy())
             return builder_->CreateZExtOrTrunc(arg_val, i64_ty);
@@ -1045,6 +1047,15 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
                 builder_->CreateCall(rt_.adt_set_field_,
                     {boxed, ConstantInt::get(i64_ty, fi - 1), fv});
             }
+            // Carry the inner ADT's per-field heap mask so this newly boxed
+            // copy frees its heap fields when destroyed.
+            int64_t inner_mask = 0;
+            for (size_t fi = 0; fi < tv.subtypes.size() && fi < 64; fi++)
+                if (is_heap_type(tv.subtypes[fi]))
+                    inner_mask |= ((int64_t)1 << fi);
+            if (inner_mask != 0)
+                builder_->CreateCall(rt_.adt_set_heap_mask_,
+                    {boxed, ConstantInt::get(i64_ty, inner_mask)});
             return builder_->CreatePtrToInt(boxed, i64_ty, "adt_field_box");
         }
         return arg_val;
@@ -1064,7 +1075,12 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
              ConstantInt::get(i64_ty, info.arity)}, "adt_node");
         int64_t adt_heap_mask = 0;
         for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
-            Value* arg_val = to_i64(all_args[ai].val);
+            Value* arg_val = to_i64(all_args[ai]);
+            // Storing a heap-typed value into the ADT transfers/shares
+            // ownership — rc_inc so the field's lifetime is tied to the ADT,
+            // not the original binding.
+            if (is_heap_type(all_args[ai].type) && !all_args[ai].val->getType()->isStructTy())
+                emit_rc_inc(all_args[ai].val, all_args[ai].type);
             builder_->CreateCall(rt_.adt_set_field_,
                 {node_ptr, ConstantInt::get(i64_ty, ai), arg_val});
             if (is_heap_type(all_args[ai].type) && ai < 64)
@@ -1085,7 +1101,11 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
         Value* val = UndefValue::get(struct_type);
         val = builder_->CreateInsertValue(val, ConstantInt::get(tag_ty, info.tag), {0});
         for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
-            Value* arg_val = to_i64(all_args[ai].val);
+            // rc_inc heap field values: same ownership rule as the recursive
+            // path — the ADT (eventually boxed) becomes a co-owner.
+            if (is_heap_type(all_args[ai].type) && !all_args[ai].val->getType()->isStructTy())
+                emit_rc_inc(all_args[ai].val, all_args[ai].type);
+            Value* arg_val = to_i64(all_args[ai]);
             val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
         }
         TypedValue result{val, CType::ADT};
