@@ -107,6 +107,20 @@
   `block_depth_` counter on the lexer that tracks `case`/`do`/`with`/`handle`
   nesting and keeps newlines significant inside those blocks even when the
   surrounding parens would otherwise suppress them.
+- [ ] **Parser: `f (x, y)` parses as `f x y` instead of `f ((x, y))`** —
+  Yona's juxtaposition treats `(x, y)` immediately following an
+  identifier as two separate curried arguments, not a tuple argument.
+  `f (1, 2)` calls `f` with `1` and `2`; passing the tuple requires a
+  let binding (`let p = (1, 2) in f p`) or a wrapper function. This
+  silently breaks any constructor / function expecting a tuple as one
+  arg — `Yield (x, y) (\_ -> ...)` parses as `Yield x y (\_ -> ...)`,
+  Yield has arity 2, and the lambda gets dropped. Workaround in
+  `Std\Stream`'s `zip`: `let pair = (x, y) in Yield pair (\_ -> ...)`.
+  Proper fix is a parser disambiguation rule: a parenthesized
+  comma-list immediately after a callable should be a single tuple
+  argument when the callable's known arity matches, or always (the
+  Haskell convention). Affects every callable that takes a tuple,
+  not just constructors.
 - [x] **Parser: integer literals overflow at INT32_MAX** — fixed.
   `IntegerExpr` was templated on `LiteralExpr<int>` (32-bit) and the
   parser was casting the lexer's int64 value to `int` before storing it.
