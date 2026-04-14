@@ -4,9 +4,9 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1207 assertions across 204 test cases (all passing)
+- **Tests**: 1211 assertions across 204 test cases (all passing)
 - **Benchmarks**: 34/34 passing (rerun 2026-04-14, LLVM 22, 10 iters at -O2)
-- **Stdlib**: 33 modules (Std\IO rewritten non-blocking, Std\Stream v1, Std\Constants\{Num,Math,Platform})
+- **Stdlib**: ~37 modules (non-blocking Std\IO, Std\Stream, Std\Constants\{Num,Math,Platform}, Std\Channel, Std\Task)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
 
@@ -103,18 +103,6 @@ enhancement, not a benchmark change.
   that generate runtime checks in debug, erased in release.
 
 ### Language — Concurrency
-- [x] **Stream (lazy pull-based sequence)** — shipped as `lib/Std/Stream.yona`.
-  Type: `Stream a = Yield a (() -> Stream a) | Nil`. Surface: producers
-  (`empty`, `singleton`, `fromSeq`, `range`, `naturals`, `repeat`,
-  `iterate`, `unfold`, `fromIterator`), lazy operators (`map`, `filter`,
-  `take`, `drop`, `takeWhile`, `dropWhile`, `zip`, `zipWith`, `concat`,
-  `flatMap`, `scan`), pipeline parallelism (`async`, `buffered`), and
-  terminators (`toSeq`, `foldl`, `forEach`, `count`, `sum`, `anyMatch`,
-  `allMatch`, `find`, `head`, `isEmpty`). Fixture tests: `stream_basic`,
-  `stream_filter_take`, `stream_iterate`, `stream_pipeline`, `stream_zip`,
-  `stream_async`. Deferred: `chunksOf`, resource cleanup (`Stream.bracket`),
-  error forwarding across `async`, cross-operator fusion, multi-consumer
-  broadcast.
 - [ ] **Multi-Shot Effects with Stackful Coroutines** (research, deferred) —
   extend the effect system to support multi-shot resume and true suspension
   via heap-allocated continuations or per-effect stacks. Enables: backtracking
@@ -130,13 +118,6 @@ enhancement, not a benchmark change.
   `recv`: before `cond_wait`, check if all tasks in the group are blocked
   and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
   deadlocks (cycles, crashed producers) that linear types can't see.
-- [x] **Std\IO module** — non-blocking console and handle-based byte I/O.
-  Shipped as pure-Yona module calling `yona_Std_IO__*` externs that
-  submit via io_uring (writes) or thread pool (readLine). All write
-  operations return Promises that auto-await at the call site.
-- [x] **Std\Constants module** — split into `Std\Constants\Num`,
-  `Std\Constants\Math`, `Std\Constants\Platform`. Platform queries use
-  externs in `os_linux.c`.
 - [ ] **LLVM coroutine lowering for async** — replace the thread-pool +
   promise machinery (`yona_pool_worker`, `yona_rt_async_call`, `async_await`)
   with LLVM coroutines as the suspend/resume substrate. io_uring stays as
@@ -278,13 +259,17 @@ enhancement, not a benchmark change.
 - Non-blocking Process: spawn, readLine, readAll, wait, kill, writeStdin, pid
 - Async exec/execStatus via thread pool (AFN)
 
-### Standard Library (27 modules)
+### Standard Library (~37 modules)
 
-**Pure Yona (12):** Option, Result, List, Tuple, Range, Math, Pair, Bool,
-Test, Collection, Function, Http
+**Pure Yona:** Option, Result, List, Tuple, Range, Math, Pair, Bool,
+Test, Collection, Function, Http, IO (non-blocking io_uring writes +
+thread-pool readLine), Stream (lazy pull-based sequences with
+`chunksOf`, `bracket`, pipeline parallelism via `async`/`buffered`),
+Parallel, Regex, Channel, Constants\{Num,Math,Platform}
 
-**C runtime (15):** String, Encoding, Types, IO, File, Process, Random,
-Json, Crypto, Log, Net, Bytes, Time, Path, Format, Dict, Set, Regex
+**C runtime:** String, Encoding, Types, File, Process, Random, Json,
+Crypto, Log, Net, Bytes, Time, Path, Format, Dict, Set, IntArray,
+FloatArray, ByteArray, Task
 
 ### Tooling & Distribution
 - DWARF debug info, DiagnosticEngine with error codes and `--explain`

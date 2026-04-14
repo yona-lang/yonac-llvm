@@ -433,7 +433,8 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
                                    std::vector<bool>& binding_is_arena) {
     auto saved_arena = current_arena_;
 
-    for (auto* alias : node->aliases) {
+    for (size_t ai = 0; ai < node->aliases.size(); ai++) {
+        auto* alias = node->aliases[ai];
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
             std::string vname = va->identifier->name->value;
 
@@ -454,9 +455,26 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
             if (tv) {
                 named_values_[vname] = tv;
 
-                // Seq protection: rc_inc to prevent unique-owner tail mutation
-                if (tv.type == CType::SEQ && tv.val && !llvm::isa<llvm::Constant>(tv.val))
-                    emit_rc_inc(tv.val, CType::SEQ);
+                // Seq protection: rc_inc to prevent unique-owner tail
+                // mutation when the binding is used more than once. If
+                // the body + subsequent aliases reference vname at most
+                // once, the single use (or drop) takes the existing ref
+                // and the protection is unnecessary — saving a copy on
+                // the downstream seq_tail_consume fast path.
+                if (tv.type == CType::SEQ && tv.val && !llvm::isa<llvm::Constant>(tv.val)) {
+                    int uses = count_identifier_refs(node->expr, vname);
+                    for (size_t aj = ai + 1; aj < node->aliases.size(); aj++) {
+                        auto* other = node->aliases[aj];
+                        if (auto* vb = dynamic_cast<ValueAlias*>(other))
+                            uses += count_identifier_refs(vb->expr, vname);
+                        else if (auto* lb = dynamic_cast<LambdaAlias*>(other))
+                            uses += count_identifier_refs(lb->lambda, vname);
+                        else if (auto* pb = dynamic_cast<PatternAlias*>(other))
+                            uses += count_identifier_refs(pb->expr, vname);
+                    }
+                    if (uses > 1)
+                        emit_rc_inc(tv.val, CType::SEQ);
+                }
 
                 if (is_heap_type(tv.type) && tv.val) {
                     scope_bindings.push_back(tv);
