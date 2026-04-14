@@ -78,15 +78,28 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
         }
     }
     if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
-        if (node->expr->get_type() == AST_IDENTIFIER_EXPR) {
-            auto scrut_name = static_cast<IdentifierExpr*>(node->expr)->name->value;
-            if (count_identifier_refs(clause->body, scrut_name) > 0)
-                emit_rc_inc(seq_ptr, CType::SEQ);
-        }
+        // Force seq_tail onto the copy path by rc_inc'ing the scrutinee
+        // beforehand. Without this, when the scrutinee has rc=1, tail
+        // returns the same pointer with bumped offset — and our arm-exit
+        // rc_dec on the tail binding would then free the caller-owned
+        // scrutinee. Paying the copy cost keeps ownership crisp: the
+        // `rest` binding always owns a fresh seq with rc=1, and the
+        // arm-exit drop balances it.
+        //
+        // If the scrutinee was already referenced in the body by name,
+        // the rc_inc also covers that borrow (it's then symmetric with
+        // the existing behavior).
+        emit_rc_inc(seq_ptr, CType::SEQ);
         auto tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
         auto* pv = static_cast<PatternValue*>(htp->tail);
         if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
             named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
+        // Schedule rc_dec for the tail (owned, rc=1) and the scrutinee
+        // (balance the rc_inc above) at arm exit.
+        if (!arm_drop_stack_.empty()) {
+            arm_drop_stack_.back().push_back({tv, CType::SEQ});
+            arm_drop_stack_.back().push_back({seq_ptr, CType::SEQ});
+        }
     }
     return true;
 }
@@ -426,6 +439,11 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
         bool body_inline = false;
 
+        // Enter arm scope for drop tracking. Pattern-introduced heap-typed
+        // bindings (currently just head-tail `rest`) accumulate here and
+        // are rc_dec'd after the arm body is codegen'd.
+        arm_drop_stack_.push_back({});
+
         if (pat->get_type() == AST_UNDERSCORE_PATTERN) {
             builder_->CreateBr(body_bb);
         } else if (pat->get_type() == AST_PATTERN_VALUE) {
@@ -568,6 +586,17 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
 
         auto body_tv = codegen(clause->body);
         if (!body_tv) return {};
+        // Emit arm-scope drops for pattern-bound heap values BEFORE the arm
+        // branches to the merge block. If the body value is one of the
+        // scheduled drops (e.g., `[h|t] -> t`), skip that drop — the value
+        // escapes the arm and the caller becomes its owner.
+        if (!arm_drop_stack_.empty()) {
+            for (auto& [val, ct] : arm_drop_stack_.back()) {
+                if (val == body_tv.val) continue;
+                emit_rc_dec(val, ct);
+            }
+            arm_drop_stack_.pop_back();
+        }
         builder_->CreateBr(merge_bb);
         results.push_back({body_tv, builder_->GetInsertBlock()});
 

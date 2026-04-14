@@ -84,11 +84,73 @@ typedef struct slab {
 
 static __thread slab_t* pool_slabs[POOL_CLASSES] = {0};
 
+/* Allocation statistics — enabled when YONA_ALLOC_STATS env var is set at
+ * program start. The atomic increments are cheap; the report destructor
+ * prints to stderr only if the env var is set. Per-tag breakdown helps
+ * localize leaks (see bench/core/queens.yona investigation that uncovered
+ * the seq_tail copy-path leak). */
+#include <stdatomic.h>
+static _Atomic long long yona_alloc_n = 0;
+static _Atomic long long yona_free_n = 0;
+static _Atomic long long yona_slab_bytes = 0;
+#define YONA_NUM_TAGS 32
+static _Atomic long long yona_alloc_by_tag[YONA_NUM_TAGS];
+static _Atomic long long yona_free_by_tag[YONA_NUM_TAGS];
+static const char* yona_tag_name(int tag) {
+    switch (tag) {
+        case 1:  return "SEQ";
+        case 2:  return "SET";
+        case 3:  return "DICT";
+        case 4:  return "ADT";
+        case 5:  return "CLOSURE";
+        case 6:  return "STRING";
+        case 7:  return "TUPLE";
+        case 8:  return "BYTEARR";
+        case 11: return "CHUNKED";
+        case 12: return "RBT";
+        case 13: return "RBT_NODE";
+        case 14: return "RBT_LEAF";
+        case 15: return "RBT_CHUNK";
+        case 16: return "REGEX";
+        case 17: return "PROCESS";
+        case 18: return "INTARR";
+        case 19: return "FLOATARR";
+        case 20: return "CHANNEL";
+        default: return "other";
+    }
+}
+__attribute__((destructor)) static void yona_alloc_report(void) {
+    if (!getenv("YONA_ALLOC_STATS")) return;
+    fprintf(stderr, "[alloc-stats] allocs=%lld frees=%lld slab_bytes=%lld\n",
+            atomic_load(&yona_alloc_n), atomic_load(&yona_free_n),
+            atomic_load(&yona_slab_bytes));
+    for (int t = 0; t < YONA_NUM_TAGS; t++) {
+        long long a = atomic_load(&yona_alloc_by_tag[t]);
+        long long f = atomic_load(&yona_free_by_tag[t]);
+        if (a == 0 && f == 0) continue;
+        fprintf(stderr, "[alloc-stats]   tag=%s allocs=%lld frees=%lld leaked=%lld\n",
+                yona_tag_name(t), a, f, a - f);
+    }
+}
+#define YONA_ALLOC_INC_TAG(tag) do { \
+    atomic_fetch_add_explicit(&yona_alloc_n, 1, memory_order_relaxed); \
+    if ((tag) >= 0 && (tag) < YONA_NUM_TAGS) \
+        atomic_fetch_add_explicit(&yona_alloc_by_tag[(tag)], 1, memory_order_relaxed); \
+} while(0)
+#define YONA_FREE_INC_TAG(tag) do { \
+    atomic_fetch_add_explicit(&yona_free_n, 1, memory_order_relaxed); \
+    if ((tag) >= 0 && (tag) < YONA_NUM_TAGS) \
+        atomic_fetch_add_explicit(&yona_free_by_tag[(tag)], 1, memory_order_relaxed); \
+} while(0)
+#define YONA_SLAB_ADD(n)       atomic_fetch_add_explicit(&yona_slab_bytes, (long long)(n), memory_order_relaxed)
+
 static void pool_grow(int cls) {
     size_t block_size = pool_sizes[cls];
-    slab_t* slab = (slab_t*)malloc(sizeof(slab_t) + SLAB_BLOCKS * block_size);
+    size_t slab_size = sizeof(slab_t) + SLAB_BLOCKS * block_size;
+    slab_t* slab = (slab_t*)malloc(slab_size);
     slab->next = pool_slabs[cls];
     pool_slabs[cls] = slab;
+    YONA_SLAB_ADD(slab_size);
     /* Link all blocks in the slab into the free list */
     for (int i = 0; i < SLAB_BLOCKS; i++) {
         pool_block_t* block = (pool_block_t*)(slab->data + i * block_size);
@@ -136,6 +198,7 @@ void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
     int64_t* raw = (int64_t*)pool_alloc(total);
     raw[0] = 1;         /* refcount = 1 */
     raw[1] = ENCODE_TAG(type_tag, cls);  /* type tag + pool class */
+    YONA_ALLOC_INC_TAG((int)type_tag);
     return (void*)(raw + RC_HEADER_SIZE);
 }
 
@@ -333,6 +396,7 @@ void yona_rt_rc_dec(void* ptr) {
             extern void yona_rt_channel_destroy(void* ch);
             yona_rt_channel_destroy(ptr);
         }
+        YONA_FREE_INC_TAG((int)type_tag);
         if (pool_cls >= 0)
             pool_free(header, pool_sizes[pool_cls]);
         else

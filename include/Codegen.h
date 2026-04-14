@@ -150,6 +150,15 @@ private:
     int lambda_counter_ = 0;
     std::string last_lambda_name_;
 
+    // Case-arm-scoped seq bindings to drop before the arm branches to the
+    // merge block. A head-tail pattern binds `rest = seq_tail(scrutinee)`,
+    // which allocates a fresh seq when the scrutinee isn't unique. Without
+    // an explicit rc_dec at arm exit, that seq leaks — see the queens
+    // benchmark investigation. Each inner vector is the drops for one
+    // active case arm; codegen_case pushes a new frame on entry to the
+    // arm and drops + pops on exit.
+    std::vector<std::vector<std::pair<llvm::Value*, CType>>> arm_drop_stack_;
+
     // Closure devirtualization: map closure Value* → underlying Function*
     // When a known lambda is wrapped in a closure, we remember the mapping
     // so indirect closure calls can be replaced with direct calls.

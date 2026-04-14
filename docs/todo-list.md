@@ -12,44 +12,50 @@
 
 ## Benchmark Results
 
-Rerun on LLVM 22, 2026-04-14, 10 iterations, `b51e035`. Sorted by Yona/C ratio.
+Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
+
+> **Head-tail drop fix (2026-04-14)**: `case seq of [h|t] -> …` arms now
+> rc_inc the scrutinee + force `seq_tail` onto the copy path, and rc_dec
+> both at arm exit. This plugs a seq leak that pushed `queens` to 43 MB /
+> 10.9x C; post-fix queens is 2.4 MB (matching C) but jumped in wall
+> time from 14ms to 36ms because every tail now copies. Several list_*
+> benchmarks also regressed on time and memory — tracked as separate
+> perf/correctness followups in the open list.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| par_map | 0.60ms | 0.63ms | **1.0x** | 2.4 | 2.4 |
-| list_map_filter | 0.73ms | 0.70ms | **1.0x** | 2.9 | 3.0 |
-| parallel_async | 101ms | 101ms | **1.0x** | 2.7 | 2.5 |
+| par_map | 0.54ms | 0.64ms | **0.8x** | 2.4 | 2.4 |
+| tak | 66ms | 64ms | **1.0x** | 2.4 | 2.2 |
+| parallel_async | 102ms | 101ms | **1.0x** | 2.8 | 2.5 |
 | sequential_async | 402ms | 401ms | **1.0x** | 2.8 | 2.2 |
-| process_spawn | 1.2ms | 1.1ms | **1.1x** | 3.8 | 3.8 |
-| tak | 66ms | 62ms | **1.1x** | 2.4 | 2.2 |
-| file_read | 0.75ms | 0.69ms | **1.1x** | 3.5 | 3.3 |
-| binary_read_chunks | 0.80ms | 0.70ms | **1.1x** | 2.5 | 2.3 |
-| process_exec | 1.2ms | 1.0ms | 1.2x | 3.9 | 3.9 |
-| int_array_fill_sum | 0.59ms | 0.49ms | 1.2x | 2.6 | 2.3 |
-| binary_write_read | 3.6ms | 2.9ms | 1.2x | 12.5 | 7.2 |
-| channel_pipeline | 1.2ms | 0.94ms | 1.3x | 3.2 | 2.3 |
-| channel_fanin | 1.5ms | 1.1ms | 1.3x | 3.3 | 2.4 |
-| seq_map | 0.61ms | 0.49ms | 1.3x | 2.4 | 2.2 |
-| sum_squares | 0.59ms | 0.46ms | 1.3x | 2.4 | 2.2 |
-| channel_throughput | 1.7ms | 1.2ms | 1.4x | 3.5 | 2.3 |
-| sieve | 0.77ms | 0.54ms | 1.4x | 3.1 | 2.2 |
-| list_reverse | 0.89ms | 0.63ms | 1.4x | 3.2 | 2.6 |
-| list_sum | 0.87ms | 0.59ms | 1.5x | 3.1 | 2.6 |
-| file_parallel_read | 1.3ms | 0.81ms | 1.6x | 6.0 | 5.4 |
-| file_write_read | 1.5ms | 0.86ms | 1.7x | 4.8 | 3.2 |
-| set_build | 1.4ms | 0.67ms | 2.1x | 3.4 | 2.3 |
-| dict_build | 1.4ms | 0.63ms | 2.2x | 3.4 | 2.5 |
-| file_readlines_large | 35ms | 14ms | 2.4x | 2.5 | 2.1 |
-| fibonacci | 15ms | 6.3ms | 2.4x | 2.3 | 2.2 |
-| ackermann | 162ms | 63ms | 2.6x | 2.5 | 2.3 |
-| sort | 1.5ms | 0.52ms | 2.8x | 8.1 | 2.2 |
-| file_readlines | 2.2ms | 0.71ms | 3.1x | 7.3 | 2.2 |
-| file_write_read_large | 44ms | 13ms | 3.3x | 107 | 2.3 |
-| int_array_map | 1.9ms | 0.55ms | 3.5x | 2.8 | 2.4 |
-| int_array_sum | 1.8ms | 0.47ms | 3.9x | 2.7 | 2.3 |
-| file_read_large | 12ms | 2.8ms | 4.4x | 55 | 2.3 |
-| file_parallel_read_large | 8.2ms | 1.3ms | 6.4x | 37 | 2.4 |
-| queens | 13ms | 1.2ms | 10.6x | 43 | 2.2 |
+| file_read | 0.78ms | 0.70ms | 1.1x | 3.6 | 3.3 |
+| seq_map | 0.55ms | 0.51ms | 1.1x | 2.4 | 2.2 |
+| process_exec | 1.2ms | 1.0ms | 1.1x | 3.9 | 3.9 |
+| sum_squares | 0.55ms | 0.50ms | 1.1x | 2.4 | 2.2 |
+| int_array_fill_sum | 0.63ms | 0.53ms | 1.2x | 2.6 | 2.3 |
+| binary_write_read | 3.5ms | 2.9ms | 1.2x | 12.5 | 7.3 |
+| binary_read_chunks | 0.83ms | 0.64ms | 1.3x | 2.5 | 2.2 |
+| channel_pipeline | 1.3ms | 0.96ms | 1.4x | 3.2 | 2.3 |
+| channel_fanin | 1.5ms | 1.1ms | 1.4x | 3.3 | 2.3 |
+| channel_throughput | 1.8ms | 1.2ms | 1.5x | 3.5 | 2.2 |
+| file_parallel_read | 1.3ms | 0.79ms | 1.6x | 5.8 | 5.4 |
+| file_write_read | 1.4ms | 0.85ms | 1.7x | 4.8 | 3.2 |
+| sieve | 0.91ms | 0.50ms | 1.8x | 3.2 | 2.1 |
+| list_map_filter | 1.4ms | 0.73ms | 2.0x | 5.8 | 3.1 |
+| set_build | 1.3ms | 0.59ms | 2.2x | 3.4 | 2.3 |
+| sort | 1.1ms | 0.51ms | 2.2x | 2.9 | 2.2 |
+| dict_build | 1.4ms | 0.63ms | 2.2x | 3.4 | 2.4 |
+| fibonacci | 15ms | 6.2ms | 2.4x | 2.4 | 2.2 |
+| ackermann | 165ms | 62ms | 2.7x | 2.6 | 2.4 |
+| file_readlines_large | 44ms | 14ms | 3.1x | 2.6 | 2.2 |
+| file_write_read_large | 46ms | 14ms | 3.3x | 107 | 2.3 |
+| int_array_sum | 1.8ms | 0.52ms | 3.5x | 2.6 | 2.3 |
+| int_array_map | 1.8ms | 0.52ms | 3.5x | 2.7 | 2.4 |
+| list_sum | 2.1ms | 0.58ms | 3.6x | 9.1 | 2.6 |
+| file_read_large | 13ms | 3.0ms | 4.2x | 55 | 2.3 |
+| list_reverse | 2.7ms | 0.61ms | 4.4x | 9.1 | 2.5 |
+| file_parallel_read_large | 8.6ms | 1.3ms | 6.7x | 37 | 2.4 |
+| queens | 36ms | 2.3ms | 15.2x | 2.4 | 2.2 |
 
 Erlang reference impls (bench/reference/*.erl) exist for all 17 Yona benchmarks
 but are not yet wired into the runner's comparison output — that's a runner

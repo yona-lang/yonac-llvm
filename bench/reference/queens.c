@@ -2,9 +2,13 @@
 #include <stdint.h>
 #include <stdlib.h>
 int safe(int queen, int *placed, int n, int col) {
-    for (int i = 0; i < n; i++) {
+    /* Walk placed in reverse — placed[n-1] is the most recently placed
+     * queen, one column back from the candidate; col starts at 1 and
+     * increments as we walk further back. */
+    for (int i = n - 1; i >= 0; i--) {
         if (queen == placed[i]) return 0;
-        if (abs(queen - placed[i]) == col + i) return 0;
+        if (abs(queen - placed[i]) == col) return 0;
+        col++;
     }
     return 1;
 }
