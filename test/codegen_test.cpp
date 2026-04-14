@@ -212,6 +212,22 @@ TEST_CASE("Fixture-based codegen tests") {
 
     REQUIRE(!test_files.empty());
 
+    // Set up and tear down scratch files that specific fixtures read from.
+    // The fixtures foldl_iterator and iterator_gen_lines assume a
+    // /tmp/yona_iter_gen_lines_test.txt file with 3 lines totalling 14 bytes.
+    struct ScratchFiles {
+        std::vector<fs::path> paths;
+        ScratchFiles() {
+            auto p = fs::path("/tmp/yona_iter_gen_lines_test.txt");
+            std::ofstream(p) << "abcde\nfghij\nklmn\n";
+            paths.push_back(p);
+        }
+        ~ScratchFiles() {
+            std::error_code ec;
+            for (auto& p : paths) fs::remove(p, ec);
+        }
+    } scratch_files;
+
     for (const auto& yona_file : test_files) {
         auto expected_file = yona_file;
         expected_file.replace_extension(".expected");

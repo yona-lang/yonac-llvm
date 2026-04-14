@@ -186,11 +186,20 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
             // Skip known functions (compiled or deferred) — they're global symbols.
             // But DO capture function pointers (runtime values: parameters, closures).
             if (it->second.type == CType::FUNCTION) {
-                // Compiled function: skip (it's a global LLVM function)
-                if (it->second.val && isa<Function>(it->second.val))
-                    continue;
+                // Compiled function: usually a global LLVM function (skip), but
+                // an enclosing closure under compilation also registers itself
+                // in named_values_ as a Function* for recursive-call resolution.
+                // That case has closure_env set in compiled_functions_; we must
+                // capture it so the inner lambda can call the recursive closure
+                // with the correct env.
+                if (it->second.val && isa<Function>(it->second.val)) {
+                    auto cf_it = compiled_functions_.find(v);
+                    bool is_closure_under_compile =
+                        cf_it != compiled_functions_.end() && cf_it->second.closure_env;
+                    if (!is_closure_under_compile) continue;
+                }
                 // Deferred function: skip (will be compiled later as a global)
-                if (deferred_functions_.count(v) > 0)
+                else if (deferred_functions_.count(v) > 0)
                     continue;
                 // Extern/imported function: skip (resolved at link time)
                 if (imports_.extern_functions.count(v) > 0)
@@ -212,11 +221,23 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         auto ptr_ty = PointerType::get(*context_, 0);
         auto i64_ty = LType::getInt64Ty(*context_);
 
-        // Collect capture values and types from current scope
+        // Collect capture values and types from current scope.
+        // Special case: if the free var names a closure that is itself still
+        // being compiled (an enclosing `let pull _ = …` that we're inside
+        // the body of), capture that closure's env pointer — which, inside
+        // pull's body, is pull's own closure. Capturing the raw Function*
+        // would drop the env and any calls from the inner lambda would pass
+        // a garbage env.
         std::vector<TypedValue> capture_tvs;
         for (auto& fv : def.free_vars) {
             auto it = named_values_.find(fv);
-            capture_tvs.push_back(it->second);
+            TypedValue cap = it->second;
+            auto cf_it = compiled_functions_.find(fv);
+            if (cf_it != compiled_functions_.end() && cf_it->second.closure_env &&
+                cap.val && isa<Function>(cap.val)) {
+                cap.val = cf_it->second.closure_env;
+            }
+            capture_tvs.push_back(cap);
         }
 
         // Build param types: (ptr env, i64 args...)
@@ -1183,8 +1204,12 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
         arg_types.push_back(a.val->getType());
         vals.push_back(a.val);
     }
+    // For return type inference, ignore the synthetic Unit arg that `f()`
+    // inserts at parse time — it doesn't reflect the callee's actual return.
+    CType first_nonunit = CType::INT;
+    for (auto& a : all_args) { if (a.type != CType::UNIT) { first_nonunit = a.type; break; } }
     CType ret_ctype = (!var_it->second.subtypes.empty()) ? var_it->second.subtypes[0]
-        : (all_args.empty() ? CType::INT : all_args[0].type);
+                                                         : first_nonunit;
     auto ret_llvm = llvm_type(ret_ctype);
     auto var_val = var_it->second.val;
 
@@ -1869,7 +1894,31 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
     auto& cf = cf_it->second;
     size_t func_arity = cf.param_types.size() - cf.capture_names.size();
 
-    // 7. Dispatch based on arg count vs arity
+    // If the callee is a closure (has closure_env) and closure_env is an
+    // Argument of a DIFFERENT function than the one we're currently emitting
+    // into, we can't emit a direct call — the env Argument isn't in scope.
+    // This happens when a recursive let-bound closure `pull` is referenced
+    // from a nested lambda (e.g. `\_ -> pull ()`); the lambda captures `pull`
+    // as a closure and must call through it via higher_order_call, which
+    // loads the closure fn+env from the lambda's own captures.
+    if (cf.closure_env) {
+        if (auto* env_arg = dyn_cast<Argument>(cf.closure_env)) {
+            auto* current_fn = builder_->GetInsertBlock()->getParent();
+            if (env_arg->getParent() != current_fn) {
+                auto var_it = named_values_.find(fn_name);
+                if (var_it != named_values_.end() && var_it->second.type == CType::FUNCTION && var_it->second.val)
+                    return codegen_higher_order_call(fn_name, all_args);
+            }
+        }
+    }
+
+    // 7. Dispatch based on arg count vs arity.
+    // `f ()` on a 0-arity function: drop the synthetic Unit arg — the parser
+    // inserts one for every `f()` paren-call form, but 0-arity callees
+    // (CAFs like `uuid4`, `now`) don't want it. A 1-arity function whose
+    // parameter happens to be unit-typed keeps the arg and receives ().
+    if (func_arity == 0 && all_args.size() == 1 && all_args[0].type == CType::UNIT)
+        all_args.clear();
     if (all_args.size() < func_arity)
         return codegen_partial_apply(fn_name, cf, all_args);
     if (all_args.size() > func_arity)

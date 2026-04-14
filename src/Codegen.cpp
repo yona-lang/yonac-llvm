@@ -248,10 +248,11 @@ void Codegen::init_target() {
     InitializeNativeTarget();
     InitializeNativeTargetAsmPrinter();
     InitializeNativeTargetAsmParser();
-    auto triple = sys::getDefaultTargetTriple();
-    module_->setTargetTriple(Triple(triple));
+    auto triple_str = sys::getDefaultTargetTriple();
+    Triple triple(triple_str);
+    module_->setTargetTriple(triple);
     std::string err;
-    auto target = TargetRegistry::lookupTarget(triple, err);
+    auto target = TargetRegistry::lookupTarget(triple_str, err);
     if (!target) { std::cerr << "Target error: " << err << "\n"; return; }
     TargetOptions opt;
     target_machine_ = target->createTargetMachine(triple, "generic", "", opt, Reloc::PIC_);

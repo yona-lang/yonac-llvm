@@ -724,6 +724,12 @@ unique_ptr<ExprNode> ParserImpl::parse_infix_expr(unique_ptr<ExprNode> left, Pre
                 // tuple argument, not a curried call with N arguments.
                 auto* tup = new TupleExpr(loc, args);
                 apply_args.push_back(static_cast<ExprNode*>(tup));
+            } else if (args.empty() && !has_named_args) {
+                // `f()` — paren-form call with no args is an application to
+                // unit, same as the juxtaposition form `f ()`. Without this
+                // we'd build `ApplyExpr(f, [])` which is a 0-of-N partial
+                // application (returns the function unchanged).
+                apply_args.push_back(static_cast<ExprNode*>(new UnitExpr(loc)));
             } else {
                 for (auto* arg : args) {
                     apply_args.push_back(arg);

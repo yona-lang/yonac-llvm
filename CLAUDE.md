@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Prerequisites
 
-- LLVM 16+ (Fedora: `sudo dnf install llvm llvm-devel llvm-libs cmake ninja-build`)
+- LLVM 22+ (Fedora: `sudo dnf install llvm llvm-devel llvm-libs cmake ninja-build`)
 - CMake 3.10+, Ninja
 - C++23 capable compiler
 
@@ -97,7 +97,7 @@ Yona language compiler using LLVM. Pipeline: Lexer → Parser → AST → Codege
 
 ### Dependencies
 
-- **LLVM 16+**: Code generation backend
+- **LLVM 22+**: Code generation backend
 - **CLI11**: Command-line argument parsing (fetched via FetchContent)
 - **doctest**: Testing framework (fetched via FetchContent)
 

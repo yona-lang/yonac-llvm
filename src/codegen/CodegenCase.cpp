@@ -178,7 +178,7 @@ bool Codegen::codegen_pattern_tuple(TuplePattern* tp, const TypedValue& scrutine
     return false;
 }
 
-bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedValue& scrutinee,
+bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedValue& scrutinee_in,
                                            BasicBlock* body_bb, BasicBlock* next_bb) {
     auto ctor_it = types_.adt_constructors.find(cp->constructor_name);
     if (ctor_it == types_.adt_constructors.end()) {
@@ -189,6 +189,17 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
     int8_t tag = static_cast<int8_t>(ctor_it->second.tag);
     auto tag_ty = LType::getInt64Ty(*context_);
     auto i64_ty = LType::getInt64Ty(*context_);
+
+    // The scrutinee is sometimes an i64-typed ADT — this happens when the
+    // value comes through a generic i64-returning runtime call (e.g.
+    // `yona_rt_async_await` for a CAF returning an Option). Coerce back to
+    // ptr so the heap-layout extractors work.
+    TypedValue scrutinee = scrutinee_in;
+    if (scrutinee.val && scrutinee.val->getType()->isIntegerTy() &&
+        scrutinee.type == CType::ADT) {
+        scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
+            PointerType::get(*context_, 0), "adt.scrutinee.ptr");
+    }
 
     // Use heap layout if either: (a) the constructor is recursive, or
     // (b) the scrutinee is a pointer (e.g., it was loaded from a closure

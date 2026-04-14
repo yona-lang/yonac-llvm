@@ -4,48 +4,52 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1179 assertions across 204 test cases (all passing)
-- **Benchmarks**: 31/31 passing (8 CPU, 5 collections, 10 I/O, 4 concurrency)
-- **Stdlib**: 31 modules, ~330 exported functions (Channel, Task added)
+- **Tests**: 1207 assertions across 204 test cases (all passing)
+- **Benchmarks**: 34/34 passing (rerun 2026-04-14, LLVM 22, 10 iters at -O2)
+- **Stdlib**: 33 modules (Std\IO rewritten non-blocking, Std\Stream v1, Std\Constants\{Num,Math,Platform})
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
-- **Benchmarks**: 31/31 passing, 7 at/below C parity, 21 within 2x C
 
 ## Benchmark Results
 
-| Benchmark | Yona | C | Time | Yona MB | C MB | Mem |
-|-----------|------|---|------|---------|------|-----|
-| tak | 66ms | 77ms | **0.9x** | 2.3 | 2.0 | 1.2x |
-| par_map | 0.65ms | 0.71ms | **0.9x** | 2.3 | 2.4 | 1.0x |
-| int_array_fill_sum | 0.61ms | 0.70ms | **0.9x** | 2.5 | 2.2 | 1.1x |
-| list_map_filter | 0.83ms | 0.83ms | **1.0x** | 2.9 | 3.0 | 1.0x |
-| file_read | 0.88ms | 0.86ms | **1.0x** | 3.5 | 3.2 | 1.1x |
-| parallel_async | 102ms | 102ms | **1.0x** | 2.8 | 2.3 | 1.2x |
-| sequential_async | 402ms | 401ms | **1.0x** | 2.7 | 2.1 | 1.3x |
-| binary_write_read | 3.5ms | 3.3ms | 1.1x | 12.4 | 7.2 | 1.7x |
-| process_spawn | 1.3ms | 1.3ms | 1.1x | 3.9 | 3.9 | 1.0x |
-| process_exec | 1.2ms | 1.1ms | 1.1x | 3.9 | 3.9 | 1.0x |
-| seq_map | 0.61ms | 0.54ms | 1.1x | 2.4 | 2.1 | 1.1x |
-| sum_squares | 0.62ms | 0.53ms | 1.2x | 2.4 | 2.0 | 1.2x |
-| binary_read_chunks | 0.98ms | 0.76ms | 1.3x | 2.4 | 2.1 | 1.1x |
-| sieve | 0.75ms | 0.53ms | 1.4x | 3.0 | 2.1 | 1.4x |
-| list_sum | 0.83ms | 0.65ms | 1.3x | 3.1 | 2.5 | 1.2x |
-| list_reverse | 0.89ms | 0.66ms | 1.4x | 3.2 | 2.4 | 1.3x |
-| file_write_read | 1.6ms | 1.0ms | 1.6x | 4.7 | 3.1 | 1.5x |
-| file_parallel_read | 1.4ms | 0.89ms | 1.6x | 5.8 | 5.2 | 1.1x |
-| dict_build | 1.4ms | 0.69ms | 2.0x | 3.4 | 2.3 | 1.5x |
-| fibonacci | 16ms | 7.8ms | 2.0x | 2.4 | 2.0 | 1.2x |
-| set_build | 1.4ms | 0.64ms | 2.2x | 3.3 | 2.2 | 1.5x |
-| ackermann | 166ms | 67ms | 2.5x | 2.2 | 2.4 | 0.9x |
-| file_readlines | 2.3ms | 0.85ms | 2.7x | 7.2 | 2.1 | 3.4x |
-| file_readlines_large | 39ms | 15ms | 2.6x | 2.4 | 2.0 | 1.2x |
-| sort | 1.6ms | 0.57ms | 2.9x | 8.0 | 2.1 | 3.8x |
-| int_array_map | 2.0ms | 0.67ms | 3.0x | 2.7 | 2.4 | 1.1x |
-| int_array_sum | 1.8ms | 0.55ms | 3.3x | 2.6 | 2.2 | 1.2x |
-| file_write_read_large | 51ms | 16ms | 3.2x | 107 | 2.1 | 51x |
-| file_read_large | 14ms | 3.2ms | 4.5x | 55 | 2.3 | 24x |
-| file_parallel_read_large | 9.4ms | 1.5ms | 6.2x | 37 | 2.3 | 16x |
-| queens | 14ms | 1.3ms | 10.6x | 43 | 2.1 | 20x |
+Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
+
+| Benchmark | Yona | C | Ratio | Yona MB | C MB |
+|-----------|------|---|-------|---------|------|
+| par_map | 0.56ms | 0.68ms | **0.8x** | 2.4 | 2.4 |
+| tak | 64ms | 64ms | **1.0x** | 2.3 | 2.2 |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.5 |
+| sequential_async | 402ms | 402ms | **1.0x** | 2.8 | 2.2 |
+| process_spawn | 1.2ms | 1.1ms | **1.0x** | 3.8 | 3.9 |
+| file_read | 0.77ms | 0.73ms | 1.1x | 3.6 | 3.3 |
+| binary_read_chunks | 0.82ms | 0.66ms | 1.2x | 2.5 | 2.3 |
+| binary_write_read | 3.4ms | 2.9ms | 1.2x | 12.5 | 7.3 |
+| list_map_filter | 0.86ms | 0.70ms | 1.2x | 2.9 | 3.1 |
+| channel_fanin | 1.5ms | 1.1ms | 1.3x | 3.3 | 2.3 |
+| channel_pipeline | 1.3ms | 0.98ms | 1.3x | 3.2 | 2.3 |
+| int_array_fill_sum | 0.66ms | 0.51ms | 1.3x | 2.6 | 2.3 |
+| list_sum | 0.80ms | 0.59ms | 1.3x | 3.1 | 2.6 |
+| process_exec | 1.3ms | 0.97ms | 1.3x | 4.0 | 3.9 |
+| seq_map | 0.64ms | 0.50ms | 1.3x | 2.4 | 2.2 |
+| sum_squares | 0.63ms | 0.49ms | 1.3x | 2.4 | 2.1 |
+| channel_throughput | 1.7ms | 1.3ms | 1.4x | 3.5 | 2.3 |
+| file_parallel_read | 1.2ms | 0.80ms | 1.5x | 6.0 | 5.4 |
+| list_reverse | 0.90ms | 0.57ms | 1.6x | 3.2 | 2.6 |
+| file_write_read | 1.5ms | 0.83ms | 1.8x | 4.8 | 3.2 |
+| sieve | 0.92ms | 0.50ms | 1.8x | 3.1 | 2.2 |
+| dict_build | 1.4ms | 0.61ms | 2.2x | 3.4 | 2.4 |
+| set_build | 1.4ms | 0.61ms | 2.2x | 3.4 | 2.3 |
+| file_readlines_large | 35ms | 14ms | 2.4x | 2.6 | 2.1 |
+| fibonacci | 15ms | 6.4ms | 2.4x | 2.4 | 2.2 |
+| ackermann | 163ms | 63ms | 2.6x | 2.5 | 2.3 |
+| sort | 1.6ms | 0.54ms | 2.9x | 8.1 | 2.2 |
+| file_readlines | 2.2ms | 0.71ms | 3.0x | 7.3 | 2.2 |
+| file_write_read_large | 47ms | 14ms | 3.4x | 107 | 2.2 |
+| int_array_map | 1.9ms | 0.53ms | 3.7x | 2.7 | 2.4 |
+| int_array_sum | 1.9ms | 0.52ms | 3.7x | 2.7 | 2.3 |
+| file_read_large | 13ms | 3.0ms | 4.2x | 55 | 2.3 |
+| file_parallel_read_large | 8.9ms | 1.3ms | 6.8x | 37 | 2.4 |
+| queens | 14ms | 1.3ms | 10.9x | 43 | 2.2 |
 
 ## Remaining Work
 
@@ -68,26 +72,18 @@
   that generate runtime checks in debug, erased in release.
 
 ### Language — Concurrency
-- [ ] **Stream (lazy pull-based sequence)** — `Std\Stream` module built
-  on top of channels, not effects. Type:
-
-      type Stream a = Stream (() -> Option (a, Stream a))
-
-  Each step yields the next element + the rest of the stream — pure
-  state-passing, no Cell primitive, no existentials. Operators (`map`,
-  `filter`, `take`, `drop`, `zip`, `concat`, `flatMap`, `scan`,
-  `chunksOf`, etc.) compose by closure, are lazy, and run sequentially
-  in the consumer's task by default. Pipeline parallelism is opt-in:
-  `Stream.async` spawns the upstream producer into a task and pipes
-  through a bounded channel, with `Stream.buffered N` for an explicit
-  buffer size. Producers: `range`, `naturals`, `repeat`, `iterate`,
-  `unfold`, `fromSeq`, `fromIterator`. Terminators: `toSeq`, `foldl`,
-  `forEach`, `count`, `sum`, `any`, `all`, `find`, `head`. Pure-Yona
-  library (~250 lines), no compiler/runtime changes — exercises the
-  channel + Linear sender/receiver + ADT-with-function-field +
-  recursive let infrastructure. Deferred: resource cleanup
-  (`Stream.bracket`), error forwarding across `async`, cross-operator
-  fusion, multi-consumer broadcast.
+- [x] **Stream (lazy pull-based sequence)** — shipped as `lib/Std/Stream.yona`.
+  Type: `Stream a = Yield a (() -> Stream a) | Nil`. Surface: producers
+  (`empty`, `singleton`, `fromSeq`, `range`, `naturals`, `repeat`,
+  `iterate`, `unfold`, `fromIterator`), lazy operators (`map`, `filter`,
+  `take`, `drop`, `takeWhile`, `dropWhile`, `zip`, `zipWith`, `concat`,
+  `flatMap`, `scan`), pipeline parallelism (`async`, `buffered`), and
+  terminators (`toSeq`, `foldl`, `forEach`, `count`, `sum`, `anyMatch`,
+  `allMatch`, `find`, `head`, `isEmpty`). Fixture tests: `stream_basic`,
+  `stream_filter_take`, `stream_iterate`, `stream_pipeline`, `stream_zip`,
+  `stream_async`. Deferred: `chunksOf`, resource cleanup (`Stream.bracket`),
+  error forwarding across `async`, cross-operator fusion, multi-consumer
+  broadcast.
 - [ ] **Multi-Shot Effects with Stackful Coroutines** (research, deferred) —
   extend the effect system to support multi-shot resume and true suspension
   via heap-allocated continuations or per-effect stacks. Enables: backtracking
@@ -103,13 +99,6 @@
   `recv`: before `cond_wait`, check if all tasks in the group are blocked
   and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
   deadlocks (cycles, crashed producers) that linear types can't see.
-- [ ] **Iterator fixture tests depend on an ambient `/tmp` file** —
-  `foldl_iterator.yona` and `iterator_gen_lines.yona` read from
-  `/tmp/yona_iter_gen_lines_test.txt`, which nothing in the test
-  harness creates. The tests pass by chance when a previous run left
-  a matching file behind (expected total = 14 across 3 lines).
-  Should move the file creation into the fixture runner, or rewrite
-  the tests to create and delete their own scratch file.
 - [x] **Std\IO module** — non-blocking console and handle-based byte I/O.
   Shipped as pure-Yona module calling `yona_Std_IO__*` externs that
   submit via io_uring (writes) or thread pool (readLine). All write
@@ -117,13 +106,22 @@
 - [x] **Std\Constants module** — split into `Std\Constants\Num`,
   `Std\Constants\Math`, `Std\Constants\Platform`. Platform queries use
   externs in `os_linux.c`.
-- [ ] **Case-match on CAF-returned ADT crashes codegen.** Repro:
-  `yonac -e 'import readLine from Std\IO in case readLine of Some n -> n, None -> "" end'`
-  triggers `llvm::checkGEPType` assertion. The CAF auto-force returns an
-  `i64` from `yona_rt_async_await`; the case-pattern path then tries to
-  GEP into the scrutinee as an ADT struct pointer without coercing back
-  to `ptr`. Fix is in the case-pattern codegen: detect ADT-typed scrutinee
-  and bitcast `i64 → ptr` before the GEP.
+- [ ] **LLVM coroutine lowering for async** — replace the thread-pool +
+  promise machinery (`yona_pool_worker`, `yona_rt_async_call`, `async_await`)
+  with LLVM coroutines as the suspend/resume substrate. io_uring stays as
+  the kernel completion source: an await suspends the coroutine, submits
+  an SQE with the coroutine handle in `user_data`, and a reactor thread
+  reaps the CQ and calls `resume`. Wins: no parked worker per pending I/O,
+  frame sized to actual capture set instead of full thread stack, suspend
+  is a few loads + indirect jump instead of futex + scheduler.
+  Catches: every async function gets coroutine-shaped (split into ramp +
+  resume), so `extern io`/`extern async` lowering and the C ABI for
+  promises both need rework. Frame allocation via `llvm.coro.alloc`
+  should route through `rc_alloc` (or arena per task) so frames
+  participate in the refcount system. Cancellation needs first-class
+  plumbing — depends on the structured-concurrency work landing first
+  so the cancellation model is settled before we bake it into coroutine
+  shape. Scope: ~1500 lines codegen + runtime.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.
