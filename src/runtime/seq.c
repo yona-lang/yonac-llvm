@@ -436,6 +436,9 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
 
 /* ===== Tail — O(1) amortized ===== */
 
+/* Callee-borrows variant: seq's refcount is preserved. Used for sites that
+ * keep the original seq alive after the tail call (comprehensions walking
+ * a borrowed source, generic tail functions that return a fresh ref). */
 int64_t* yona_rt_seq_tail(int64_t* seq) {
     int64_t len = seq[0];
     if (UNLIKELY(len <= 1)) return yona_rt_seq_alloc(0);
@@ -569,6 +572,26 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
     int64_t* res = yona_rt_seq_alloc(new_len);
     res[1] = r->heap_flag;
     memcpy(res + SEQ_HDR_SIZE, r->tail_buf, (size_t)new_len * sizeof(int64_t));
+    return res;
+}
+
+/* Callee-consumes variant: the caller transfers ownership of `seq`, and
+ * gets back an owned tail. If seq_tail returned `seq` itself (in-place
+ * offset bump on a unique seq), ownership passes through. Otherwise the
+ * old seq is now dead from the caller's perspective, so we rc_dec it.
+ *
+ * Used by pattern-match head-tail (`case s of [h|t] -> … end`): binding
+ * `t` to the tail of `s` doesn't semantically keep `s` alive in the arm.
+ * With this variant, the callee drops `s` on the copy path instead of
+ * the arm codegen needing to rc_inc-the-scrutinee-for-safety (which
+ * forced every tail onto the copy path and regressed list_* perf).
+ *
+ * When the arm body DOES reference the scrutinee by name, the codegen
+ * pre-rc_inc's before calling this — the rc_dec inside just balances
+ * that inc, leaving the scrutinee alive for further uses. */
+int64_t* yona_rt_seq_tail_consume(int64_t* seq) {
+    int64_t* res = yona_rt_seq_tail(seq);
+    if (res != seq) yona_rt_rc_dec(seq);
     return res;
 }
 

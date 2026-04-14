@@ -78,27 +78,51 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
         }
     }
     if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
-        // Force seq_tail onto the copy path by rc_inc'ing the scrutinee
-        // beforehand. Without this, when the scrutinee has rc=1, tail
-        // returns the same pointer with bumped offset — and our arm-exit
-        // rc_dec on the tail binding would then free the caller-owned
-        // scrutinee. Paying the copy cost keeps ownership crisp: the
-        // `rest` binding always owns a fresh seq with rc=1, and the
-        // arm-exit drop balances it.
+        // Two regimes for head-tail binding depending on whether we own
+        // the scrutinee or are borrowing it from our caller:
         //
-        // If the scrutinee was already referenced in the body by name,
-        // the rc_inc also covers that borrow (it's then symmetric with
-        // the existing behavior).
-        emit_rc_inc(seq_ptr, CType::SEQ);
-        auto tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
+        //   BORROWED SCRUTINEE (scrutinee is a live function parameter or a
+        //   let-bound name still referenced elsewhere): the in-place tail
+        //   fast path would mutate a seq the caller still expects intact,
+        //   so we rc_inc first and let seq_tail force the shared/copy
+        //   path. The `t` binding gets its own rc=1 ref and we drop both
+        //   t and the incremented scrut at arm exit.
+        //
+        //   OWNED SCRUTINEE (scrutinee is a temporary value, or a let-bound
+        //   seq not used after the case): we hand ownership to
+        //   seq_tail_consume, which returns either the same pointer
+        //   (in-place) or a fresh copy + rc_dec of the old. We then drop
+        //   just `t` at arm exit. This keeps the hot foldl/scanl pattern
+        //   on the fast in-place path, which is the main perf win.
+        //
+        // Detecting "borrowed": if the scrutinee expression compiles to
+        // an LLVM Argument, it's a function parameter — caller borrows
+        // it back. Anything else is a local SSA value, owned by us.
+        // A second condition for "borrowed": the arm body refers to the
+        // scrutinee by name, meaning the scrutinee is re-used after the
+        // tail and can't be mutated in place.
+        bool scrut_is_arg = llvm::isa<llvm::Argument>(seq_ptr);
+        bool scrut_reused = false;
+        if (node->expr->get_type() == AST_IDENTIFIER_EXPR) {
+            auto scrut_name = static_cast<IdentifierExpr*>(node->expr)->name->value;
+            scrut_reused = count_identifier_refs(clause->body, scrut_name) > 0;
+        }
+        bool borrowed = scrut_is_arg || scrut_reused;
+
+        llvm::Value* tv;
+        if (borrowed) {
+            emit_rc_inc(seq_ptr, CType::SEQ);
+            tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
+        } else {
+            tv = builder_->CreateCall(rt_.seq_tail_consume_, {seq_ptr});
+        }
         auto* pv = static_cast<PatternValue*>(htp->tail);
         if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
             named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
-        // Schedule rc_dec for the tail (owned, rc=1) and the scrutinee
-        // (balance the rc_inc above) at arm exit.
         if (!arm_drop_stack_.empty()) {
             arm_drop_stack_.back().push_back({tv, CType::SEQ});
-            arm_drop_stack_.back().push_back({seq_ptr, CType::SEQ});
+            if (borrowed)
+                arm_drop_stack_.back().push_back({seq_ptr, CType::SEQ});
         }
     }
     return true;

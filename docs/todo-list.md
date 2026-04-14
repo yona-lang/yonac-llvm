@@ -29,6 +29,19 @@ Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
 > cleanly in the unique paths: when `r->head_next` is rewritten to point
 > at a different chunk, the rc is transferred, not duplicated. 312/312
 > freed after the fix.
+>
+> **Head-tail consume path (2026-04-14)**: added `yona_rt_seq_tail_consume`
+> for ownership-transfer pattern matching. `case scrut of [h|t] -> …`
+> now picks one of two paths at compile time: when `scrut` is a local
+> SSA value (not a function param, not re-referenced in the arm body)
+> we hand it to consume and drop just `t` at arm exit — preserving the
+> in-place fast path when the scrut is unique. When `scrut` is a
+> function Argument or the body re-references it, we stick with the
+> rc_inc + borrow-path that was added for the queens fix. The list_*
+> benchmarks sit in the second bucket (scrut is foldl's seq param), so
+> they still pay the copy cost; a further improvement would require
+> either changing the callee-borrows convention for seq params or
+> removing the defensive rc_inc on let-bound seqs.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|

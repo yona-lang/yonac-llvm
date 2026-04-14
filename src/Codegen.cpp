@@ -313,6 +313,7 @@ void Codegen::declare_runtime() {
     rt_.seq_join_      = decl("yona_rt_seq_join", i64p, {i64p, i64p});
     rt_.seq_head_      = decl("yona_rt_seq_head", i64, {i64p});
     rt_.seq_tail_      = decl("yona_rt_seq_tail", i64p, {i64p});
+    rt_.seq_tail_consume_ = decl("yona_rt_seq_tail_consume", i64p, {i64p});
     rt_.seq_is_empty_  = decl("yona_rt_seq_is_empty", i64, {i64p});
     rt_.seq_snoc_      = decl("yona_rt_seq_snoc", i64p, {i64p, i64});  // append to end
     rt_.print_symbol_  = decl("yona_rt_print_symbol", vd, {ptr}); // takes char* name
