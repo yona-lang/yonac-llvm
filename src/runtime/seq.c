@@ -395,12 +395,24 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         return (int64_t*)nr;
     }
 
-    /* Head_buf full: chain it into head_next (1/32 cons calls) */
+    /* Head_buf full: chain it into head_next (1/32 cons calls).
+     *
+     * c->next takes the old r->head_next. Whether we need to rc_inc that
+     * old chunk depends on whether r survives:
+     *  - Unique path: we mutate r and set r->head_next = c. Ownership of
+     *    the old head_next transfers from r to c (via c->next); rc stays
+     *    the same, so NO rc_inc.
+     *  - Non-unique path: r is kept and nr is allocated. Both nr (via
+     *    c->next) and the original r reference the old head_next; we
+     *    need rc_inc so both owners are counted.
+     *
+     * Previously this always rc_inc'd, which leaked one ref on every
+     * chunk in every build (~1 leak per 32 cons operations). Observed
+     * as the RBT_CHUNK leak in bench/collections/list_sum. */
     rbt_chunk_t* c = chunk_alloc();
     c->count = r->head_cnt;
     memcpy(c->elems, r->head_buf, (size_t)r->head_cnt * sizeof(int64_t));
     c->next = r->head_next;
-    if (r->head_next) yona_rt_rc_inc(r->head_next);
 
     if (is_unique(r)) {
         r->head_next = c;
@@ -411,6 +423,7 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         r->length++;
         return (int64_t*)r;
     }
+    if (r->head_next) yona_rt_rc_inc(r->head_next);
     rbt_t* nr = rbt_copy_body(r);
     nr->length = r->length + 1;
     nr->head_off = B - 1;
@@ -505,13 +518,22 @@ int64_t* yona_rt_seq_tail(int64_t* seq) {
     if (r->head_next) {
         rbt_chunk_t* c = r->head_next;
         if (is_unique(r)) {
-            yona_rt_rc_inc(c);
+            /* Unique path: r survives, with r->head_next rewritten from c
+             * to c->next. Ownership transfers — r used to reach c->next
+             * through c, now reaches it directly; still one owner, so
+             * c->next's rc is unchanged. c itself loses its owner (r) and
+             * must be freed, but c also holds a ref to c->next we don't
+             * want to double-count, so sever c->next before rc_dec(c).
+             *
+             * Previously this was rc_inc(c) + rc_inc(c->next) + rc_dec(c),
+             * which netted +1 on c->next per pop. Over a 10K-element foldl
+             * that leaked ~311 chunks — the list_* benchmark RBT leak. */
             r->head_off = c->offset;
             r->head_cnt = c->count;
             memcpy(r->head_buf, c->elems, B * sizeof(int64_t));
             r->head_chain_len -= c->count;
             r->head_next = c->next;
-            if (c->next) yona_rt_rc_inc(c->next);
+            c->next = NULL;
             yona_rt_rc_dec(c);
             r->length--;
             return (int64_t*)r;

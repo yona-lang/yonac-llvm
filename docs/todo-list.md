@@ -21,6 +21,14 @@ Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
 > time from 14ms to 36ms because every tail now copies. Several list_*
 > benchmarks also regressed on time and memory — tracked as separate
 > perf/correctness followups in the open list.
+>
+> **RBT chunk leak fix (2026-04-14)**: the RBT seq's cons-promote and
+> tail-chain-pop paths were over-rc_inc'ing head_next — leaking one ref
+> on nearly every chunk for large (>32-element) seqs. `list_sum` showed
+> 312 chunk allocs and only 1 free. Fixed by making ownership transfer
+> cleanly in the unique paths: when `r->head_next` is rewritten to point
+> at a different chunk, the rc is transferred, not duplicated. 312/312
+> freed after the fix.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
