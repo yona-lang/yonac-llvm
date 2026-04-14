@@ -133,6 +133,13 @@ int64_t yona_rt_io_await(int64_t uring_id) {
             result = (res >= 0) ? (int64_t)res : -1;
             break;
         }
+        case IO_OP_WRITE_FD_STR: {
+            /* Caller allocated the concatenated string via malloc. Free
+             * it now that the kernel has consumed it. */
+            if (ctx->buf) free(ctx->buf);
+            result = (res >= 0) ? (int64_t)res : -1;
+            break;
+        }
         default:
             result = (int64_t)res;
             break;
@@ -603,4 +610,91 @@ int64_t yona_rt_file_chunk_iterator(int64_t fd, int64_t chunk_size) {
     iter_adt[2] = 0;
     iter_adt[3] = (int64_t)(intptr_t)closure;
     return (int64_t)(intptr_t)iter_adt;
+}
+
+/* ===== Std\IO support ===== */
+
+/* Submit a write of one or two string chunks to an open fd. The write
+ * goes to the file's current position (no pwrite — writes to TTYs or
+ * pipes don't support offsets). We concatenate chunks into one buffer
+ * so a single IORING_OP_WRITE covers it; the buffer is free'd by the
+ * completer via IO_OP_WRITE_FD_STR. Returns uring user_data ID.
+ *
+ * Falls back to blocking write() when io_uring is unavailable. */
+static int64_t write_fd_strs_submit_impl(int fd, const char* s1, const char* s2) {
+    size_t l1 = s1 ? strlen(s1) : 0;
+    size_t l2 = s2 ? strlen(s2) : 0;
+    size_t total = l1 + l2;
+    char* buf = (char*)malloc(total + 1);
+    if (l1) memcpy(buf, s1, l1);
+    if (l2) memcpy(buf + l1, s2, l2);
+    buf[total] = '\0';
+
+    io_context_t* ctx = (io_context_t*)malloc(sizeof(io_context_t));
+    ctx->type = IO_OP_WRITE_FD_STR;
+    ctx->fd = fd;
+    ctx->buf = buf;
+    ctx->buf_size = total;
+    ctx->close_fd = 0;
+
+    struct io_uring_sqe sqe;
+    memset(&sqe, 0, sizeof(sqe));
+    sqe.opcode = IORING_OP_WRITE;
+    sqe.fd = fd;
+    sqe.addr = (unsigned long)buf;
+    sqe.len = (unsigned)total;
+    sqe.off = (uint64_t)-1;  /* -1 = use fd's current position (no pwrite) */
+
+    uint64_t id = ring_submit_sqe(&sqe);
+    if (id == 0) {
+        /* Fallback: blocking write */
+        ssize_t n = write(fd, buf, total);
+        free(buf);
+        free(ctx);
+        return io_register_direct_result((void*)(intptr_t)(n >= 0 ? n : -1));
+    }
+    io_ctx_put(id, ctx);
+    return (int64_t)id;
+}
+
+int64_t yona_platform_write_fd_str_submit(int fd, const char* s) {
+    return write_fd_strs_submit_impl(fd, s, NULL);
+}
+
+int64_t yona_platform_write_fd_strs_submit(int fd, const char* s1, const char* s2) {
+    return write_fd_strs_submit_impl(fd, s1, s2);
+}
+
+/* Blocking line read. Called from the thread pool (AFN) so the calling
+ * task isn't stalled. Returns a heap-allocated string (including the
+ * trailing '\n' stripped) on success, NULL on EOF or error. */
+extern void* yona_rt_rc_alloc_string(size_t bytes);
+
+const char* yona_platform_read_line_fd(int fd) {
+    /* Read up to 8 KB looking for '\n'. For stdin/TTY this is usually
+     * one syscall; for pipes it may take several short reads. We grow
+     * the buffer when needed. */
+    size_t cap = 512;
+    size_t len = 0;
+    char* buf = (char*)malloc(cap);
+    for (;;) {
+        if (len + 1 >= cap) {
+            cap *= 2;
+            buf = (char*)realloc(buf, cap);
+        }
+        char ch;
+        ssize_t n = read(fd, &ch, 1);
+        if (n <= 0) {
+            if (len == 0) { free(buf); return NULL; }  /* EOF with no data */
+            break;
+        }
+        if (ch == '\n') break;
+        if (ch == '\r') continue;  /* swallow CR — CRLF and stray CR */
+        buf[len++] = ch;
+    }
+    char* out = (char*)yona_rt_rc_alloc_string(len + 1);
+    memcpy(out, buf, len);
+    out[len] = '\0';
+    free(buf);
+    return out;
 }

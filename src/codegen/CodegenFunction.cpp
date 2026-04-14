@@ -934,6 +934,13 @@ Codegen::CompiledFunction Codegen::compile_function(
         cf.return_adt_name = body_tv.adt_type_name;
     if (body_tv && !body_tv.subtypes.empty())
         cf.return_subtypes = body_tv.subtypes;
+    // Propagate io-promise-ness from the body so a Yona wrapper like
+    // `println s = writeLine stdoutFd s` is treated at its call sites as
+    // an io_uring submit (direct call + yona_rt_io_await) rather than a
+    // generic thread-pool Promise (which would double-schedule it on
+    // the worker pool and corrupt string refcount on the boundary).
+    if (body_tv && body_tv.is_io_promise)
+        cf.is_io_async = true;
     compiled_functions_[name] = cf;
     named_values_[name] = {fn, CType::FUNCTION};
 

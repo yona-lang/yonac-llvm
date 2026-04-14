@@ -1335,6 +1335,7 @@ public:
   compiler::types::Type declared_type;  // type annotation
   ExprNode *body;           // expression using the extern
   bool is_async;            // true for "extern async" — calls via thread pool
+  bool is_io = false;       // true for "extern io" — submits to io_uring, returns id
 
   explicit ExternDeclExpr(SourceContext token, string name,
                            compiler::types::Type type, ExprNode *body,

@@ -143,6 +143,8 @@ void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
 void yona_rt_rc_inc(void* ptr) {
     if (__builtin_expect(!ptr, 0)) return;
     int64_t* header = ((int64_t*)ptr) - RC_HEADER_SIZE;
+    int64_t rc = __atomic_load_n(&header[0], __ATOMIC_RELAXED);
+    if (__builtin_expect(rc == INT64_MAX, 0)) return;  /* arena/static sentinel */
     __atomic_fetch_add(&header[0], 1, __ATOMIC_RELAXED);
 }
 
@@ -1773,14 +1775,62 @@ void yona_rt_close(int64_t handle) {
         close((int)handle);
 }
 
-/* Std\IO */
-void yona_Std_IO__print(const char* s)   { printf("%s", s); fflush(stdout); }
-void yona_Std_IO__println(const char* s) { printf("%s\n", s); fflush(stdout); }
-void yona_Std_IO__eprint(const char* s)  { fprintf(stderr, "%s", s); fflush(stderr); }
-void yona_Std_IO__eprintln(const char* s){ fprintf(stderr, "%s\n", s); fflush(stderr); }
-const char* yona_Std_IO__readLine(void)  { return yona_platform_read_line(); }
-void yona_Std_IO__printInt(int64_t n)    { printf("%ld", n); fflush(stdout); }
-void yona_Std_IO__printFloat(double f)   { printf("%g", f); fflush(stdout); }
+/* Std\IO — non-blocking writes via io_uring, non-blocking line reads
+ * via the thread pool. Every function that can block submits its work
+ * off the calling task and returns a uring / async id; the codegen's
+ * IO / AFN markers auto-await at the use site.
+ *
+ * The int64_t fd argument unpacks directly from the FileHandle ADT
+ * wrapper (heap-boxed `{tag, fd}`); user code writes
+ * `case h of FileHandle fd -> ...` to get the raw fd, and the stdin /
+ * stdout / stderr CAFs in Std\IO return already-extracted fd ints. */
+
+extern int64_t yona_platform_write_fd_str_submit(int fd, const char* s);
+extern int64_t yona_platform_write_fd_strs_submit(int fd, const char* s1, const char* s2);
+extern const char* yona_platform_read_line_fd(int fd);
+
+/* Write a string to an fd (no trailing newline). Returns uring ID. */
+int64_t yona_Std_IO__writeStr(int64_t fd, const char* s) {
+    return yona_platform_write_fd_str_submit((int)fd, s);
+}
+
+/* Write a string followed by "\n". Returns uring ID. */
+int64_t yona_Std_IO__writeLine(int64_t fd, const char* s) {
+    return yona_platform_write_fd_strs_submit((int)fd, s, "\n");
+}
+
+/* Thread-pool async: read one line from fd. Returns Option String
+ * (heap-allocated Some line / None at EOF). Called via AFN so the
+ * read blocks on a worker thread, not the calling task. */
+int64_t yona_Std_IO__readLineFd(int64_t fd) {
+    const char* line = yona_platform_read_line_fd((int)fd);
+    if (!line) {
+        /* EOF → None */
+        int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + 0) * sizeof(int64_t));
+        adt[0] = 1;  /* tag = None */
+        adt[1] = 0;  /* num_fields */
+        adt[2] = 0;  /* heap_mask */
+        return (int64_t)(intptr_t)adt;
+    }
+    /* Some line — the string is heap-owned, so bit 0 of heap_mask is set. */
+    int64_t* adt = (int64_t*)rc_alloc(RC_TYPE_ADT, (ADT_HDR_SIZE + 1) * sizeof(int64_t));
+    adt[0] = 0;  /* tag = Some */
+    adt[1] = 1;  /* num_fields */
+    adt[2] = 1;  /* heap_mask — field 0 is heap */
+    adt[3] = (int64_t)(intptr_t)line;
+    return (int64_t)(intptr_t)adt;
+}
+
+/* Synchronous: isatty(fd). Cheap syscall, no async needed. */
+int64_t yona_Std_IO__isTty(int64_t fd) {
+    return isatty((int)fd) == 1 ? 1 : 0;
+}
+
+/* Synchronous: fsync(fd). Most io_uring writes are durable at
+ * completion; this is a backstop for user-managed buffers. */
+int64_t yona_Std_IO__flushFd(int64_t fd) {
+    return fsync((int)fd) == 0 ? 1 : 0;
+}
 
 /* Std\File — async ops return uring ID, sync ops return directly */
 /* Register a direct result for io_await fallback when io_uring is unavailable */

@@ -850,9 +850,14 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
         ? yona_type_adt_name(current_type) : "";
     // For ADT returns, externs always come from the C runtime returning a
     // heap-allocated ADT pointer (i64 cast). Use ptr in the function signature.
-    auto ret_llvm = (ret_ctype == CType::ADT)
-        ? static_cast<LType*>(PointerType::get(*context_, 0))
-        : llvm_type(ret_ctype);
+    // For `extern io` (io_uring submit-and-return), the C function returns
+    // an i64 uring user_data ID; the codegen sees a Promise and auto-awaits.
+    auto i64_ty = LType::getInt64Ty(*context_);
+    auto ret_llvm = node->is_io
+        ? static_cast<LType*>(i64_ty)
+        : ((ret_ctype == CType::ADT)
+            ? static_cast<LType*>(PointerType::get(*context_, 0))
+            : llvm_type(ret_ctype));
 
     // The C ABI symbol may differ from the local Yona name (e.g.
     // `extern channel_new : Int -> Channel = "yona_Std_Channel__channel"`).
@@ -867,15 +872,20 @@ TypedValue Codegen::codegen_extern_decl(ExternDeclExpr* node) {
                                c_sym, module_.get());
     }
 
-    // Register as a compiled function
+    // Register as a compiled function. is_io makes the call site await
+    // via yona_rt_io_await (io_uring); is_async routes through the thread
+    // pool (yona_rt_async_await). Plain externs are synchronous.
     CompiledFunction cf;
     cf.fn = fn;
-    cf.return_type = node->is_async ? CType::PROMISE : ret_ctype;
+    cf.return_type = (node->is_async || node->is_io) ? CType::PROMISE : ret_ctype;
     cf.param_types = param_ctypes;
     cf.return_adt_name = ret_adt_name;
+    cf.is_io_async = node->is_io;
     compiled_functions_[node->name] = cf;
     named_values_[node->name] = {fn, CType::FUNCTION,
-                                  node->is_async ? std::vector<CType>{ret_ctype} : std::vector<CType>{}};
+                                  (node->is_async || node->is_io)
+                                      ? std::vector<CType>{ret_ctype}
+                                      : std::vector<CType>{}};
 
     // Compile the body (nullptr for module-level externs)
     if (node->body) return codegen(node->body);

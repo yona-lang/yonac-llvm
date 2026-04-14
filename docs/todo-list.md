@@ -110,20 +110,20 @@
   a matching file behind (expected total = 14 across 3 lines).
   Should move the file creation into the fixture runner, or rewrite
   the tests to create and delete their own scratch file.
-- [ ] **Std\IO module** — standard input/output abstractions. Today the
-  built-in `print` family handles most output but there's no real `IO`
-  module. Should provide: `stdin`/`stdout`/`stderr` as `FileHandle`
-  values, line-oriented read (`readLine`, `readLines : Iterator String`),
-  formatted output (`printf`/`println` with format strings), buffered
-  vs unbuffered modes, redirection helpers. Builds on the existing
-  `Std\File` runtime and the `with`/`Linear` resource pattern.
-- [ ] **Std\Constants module** — numeric and platform constants currently
-  hard-coded throughout the stdlib. `intMax`/`intMin` (INT64_MAX/INT64_MIN),
-  `floatMax`/`floatMin`/`floatEpsilon`, `pathSeparator`, `lineSeparator`,
-  page size, host endianness, math constants (`pi`, `e`, `tau`),
-  filesystem limits. Single source of truth so e.g. `Std\Stream.naturals`
-  doesn't have to spell out `9223372036854775807` literally. Pure-Yona
-  module, no C runtime needed.
+- [x] **Std\IO module** — non-blocking console and handle-based byte I/O.
+  Shipped as pure-Yona module calling `yona_Std_IO__*` externs that
+  submit via io_uring (writes) or thread pool (readLine). All write
+  operations return Promises that auto-await at the call site.
+- [x] **Std\Constants module** — split into `Std\Constants\Num`,
+  `Std\Constants\Math`, `Std\Constants\Platform`. Platform queries use
+  externs in `os_linux.c`.
+- [ ] **Case-match on CAF-returned ADT crashes codegen.** Repro:
+  `yonac -e 'import readLine from Std\IO in case readLine of Some n -> n, None -> "" end'`
+  triggers `llvm::checkGEPType` assertion. The CAF auto-force returns an
+  `i64` from `yona_rt_async_await`; the case-pattern path then tries to
+  GEP into the scrutinee as an ADT struct pointer without coercing back
+  to `ptr`. Fix is in the case-pattern codegen: detect ADT-typed scrutinee
+  and bitcast `i64 → ptr` before the GEP.
 - [ ] **STM** (Software Transactional Memory) — shared mutable state
 - [ ] **Serialization System** — structured binary/text serialization for Yona
   values. Encoders/decoders for ADTs, tuples, sequences, dicts, sets.

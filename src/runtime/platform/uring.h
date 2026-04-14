@@ -185,6 +185,7 @@ enum io_op_type {
     IO_OP_READ_FILE_BYTES, /* returns Bytes instead of String */
     IO_OP_READ_FD_BYTES,   /* pread from open fd, returns Bytes (don't close fd) */
     IO_OP_WRITE_FD_BYTES,  /* pwrite to open fd, returns bytes written (don't close fd) */
+    IO_OP_WRITE_FD_STR,    /* write string(s) to open fd, returns () */
 };
 
 typedef struct {

@@ -91,7 +91,43 @@ TypedValue Codegen::codegen_bool_false(FalseLiteralExpr* node) {
 }
 TypedValue Codegen::codegen_string(StringExpr* node) {
     set_debug_loc(node->source_context);
-    return {builder_->CreateGlobalStringPtr(node->value), CType::STRING};
+    // Emit string literal as an RC-managed static global so that Perceus
+    // DUP/DROP at call sites don't dereference a missing RC header. Layout:
+    //   { i64 refcount = INT64_MAX (arena sentinel),
+    //     i64 encoded_tag = RC_TYPE_STRING(6) | (len << 16) | (cls=-1 → 0 << 8),
+    //     [N x i8] bytes (including trailing NUL) }
+    // rc_inc/rc_dec both short-circuit on the sentinel.
+    const auto& s = node->value;
+    const size_t len = s.size();
+    auto* i64_ty = LType::getInt64Ty(*context_);
+    auto* i8_ty = LType::getInt8Ty(*context_);
+    auto* bytes_ty = ArrayType::get(i8_ty, len + 1);
+    std::vector<Constant*> byte_consts;
+    byte_consts.reserve(len + 1);
+    for (size_t i = 0; i < len; i++)
+        byte_consts.push_back(ConstantInt::get(i8_ty, (uint8_t)s[i]));
+    byte_consts.push_back(ConstantInt::get(i8_ty, 0));
+    auto* bytes_init = ConstantArray::get(bytes_ty, byte_consts);
+    auto* struct_ty = StructType::get(*context_, {i64_ty, i64_ty, bytes_ty});
+    constexpr int64_t RC_ARENA_SENTINEL = INT64_MAX;
+    constexpr int64_t RC_TYPE_STRING = 6;
+    int64_t encoded_tag = RC_TYPE_STRING | ((int64_t)len << 16);
+    auto* init = ConstantStruct::get(struct_ty, {
+        ConstantInt::get(i64_ty, RC_ARENA_SENTINEL),
+        ConstantInt::get(i64_ty, encoded_tag),
+        bytes_init,
+    });
+    // Not constant — rc_inc would write into .rodata otherwise. Sentinel check
+    // makes rc_inc a no-op, but we set isConstant=false to keep the symbol in a
+    // writable section just in case any other path mutates the header.
+    auto* gv = new GlobalVariable(*module_, struct_ty, /*isConstant=*/false,
+                                  GlobalValue::PrivateLinkage, init, ".strlit");
+    gv->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+    // Return pointer to the bytes field (index 2).
+    auto* bytes_ptr = builder_->CreateConstInBoundsGEP2_32(struct_ty, gv, 0, 2);
+    // Cast to i8* for consistency.
+    auto* as_i8 = builder_->CreateBitCast(bytes_ptr, PointerType::get(*context_, 0));
+    return {as_i8, CType::STRING};
 }
 TypedValue Codegen::codegen_unit(UnitExpr* node) {
     set_debug_loc(node->source_context);

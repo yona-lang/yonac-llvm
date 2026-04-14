@@ -70,10 +70,17 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
                 adt_declarations.push_back(adt.release());
             }
         } else if (match(TokenType::YEXTERN)) {
-            // Module-level extern: extern name : Type
+            // Module-level extern: extern [async|io] name : Type [= "CSYMBOL"]
+            //   `async` — thread-pool async (returns Promise)
+            //   `io`    — io_uring submit-and-return (returns Promise)
+            //   neither — synchronous C call
             bool is_async = false;
+            bool is_io = false;
             if (check(TokenType::YIDENTIFIER) && current().lexeme == "async") {
                 is_async = true;
+                advance();
+            } else if (check(TokenType::YIDENTIFIER) && current().lexeme == "io") {
+                is_io = true;
                 advance();
             }
             skip_newlines();
@@ -87,6 +94,7 @@ unique_ptr<ModuleDecl> ParserImpl::parse_module_internal() {
                 auto etype = parse_type();
                 if (etype) {
                     auto* decl = new ExternDeclExpr(eloc, ename, *etype, nullptr, is_async);
+                    decl->is_io = is_io;
                     // Optional `= "C_SYMBOL"` to bind a Yona-friendly name to a
                     // mangled C ABI symbol. Without it, ename IS the C symbol.
                     if (match(TokenType::YASSIGN)) {
