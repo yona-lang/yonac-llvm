@@ -163,7 +163,15 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
             // Recurse into all expression types that may contain sub-expressions
             if (auto* le = dynamic_cast<LetExpr*>(node)) {
                 analyze(le->expr);
-                for (auto* alias : le->aliases) analyze(alias);
+                // Recurse into each alias's RHS so a parameter used in a let
+                // binding ("let r = acq x, …") is still seen in function
+                // position and gets inferred as CType::FUNCTION.
+                for (auto* alias : le->aliases) {
+                    if (auto* va = dynamic_cast<ValueAlias*>(alias)) analyze(va->expr);
+                    else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) analyze(la->lambda);
+                    else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) analyze(pa->expr);
+                    else analyze(alias);
+                }
             } else if (auto* ie = dynamic_cast<IfExpr*>(node)) {
                 analyze(ie->condition); analyze(ie->thenExpr); analyze(ie->elseExpr);
             } else if (auto* de = dynamic_cast<DoExpr*>(node)) {

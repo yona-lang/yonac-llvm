@@ -1,0 +1,2 @@
+import range, chunksOf, count from Std\Stream in
+count (chunksOf 3 (range 1 11))

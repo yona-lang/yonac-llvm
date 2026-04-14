@@ -162,7 +162,8 @@ module Std\Stream
 
 export type Stream
 export empty, singleton, fromSeq, range, naturals, repeat, iterate, unfold, fromIterator
-export map, filter, take, drop, takeWhile, dropWhile, zip, zipWith, concat, flatMap, scan
+export map, filter, take, drop, takeWhile, dropWhile, zip, zipWith, concat, flatMap, scan, chunksOf
+export bracket
 export async, buffered
 export toSeq, foldl, forEach, count, sum, anyMatch, allMatch, find, head, isEmpty
 
@@ -306,6 +307,43 @@ scan fn z s = case s of
     Yield x rest -> let z2 = fn z x in Yield z2 (\_ -> scan fn z2 (rest ()))
     Nil          -> Nil
 end
+
+## Group consecutive elements into chunks of size `n` (as `Seq`). The last
+## chunk may be shorter if the input length is not a multiple of `n`. Empty
+## or non-positive `n` yields `Nil`.
+chunksOf n s =
+    if n <= 0 then Nil
+    else let
+        go count acc t = case t of
+            Yield x rest ->
+                let acc2 = acc ++ [x] in
+                if count + 1 >= n
+                then Yield acc2 (\_ -> go 0 [] (rest ()))
+                else go (count + 1) acc2 (rest ())
+            Nil -> if count == 0 then Nil
+                   else Yield acc (\_ -> Nil)
+        end
+    in go 0 [] s
+
+## ----- Resource scoping -----------------------------------------------------
+
+## Run `release r` exactly once when the stream from `produce r` is fully
+## drained. `acquire 0` is forced eagerly so the resource is held across the
+## whole stream, not per-element. Abandoning the stream before `Nil` currently
+## leaks the resource — see the "resource cleanup" note at the top of this
+## file; a drop-signal from the consumer is planned.
+##
+## `acquire` and `release` take an unused Int (not Unit) because the higher-
+## order call path filters Unit args (treating them as thunk-call markers),
+## so a `\u -> ...` lambda would otherwise see arity-mismatch crashes. Pass
+## any Int; the value is ignored.
+bracket acquire release produce =
+    let r = acquire 0
+    in let wrap t = case t of
+            Yield x rest -> Yield x (\_ -> wrap (rest ()))
+            Nil          -> let _ = release r in Nil
+        end
+    in wrap (produce r)
 
 ## ----- Pipeline parallelism -------------------------------------------------
 
