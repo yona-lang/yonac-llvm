@@ -271,11 +271,9 @@ dropWhile pred s = case s of
 end
 
 ## Pair-wise combination of two streams. Stops when either side is exhausted.
-## Note: the tuple `(x, y)` is bound to `pair` first to avoid juxtaposition
-## parsing `Yield (x, y) ...` as `Yield x y ...` (a curried 3-arg form).
 zip a b = case a of
     Yield x ra -> case b of
-        Yield y rb -> let pair = (x, y) in Yield pair (\_ -> zip (ra ()) (rb ()))
+        Yield y rb -> Yield (x, y) (\_ -> zip (ra ()) (rb ()))
         Nil        -> Nil
     end
     Nil -> Nil

@@ -1,0 +1,2 @@
+let f = \p -> case p of (a, b) -> a + b end in
+f (5, 10)

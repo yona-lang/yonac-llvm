@@ -205,11 +205,30 @@ void Unifier::adjust_levels(MonoTypePtr type, int level) {
     }
 }
 
-// Pretty-print a type for error messages
-std::string pretty_print(MonoTypePtr type) {
+// Convert a var_id to a user-facing name: a, b, ..., z, a1, b1, ...
+// The id → name map is unique per top-level pretty_print call so the same
+// variable renders the same way within one error message. Internal
+// counters (which can be large / non-contiguous) never leak into
+// diagnostics.
+namespace {
+struct PrintCtx {
+    std::unordered_map<int, std::string> names;
+    std::string name_for(int var_id) {
+        auto it = names.find(var_id);
+        if (it != names.end()) return it->second;
+        int n = static_cast<int>(names.size());
+        std::string nm;
+        nm += static_cast<char>('a' + (n % 26));
+        if (n >= 26) nm += std::to_string(n / 26);
+        names[var_id] = nm;
+        return nm;
+    }
+};
+
+std::string pretty_print_rec(MonoTypePtr type, PrintCtx& ctx) {
     if (!type) return "?";
     switch (type->tag) {
-        case MonoType::Var: return "t" + std::to_string(type->var_id);
+        case MonoType::Var: return ctx.name_for(type->var_id);
         case MonoType::Con: {
             switch (type->con) {
                 case TyCon::Int: return "Int";
@@ -231,18 +250,18 @@ std::string pretty_print(MonoTypePtr type) {
             return "?";
         }
         case MonoType::Arrow:
-            return "(" + pretty_print(type->param_type) + " -> " +
-                   pretty_print(type->return_type) + ")";
+            return "(" + pretty_print_rec(type->param_type, ctx) + " -> " +
+                   pretty_print_rec(type->return_type, ctx) + ")";
         case MonoType::App: {
             std::string s = type->type_name;
-            for (auto* a : type->args) s += " " + pretty_print(a);
+            for (auto* a : type->args) s += " " + pretty_print_rec(a, ctx);
             return s;
         }
         case MonoType::MTuple: {
             std::string s = "(";
             for (size_t i = 0; i < type->elements.size(); i++) {
                 if (i > 0) s += ", ";
-                s += pretty_print(type->elements[i]);
+                s += pretty_print_rec(type->elements[i], ctx);
             }
             return s + ")";
         }
@@ -250,16 +269,23 @@ std::string pretty_print(MonoTypePtr type) {
             std::string s = "{ ";
             for (size_t i = 0; i < type->record_fields.size(); i++) {
                 if (i > 0) s += ", ";
-                s += type->record_fields[i].first + " : " + pretty_print(type->record_fields[i].second);
+                s += type->record_fields[i].first + " : " + pretty_print_rec(type->record_fields[i].second, ctx);
             }
             if (type->row_rest) {
                 if (!type->record_fields.empty()) s += " | ";
-                s += pretty_print(type->row_rest);
+                s += pretty_print_rec(type->row_rest, ctx);
             }
             return s + " }";
         }
         default: return "?";
     }
+}
+} // namespace
+
+// Pretty-print a type for error messages
+std::string pretty_print(MonoTypePtr type) {
+    PrintCtx ctx;
+    return pretty_print_rec(type, ctx);
 }
 
 } // namespace yona::compiler::typechecker

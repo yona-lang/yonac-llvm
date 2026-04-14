@@ -103,24 +103,34 @@
   `recv`: before `cond_wait`, check if all tasks in the group are blocked
   and no I/O is in flight; if so, raise `:Deadlock`. Catches transitive
   deadlocks (cycles, crashed producers) that linear types can't see.
+- [ ] **Iterator fixture tests depend on an ambient `/tmp` file** —
+  `foldl_iterator.yona` and `iterator_gen_lines.yona` read from
+  `/tmp/yona_iter_gen_lines_test.txt`, which nothing in the test
+  harness creates. The tests pass by chance when a previous run left
+  a matching file behind (expected total = 14 across 3 lines).
+  Should move the file creation into the fixture runner, or rewrite
+  the tests to create and delete their own scratch file.
 - [x] **Parser: `case` inside lambda bodies** — fixed by adding a
   `block_depth_` counter on the lexer that tracks `case`/`do`/`with`/`handle`
   nesting and keeps newlines significant inside those blocks even when the
   surrounding parens would otherwise suppress them.
-- [ ] **Parser: `f (x, y)` parses as `f x y` instead of `f ((x, y))`** —
-  Yona's juxtaposition treats `(x, y)` immediately following an
-  identifier as two separate curried arguments, not a tuple argument.
-  `f (1, 2)` calls `f` with `1` and `2`; passing the tuple requires a
-  let binding (`let p = (1, 2) in f p`) or a wrapper function. This
-  silently breaks any constructor / function expecting a tuple as one
-  arg — `Yield (x, y) (\_ -> ...)` parses as `Yield x y (\_ -> ...)`,
-  Yield has arity 2, and the lambda gets dropped. Workaround in
-  `Std\Stream`'s `zip`: `let pair = (x, y) in Yield pair (\_ -> ...)`.
-  Proper fix is a parser disambiguation rule: a parenthesized
-  comma-list immediately after a callable should be a single tuple
-  argument when the callable's known arity matches, or always (the
-  Haskell convention). Affects every callable that takes a tuple,
-  not just constructors.
+- [x] **Parser: `f (x, y)` now parses as `f ((x, y))`** — fixed.
+  The `YLPAREN` infix path in `parse_infix_expr` used to parse a
+  parenthesized comma-list as a curried multi-arg call (`f(x, y)` →
+  two separate arguments). It now wraps the comma-list in a
+  `TupleExpr` and passes it as one argument — ML / Haskell convention.
+  Single-arg parens (`f(x)`) and nullary calls (`f()`) are unchanged.
+  `Std\Stream`'s `zip` now directly writes `Yield (x, y) (\_ -> ...)`.
+  Tests: `test/codegen/tuple_arg.yona`; `fn_multi_arg.yona` and the
+  corresponding IR test updated to juxtaposition form `add 3 4`.
+- [x] **Type-checker: hide internal var IDs from errors** — fixed.
+  `pretty_print` in `Unification.cpp` no longer emits `t148`, `t149`
+  etc.; it assigns human-friendly letters (`a`, `b`, `c`, ..., then
+  `a1`, `b1`, ...) per top-level print call so the same variable
+  renders consistently within one diagnostic while different messages
+  restart from `a`. Test by running `./yonac` on `let f x = x in f 5 6`
+  — error now reads `expected Int but found (Int -> a)` instead of
+  `(Int -> t146)`.
 - [x] **Parser: integer literals overflow at INT32_MAX** — fixed.
   `IntegerExpr` was templated on `LiteralExpr<int>` (32-bit) and the
   parser was casting the lexer's int64 value to `int` before storing it.

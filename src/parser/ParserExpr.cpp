@@ -675,11 +675,16 @@ unique_ptr<ExprNode> ParserImpl::parse_infix_expr(unique_ptr<ExprNode> left, Pre
             break;
         }
 
-        // Function call
+        // Function call — parenthesized argument list. One argument, or
+        // zero arguments (nullary call). A comma-separated list in this
+        // position IS a tuple argument (ML / Haskell convention), not
+        // a curried multi-arg call; `f(x, y)` means `f ((x, y))`. Use
+        // juxtaposition (`f x y` or `f x (y, z)`) for curried calls.
         case TokenType::YLPAREN: {
             vector<ExprNode*> args;
             vector<pair<string, ExprNode*>> named_args;
             bool has_named_args = false;
+            bool had_comma = false;
 
             if (!check(TokenType::YRPAREN)) {
                 do {
@@ -698,6 +703,7 @@ unique_ptr<ExprNode> ParserImpl::parse_infix_expr(unique_ptr<ExprNode> left, Pre
                         auto arg = parse_expr();
                         if (arg) args.push_back(arg.release());
                     }
+                    if (check(TokenType::YCOMMA)) had_comma = true;
                 } while (match(TokenType::YCOMMA));
             }
 
@@ -713,8 +719,15 @@ unique_ptr<ExprNode> ParserImpl::parse_infix_expr(unique_ptr<ExprNode> left, Pre
             }
 
             vector<variant<ExprNode*, ValueExpr*>> apply_args;
-            for (auto* arg : args) {
-                apply_args.push_back(arg);
+            if (had_comma && !has_named_args && args.size() > 1) {
+                // `f(x, y, ...)` → `f ((x, y, ...))` — the paren list is a
+                // tuple argument, not a curried call with N arguments.
+                auto* tup = new TupleExpr(loc, args);
+                apply_args.push_back(static_cast<ExprNode*>(tup));
+            } else {
+                for (auto* arg : args) {
+                    apply_args.push_back(arg);
+                }
             }
 
             auto apply_expr = make_unique<ApplyExpr>(loc, call_expr, apply_args);

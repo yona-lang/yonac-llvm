@@ -175,7 +175,7 @@ TEST_CASE("Function generates internal LLVM function") {
 }
 
 TEST_CASE("Multi-arg function generates correct signature") {
-    auto ir = compile_to_ir("let add x y = x + y in add(3, 4)");
+    auto ir = compile_to_ir("let add x y = x + y in add 3 4");
     CHECK(ir_contains(ir, "define internal fastcc i64 @add(i64 %x, i64 %y)"));
 }
 
