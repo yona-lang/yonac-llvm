@@ -510,12 +510,12 @@ public:
   [[nodiscard]] AstNodeType get_type() const override { return AST_FALSE_LITERAL_EXPR; };
 };
 
-class FloatExpr final : public LiteralExpr<float> {
+class FloatExpr final : public LiteralExpr<double> {
 private:
   void print(std::ostream &os) const override;
 
 public:
-  explicit FloatExpr(SourceContext token, float value);
+  explicit FloatExpr(SourceContext token, double value);
   template<typename ResultType>
   ResultType accept(const AstVisitor<ResultType> &visitor) const {
     return visitor.visit(const_cast<typename std::remove_const<typename std::remove_pointer<decltype(this)>::type>::type*>(this));

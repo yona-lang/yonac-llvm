@@ -1,0 +1,72 @@
+## Platform-sensitive constants.
+##
+## Values that depend on the host OS / architecture / kernel. Everything
+## here is a 0-arity CAF — Yona auto-forces the first reference so the
+## underlying syscall runs once per compiled program, no matter how many
+## times the constant is read.
+##
+## Endianness and OS name / arch are useful for wire protocols, sanity
+## checks, and diagnostic output. Page / cache-line / path-max sizes are
+## useful when sizing buffers or enforcing filesystem limits.
+module Std\Constants\Platform
+
+export pathSeparator, pathListSeparator, lineSeparator, nullDevice
+export pageSize, cacheLineSize, wordSize, cpuCount
+export pathMax, nameMax
+export endianness, isLittleEndian
+export osName, arch
+
+extern yona_platform_page_size        : Int -> Int
+extern yona_platform_cache_line_size  : Int -> Int
+extern yona_platform_path_max         : Int -> Int
+extern yona_platform_name_max         : Int -> Int
+extern yona_platform_cpu_count        : Int -> Int
+extern yona_platform_is_little_endian : Int -> Int
+extern yona_platform_os_name          : Int -> String
+extern yona_platform_arch             : Int -> String
+
+## Path component separator. `/` on POSIX, `\` on Windows.
+pathSeparator = "/"
+
+## Separator between entries in PATH-like environment variables.
+## `:` on POSIX, `;` on Windows.
+pathListSeparator = ":"
+
+## Line terminator as emitted by `println` and friends. `\n` on POSIX,
+## `\r\n` on Windows.
+lineSeparator = "\n"
+
+## Path to the null device — `/dev/null` on POSIX, `NUL` on Windows.
+nullDevice = "/dev/null"
+
+## Pointer / word width in bits. Yona is 64-bit only today.
+wordSize = 64
+
+## Host page size in bytes, via `sysconf(_SC_PAGESIZE)`. Usually 4096.
+pageSize = yona_platform_page_size 0
+
+## L1 data cache line size in bytes. Usually 64. Use for padding hot
+## atomic fields to avoid false sharing.
+cacheLineSize = yona_platform_cache_line_size 0
+
+## Number of online CPUs, via `sysconf(_SC_NPROCESSORS_ONLN)`. Useful
+## as a default for thread-pool sizing.
+cpuCount = yona_platform_cpu_count 0
+
+## Filesystem `PATH_MAX`, via `pathconf("/", _PC_PATH_MAX)`.
+pathMax = yona_platform_path_max 0
+
+## Filesystem component length limit (`NAME_MAX`). 255 on most Linux FSes.
+nameMax = yona_platform_name_max 0
+
+## `1` for little-endian hosts (x86_64, aarch64-le), `0` for big-endian.
+isLittleEndian = yona_platform_is_little_endian 0
+
+## Host endianness as a symbol — `:little` or `:big`.
+endianness = if isLittleEndian == 1 then :little else :big
+
+## OS name from `uname().sysname` — `"Linux"`, `"Darwin"`, `"FreeBSD"`, etc.
+osName = yona_platform_os_name 0
+
+## Machine architecture from `uname().machine` — `"x86_64"`, `"aarch64"`, etc.
+arch = yona_platform_arch 0

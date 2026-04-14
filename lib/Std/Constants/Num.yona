@@ -1,0 +1,42 @@
+## Numeric limits.
+##
+## Yona's `Int` is i64 and `Float` is f64; these constants expose the
+## signed-integer and IEEE-754 bounds. `int32Max` / `int32Min` are
+## provided for when interop (syscalls, network protocols) requires
+## a narrower range.
+module Std\Constants\Num
+
+export intMax, intMin, int32Max, int32Min
+export floatMax, floatMin, floatEpsilon, floatInfinity, floatNaN
+
+## Largest signed 64-bit integer: 2^63 - 1.
+intMax = 9223372036854775807
+
+## Smallest signed 64-bit integer: -(2^63). Written as `-intMax - 1`
+## because the literal 9223372036854775808 overflows i64 (the lexer
+## parses the unsigned magnitude before applying the unary minus).
+intMin = -9223372036854775807 - 1
+
+## Largest signed 32-bit integer: 2^31 - 1.
+int32Max = 2147483647
+
+## Smallest signed 32-bit integer: -(2^31).
+int32Min = -2147483648
+
+## Largest finite positive IEEE-754 double (≈ 1.798e308).
+floatMax = 1.7976931348623157e308
+
+## Smallest positive normal IEEE-754 double (≈ 2.225e-308).
+floatMin = 2.2250738585072014e-308
+
+## Machine epsilon: the difference between 1.0 and the next representable
+## double (≈ 2.22e-16).
+floatEpsilon = 2.220446049250313e-16
+
+## Positive infinity (1.0 / 0.0 forces the value; the parser doesn't
+## accept `Infinity` or `inf` as literals).
+floatInfinity = 1.0 / 0.0
+
+## Quiet NaN. Any computation with NaN propagates NaN; comparisons with
+## NaN are always false (including `NaN == NaN`).
+floatNaN = 0.0 / 0.0

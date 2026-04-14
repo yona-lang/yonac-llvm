@@ -1,0 +1,2 @@
+import intMax, int32Max from Std\Constants\Num in
+intMax - int32Max

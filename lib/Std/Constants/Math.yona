@@ -1,0 +1,39 @@
+## Mathematical constants.
+##
+## All values are `Float` (IEEE-754 double). Precisions match what a
+## double can represent; any extra digits in the source are there so
+## the lexer rounds to the nearest representable double, not for
+## decorative purposes.
+module Std\Constants\Math
+
+export pi, tau, e, phi, sqrt2, sqrt3, ln2, ln10, log2e, log10e
+
+## Ratio of a circle's circumference to its diameter.
+pi = 3.141592653589793238462643383279502884
+
+## pi * 2, full-circle angle in radians.
+tau = 6.283185307179586476925286766559005768
+
+## Euler's number, base of the natural logarithm.
+e = 2.718281828459045235360287471352662498
+
+## Golden ratio: (1 + sqrt 5) / 2.
+phi = 1.618033988749894848204586834365638117
+
+## sqrt 2.
+sqrt2 = 1.414213562373095048801688724209698079
+
+## sqrt 3.
+sqrt3 = 1.732050807568877293527446341505872367
+
+## Natural log of 2.
+ln2 = 0.693147180559945309417232121458176568
+
+## Natural log of 10.
+ln10 = 2.302585092994045684017991454684364208
+
+## log base 2 of e.
+log2e = 1.442695040888963407359924681001892137
+
+## log base 10 of e.
+log10e = 0.434294481903251827651128918916605082

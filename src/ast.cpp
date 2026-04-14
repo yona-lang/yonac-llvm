@@ -84,7 +84,7 @@ FalseLiteralExpr::FalseLiteralExpr(SourceContext token) : LiteralExpr<bool>(toke
 
 void FalseLiteralExpr::print(std::ostream &os) const { os << "false"; }
 
-FloatExpr::FloatExpr(SourceContext token, const float value) : LiteralExpr<float>(token, value) {}
+FloatExpr::FloatExpr(SourceContext token, const double value) : LiteralExpr<double>(token, value) {}
 
 void FloatExpr::print(std::ostream &os) const { os << value; }
 
@@ -1643,7 +1643,7 @@ std::ostream &operator<<(std::ostream &os, const AstNode &obj) {
 
 // Explicit template instantiations for LiteralExpr
 template class LiteralExpr<bool>;
-template class LiteralExpr<float>;
+template class LiteralExpr<double>;
 template class LiteralExpr<int>;
 template class LiteralExpr<unsigned char>;
 template class LiteralExpr<string>;

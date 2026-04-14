@@ -112,9 +112,10 @@ extern ceil : Float -> Float
 ## Round to nearest integer (Float -> Float).
 extern round : Float -> Float
 
-## Pi constant.
+## Pi constant. Re-export from `Std\Constants\Math` so `Std\Math.pi` keeps
+## working while the canonical definition lives in one place.
 ##
 ## ```
 ## pi   # => 3.14159265358979
 ## ```
-pi = 3.14159265358979323846
+pi = import pi as piConst from Std\Constants\Math in piConst

@@ -335,3 +335,62 @@ void yona_process_destroy(void* proc_handle) {
         waitpid((pid_t)proc->pid, &status, WNOHANG);
     }
 }
+
+/* ===== Platform constants ===== */
+/* Constants exposed to Std\Constants\Platform. These are read once
+ * at runtime and returned as Int/String; Yona's CAFs memoize the
+ * first read so there's no per-call syscall overhead. */
+
+#include <sys/utsname.h>
+#include <limits.h>
+
+int64_t yona_platform_page_size(void) {
+    long v = sysconf(_SC_PAGESIZE);
+    return v > 0 ? (int64_t)v : 4096;
+}
+
+int64_t yona_platform_cache_line_size(void) {
+    long v = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+    return v > 0 ? (int64_t)v : 64;
+}
+
+int64_t yona_platform_path_max(void) {
+    long v = pathconf("/", _PC_PATH_MAX);
+    return v > 0 ? (int64_t)v : 4096;
+}
+
+int64_t yona_platform_name_max(void) {
+    long v = pathconf("/", _PC_NAME_MAX);
+    return v > 0 ? (int64_t)v : 255;
+}
+
+int64_t yona_platform_cpu_count(void) {
+    long v = sysconf(_SC_NPROCESSORS_ONLN);
+    return v > 0 ? (int64_t)v : 1;
+}
+
+/* 1 = little-endian (x86_64, aarch64-le), 0 = big-endian. */
+int64_t yona_platform_is_little_endian(void) {
+    uint16_t x = 1;
+    return (*(uint8_t*)&x) == 1 ? 1 : 0;
+}
+
+const char* yona_platform_os_name(void) {
+    struct utsname u;
+    const char* src = "unknown";
+    if (uname(&u) == 0) src = u.sysname;
+    size_t n = strlen(src);
+    char* r = (char*)yona_rt_rc_alloc_string(n + 1);
+    memcpy(r, src, n + 1);
+    return r;
+}
+
+const char* yona_platform_arch(void) {
+    struct utsname u;
+    const char* src = "unknown";
+    if (uname(&u) == 0) src = u.machine;
+    size_t n = strlen(src);
+    char* r = (char*)yona_rt_rc_alloc_string(n + 1);
+    memcpy(r, src, n + 1);
+    return r;
+}

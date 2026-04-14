@@ -659,21 +659,66 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
 
     auto it = named_values_.find(node->name->value);
     if (it != named_values_.end()) {
-        // If it's a FUNCTION with nullptr val, set last_lambda_name_ for higher-order support
-        if (it->second.type == CType::FUNCTION && !it->second.val) {
-            last_lambda_name_ = node->name->value;
+        // If it's a FUNCTION, check whether the underlying definition is
+        // a 0-arity CAF. If so, auto-force it here so call sites that
+        // expect a value (e.g. `pi > 3.14`) don't see a function
+        // reference instead. Applies both when `val == nullptr`
+        // (deferred, not yet compiled) and when `val` points to an
+        // already-compiled 0-arg Function*.
+        if (it->second.type == CType::FUNCTION) {
+            // Deferred CAF — compile and call with no args.
+            auto def_it = deferred_functions_.find(node->name->value);
+            if (def_it != deferred_functions_.end() && def_it->second.param_names.empty()) {
+                auto cf = compile_function(node->name->value, def_it->second, {});
+                if (cf.fn) {
+                    std::vector<llvm::Value*> no_args;
+                    if (cf.closure_env) no_args.push_back(cf.closure_env);
+                    auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");
+                    TypedValue result{call, cf.return_type};
+                    if (!cf.return_adt_name.empty()) result.adt_type_name = cf.return_adt_name;
+                    if (!cf.return_subtypes.empty()) result.subtypes = cf.return_subtypes;
+                    return result;
+                }
+            }
+            // Already-compiled 0-arg CAF — emit the call directly.
+            auto cf_it = compiled_functions_.find(node->name->value);
+            if (cf_it != compiled_functions_.end()) {
+                auto& cf = cf_it->second;
+                size_t user_arity = cf.param_types.size() - cf.capture_names.size();
+                if (user_arity == 0 && !cf.is_io_async && cf.return_type != CType::PROMISE) {
+                    std::vector<llvm::Value*> no_args;
+                    if (cf.closure_env) no_args.push_back(cf.closure_env);
+                    auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");
+                    TypedValue result{call, cf.return_type};
+                    if (!cf.return_adt_name.empty()) result.adt_type_name = cf.return_adt_name;
+                    if (!cf.return_subtypes.empty()) result.subtypes = cf.return_subtypes;
+                    return result;
+                }
+            }
+            if (!it->second.val) last_lambda_name_ = node->name->value;
         }
-        // Note: Perceus DUP at non-last uses requires matching callee DROP
-        // at function exit. Callee DROP is blocked by the PHI problem:
-        // when a function returns a param via a branch (if/case), the
-        // return Value* is a PHI, not the param, so the DROP check
-        // `param == return` fails and frees the returned value.
-        // Full Perceus needs per-branch DROP insertion.
         return it->second;
     }
-    // Check if it's a compiled function
+    // Check if it's a compiled function. 0-arity CAFs ("constants that
+    // compute") are auto-forced on every reference, same as the deferred
+    // branch below — otherwise a second reference would return the
+    // function pointer itself and downstream code (e.g. `pi > 3.14`)
+    // type-errors against a callable.
     auto fit = compiled_functions_.find(node->name->value);
-    if (fit != compiled_functions_.end()) return {fit->second.fn, CType::FUNCTION, {fit->second.return_type}};
+    if (fit != compiled_functions_.end()) {
+        auto& cf = fit->second;
+        size_t user_arity = cf.param_types.size() - cf.capture_names.size();
+        if (user_arity == 0 && !cf.is_io_async && cf.return_type != CType::PROMISE) {
+            std::vector<llvm::Value*> no_args;
+            if (cf.closure_env) no_args.push_back(cf.closure_env);
+            auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");
+            TypedValue result{call, cf.return_type};
+            if (!cf.return_adt_name.empty()) result.adt_type_name = cf.return_adt_name;
+            if (!cf.return_subtypes.empty()) result.subtypes = cf.return_subtypes;
+            return result;
+        }
+        return {cf.fn, CType::FUNCTION, {cf.return_type}};
+    }
     // Check if it's a deferred function (not yet compiled — referenced as value).
     // For 0-arity definitions like `naturals = range 0 N`, an identifier
     // reference should auto-force the function (Haskell-style CAF / value
