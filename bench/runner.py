@@ -69,11 +69,73 @@ def compile_c(c_file, exe_path):
         return False
 
 
-def run_once(exe):
-    """Run executable once. Returns (output, time_ms, peak_rss_kb) or None on failure."""
+# Reference-language registry. Each entry returns a runnable command list for
+# /usr/bin/time or None if prerequisites are missing.
+def _prep_c(stem, build_dir):
+    src = BENCH_DIR / "reference" / (stem + ".c")
+    if not src.exists():
+        return None
+    exe = build_dir / f"ref_c_{stem}"
+    if not compile_c(src, exe):
+        return None
+    return [str(exe)]
+
+
+def _prep_erl(stem, build_dir):
+    """Prepare an Erlang reference: compile the escript to a .beam so the
+    benchmark run measures compiled Erlang, not the escript interpreter.
+    The .erl file is expected to define `main/1`; we convert it to a
+    regular module, compile with erlc, and invoke via erl -noshell."""
+    src = BENCH_DIR / "reference" / (stem + ".erl")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("erl") or not which("erlc"):
+        return None
+    # Rewrite the escript header to a module declaration so erlc can
+    # compile it. Cache the generated source + beam in BUILD_DIR.
+    mod_name = f"yonabench_{stem}"
+    erl_src = build_dir / f"{mod_name}.erl"
+    beam = build_dir / f"{mod_name}.beam"
+    if not beam.exists() or src.stat().st_mtime > beam.stat().st_mtime:
+        raw = src.read_text().splitlines()
+        # Drop the escript shebang + any leading `%%` comment lines that
+        # sit above the first `main/1` clause; replace with a module hdr.
+        body = []
+        for line in raw:
+            if line.startswith("#!"):
+                continue
+            body.append(line)
+        erl_src.write_text(
+            f"-module({mod_name}).\n"
+            f"-export([main/1]).\n"
+            + "\n".join(body) + "\n"
+        )
+        result = subprocess.run(
+            ["erlc", "-o", str(build_dir), str(erl_src)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0 or not beam.exists():
+            return None
+    # Note: Erlang VM startup is ~1s on this box, so these numbers reflect
+    # VM boot + computation and will look lopsided on sub-millisecond
+    # benchmarks. -eval invokes main/1 with [] (escript convention).
+    return ["erl", "-noshell", "-pa", str(build_dir),
+            "-eval", f"{mod_name}:main([]), init:stop()."]
+
+
+REF_LANGS = {
+    "c": {"label": "C", "prep": _prep_c},
+    "erl": {"label": "Erl", "prep": _prep_erl},
+}
+
+
+def run_once(cmd_or_exe):
+    """Run a command once. `cmd_or_exe` is a str (path) or a list of args.
+    Returns (output, time_ms, peak_rss_kb) or None on failure."""
     try:
-        # Use /usr/bin/time for memory measurement
-        cmd = ["/usr/bin/time", "-v", str(exe)]
+        cmd = cmd_or_exe if isinstance(cmd_or_exe, list) else [str(cmd_or_exe)]
+        cmd = ["/usr/bin/time", "-v"] + cmd
         start = time.perf_counter_ns()
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=BENCH_TIMEOUT)
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
@@ -143,8 +205,10 @@ def fmt_rss(kb):
     return f"{kb / 1024:.1f}MB"
 
 
-def run_suite(benchmarks, opt_level, iterations, compare_c=False):
-    """Run all benchmarks at one opt level. Returns list of result dicts."""
+def run_suite(benchmarks, opt_level, iterations, compare_langs=()):
+    """Run all benchmarks at one opt level. `compare_langs` is a tuple of
+    language keys (from REF_LANGS) to compare against.
+    Returns list of result dicts."""
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
     results = []
     current_category = None
@@ -183,17 +247,25 @@ def run_suite(benchmarks, opt_level, iterations, compare_c=False):
 
         line = f"    {stem:.<28} {fmt_time(stats['avg_ms']):>8}  {fmt_rss(stats['peak_rss_kb']):>8}"
 
-        if compare_c:
-            c_file = BENCH_DIR / "reference" / (stem + ".c")
-            c_exe = BUILD_DIR / f"ref_{stem}"
-            if c_file.exists() and compile_c(c_file, c_exe):
-                c_stats = run_benchmark(c_exe, iterations)
-                if c_stats:
-                    ratio = stats["avg_ms"] / c_stats["avg_ms"] if c_stats["avg_ms"] > 0 else 0
-                    r["c_avg_ms"] = c_stats["avg_ms"]
-                    r["c_rss_kb"] = c_stats["peak_rss_kb"]
-                    r["ratio"] = ratio
-                    line += f"  C: {fmt_time(c_stats['avg_ms']):>8} {fmt_rss(c_stats['peak_rss_kb']):>6}  {ratio:.1f}x"
+        for lang in compare_langs:
+            spec = REF_LANGS.get(lang)
+            if not spec:
+                continue
+            cmd = spec["prep"](stem, BUILD_DIR)
+            if cmd is None:
+                continue
+            ref_stats = run_benchmark(cmd, iterations)
+            if not ref_stats:
+                continue
+            # Skip if the reference produced the wrong output — meaningless to time.
+            if not check_correctness(bench, ref_stats["output"]):
+                continue
+            ratio = stats["avg_ms"] / ref_stats["avg_ms"] if ref_stats["avg_ms"] > 0 else 0
+            r[f"{lang}_avg_ms"] = ref_stats["avg_ms"]
+            r[f"{lang}_rss_kb"] = ref_stats["peak_rss_kb"]
+            r[f"{lang}_ratio"] = ratio
+            line += (f"  {spec['label']}: {fmt_time(ref_stats['avg_ms']):>8} "
+                     f"{fmt_rss(ref_stats['peak_rss_kb']):>6}  {ratio:.1f}x")
 
         print(line)
         results.append(r)
@@ -239,11 +311,40 @@ def main():
     parser.add_argument("filter", nargs="?", help="Filter by benchmark name")
     parser.add_argument("-n", "--iterations", type=int, default=3)
     parser.add_argument("-O", "--opt-level", type=int, default=2)
-    parser.add_argument("--compare-c", "--compare", action="store_true")
+    parser.add_argument("--compare-c", action="store_true",
+                        help="Compare against C reference impls")
+    parser.add_argument("--compare-erl", action="store_true",
+                        help="Compare against Erlang reference impls (erlc-compiled)")
+    # `--compare` without a value means "-c" (backwards compat). With a value,
+    # it takes a CSV of language keys: `--compare=c,erl`. The `nargs="?"` +
+    # `const` trick gives us both forms from a single flag.
+    parser.add_argument("--compare",
+                        dest="compare_langs_csv",
+                        nargs="?", const="c",
+                        help="Comma-separated languages to compare against "
+                             f"({','.join(REF_LANGS.keys())}). Defaults to 'c' "
+                             f"when the flag is present without a value.")
     parser.add_argument("--all-opt-levels", action="store_true", help="Run O0, O1, O2, O3")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--save", action="store_true", help="Save results to bench/history.jsonl")
     args = parser.parse_args()
+
+    # Resolve comparison languages from the various flags.
+    compare_langs = []
+    if args.compare_c:
+        compare_langs.append("c")
+    if args.compare_erl:
+        compare_langs.append("erl")
+    if args.compare_langs_csv:
+        for lang in args.compare_langs_csv.split(","):
+            lang = lang.strip().lower()
+            if lang and lang not in compare_langs:
+                if lang not in REF_LANGS:
+                    print(f"Error: unknown comparison language '{lang}'. "
+                          f"Available: {','.join(REF_LANGS.keys())}")
+                    sys.exit(1)
+                compare_langs.append(lang)
+    compare_langs = tuple(compare_langs)
 
     if not YONAC.exists():
         print(f"Error: yonac not found at {YONAC}")
@@ -263,11 +364,11 @@ def main():
             print(f"\n{'=' * 60}")
             print(f"  Optimization Level: -O{level}  ({args.iterations} iterations)")
             print(f"{'=' * 60}")
-            all_results[f"O{level}"] = run_suite(benchmarks, level, args.iterations, args.compare_c)
+            all_results[f"O{level}"] = run_suite(benchmarks, level, args.iterations, compare_langs)
     else:
         print(f"Yona Benchmarks — -O{args.opt_level}, {args.iterations} iterations")
         print(f"{'=' * 60}")
-        all_results[f"O{args.opt_level}"] = run_suite(benchmarks, args.opt_level, args.iterations, args.compare_c)
+        all_results[f"O{args.opt_level}"] = run_suite(benchmarks, args.opt_level, args.iterations, compare_langs)
 
     # Summary
     print(f"\n{'=' * 60}")

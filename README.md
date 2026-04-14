@@ -10,7 +10,7 @@ A compiled functional programming language targeting LLVM, featuring persistent 
 - **Pattern matching** — head-tail, tuples, constructors, or-patterns, guards
 - **Algebraic data types** — with traits, default methods, cross-module dispatch
 - **Module system** — FQN imports, interface files, cross-module generics
-- **27 stdlib modules** — I/O, networking, regex, JSON, crypto, process management
+- **37 stdlib modules** — I/O, networking, regex, JSON, crypto, process management, streams, channels
 
 ## Quick Start
 
@@ -105,28 +105,38 @@ end
 | `Std\Regex` | compile, matches, find, findAll, replace, replaceAll, split |
 | `Std\File` | readFile, writeFile, exists, readLines, listDir |
 | `Std\Process` | spawn, exec, readLine, readAll, wait, kill, writeStdin |
-| `Std\IO` | print, println, readLine |
+| `Std\IO` | print, println, eprint, eprintln, readLine, isTty, flush (non-blocking via io_uring) |
 | `Std\Json` | parse, stringify |
 | `Std\Net` | connect, accept, send, recv |
 | `Std\Option` | Some, None, map, unwrapOr |
 | `Std\Result` | Ok, Err, map, mapErr, unwrapOr |
+| `Std\Stream` | range, map, filter, take, chunksOf, bracket, async, buffered |
+| `Std\Channel` | channel, send, recv, close (bounded, linear endpoints) |
+| `Std\Task` | spawn, await |
+| `Std\Constants\{Num,Math,Platform}` | intMax, pi, pageSize, endianness |
 
 Full API docs: `python3 scripts/gendocs.py` generates [docs/api/](docs/api/).
 
 ## Performance
 
-Benchmarks vs equivalent C (gcc -O2):
+Benchmarks vs equivalent C (gcc -O2), 10 iterations:
 
 | Benchmark | Ratio | Notes |
 |-----------|-------|-------|
+| par_map | **1.0x** | Parallel comprehension, 20 elements |
 | list_map_filter | **1.0x** | Stream fusion eliminates intermediate allocations |
-| tak | **0.8x** | Faster than C (LLVM optimizations) |
-| sum_squares | 1.2x | |
+| parallel_async / sequential_async | **1.0x** | io_uring + thread pool |
+| tak | **1.1x** | |
+| sum_squares | 1.3x | |
 | sieve | 1.4x | |
-| dict_build (10K) | 2.0x | HAMT with transient inserts |
-| set_build (10K) | 2.1x | HAMT-backed |
-| fibonacci | 2.0x | |
-| queens | 10.8x | Allocation-heavy (42MB vs 2MB) |
+| fibonacci | 2.4x | |
+| dict_build / set_build (10K) | 2.2x | HAMT-backed |
+| ackermann | 2.6x | |
+| queens | 10.6x | Allocation-heavy (43 MB vs 2 MB) — on the investigation list |
+
+Full table: [docs/todo-list.md](docs/todo-list.md#benchmark-results). Reference
+impls in C, Erlang, Haskell, Java, JavaScript, Python under
+[`bench/reference/`](bench/reference/).
 
 ## Architecture
 
@@ -171,8 +181,8 @@ cmake --build --preset build-debug-linux
 # Run tests
 ctest --preset unit-tests-linux
 
-# Run benchmarks
-python3 bench/runner.py --compare
+# Run benchmarks (compare vs C; add --compare-erl or --compare=c,erl for Erlang too)
+python3 bench/runner.py --compare-c -n 10
 
 # Format code
 ./scripts/format.sh

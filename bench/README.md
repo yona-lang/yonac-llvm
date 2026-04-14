@@ -12,6 +12,12 @@ python3 bench/runner.py fibonacci
 # Compare against C reference implementations
 python3 bench/runner.py --compare-c
 
+# Compare against Erlang (uses erlc, so run includes VM boot)
+python3 bench/runner.py --compare-erl
+
+# Compare against several languages at once
+python3 bench/runner.py --compare=c,erl
+
 # Compare all optimization levels (O0, O1, O2, O3)
 python3 bench/runner.py --all-opt-levels
 
@@ -30,7 +36,9 @@ python3 bench/runner.py --json
 - **Wall-clock time** (ms) — min/avg/max over N iterations
 - **Peak RSS** (KB) — maximum resident set size via `/usr/bin/time -v`
 - **Correctness** — each benchmark has a `.expected` file verified before timing
-- **C comparison** — optional ratio vs equivalent C implementation
+- **Reference comparison** — optional ratio vs C, Erlang, or both (via
+  `--compare-c` / `--compare-erl` / `--compare=c,erl`). Erlang numbers
+  include VM startup (~1s), so short benchmarks look lopsided.
 
 ## Structure
 
@@ -49,11 +57,11 @@ bench/
   numeric/               # Numeric computation benchmarks
     ackermann.yona       # Ackermann function (deep recursion)
     sum_squares.yona     # Sum of squares (tight loop, TCE)
-  reference/             # C reference implementations
-    fibonacci.c
-    tak.c
-    ackermann.c
-    sum_squares.c
+  reference/             # Reference implementations (C, Erlang, Haskell,
+    fibonacci.c          # Java, JavaScript, Python). Only .c and .erl are
+    fibonacci.erl        # currently wired into the runner's comparison
+    fibonacci.hs         # output; the others are kept for reading.
+    ...
 ```
 
 ## Adding a Benchmark
@@ -61,14 +69,18 @@ bench/
 1. Create `bench/<category>/<name>.yona`
 2. Create `bench/<category>/<name>.expected` — expected output
 3. Optionally `bench/reference/<name>.c` — C equivalent
+4. Optionally `bench/reference/<name>.erl` — Erlang equivalent. Use the
+   escript shebang (`#!/usr/bin/env escript`) and export `main/1`. The
+   runner rewrites it to a regular module and compiles with `erlc`
+   before timing.
 
 The runner discovers all `.yona` files automatically. Each benchmark has a
 10-second timeout to prevent runaway execution.
 
 ## Known Limitations
 
-- N-queens benchmark requires closure capture of outer function parameters
-  (tracked as a codegen bug — nested let functions don't capture enclosing
-  function parameters correctly)
 - Sieve uses O(n²) list filtering — expected to be slow
 - No REPL-level benchmarks yet (compile time not measured)
+- Erlang comparison includes VM startup overhead (~1s); short-running
+  benchmarks will show very low Yona/Erl ratios that mostly reflect
+  boot cost, not computational speed

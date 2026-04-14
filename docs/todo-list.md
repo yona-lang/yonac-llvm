@@ -12,44 +12,48 @@
 
 ## Benchmark Results
 
-Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
+Rerun on LLVM 22, 2026-04-14, 10 iterations, `b51e035`. Sorted by Yona/C ratio.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| par_map | 0.56ms | 0.68ms | **0.8x** | 2.4 | 2.4 |
-| tak | 64ms | 64ms | **1.0x** | 2.3 | 2.2 |
-| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.5 |
-| sequential_async | 402ms | 402ms | **1.0x** | 2.8 | 2.2 |
-| process_spawn | 1.2ms | 1.1ms | **1.0x** | 3.8 | 3.9 |
-| file_read | 0.77ms | 0.73ms | 1.1x | 3.6 | 3.3 |
-| binary_read_chunks | 0.82ms | 0.66ms | 1.2x | 2.5 | 2.3 |
-| binary_write_read | 3.4ms | 2.9ms | 1.2x | 12.5 | 7.3 |
-| list_map_filter | 0.86ms | 0.70ms | 1.2x | 2.9 | 3.1 |
-| channel_fanin | 1.5ms | 1.1ms | 1.3x | 3.3 | 2.3 |
-| channel_pipeline | 1.3ms | 0.98ms | 1.3x | 3.2 | 2.3 |
-| int_array_fill_sum | 0.66ms | 0.51ms | 1.3x | 2.6 | 2.3 |
-| list_sum | 0.80ms | 0.59ms | 1.3x | 3.1 | 2.6 |
-| process_exec | 1.3ms | 0.97ms | 1.3x | 4.0 | 3.9 |
-| seq_map | 0.64ms | 0.50ms | 1.3x | 2.4 | 2.2 |
-| sum_squares | 0.63ms | 0.49ms | 1.3x | 2.4 | 2.1 |
-| channel_throughput | 1.7ms | 1.3ms | 1.4x | 3.5 | 2.3 |
-| file_parallel_read | 1.2ms | 0.80ms | 1.5x | 6.0 | 5.4 |
-| list_reverse | 0.90ms | 0.57ms | 1.6x | 3.2 | 2.6 |
-| file_write_read | 1.5ms | 0.83ms | 1.8x | 4.8 | 3.2 |
-| sieve | 0.92ms | 0.50ms | 1.8x | 3.1 | 2.2 |
-| dict_build | 1.4ms | 0.61ms | 2.2x | 3.4 | 2.4 |
-| set_build | 1.4ms | 0.61ms | 2.2x | 3.4 | 2.3 |
-| file_readlines_large | 35ms | 14ms | 2.4x | 2.6 | 2.1 |
-| fibonacci | 15ms | 6.4ms | 2.4x | 2.4 | 2.2 |
-| ackermann | 163ms | 63ms | 2.6x | 2.5 | 2.3 |
-| sort | 1.6ms | 0.54ms | 2.9x | 8.1 | 2.2 |
-| file_readlines | 2.2ms | 0.71ms | 3.0x | 7.3 | 2.2 |
-| file_write_read_large | 47ms | 14ms | 3.4x | 107 | 2.2 |
-| int_array_map | 1.9ms | 0.53ms | 3.7x | 2.7 | 2.4 |
-| int_array_sum | 1.9ms | 0.52ms | 3.7x | 2.7 | 2.3 |
-| file_read_large | 13ms | 3.0ms | 4.2x | 55 | 2.3 |
-| file_parallel_read_large | 8.9ms | 1.3ms | 6.8x | 37 | 2.4 |
-| queens | 14ms | 1.3ms | 10.9x | 43 | 2.2 |
+| par_map | 0.60ms | 0.63ms | **1.0x** | 2.4 | 2.4 |
+| list_map_filter | 0.73ms | 0.70ms | **1.0x** | 2.9 | 3.0 |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.7 | 2.5 |
+| sequential_async | 402ms | 401ms | **1.0x** | 2.8 | 2.2 |
+| process_spawn | 1.2ms | 1.1ms | **1.1x** | 3.8 | 3.8 |
+| tak | 66ms | 62ms | **1.1x** | 2.4 | 2.2 |
+| file_read | 0.75ms | 0.69ms | **1.1x** | 3.5 | 3.3 |
+| binary_read_chunks | 0.80ms | 0.70ms | **1.1x** | 2.5 | 2.3 |
+| process_exec | 1.2ms | 1.0ms | 1.2x | 3.9 | 3.9 |
+| int_array_fill_sum | 0.59ms | 0.49ms | 1.2x | 2.6 | 2.3 |
+| binary_write_read | 3.6ms | 2.9ms | 1.2x | 12.5 | 7.2 |
+| channel_pipeline | 1.2ms | 0.94ms | 1.3x | 3.2 | 2.3 |
+| channel_fanin | 1.5ms | 1.1ms | 1.3x | 3.3 | 2.4 |
+| seq_map | 0.61ms | 0.49ms | 1.3x | 2.4 | 2.2 |
+| sum_squares | 0.59ms | 0.46ms | 1.3x | 2.4 | 2.2 |
+| channel_throughput | 1.7ms | 1.2ms | 1.4x | 3.5 | 2.3 |
+| sieve | 0.77ms | 0.54ms | 1.4x | 3.1 | 2.2 |
+| list_reverse | 0.89ms | 0.63ms | 1.4x | 3.2 | 2.6 |
+| list_sum | 0.87ms | 0.59ms | 1.5x | 3.1 | 2.6 |
+| file_parallel_read | 1.3ms | 0.81ms | 1.6x | 6.0 | 5.4 |
+| file_write_read | 1.5ms | 0.86ms | 1.7x | 4.8 | 3.2 |
+| set_build | 1.4ms | 0.67ms | 2.1x | 3.4 | 2.3 |
+| dict_build | 1.4ms | 0.63ms | 2.2x | 3.4 | 2.5 |
+| file_readlines_large | 35ms | 14ms | 2.4x | 2.5 | 2.1 |
+| fibonacci | 15ms | 6.3ms | 2.4x | 2.3 | 2.2 |
+| ackermann | 162ms | 63ms | 2.6x | 2.5 | 2.3 |
+| sort | 1.5ms | 0.52ms | 2.8x | 8.1 | 2.2 |
+| file_readlines | 2.2ms | 0.71ms | 3.1x | 7.3 | 2.2 |
+| file_write_read_large | 44ms | 13ms | 3.3x | 107 | 2.3 |
+| int_array_map | 1.9ms | 0.55ms | 3.5x | 2.8 | 2.4 |
+| int_array_sum | 1.8ms | 0.47ms | 3.9x | 2.7 | 2.3 |
+| file_read_large | 12ms | 2.8ms | 4.4x | 55 | 2.3 |
+| file_parallel_read_large | 8.2ms | 1.3ms | 6.4x | 37 | 2.4 |
+| queens | 13ms | 1.2ms | 10.6x | 43 | 2.2 |
+
+Erlang reference impls (bench/reference/*.erl) exist for all 17 Yona benchmarks
+but are not yet wired into the runner's comparison output — that's a runner
+enhancement, not a benchmark change.
 
 ## Remaining Work
 

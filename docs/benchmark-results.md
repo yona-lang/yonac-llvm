@@ -1,5 +1,12 @@
 # Benchmark Results — Yona v0.1.0
 
+> **Note (2026-04-14)**: This file is a snapshot from commit `582f9ad`
+> under LLVM 21 and reflects a multi-language comparison that hasn't been
+> regenerated since. For current Yona-vs-C numbers under LLVM 22 see
+> [todo-list.md → Benchmark Results](./todo-list.md#benchmark-results).
+> Regenerating the Haskell/Java/Node/Python columns is a separate chore
+> that hasn't been prioritized.
+
 **Date**: 2026-04-06
 **Commit**: 582f9ad
 **Platform**: Linux 6.19.10 (Fedora 43), AMD Ryzen 7 9700X 8-Core, 60GB RAM
