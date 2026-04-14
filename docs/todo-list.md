@@ -85,6 +85,35 @@ enhancement, not a benchmark change.
 ## Remaining Work
 
 ### Performance
+- [ ] **Seq calling convention: callee-borrows → callee-owns (Perceus-linear)** —
+  highest-value open perf item. The current callee-borrows convention for
+  seq parameters forces `seq_tail` onto the copy path at every function
+  boundary, because in-place mutation under a borrowed seq isn't safe (the
+  caller might look at it again). That's why list_sum/list_reverse/
+  list_map_filter pay 2-4x vs C and queens pays 15x.
+
+  Switching seq params to callee-owns (the Perceus linear model, already
+  used for non-seq types in Yona) means: caller transfers ownership on
+  call; callee rc_decs at function exit unless it forwarded the seq. The
+  in-place `seq_tail` fast path then fires in foldl/map/filter/zip, which
+  is the hot pattern for nearly every list-heavy program.
+
+  Staged:
+  (1) last-use dataflow analysis (~200 lines) + codegen_apply transfer
+      emission for a whitelisted set of fold-style functions; verify
+      list_* drops to ~1.5x.
+  (2) generalize to all seq params; remove the defensive rc_incs in
+      codegen_let_aliases and codegen_pattern_headtail; update the ~25
+      extern C stdlib wrappers to rc_dec seq args on exit.
+  (3) raise/longjmp cleanup so an uncaught raise doesn't leak owned seq
+      params — needs either thread-local pending-drops lists or a
+      codegen-installed setjmp unwind handler. This is the nastiest piece
+      and can ship with a documented caveat initially.
+
+  Scope: ~700 lines across codegen, runtime helpers, and stdlib C
+  wrappers. Requires .yonai ABI bump (rebuild stdlib). Cross-module
+  GENFN monomorphization must stay consistent on both sides.
+
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 - [ ] **Explore JIT compilation potential** — research task. Investigate
@@ -177,6 +206,18 @@ enhancement, not a benchmark change.
 - [ ] macOS platform layer (kqueue-based async I/O)
 - [ ] Windows platform layer (IOCP-based async I/O)
 - [ ] Multi-arch (aarch64/arm64) build presets
+
+### Explicitly not doing
+- **Resource-limit / sandbox stdlib module** (was proposed as `Std\Cgroup`
+  and then rescoped to `Std\Sandbox`). Dropped as not worth the budget:
+  (1) tiny audience inside a young language, (2) duplicates what docker/
+  systemd/podman already do at OS level, (3) macOS has no grouped-
+  accounting primitive so the cross-platform story would be a limp, (4)
+  a security-flavored API that isn't actually airtight is worse than
+  nothing, (5) ~1000 lines of platform C + ongoing maintenance for a
+  feature nobody has asked for. Users who need it can bind `cgroup` /
+  `JobObject` / `jail` via `extern` in their own project. Revisit only
+  if a real user shows up with a real use case.
 
 ---
 
