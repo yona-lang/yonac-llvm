@@ -8,8 +8,14 @@ uses **reference counting** with several optimizations:
 
 - **Atomic RC** for thread safety
 - **Recursive destructors** for all container types
-- **Hybrid Perceus** DUP/DROP for non-seq heap types
-- **Unique-owner optimization** for seqs (in-place modify when rc==1)
+- **Perceus-linear callee-owns ABI** for seqs, sets, and dicts —
+  last-use args transferred without a DUP, callees consume on path-copy
+- **Per-branch transfer_scope** (if + case arms) — asymmetric
+  transfers emit compensating rc_decs only on branches that didn't
+  transfer, with SSA dominance preserved by snapshotting pre_blocks
+  before branch-block creation
+- **Unique-owner optimization** (in-place cons/tail for seqs, in-place
+  HAMT node mutation for dicts/sets when rc==1)
 - **Weak self-references** to break recursive closure cycles
 - **io_uring buffer pinning** for async I/O safety
 - **Scope-exit RC** for let-bound values
@@ -175,57 +181,101 @@ let x = create() in body
 
 This is implemented in `codegen_let` (`CodegenExpr.cpp`).
 
-## Perceus DUP/DROP — unified (as of 2026-04-15)
+## Perceus DUP/DROP — unified (seqs + dicts/sets, 2026-04-15)
 
-All heap types — including seqs — now follow the Perceus-linear
-callee-owns convention:
+All persistent heap types — seqs, dicts, and sets — follow the
+Perceus-linear callee-owns convention:
 
-**At call sites** (`codegen_apply` → `emit_direct_call`):
-- For each heap-typed named arg: `rc_inc` (DUP) unless we can prove this
-  is the last use of the binding. For SEQ args we check `count_identifier_refs`
-  against the enclosing function body — count=1 means single-use and we
-  skip the DUP, marking the Value* as transferred.
-- Temps (not in `named_values_`) keep their initial rc=1 and are marked
-  transferred.
-- `transferred_seqs_` — set of Value*s whose ownership was handed off.
-  Used to skip redundant drops at scope exits.
+**At call sites** (`codegen_apply` → `emit_direct_call` / `codegen_extern_call`):
+- For each heap-typed named arg: `rc_inc` (DUP) unless we can prove
+  this is the last use of the binding, in which case we skip the DUP
+  and mark the Value* as transferred. Single-use detection counts
+  identifier references in the enclosing function body
+  (`count_identifier_refs`) — count=1 means both the single and the
+  last use.
+- Temps (not in `named_values_`) keep their initial rc=1 and are
+  marked transferred.
+- Two disjoint transfer sets:
+  - `transferred_seqs_` — SEQ Perceus; also participates in per-branch
+    transfer-scope logic for compensating rc_decs across if/case arms.
+  - `transferred_maps_` — SET/DICT callee-owns via extern ops (e.g.
+    `Set.insert`, `Dict.put`). Kept separate so the per-branch
+    transfer-scope logic doesn't drop map values as SEQs.
 
 **At function exit** (`compile_function`):
 - For each heap-typed param: `rc_dec` (DROP) unless the param is in
-  `transferred_seqs_` (meaning a consumer inside the body already
-  absorbed the ref) or a runtime-check `icmp eq` with the return value
-  shows param-is-return (ownership transferred to caller).
+  `transferred_seqs_` / `transferred_maps_` (a consumer in the body
+  already absorbed the ref) or a runtime-check `icmp eq` with the
+  return value shows the param was returned to the caller.
 
 **Pattern-match head-tail** (`codegen_pattern_headtail`):
-- If the scrutinee is a single-use identifier in the enclosing function
-  body (count=1 via `count_identifier_refs`), hand it to
-  `yona_rt_seq_tail_consume`. Consume returns the tail with the seq's
-  ownership transferred — in-place on rc=1, copy + rc_dec on rc>1.
-- If the scrutinee is multi-use, `rc_inc` it first and use the plain
-  `yona_rt_seq_tail` + arm-exit drop of both tail and incremented scrut.
-- Empty-seq arm (`[] -> …`): explicit `rc_dec` of the scrutinee at the
-  body_bb entry (no pattern consume happened on this path).
+- Single-use scrut → `yona_rt_seq_tail_consume`. In-place on rc==1,
+  copy + rc_dec on rc>1.
+- Multi-use scrut → `rc_inc` first, use plain `yona_rt_seq_tail`,
+  drop both tail and the incremented scrut at arm exit.
+- Empty-seq arm (`[] -> …`): explicit `rc_dec` of the scrutinee at
+  the body_bb entry, AND insertion into `transferred_seqs_` so the
+  case transfer_scope_exit doesn't emit a compensating second drop.
+
+**Per-branch transfer-scope** (if-expressions + case arms):
+- Before codegen'ing the first branch, snapshot `pre_blocks` (all
+  currently-existing BBs in the enclosing function) and the current
+  `transferred_seqs_`. Crucially, this snapshot happens *before* the
+  branch BBs are created with `fn` — otherwise those BBs wrongly
+  count as pre-existing, and values defined inside them pass the
+  cross-branch droppability check, producing rc_dec instructions
+  that don't dominate their operands.
+- Each branch runs with a fresh copy of the entry snapshot; on exit
+  we record what it transferred.
+- At scope exit, for every value transferred by some (but not all)
+  branches, emit a compensating `rc_dec` in the branches that didn't
+  transfer it — as long as that value's SSA def is in `pre_blocks`
+  (so the rc_dec dominates the def). Values created *inside* a
+  branch are never dropped across branches.
+
+**Runtime consume paths** (set/dict):
+- `yona_rt_set_insert` / `yona_rt_dict_put`: after `hamt_put`, if the
+  result pointer differs from the input we path-copied — rc_dec the
+  old HAMT so the caller's one-ref-in is matched by one-ref-out.
+- `set_ensure_hamt` consumes the flat set on flat→HAMT conversion.
+- Without these, `let a = build N {} in let b = build N {} in …`
+  would double-drop: each build level's `%s` could alias the same
+  object after in-place mutations, and a deeper level's path-copy
+  drop would free it while outer levels still held a stale ref.
+
+**HAMT size-delta tracking**:
+- `hamt_put_impl`'s child-recurse path propagates
+  `new_child.size − old_child.size` to the parent, so same-key
+  replaces through child nodes no longer inflate the parent's size.
+  Fixed a `Set.union` wrong-result bug where re-inserting duplicates
+  via child sub-nodes over-counted.
 
 ### Why this works now but didn't before
 
-Earlier attempts hit "glibc tcache corruption" on long seq chains because
-every allocation went through the tcache free-list. The current fix flows
-seq_cons/seq_tail ownership through `rc_alloc`/`pool_free` with a fixed
-slab allocator (see Slab-based pool allocator section) that avoids
-tcache entirely. Combined with the `transferred_seqs_` tracking and the
-fixed `count_identifier_refs` traversal (previously dropping arguments
-inside curried `ExprCall` chains, which made single-use detection miss
-the common `safe col placed 1` pattern), full Perceus for seqs is now
-both correct and a 2-3× win on foldl-style list benchmarks.
+Earlier Perceus attempts on seqs hit "glibc tcache corruption" on
+long seq chains because every allocation went through the tcache
+free-list. The current fix flows `seq_cons` / `seq_tail` ownership
+through `rc_alloc` / `pool_free` with a fixed slab allocator (see
+pool section) that avoids tcache entirely. Combined with the
+`transferred_seqs_` tracking and the fixed `count_identifier_refs`
+traversal (previously dropping arguments inside curried `ExprCall`
+chains, which made single-use detection miss `safe col placed 1`),
+full Perceus for seqs is now correct and 2–3× faster on foldl-style
+list benchmarks.
 
-### Known residual
+For dicts/sets, the analogous issue was extern calls that could
+return a pointer aliased with their input (in-place `hamt_put`). The
+current split — `transferred_maps_` + runtime consume — keeps the
+call-site semantics clean: caller passes one ref, callee returns one
+ref, no double-counting.
 
-A multi-use seq captured by a closure that's then referenced in several
-call arms (`let tryCol col = … safe col placed 1 … col :: placed … end`
-from bench/core/queens.yona) leaks under the single-use heuristic. The
-fix is flow-sensitive per-branch last-use analysis — queued as
-task #117. Until then queens has ~35 MB peak RSS; list_*-style programs
-are leak-free.
+### Results
+
+- list_sum, list_reverse, list_map_filter: 2–3× faster, 3× less
+  memory compared to pre-Perceus (see `docs/benchmark-results.md`).
+- queens: 43 MB → 2.2 MB, 2× faster.
+- dict_build / set_build: 0 DICT/SET leaks with `let` binding
+  (`YONA_ALLOC_STATS=1` verified).
 
 ## Seq Unique-Owner Optimization
 
@@ -332,12 +382,19 @@ for every async call without significant benefit.
 ```
 Value created:    rc_alloc → pool_alloc(total) → rc=1, type_tag encoded
 Let binding:      no rc change (rc=1 from alloc)
-Non-seq DUP:      rc_inc at call site for named args → rc++
-Function param:   callee-borrows (seq) or callee-owns (non-seq)
-Callee DROP:      rc_dec at function exit if param != return (non-seq only)
-Scope exit:       rc_inc(result), rc_dec(binding)
+DUP at call:      rc_inc at call site for named heap args EXCEPT on
+                  single-use (SEQ/SET/DICT) — those skip the inc and
+                  mark the Value* as transferred
+Function param:   callee-owns for all heap types (seqs, sets, dicts,
+                  closures, strings, ADTs, tuples, ...)
+Callee DROP:      rc_dec at function exit if param != return AND the
+                  param was not transferred to a consumer in the body
+Scope exit:       rc_inc(result), rc_dec(binding) unless transferred
 Closure capture:  rc_inc (except self-capture)
-Seq cons/tail:    rc_inc for structural sharing (next chunk)
+Seq cons/tail:    rc_inc for structural sharing (next chunk);
+                  consume path rc_dec's old on path-copy
+HAMT put:         in-place mutation when rc==1; path-copy otherwise,
+                  with runtime rc_dec on the old input
 Container free:   recursive rc_dec of children per heap_mask/heap_flag
 Block freed:      pool_free (slab reuse) or free (oversized)
 Arena values:     sentinel refcount, bulk free via arena_destroy
@@ -348,15 +405,16 @@ Non-escaping:     arena bump-alloc, no per-object RC, bulk free at scope exit
 
 | File | Role |
 |------|------|
-| `src/compiled_runtime.c` | RC infrastructure, pool allocator, arena |
-| `src/runtime/seq.c` | Persistent seq with chunked list |
+| `src/compiled_runtime.c` | RC infrastructure, pool allocator, arena; `set_insert` / `dict_put` consume paths |
+| `src/runtime/seq.c` | Persistent seq with chunked list, consume variants |
+| `src/runtime/hamt.c` | HAMT put/get/destroy, size-delta tracking for same-key replace |
 | `src/codegen/CodegenUtils.cpp` | `emit_rc_inc`, `emit_rc_dec`, `is_heap_type` |
-| `src/codegen/CodegenExpr.cpp` | Scope-exit RC in `codegen_let`, Perceus analysis |
-| `src/codegen/CodegenFunction.cpp` | DUP at call sites, DROP at function exit |
-| `src/codegen/CodegenCase.cpp` | `consumed_params_` for seq_tail |
+| `src/codegen/CodegenExpr.cpp` | Scope-exit RC in `codegen_let`, transfer_scope helpers, Perceus analysis |
+| `src/codegen/CodegenFunction.cpp` | DUP at call sites (single-use detection for SEQ/SET/DICT), DROP at function exit, `transferred_maps_` for extern map ops |
+| `src/codegen/CodegenCase.cpp` | Per-branch transfer_scope for case arms, head-tail consume, empty-arm scrut drop |
 | `src/codegen/CodegenCollections.cpp` | heap_mask for tuples/seqs |
 | `src/codegen/LastUseAnalysis.cpp` | Backward AST walk for last-use detection |
 | `include/LastUseAnalysis.h` | Last-use analysis API |
-| `include/Codegen.h` | `CompiledFunction.closure_env`, `consumed_params_` |
+| `include/Codegen.h` | `CompiledFunction.closure_env`, `transferred_seqs_`, `transferred_maps_`, `TransferScope` helpers |
 | `src/runtime/platform/file_linux.c` | io_uring buffer pinning (write) |
 | `src/runtime/platform/net_linux.c` | io_uring buffer pinning (send) |

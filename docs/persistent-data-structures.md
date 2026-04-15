@@ -67,6 +67,27 @@ let build n d = if n <= 0 then d else build (n - 1) (put d n (n * n)) in
 size (build 10000 {})
 ```
 
+### Callee-owns ABI (Perceus)
+
+As of 2026-04-15, `Dict.put` / `Set.insert` follow a callee-owns
+convention: the callee consumes its input and returns a ref the
+caller owns.
+
+- If the implementation path-copies (growth beyond the current node,
+  promotion to a child subtrie), the runtime `rc_dec`'s the old
+  input before returning the new one.
+- If it mutates in place (rc==1 fast path), the returned pointer
+  aliases the input and the ref is simply forwarded.
+
+At the call site, the codegen skips the rc_inc when passing a named
+Dict/Set binding whose textual use-count in the enclosing function
+body is 1 (last-use), marking it in `transferred_maps_` so the
+function-exit drop skips it too. Combined with the runtime consume
+paths, this eliminates double-drops in recursive build-chain
+patterns (e.g. `let a = build N {} in let b = build N {} in …`).
+`YONA_ALLOC_STATS=1` on a 10K dict_build reports `leaked=0` with a
+let-bound result.
+
 ### Usage
 
 ```yona
@@ -105,14 +126,26 @@ This makes "copy-on-write" semantics efficient: modifying a 10K-entry dict only 
 
 ## Performance
 
-Benchmarks vs C (gcc -O2):
+Benchmarks vs C (gcc -O2), startup-adjusted; see
+[benchmark-results.md](./benchmark-results.md) for the full matrix
+across 7 languages.
 
 | Benchmark | Yona | C | Ratio |
 |-----------|------|---|-------|
-| list_map_filter (10K, stream-fused) | 0.8ms | 0.9ms | **0.9x** |
-| list_reverse (10K) | 0.9ms | 0.7ms | 1.3x |
-| dict_build (10K HAMT inserts) | 1.4ms | 0.7ms | 2.0x |
-| set_build (10K HAMT inserts) | 1.4ms | 0.7ms | 2.0x |
-| queens (N=10, heavy allocation) | 14ms | 1.5ms | ~5-10x |
+| list_map_filter (10K, stream-fused) | 0.41ms | 0.27ms | 1.5x |
+| list_reverse (10K) | 0.38ms | 0.14ms | 2.7x |
+| list_sum (10K) | 0.28ms | 0.13ms | 2.2x |
+| dict_build (10K HAMT inserts) | 1.08ms | 0.26ms | 4.1x |
+| set_build (10K HAMT inserts) | 1.00ms | 0.26ms | 3.8x |
+| queens (N=10, heavy allocation) | 14.8ms | 1.95ms | 7.6x |
 
-The 2x gap on dict/set build is the inherent cost of persistence (structural sharing + RC) vs mutable flat hash tables. For workloads that benefit from persistence (versioning, concurrent access, undo), the cost is justified.
+The C baseline uses open-addressed linear-probing tables (a flat
+array); Yona's HAMT is a 32-way trie. For workloads that benefit
+from persistence (versioning, concurrent access, undo, structural
+sharing between versions), this is the cost of that power. The
+callee-owns ABI + unique-owner in-place optimization keep the
+constant factor low enough that `dict_build`/`set_build` are
+competitive with JVM `HashMap` / `HashSet` after startup adjustment
+(Yona ~1 ms vs Java's adjusted 0.01 ms — Java's JIT wins these
+micros but Yona's 2.4 MB baseline vs JVM's 39 MB is the real
+trade-off for small programs).

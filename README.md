@@ -146,7 +146,7 @@ Source → Lexer → Parser → AST → Codegen (LLVM IR) → Native Executable
 
 - **Lexer**: Newline-aware, juxtaposition-based function application
 - **Codegen**: Type-directed with `TypedValue = {Value*, CType}`, monomorphization
-- **Memory**: Atomic RC, hybrid Perceus DUP/DROP, pool allocator, arena allocation
+- **Memory**: Atomic RC, Perceus-linear callee-owns for all heap types (seqs, sets, dicts, …), pool allocator, arena allocation
 - **Async**: io_uring (Linux), thread pool with work-stealing
 - **Data structures**: RBT sequences, HAMT dicts/sets with structural sharing
 
