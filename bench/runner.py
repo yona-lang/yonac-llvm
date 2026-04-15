@@ -124,9 +124,223 @@ def _prep_erl(stem, build_dir):
             "-eval", f"{mod_name}:main([]), init:stop()."]
 
 
+def _prep_java(stem, build_dir):
+    """Compile a Java reference with javac; invoke via `java ClassName`.
+    The .java file is expected to define a top-level class matching `stem`
+    (or one with a `main(String[])` method)."""
+    src = BENCH_DIR / "reference" / (stem + ".java")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("java") or not which("javac"):
+        return None
+    # javac's class output location is determined by the source's package
+    # (default package → the current class dir). We copy the source into
+    # build_dir/<stem>/ so the .class files don't collide across benches.
+    jdir = build_dir / f"java_{stem}"
+    jdir.mkdir(parents=True, exist_ok=True)
+    # Find the public/main class name from the source.
+    text = src.read_text()
+    # Look for `class NAME` — fall back to `stem`.
+    import re
+    m = re.search(r"(?:public\s+)?class\s+(\w+)", text)
+    cls = m.group(1) if m else stem
+    class_file = jdir / f"{cls}.class"
+    if not class_file.exists() or src.stat().st_mtime > class_file.stat().st_mtime:
+        # Copy source next to where .class will land (javac default).
+        staged = jdir / f"{cls}.java"
+        staged.write_text(text)
+        result = subprocess.run(
+            ["javac", "-d", str(jdir), str(staged)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0 or not class_file.exists():
+            return None
+    return ["java", "-cp", str(jdir), cls]
+
+
+def _prep_hs(stem, build_dir):
+    """Compile a Haskell reference with ghc -O2 (native binary)."""
+    src = BENCH_DIR / "reference" / (stem + ".hs")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("ghc"):
+        return None
+    exe = build_dir / f"ref_hs_{stem}"
+    if not exe.exists() or src.stat().st_mtime > exe.stat().st_mtime:
+        # -outputdir keeps .hi/.o clutter inside build_dir rather than
+        # next to the source.
+        hdir = build_dir / f"hs_{stem}"
+        hdir.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            ["ghc", "-O2", "-outputdir", str(hdir), "-o", str(exe), str(src)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0 or not exe.exists():
+            return None
+    return [str(exe)]
+
+
+def _prep_js(stem, build_dir):
+    """Node.js reference — no compile step, invoke `node file.js` directly."""
+    src = BENCH_DIR / "reference" / (stem + ".js")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("node"):
+        return None
+    return ["node", str(src)]
+
+
+def _prep_py(stem, build_dir):
+    """Python reference — no compile step, invoke `python3 file.py` directly."""
+    src = BENCH_DIR / "reference" / (stem + ".py")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("python3"):
+        return None
+    return ["python3", str(src)]
+
+
+def _prep_go(stem, build_dir):
+    """Compile a Go reference with `go build`."""
+    src = BENCH_DIR / "reference" / (stem + ".go")
+    if not src.exists():
+        return None
+    from shutil import which
+    if not which("go"):
+        return None
+    exe = build_dir / f"ref_go_{stem}"
+    if not exe.exists() or src.stat().st_mtime > exe.stat().st_mtime:
+        result = subprocess.run(
+            ["go", "build", "-o", str(exe), str(src)],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode != 0 or not exe.exists():
+            return None
+    return [str(exe)]
+
+
+def measure_startup(lang, build_dir, iterations=3):
+    """Return average startup time in ms for `lang` by running a trivial
+    no-op program. Cached in build_dir so we only measure once per run.
+
+    The probe for each language is a minimal "do nothing" program built
+    and run via the same toolchain the reference impls use, so the
+    measured number includes compiler-output/VM-boot overhead exactly
+    the way benchmark runs do."""
+    cache = build_dir / f".startup_{lang}.ms"
+    if cache.exists():
+        try:
+            parts = cache.read_text().strip().split()
+            return float(parts[0]), (int(parts[1]) if len(parts) > 1 else 0)
+        except (ValueError, IndexError):
+            pass
+    probe_dir = build_dir / "_startup"
+    probe_dir.mkdir(parents=True, exist_ok=True)
+
+    from shutil import which
+    cmd = None
+    if lang == "c":
+        if not which("cc"):
+            return 0.0, 0
+        src = probe_dir / "startup.c"
+        src.write_text("int main(void){return 0;}\n")
+        exe = probe_dir / "startup_c"
+        if subprocess.run(["cc", "-O2", "-o", str(exe), str(src)],
+                          capture_output=True, timeout=30).returncode != 0:
+            return 0.0, 0
+        cmd = [str(exe)]
+    elif lang == "erl":
+        if not (which("erl") and which("erlc")):
+            return 0.0, 0
+        src = probe_dir / "startup_erl.erl"
+        src.write_text("-module(startup_erl).\n-export([main/1]).\nmain(_) -> ok.\n")
+        if subprocess.run(["erlc", "-o", str(probe_dir), str(src)],
+                          capture_output=True, timeout=30).returncode != 0:
+            return 0.0, 0
+        cmd = ["erl", "-noshell", "-pa", str(probe_dir),
+               "-eval", "startup_erl:main([]), init:stop()."]
+    elif lang == "java":
+        if not (which("java") and which("javac")):
+            return 0.0, 0
+        src = probe_dir / "startup_java.java"
+        src.write_text("public class startup_java { public static void main(String[] a) {} }\n")
+        if subprocess.run(["javac", "-d", str(probe_dir), str(src)],
+                          capture_output=True, timeout=30).returncode != 0:
+            return 0.0, 0
+        cmd = ["java", "-cp", str(probe_dir), "startup_java"]
+    elif lang == "hs":
+        if not which("ghc"):
+            return 0.0, 0
+        src = probe_dir / "startup_hs.hs"
+        src.write_text("main = return ()\n")
+        exe = probe_dir / "startup_hs"
+        if subprocess.run(
+            ["ghc", "-O2", "-outputdir", str(probe_dir), "-o", str(exe), str(src)],
+            capture_output=True, timeout=60,
+        ).returncode != 0:
+            return 0.0, 0
+        cmd = [str(exe)]
+    elif lang == "js":
+        if not which("node"):
+            return 0.0, 0
+        src = probe_dir / "startup.js"
+        src.write_text("")
+        cmd = ["node", str(src)]
+    elif lang == "py":
+        if not which("python3"):
+            return 0.0, 0
+        src = probe_dir / "startup.py"
+        src.write_text("")
+        cmd = ["python3", str(src)]
+    elif lang == "go":
+        if not which("go"):
+            return 0.0, 0
+        src = probe_dir / "startup.go"
+        src.write_text("package main\nfunc main(){}\n")
+        exe = probe_dir / "startup_go"
+        if subprocess.run(["go", "build", "-o", str(exe), str(src)],
+                          capture_output=True, timeout=60).returncode != 0:
+            return 0.0, 0
+        cmd = [str(exe)]
+    elif lang == "yona":
+        src = probe_dir / "startup.yona"
+        src.write_text("0\n")
+        exe = probe_dir / "startup_yona"
+        if not compile_yona(src, 2, exe):
+            return 0.0, 0
+        cmd = [str(exe)]
+
+    if cmd is None:
+        return 0.0, 0
+    # Warmup once (file system caches, linker cache etc.) then measure.
+    run_once(cmd)
+    times, rss_values = [], []
+    for _ in range(iterations):
+        r = run_once(cmd)
+        if r is None:
+            continue
+        times.append(r[1])
+        rss_values.append(r[2])
+    if not times:
+        return 0.0, 0
+    avg_ms = sum(times) / len(times)
+    peak_rss = max(rss_values) if rss_values else 0
+    cache.write_text(f"{avg_ms} {peak_rss}\n")
+    return avg_ms, peak_rss
+
+
 REF_LANGS = {
-    "c": {"label": "C", "prep": _prep_c},
-    "erl": {"label": "Erl", "prep": _prep_erl},
+    "c":    {"label": "C",    "prep": _prep_c},
+    "erl":  {"label": "Erl",  "prep": _prep_erl},
+    "java": {"label": "Java", "prep": _prep_java},
+    "hs":   {"label": "Hs",   "prep": _prep_hs},
+    "js":   {"label": "Node", "prep": _prep_js},
+    "py":   {"label": "Py",   "prep": _prep_py},
+    "go":   {"label": "Go",   "prep": _prep_go},
 }
 
 
@@ -210,6 +424,35 @@ def run_suite(benchmarks, opt_level, iterations, compare_langs=()):
     language keys (from REF_LANGS) to compare against.
     Returns list of result dicts."""
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Probe VM/runtime startup for each comparison language once, so we
+    # can report both raw and startup-adjusted times. For compiled
+    # natives (C, Haskell, Go) startup is negligible; Erlang/Java/Node/
+    # Python have significant cold-start costs that dominate short
+    # benchmarks. Yona is always probed so its own numbers are adjusted
+    # on the same basis as the references.
+    startup_ms = {}
+    startup_rss = {}
+    y_ms, y_rss = measure_startup("yona", BUILD_DIR, iterations)
+    if y_ms > 0:
+        startup_ms["yona"] = y_ms
+        startup_rss["yona"] = y_rss
+    if compare_langs:
+        for lang in compare_langs:
+            ms, rss = measure_startup(lang, BUILD_DIR, iterations)
+            if ms > 0:
+                startup_ms[lang] = ms
+                startup_rss[lang] = rss
+    if startup_ms:
+        parts = []
+        if "yona" in startup_ms:
+            parts.append(f"Yona={fmt_time(startup_ms['yona'])}/{fmt_rss(startup_rss['yona'])}")
+        for l in startup_ms:
+            if l == "yona":
+                continue
+            parts.append(f"{REF_LANGS[l]['label']}={fmt_time(startup_ms[l])}/{fmt_rss(startup_rss[l])}")
+        print("  Startup (cold-start no-op, time/RSS):", ", ".join(parts))
+
     results = []
     current_category = None
 
@@ -244,8 +487,23 @@ def run_suite(benchmarks, opt_level, iterations, compare_langs=()):
             "opt_level": opt_level,
             **stats,
         }
+        # Yona startup adjustment (time + memory) — same treatment as references.
+        ysu = startup_ms.get("yona", 0.0)
+        yona_adj = max(stats["avg_ms"] - ysu, 0.01)
+        ysu_rss = startup_rss.get("yona", 0)
+        yona_rss_adj = max(stats["peak_rss_kb"] - ysu_rss, 0)
+        r["avg_ms_adj"] = yona_adj
+        r["startup_ms"] = ysu
+        r["peak_rss_kb_adj"] = yona_rss_adj
+        r["startup_rss_kb"] = ysu_rss
 
-        line = f"    {stem:.<28} {fmt_time(stats['avg_ms']):>8}  {fmt_rss(stats['peak_rss_kb']):>8}"
+        y_time_disp = (f"{fmt_time(stats['avg_ms'])}→{fmt_time(yona_adj)}"
+                       if ysu > stats["avg_ms"] * 0.05
+                       else fmt_time(stats["avg_ms"]))
+        y_rss_disp = (f"{fmt_rss(stats['peak_rss_kb'])}→{fmt_rss(yona_rss_adj)}"
+                      if ysu_rss > stats["peak_rss_kb"] * 0.05
+                      else fmt_rss(stats["peak_rss_kb"]))
+        line = f"    {stem:.<28} {y_time_disp:>14}  {y_rss_disp:>14}"
 
         for lang in compare_langs:
             spec = REF_LANGS.get(lang)
@@ -260,12 +518,32 @@ def run_suite(benchmarks, opt_level, iterations, compare_langs=()):
             # Skip if the reference produced the wrong output — meaningless to time.
             if not check_correctness(bench, ref_stats["output"]):
                 continue
-            ratio = stats["avg_ms"] / ref_stats["avg_ms"] if ref_stats["avg_ms"] > 0 else 0
-            r[f"{lang}_avg_ms"] = ref_stats["avg_ms"]
-            r[f"{lang}_rss_kb"] = ref_stats["peak_rss_kb"]
+            raw = ref_stats["avg_ms"]
+            raw_rss = ref_stats["peak_rss_kb"]
+            # Startup-adjusted: subtract each runtime's cold-start floor
+            # for both time and memory. Clamp to 0.01ms / 0KB so we don't
+            # report negative work when the benchmark's real work is
+            # below the startup-noise floor.
+            su = startup_ms.get(lang, 0.0)
+            su_rss = startup_rss.get(lang, 0)
+            adj = max(raw - su, 0.01)
+            adj_rss = max(raw_rss - su_rss, 0)
+            ratio = stats["avg_ms"] / raw if raw > 0 else 0
+            adj_ratio = yona_adj / adj if adj > 0 else 0
+            r[f"{lang}_avg_ms"] = raw
+            r[f"{lang}_avg_ms_adj"] = adj
+            r[f"{lang}_startup_ms"] = su
+            r[f"{lang}_rss_kb"] = raw_rss
+            r[f"{lang}_rss_kb_adj"] = adj_rss
+            r[f"{lang}_startup_rss_kb"] = su_rss
             r[f"{lang}_ratio"] = ratio
-            line += (f"  {spec['label']}: {fmt_time(ref_stats['avg_ms']):>8} "
-                     f"{fmt_rss(ref_stats['peak_rss_kb']):>6}  {ratio:.1f}x")
+            r[f"{lang}_ratio_adj"] = adj_ratio
+            time_disp = (f"{fmt_time(raw)}→{fmt_time(adj)}"
+                         if su > raw * 0.05 else fmt_time(raw))
+            rss_disp = (f"{fmt_rss(raw_rss)}→{fmt_rss(adj_rss)}"
+                        if su_rss > raw_rss * 0.05 else fmt_rss(raw_rss))
+            line += (f"  {spec['label']}: {time_disp:>14} "
+                     f"{rss_disp:>14}  {adj_ratio:.1f}x")
 
         print(line)
         results.append(r)
