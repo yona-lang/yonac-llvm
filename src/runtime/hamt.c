@@ -324,8 +324,10 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
         /* Slot has child node: recurse */
         int idx = hamt_index((uint64_t)node->nodemap, bit);
         hamt_node_t* old_child = hamt_child(node, idx);
+        int64_t old_child_size = old_child ? old_child->size : 0;
         hamt_node_t* new_child = yona_rt_hamt_put_impl(old_child, key, val, hash,
                                                           shift + HAMT_BITS);
+        int64_t size_delta = (new_child ? new_child->size : 0) - old_child_size;
 
         if (unique) {
             /* Transient: swap child pointer in place, no allocation */
@@ -333,14 +335,14 @@ static hamt_node_t* yona_rt_hamt_put_impl(hamt_node_t* node, int64_t key,
             if (new_child != old_child)
                 yona_rt_rc_dec((void*)(intptr_t)old_child);
             node->payload[dc * 2 + idx] = (int64_t)(intptr_t)new_child;
-            node->size++;
+            node->size += size_delta;
             return node;
         }
 
         /* Copy node, replacing child at idx */
         int dc = hamt_data_count(node);
         int nc = hamt_node_count(node);
-        hamt_node_t* n = hamt_alloc(dc, nc, node->size + 1);
+        hamt_node_t* n = hamt_alloc(dc, nc, node->size + size_delta);
         n->datamap = node->datamap;
         n->nodemap = node->nodemap;
         memcpy(n->payload, node->payload, (size_t)(dc * 2) * sizeof(int64_t));

@@ -218,6 +218,93 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
     return {result, CType::BOOL};
 }
 
+// ===== Flow-sensitive transfer scoping (Perceus-linear branching) =====
+//
+// These helpers wrap the branches of an if/case/... construct so that
+// `transferred_seqs_` reflects what's transferred on the current path
+// rather than in any path's codegen. Asymmetric transfers — values
+// transferred in one branch but not another — get compensating
+// rc_decs emitted at the end of branches that didn't transfer them,
+// so downstream scope cleanups can treat the post-scope set as "union
+// of all branch transfers" without double-dropping.
+
+bool Codegen::is_cross_branch_droppable(
+    llvm::Value* v,
+    const std::unordered_set<llvm::BasicBlock*>& pre_blocks) {
+    if (llvm::isa<llvm::Argument>(v)) return true;
+    if (auto* inst = llvm::dyn_cast<llvm::Instruction>(v))
+        return pre_blocks.count(inst->getParent()) > 0;
+    // Constants and other non-instruction values are safe to reference
+    // from any branch.
+    return true;
+}
+
+void Codegen::transfer_scope_enter() {
+    TransferScope s;
+    s.entry_snapshot = transferred_seqs_;
+    if (builder_->GetInsertBlock()) {
+        auto* fn = builder_->GetInsertBlock()->getParent();
+        for (auto& bb : *fn) s.pre_blocks.insert(&bb);
+    }
+    transfer_scope_stack_.push_back(std::move(s));
+}
+
+void Codegen::transfer_branch_begin() {
+    if (transfer_scope_stack_.empty()) return;
+    transferred_seqs_ = transfer_scope_stack_.back().entry_snapshot;
+}
+
+void Codegen::transfer_branch_end(llvm::BasicBlock* exit_bb) {
+    if (transfer_scope_stack_.empty()) return;
+    TransferScope::Branch b;
+    b.exit_bb = exit_bb;
+    b.transfers = transferred_seqs_;
+    transfer_scope_stack_.back().branches.push_back(std::move(b));
+}
+
+void Codegen::transfer_scope_exit() {
+    if (transfer_scope_stack_.empty()) return;
+    TransferScope scope = std::move(transfer_scope_stack_.back());
+    transfer_scope_stack_.pop_back();
+
+    // Gather all values transferred by ANY non-terminated branch that
+    // weren't already transferred at scope entry. Terminated branches
+    // don't reach merge, so their transfers don't affect the post-scope
+    // view and we don't emit drops in them.
+    std::unordered_set<llvm::Value*> any_transferred;
+    for (auto& b : scope.branches) {
+        if (!b.exit_bb) continue;
+        for (auto* v : b.transfers)
+            if (!scope.entry_snapshot.count(v))
+                any_transferred.insert(v);
+    }
+
+    // For each such value, emit rc_dec in branches that DIDN'T transfer
+    // it. Skip terminated branches (no cleanup needed). Filter by
+    // cross-branch droppability so we don't try to drop a value defined
+    // inside a branch (SSA-unreachable outside it).
+    for (auto* v : any_transferred) {
+        if (!is_cross_branch_droppable(v, scope.pre_blocks)) continue;
+        for (auto& b : scope.branches) {
+            if (!b.exit_bb) continue;
+            if (b.transfers.count(v)) continue;
+            auto saved_ip = builder_->saveIP();
+            builder_->SetInsertPoint(b.exit_bb->getTerminator());
+            emit_rc_dec(v, CType::SEQ);
+            builder_->restoreIP(saved_ip);
+        }
+    }
+
+    // Post-scope transferred_seqs_ is the union over non-terminated
+    // branches. Any asymmetric transfers were compensated with drops
+    // above, so downstream cleanups can skip based on this union.
+    transferred_seqs_ = scope.entry_snapshot;
+    for (auto& b : scope.branches) {
+        if (!b.exit_bb) continue;
+        for (auto* v : b.transfers) transferred_seqs_.insert(v);
+    }
+}
+
 // ===== Stream fusion: count identifier references in AST =====
 
 int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
@@ -566,12 +653,15 @@ void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
         for (size_t i = 0; i < scope_bindings.size(); i++) {
             if (i < binding_is_arena.size() && binding_is_arena[i])
                 continue;
-            // Perceus-linear: skip rc_dec for seq bindings whose ownership
-            // was transferred to a consumer (user-defined call or pattern
-            // match consume). Without this, we'd double-drop a binding the
-            // callee already freed.
+            // Perceus-linear: skip rc_dec for bindings whose ownership
+            // was transferred to a consumer (user-defined call, pattern
+            // match consume, or a Set/Dict callee-owns extern op).
+            // Without this, we'd double-drop a binding the callee freed.
             if (scope_bindings[i].type == CType::SEQ &&
                 transferred_seqs_.count(scope_bindings[i].val))
+                continue;
+            if ((scope_bindings[i].type == CType::SET || scope_bindings[i].type == CType::DICT) &&
+                transferred_maps_.count(scope_bindings[i].val))
                 continue;
             emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
         }
@@ -646,107 +736,45 @@ TypedValue Codegen::codegen_if(IfExpr* node) {
     }
 
     auto fn = builder_->GetInsertBlock()->getParent();
-    auto* pre_if_block = builder_->GetInsertBlock();
+
+    // Wrap the two branches in a transfer scope so any asymmetric
+    // seq-ownership transfers (e.g. then calls a consumer, else doesn't)
+    // get compensating rc_decs emitted before the non-transferring
+    // branch's merge jump. Snapshot pre_blocks BEFORE creating branch
+    // blocks so the branches are correctly identified as "inside-scope".
+    transfer_scope_enter();
+
     auto then_bb = BasicBlock::Create(*context_, "then", fn);
     auto else_bb = BasicBlock::Create(*context_, "else");
     auto merge_bb = BasicBlock::Create(*context_, "ifcont");
     builder_->CreateCondBr(cond.val, then_bb, else_bb);
 
-    // Perceus-linear flow-sensitive transfer tracking: snapshot the
-    // transferred_seqs_ set around each branch, diff at branch end, and
-    // for every Value* a branch TRANSFERRED that the other branch did
-    // NOT, emit an rc_dec in the other branch before it jumps to merge.
-    // Without this, when one branch calls a consumer and the other
-    // doesn't, flow-insensitive transferred_seqs_ tracking would skip
-    // the drop on both paths — the non-transfer path leaks. This is
-    // the queens/safe closure-capture leak fix.
-    auto transferred_before_if = transferred_seqs_;
-
     builder_->SetInsertPoint(then_bb);
+    transfer_branch_begin();
     auto then_tv = codegen(node->thenExpr);
-    if (!then_tv) return {};
-    auto transferred_after_then = transferred_seqs_;
+    if (!then_tv) { transfer_scope_exit(); return {}; }
     bool then_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
     BasicBlock* then_end = nullptr;
     if (!then_terminated) {
         builder_->CreateBr(merge_bb);
         then_end = builder_->GetInsertBlock();
     }
-    // Revert to pre-if state so else-branch codegen sees the same
-    // starting transferred_seqs_ as then did.
-    transferred_seqs_ = transferred_before_if;
+    transfer_branch_end(then_end);
 
     fn->insert(fn->end(), else_bb);
     builder_->SetInsertPoint(else_bb);
+    transfer_branch_begin();
     auto else_tv = codegen(node->elseExpr);
-    if (!else_tv) return {};
-    auto transferred_after_else = transferred_seqs_;
+    if (!else_tv) { transfer_scope_exit(); return {}; }
     bool else_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
-
-    // Compute asymmetric transfers. Only consider Values that are DEFINED
-    // OUTSIDE both branches (function args, or instructions in dominator
-    // blocks of then_bb and else_bb) — a Value defined inside then_bb
-    // isn't in scope in else_bb (and vice versa), so we can't emit a
-    // drop for it across branches, and it also can't leak outside its
-    // branch since SSA dominance rules prevent uses outside.
-    auto is_cross_branch_droppable = [&](llvm::Value* v) -> bool {
-        // Function arguments dominate everywhere.
-        if (llvm::isa<llvm::Argument>(v)) return true;
-        if (auto* inst = llvm::dyn_cast<llvm::Instruction>(v)) {
-            auto* parent = inst->getParent();
-            // Accept only instructions in the pre-if block — those
-            // strictly dominate both then_bb and else_bb (and blocks
-            // reached from them). Instructions in blocks created during
-            // the branch codegen (then_bb, else_bb, or any descendant)
-            // aren't in scope on the other branch and can't be dropped
-            // cross-branch. Fixes "instruction does not dominate all
-            // uses" verification errors when a branch internally creates
-            // case BBs whose phi'd values get marked transferred.
-            return parent == pre_if_block;
-        }
-        return true;
-    };
-    std::vector<llvm::Value*> only_then, only_else;
-    for (auto* v : transferred_after_then)
-        if (!transferred_before_if.count(v) && !transferred_after_else.count(v) &&
-            is_cross_branch_droppable(v))
-            only_then.push_back(v);
-    for (auto* v : transferred_after_else)
-        if (!transferred_before_if.count(v) && !transferred_after_then.count(v) &&
-            is_cross_branch_droppable(v))
-            only_else.push_back(v);
-
     BasicBlock* else_end = nullptr;
     if (!else_terminated) {
-        // Else branch didn't transfer what the then branch did — drop here
-        // before jumping to merge so the "reached via else" path doesn't
-        // leak the values that were marked transferred by the then path.
-        for (auto* v : only_then) emit_rc_dec(v, CType::SEQ);
         builder_->CreateBr(merge_bb);
         else_end = builder_->GetInsertBlock();
     }
+    transfer_branch_end(else_end);
 
-    // Now patch the then-branch exit with its own asymmetric drops. We
-    // already emitted the branch and its unconditional br to merge; to
-    // splice drops BEFORE that br we temporarily reposition the builder.
-    if (then_end && !only_else.empty()) {
-        auto saved_ip = builder_->saveIP();
-        builder_->SetInsertPoint(then_end->getTerminator());
-        for (auto* v : only_else) emit_rc_dec(v, CType::SEQ);
-        builder_->restoreIP(saved_ip);
-    }
-
-    // Merge point: the post-if transferred_seqs_ is the UNION — any value
-    // we transferred in either branch is considered transferred after
-    // the if, because we emitted branch-local rc_decs above to balance
-    // the asymmetric cases. Using union (not intersection) avoids
-    // downstream scope cleanups double-dropping values the in-branch
-    // code already took care of.
-    transferred_seqs_ = transferred_before_if;
-    for (auto* v : transferred_after_then)
-        transferred_seqs_.insert(v);
-    for (auto* v : transferred_after_else)
-        transferred_seqs_.insert(v);
+    transfer_scope_exit();
 
     fn->insert(fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);

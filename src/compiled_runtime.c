@@ -147,10 +147,14 @@ __attribute__((destructor)) static void yona_alloc_report(void) {
 static void pool_grow(int cls) {
     size_t block_size = pool_sizes[cls];
     size_t slab_size = sizeof(slab_t) + SLAB_BLOCKS * block_size;
-    slab_t* slab = (slab_t*)malloc(slab_size);
+    slab_t* slab = (slab_t*)calloc(1, slab_size);
     slab->next = pool_slabs[cls];
     pool_slabs[cls] = slab;
     YONA_SLAB_ADD(slab_size);
+    if (getenv("YONA_POOL_TRACE"))
+        fprintf(stderr, "pool_grow cls=%d slab=%p data=%p-%p\n",
+                cls, (void*)slab, (void*)slab->data,
+                (void*)(slab->data + SLAB_BLOCKS * block_size));
     /* Link all blocks in the slab into the free list */
     for (int i = 0; i < SLAB_BLOCKS; i++) {
         pool_block_t* block = (pool_block_t*)(slab->data + i * block_size);
@@ -164,7 +168,20 @@ static void* pool_alloc(size_t total_bytes) {
     if (cls < 0) return malloc(total_bytes);
     if (!pool_freelist[cls]) pool_grow(cls);
     pool_block_t* block = pool_freelist[cls];
-    pool_freelist[cls] = block->next;
+    if (((uintptr_t)block & 7) != 0) {
+        fprintf(stderr, "POOL_ALLOC: UNALIGNED head block=%p cls=%d\n", (void*)block, cls);
+        fflush(stderr);
+        abort();
+    }
+    // Check that next pointer (about to become new head) is also aligned
+    pool_block_t* next = block->next;
+    if (next && ((uintptr_t)next & 7) != 0) {
+        fprintf(stderr, "POOL_ALLOC: popping block=%p with UNALIGNED next=%p cls=%d\n",
+                (void*)block, (void*)next, cls);
+        fflush(stderr);
+        abort();
+    }
+    pool_freelist[cls] = next;
     return (void*)block;
 }
 
@@ -172,6 +189,8 @@ static void pool_free(void* ptr, size_t total_bytes) {
     if (!ptr) return;
     int cls = pool_class_for(total_bytes);
     if (cls < 0) { free(ptr); return; }
+    if (cls == 3 && getenv("YONA_POOL_TRACE"))
+        fprintf(stderr, "pool_free cls=3 block=%p\n", ptr);
     pool_block_t* block = (pool_block_t*)ptr;
     block->next = pool_freelist[cls];
     pool_freelist[cls] = block;
@@ -1011,7 +1030,10 @@ void yona_rt_dict_set_heap(int64_t* dict, int64_t key_heap, int64_t val_heap) {
 
 /* Persistent insert: returns NEW dict. Old dict is unchanged.
  * Handles empty set {} (RC_TYPE_SET) gracefully — creates fresh HAMT. */
+/* Callee-owns — see yona_rt_set_insert for the rationale. */
 int64_t* yona_rt_dict_put(int64_t* dict, int64_t key, int64_t value) {
+    int64_t* orig = dict;
+    int converted_empty = 0;
     /* Check if the input is actually a SET (empty {} parsed as SetExpr) */
     if (dict) {
         int64_t* header = dict - RC_HEADER_SIZE;
@@ -1019,9 +1041,20 @@ int64_t* yona_rt_dict_put(int64_t* dict, int64_t key, int64_t value) {
         if (tag == RC_TYPE_SET) {
             /* Empty set — treat as empty dict */
             dict = (int64_t*)yona_rt_hamt_empty();
+            converted_empty = 1;
         }
     }
-    return (int64_t*)yona_rt_hamt_put((hamt_node_t*)dict, key, value);
+    int64_t* result = (int64_t*)yona_rt_hamt_put((hamt_node_t*)dict, key, value);
+    /* Consume: if the hamt_put path-copied, drop the intermediate HAMT
+     * input. (In the converted_empty case, this is the temporary empty
+     * HAMT we just created; in the direct HAMT case, it's the caller's
+     * input that we now own.) */
+    if (dict && result != dict)
+        yona_rt_rc_dec(dict);
+    /* Consume: if we converted an empty flat-set, drop the original. */
+    if (converted_empty)
+        yona_rt_rc_dec(orig);
+    return result;
 }
 
 /* Lookup: returns value for key, or default_val if not found. */
@@ -1071,8 +1104,39 @@ static hamt_node_t* set_ensure_hamt(int64_t* set) {
     return h;
 }
 
+/* Callee-owns: consumes `set`. If path-copy produces a new HAMT, the old
+ * input is rc_dec'd. If mutated in place, returns same pointer (caller
+ * will drop via its own bookkeeping). The codegen marks Set/Dict args
+ * passed to this function as transferred so it doesn't double-drop. */
 int64_t* yona_rt_set_insert(int64_t* set, int64_t elem) {
-    return (int64_t*)yona_rt_hamt_put(set_ensure_hamt(set), elem, 1);
+    int64_t* hamt_in;
+    int converted_flat = 0;
+    if (set) {
+        int64_t* header = set - RC_HEADER_SIZE;
+        int64_t tag = DECODE_TAG(header[1]);
+        if (tag == RC_TYPE_DICT) {
+            hamt_in = set;
+        } else {
+            /* Flat → HAMT: rebuild, consume old flat set. */
+            hamt_node_t* h = yona_rt_hamt_empty();
+            int64_t count = set[0];
+            for (int64_t i = 0; i < count; i++)
+                h = yona_rt_hamt_put(h, set[i + 2], 1);
+            hamt_in = (int64_t*)h;
+            converted_flat = 1;
+        }
+    } else {
+        hamt_in = NULL;
+    }
+    int64_t* result = (int64_t*)yona_rt_hamt_put((hamt_node_t*)hamt_in, elem, 1);
+    /* Consume input: if path-copy happened (result differs from hamt_in
+     * which was the caller's input after ensure_hamt), drop the old. */
+    if (hamt_in && result != hamt_in)
+        yona_rt_rc_dec(hamt_in);
+    /* Consume the original flat set if we converted it. */
+    if (converted_flat)
+        yona_rt_rc_dec(set);
+    return result;
 }
 
 int64_t yona_rt_set_contains(int64_t* set, int64_t elem) {

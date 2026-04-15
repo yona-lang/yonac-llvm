@@ -1,0 +1,5 @@
+import put, size from Std\Dict in
+let build n d = if n <= 0 then d else build (n - 1) (put d n (n * 10)) in
+let d1 = build 100 {} in
+let d2 = build 100 {} in
+(size d1) + (size d2)

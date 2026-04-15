@@ -1,0 +1,5 @@
+import insert, union, size from Std\Set in
+let build n s = if n <= 0 then s else build (n - 1) (insert s n) in
+let a = build 50 {} in
+let b = build 50 {} in
+size (union a b)

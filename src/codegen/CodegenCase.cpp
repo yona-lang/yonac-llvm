@@ -161,6 +161,11 @@ bool Codegen::codegen_pattern_seq(SeqPattern* sp, const TypedValue& scrutinee,
             builder_->SetInsertPoint(body_bb);
             emit_rc_dec(scrutinee.val, CType::SEQ);
             builder_->restoreIP(saved_ip);
+            // Mark the scrutinee as already-drained on this path so the
+            // outer case transfer_scope_exit doesn't emit a compensating
+            // second rc_dec when a sibling head-tail arm transferred the
+            // same scrutinee via seq_tail_consume.
+            transferred_seqs_.insert(scrutinee.val);
         }
     } else {
         builder_->CreateBr(body_bb);
@@ -475,6 +480,15 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     auto merge_bb = BasicBlock::Create(*context_, "case.end");
     std::vector<std::pair<TypedValue, BasicBlock*>> results;
 
+    // Wrap the arm loop in a transfer scope. Each arm is a branch; if
+    // some arms transfer a seq (e.g. head-tail consume or passing the
+    // scrutinee to a consumer) and others don't, the transfer_scope
+    // exit emits compensating rc_decs in the non-transferring arms so
+    // `transferred_seqs_` at merge reflects "transferred on all live
+    // paths" without leaking on the non-transfer paths. This is the
+    // case-arm extension of the codegen_if per-branch scoping.
+    transfer_scope_enter();
+
     for (size_t i = 0; i < node->clauses.size(); i++) {
         auto* clause = node->clauses[i];
         auto* pat = clause->pattern;
@@ -484,6 +498,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             : merge_bb;
 
         bool body_inline = false;
+
+        transfer_branch_begin();
 
         // Enter arm scope for drop tracking. Pattern-introduced heap-typed
         // bindings (currently just head-tail `rest`) accumulate here and
@@ -646,12 +662,17 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             }
             arm_drop_stack_.pop_back();
         }
-        builder_->CreateBr(merge_bb);
-        results.push_back({body_tv, builder_->GetInsertBlock()});
+        BasicBlock* arm_exit = builder_->GetInsertBlock()->getTerminator()
+            ? nullptr : builder_->GetInsertBlock();
+        if (arm_exit) builder_->CreateBr(merge_bb);
+        results.push_back({body_tv, arm_exit ? arm_exit : builder_->GetInsertBlock()});
+        transfer_branch_end(arm_exit);
 
         if (i + 1 < node->clauses.size() && next_bb != merge_bb)
             builder_->SetInsertPoint(next_bb);
     }
+
+    transfer_scope_exit();
 
     fn->insert(fn->end(), merge_bb);
     builder_->SetInsertPoint(merge_bb);

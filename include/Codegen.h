@@ -172,10 +172,55 @@ private:
     // scope exit (let cleanup, function exit), skip rc_dec for these.
     std::unordered_set<llvm::Value*> transferred_seqs_;
 
+    // Set of Value*s whose Set/Dict ownership has been transferred to a
+    // consuming extern call (Set.insert, Dict.put, etc.). Unlike
+    // transferred_seqs_, this set is NOT drained by the per-branch
+    // transfer_scope logic — it only suppresses the function-exit DROP.
+    std::unordered_set<llvm::Value*> transferred_maps_;
+
     // The body AST of the function currently being compiled. Used by
     // codegen_pattern_headtail for single-use scrutinee detection (the
     // Perceus-linear owned-scrutinee fast path).
     ast::AstNode* current_fn_body_ = nullptr;
+
+    // Flow-sensitive transfer tracking across branching constructs.
+    //
+    // A "transfer scope" wraps a multi-way branch (if-then-else, case
+    // arms) where each branch may transfer a different set of seqs via
+    // emit_direct_call or pattern consume. Without per-branch tracking,
+    // flow-insensitive `transferred_seqs_` incorrectly marks a value
+    // transferred whenever ANY branch's codegen transferred it — which
+    // causes leaks when the actual runtime path is a non-transfer
+    // branch whose scope cleanup was skipped.
+    //
+    // Protocol:
+    //   transfer_scope_enter()          — snapshot current set + BBs
+    //   for each branch:
+    //     transfer_branch_begin()       — reset to snapshot
+    //     codegen(branch)               — populates transferred_seqs_
+    //     transfer_branch_end(exit_bb)  — record this branch's set
+    //   transfer_scope_exit()           — compute asymmetric transfers,
+    //                                      emit rc_dec before each
+    //                                      non-transferring branch's
+    //                                      terminator, set = union
+    struct TransferScope {
+        std::unordered_set<llvm::Value*> entry_snapshot;
+        std::unordered_set<llvm::BasicBlock*> pre_blocks;
+        struct Branch {
+            llvm::BasicBlock* exit_bb;   // nullptr if terminated (ret/raise)
+            std::unordered_set<llvm::Value*> transfers;
+        };
+        std::vector<Branch> branches;
+    };
+    std::vector<TransferScope> transfer_scope_stack_;
+
+    void transfer_scope_enter();
+    void transfer_branch_begin();
+    void transfer_branch_end(llvm::BasicBlock* exit_bb);
+    void transfer_scope_exit();
+    static bool is_cross_branch_droppable(
+        llvm::Value* v,
+        const std::unordered_set<llvm::BasicBlock*>& pre_blocks);
 
     // Closure devirtualization: map closure Value* → underlying Function*
     // When a known lambda is wrapped in a closure, we remember the mapping

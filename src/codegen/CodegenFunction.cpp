@@ -782,7 +782,9 @@ Codegen::CompiledFunction Codegen::compile_function(
     // decide which seq params to rc_dec at exit.
     auto saved_fn_body = current_fn_body_;
     auto saved_transferred = transferred_seqs_;
+    auto saved_transferred_maps = transferred_maps_;
     transferred_seqs_.clear();
+    transferred_maps_.clear();
     TypedValue body_tv;
     if (!def.ast->bodies.empty()) {
         auto* body = def.ast->bodies[0];
@@ -935,7 +937,13 @@ Codegen::CompiledFunction Codegen::compile_function(
                     if (pi >= fn->arg_size()) continue;
                     auto* param = fn->getArg(pi);
                     if (param->getType()->isStructTy()) continue;
+                    // transferred_seqs_ tracks SEQ Perceus last-use;
+                    // transferred_maps_ tracks SET/DICT callee-owns via
+                    // extern ops (see codegen_extern_call).
                     if (ct == CType::SEQ && transferred_seqs_.count(param))
+                        continue;
+                    if ((ct == CType::SET || ct == CType::DICT)
+                        && transferred_maps_.count(param))
                         continue;
 
                     Value* param_ptr = param;
@@ -994,6 +1002,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     // are emitted — the function's body-local transfers should not leak
     // out to the enclosing scope's transfer tracking.
     transferred_seqs_ = saved_transferred;
+    transferred_maps_ = saved_transferred_maps;
     return cf;
 }
 
@@ -1454,6 +1463,24 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
     for (auto& a : all_args) vals.push_back(a.val);
     Value* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
 
+    // Callee-owns for Set/Dict extern ops that consume their heap input
+    // (e.g. Set.insert, Dict.put). For SET/DICT args and SET/DICT returns
+    // (interchangeable since `{}` parses as SET), the callee either mutates
+    // in place or path-copies + rc_dec's the old. Mark the arg as
+    // transferred so the caller's function-exit DROP doesn't double-dec.
+    // Uses transferred_maps_ (separate from transferred_seqs_) so the
+    // per-branch transfer_scope logic doesn't try to rc_dec these values
+    // as SEQs.
+    if (!all_args.empty()) {
+        CType a0 = all_args[0].type;
+        bool a0_map = (a0 == CType::SET || a0 == CType::DICT);
+        bool ret_map = (ret_ctype == CType::SET || ret_ctype == CType::DICT);
+        if (a0_map && ret_map) {
+            if (all_args[0].val && !isa<Constant>(all_args[0].val))
+                transferred_maps_.insert(all_args[0].val);
+        }
+    }
+
     // Convert boxed i64 result to the correct LLVM type
     if (is_boxed) {
         if (ret_ctype == CType::BOOL) {
@@ -1669,6 +1696,16 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                 continue;
             }
         }
+        // Same single-use check for SET/DICT under the callee-owns ABI
+        // extended to user-defined calls. Last-use args are transferred
+        // (no rc_inc); the callee's function-exit drop handles cleanup.
+        if ((ct == CType::SET || ct == CType::DICT) && current_fn_body_) {
+            int uses = count_identifier_refs(current_fn_body_, named_as);
+            if (uses <= 1) {
+                transferred_maps_.insert(all_args[ai].val);
+                continue;
+            }
+        }
         emit_rc_inc(all_args[ai].val, ct);
     }
 
@@ -1832,14 +1869,19 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
     // call (otherwise the callee might free our only ref) — that's
     // handled in the precall_seq_dups loop above where args were prepared.
     for (size_t ai = 0; ai < all_args.size(); ai++) {
-        if (all_args[ai].type != CType::SEQ) continue;
+        CType ct = all_args[ai].type;
+        if (ct != CType::SEQ && ct != CType::SET && ct != CType::DICT) continue;
         if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
         if (all_args[ai].val->getType()->isStructTy()) continue;
         bool is_named = false;
         for (auto& [k, v] : named_values_)
             if (v.val == all_args[ai].val) { is_named = true; break; }
-        if (!is_named)
-            transferred_seqs_.insert(all_args[ai].val);
+        if (!is_named) {
+            if (ct == CType::SEQ)
+                transferred_seqs_.insert(all_args[ai].val);
+            else
+                transferred_maps_.insert(all_args[ai].val);
+        }
     }
 
     TypedValue result{call_inst, cf.return_type};
