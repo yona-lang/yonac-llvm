@@ -240,6 +240,11 @@ bool Codegen::is_cross_branch_droppable(
 }
 
 void Codegen::transfer_scope_enter() {
+    // Invariant: must run BEFORE any branch BasicBlocks are created so
+    // pre_blocks captures only pre-scope blocks. Values defined inside
+    // branches fail cross-branch droppability and won't be dropped from
+    // sibling branches. See Codegen.h TransferScope doc for the pool
+    // UAF that breaking this invariant causes.
     TransferScope s;
     s.entry_snapshot = transferred_seqs_;
     if (builder_->GetInsertBlock()) {

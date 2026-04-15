@@ -1,0 +1,7 @@
+let run xs =
+    case xs of
+        []     -> 0
+        [_|_]  -> case xs of [] -> 0; [h|t] -> h + (run t) end
+    end
+in
+(run [], run [7, 8, 9])

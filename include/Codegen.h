@@ -1,12 +1,73 @@
 //
 // LLVM Code Generation for Yona
+// =============================
 //
 // Generates LLVM IR from a type-checked AST. Since Yona uses Hindley-Milner
 // type inference, all types are known at compile time and primitives are unboxed.
 //
 // Every expression produces a TypedValue — an LLVM Value paired with its
-// codegen type tag. Types propagate structurally through expressions, enabling
-// type-directed code generation without relying on the TypeChecker.
+// codegen type tag (CType). Types propagate structurally through expressions,
+// enabling type-directed code generation without relying on the TypeChecker.
+//
+// The Codegen class carries several parallel state machines that a reader
+// should understand before making changes:
+//
+//   1. Deferred compilation cache
+//      - deferred_functions_: name → AST, awaiting a concrete type at a call
+//        site (monomorphization).
+//      - compiled_functions_: (name + arg types) → LLVM Function. Result of
+//        specializing a deferred function for a specific call signature.
+//
+//   2. Scope/binding state
+//      - named_values_: identifier → TypedValue for the currently visible
+//        lexical scope. Saved/restored around let and function bodies.
+//      - arm_drop_stack_: per-case-arm list of (Value*, CType) pairs that
+//        must be rc_dec'd before the arm branches to the merge block.
+//
+//   3. Perceus-linear ownership (see docs/memory-management.md)
+//      - "Last use" is decided at call sites via count_identifier_refs()
+//        over current_fn_body_ (the AST of the enclosing function). A
+//        single textual occurrence means the argument may transfer.
+//      - transferred_seqs_: Value*s whose SEQ ownership has been handed to
+//        a consumer; function-exit and let-cleanup skip rc_dec for these.
+//      - transferred_maps_: SET/DICT equivalent; kept separate because the
+//        per-branch TransferScope logic operates only on seqs.
+//      - TransferScope stack: flow-sensitive transfer tracking across
+//        if/case. Invariant (critical): transfer_scope_enter() must run
+//        BEFORE any branch BasicBlocks are created so the pre_blocks
+//        snapshot excludes them; otherwise cross-branch droppability
+//        misclassifies values defined inside a branch.
+//
+//   4. Effects (algebraic handlers)
+//      - handler_stack_: active `handle ... with` handlers for perform
+//        resolution. Lexically nested handle frames push/pop here.
+//
+//   5. Closure devirtualization
+//      - closure_known_fn_: Value* → Function*. When a known lambda is
+//        wrapped in a closure env, we remember the underlying fn so
+//        indirect calls through the env can be rewritten to direct calls.
+//
+//   6. Module & import state
+//      - module_paths_: search roots for .yonai interface files.
+//      - Interface files carry GENFN source bodies so call sites can
+//        re-compile generics locally when their arg types differ.
+//
+// Files in src/codegen/ split the implementation by syntactic category:
+//   CodegenExpr.cpp        — literals, let, if, arithmetic, sequences
+//   CodegenCase.cpp        — case/pattern matching
+//   CodegenFunction.cpp    — function defs, apply, closures, last-use scan
+//   CodegenCollections.cpp — comprehensions, stream fusion
+//   CodegenEffects.cpp     — perform/handle, effect op dispatch
+//   CodegenModule.cpp      — module decls, imports, exports
+//
+
+//
+// Reader notes
+// ------------
+// TypedValue flow: every codegen_* helper returns a TypedValue so the caller
+// knows both the LLVM value and the CType tag. Functions that consume a
+// TypedValue (emit_rc_inc/dec, emit_direct_call, pattern matchers) switch
+// on the tag to generate type-correct IR — do not drop it.
 //
 
 #pragma once
@@ -161,11 +222,12 @@ private:
 
     // ===== Perceus linear: seq ownership tracking =====
     //
-    // Last-use analysis populated by annotate_last_uses() before each
-    // function body is compiled. Maps IdentifierExpr* → true when this
-    // occurrence is the variable's last textual occurrence on its
-    // control-flow path. Flow-sensitive over if/case branches.
-    std::unordered_map<ast::IdentifierExpr*, bool> is_last_use_;
+    // "Last use" is decided on demand at call sites via
+    // count_identifier_refs() over the enclosing function body
+    // (current_fn_body_). A single-use occurrence is treated as a
+    // transfer; codegen marks the corresponding Value* in
+    // transferred_seqs_ / transferred_maps_ so function-exit and
+    // let-scope cleanup skip the rc_dec.
 
     // Set of Value*s whose seq ownership has been transferred to a
     // consumer (user-defined function or pattern-match consume). At
@@ -188,21 +250,35 @@ private:
     // A "transfer scope" wraps a multi-way branch (if-then-else, case
     // arms) where each branch may transfer a different set of seqs via
     // emit_direct_call or pattern consume. Without per-branch tracking,
-    // flow-insensitive `transferred_seqs_` incorrectly marks a value
-    // transferred whenever ANY branch's codegen transferred it — which
-    // causes leaks when the actual runtime path is a non-transfer
-    // branch whose scope cleanup was skipped.
+    // flow-insensitive `transferred_seqs_` would be "poisoned" whenever
+    // ANY branch's codegen transferred a value — causing leaks when the
+    // actual runtime path was a non-transfer branch whose scope cleanup
+    // skipped the drop.
     //
     // Protocol:
-    //   transfer_scope_enter()          — snapshot current set + BBs
+    //   transfer_scope_enter()          — snapshot transferred_seqs_ + BBs
     //   for each branch:
-    //     transfer_branch_begin()       — reset to snapshot
+    //     transfer_branch_begin()       — reset transferred_seqs_ to snapshot
     //     codegen(branch)               — populates transferred_seqs_
     //     transfer_branch_end(exit_bb)  — record this branch's set
     //   transfer_scope_exit()           — compute asymmetric transfers,
     //                                      emit rc_dec before each
     //                                      non-transferring branch's
-    //                                      terminator, set = union
+    //                                      terminator, union into
+    //                                      transferred_seqs_
+    //
+    // INVARIANT (load-bearing, do not break without updating this doc):
+    //   transfer_scope_enter() MUST run before any branch BasicBlock is
+    //   created. pre_blocks captures the function's BB list at entry;
+    //   is_cross_branch_droppable() treats an Instruction as droppable
+    //   from a sibling branch iff its parent BB is in pre_blocks. A
+    //   branch BB created between enter() and first branch codegen
+    //   would be (incorrectly) classified as pre-scope, and values
+    //   defined inside it would get rc_dec'd from sibling branches
+    //   that never reach them — leading to pool UAF.
+    //
+    //   The fix for that bug in codegen_if: moved transfer_scope_enter()
+    //   up above BasicBlock::Create calls. See CodegenExpr.cpp.
     struct TransferScope {
         std::unordered_set<llvm::Value*> entry_snapshot;
         std::unordered_set<llvm::BasicBlock*> pre_blocks;

@@ -251,6 +251,16 @@ static int64_t chain_get(rbt_chunk_t* chunk, int64_t index) {
 /* ===== Public API ===== */
 
 int64_t* yona_rt_seq_alloc(int64_t count) {
+    /* Reject negatives and sizes that would overflow the byte-count
+     * multiplication below. The ceiling is defensive — real programs
+     * hit OOM long before this, but silent wraparound is a heap-overflow
+     * footgun so we trap instead. */
+    if (UNLIKELY(count < 0 ||
+                 count > (int64_t)((SIZE_MAX / sizeof(int64_t)) - SEQ_HDR_SIZE))) {
+        fprintf(stderr, "yona_rt_seq_alloc: invalid count %lld\n",
+                (long long)count);
+        abort();
+    }
     int64_t* seq = (int64_t*)rc_alloc(RC_TYPE_SEQ,
                                        (SEQ_HDR_SIZE + count) * sizeof(int64_t));
     seq[0] = count;
@@ -273,6 +283,11 @@ int64_t yona_rt_seq_is_empty(int64_t* seq) {
 }
 
 int64_t yona_rt_seq_get(int64_t* seq, int64_t index) {
+    if (UNLIKELY(!seq || index < 0 || index >= seq[0])) {
+        fprintf(stderr, "yona_rt_seq_get: index %lld out of range (len=%lld)\n",
+                (long long)index, (long long)(seq ? seq[0] : 0));
+        abort();
+    }
     if (LIKELY(!is_rbt(seq))) return seq[SEQ_HDR_SIZE + FLAT_OFF(seq) + index];
     rbt_t* r = (rbt_t*)seq;
     if (LIKELY(index < r->head_cnt))

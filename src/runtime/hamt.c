@@ -72,6 +72,15 @@ static int hamt_is_unique(hamt_node_t* n) {
 }
 
 static hamt_node_t* hamt_alloc(int data_count, int node_count, int64_t size) {
+    /* At each HAMT level data_count + node_count ≤ 32 by invariant
+     * (branching factor); assert to catch caller bugs that would
+     * otherwise silently wrap the byte-count multiplication. */
+    if (data_count < 0 || node_count < 0 ||
+        data_count > HAMT_WIDTH || node_count > HAMT_WIDTH) {
+        fprintf(stderr, "hamt_alloc: invalid counts data=%d node=%d\n",
+                data_count, node_count);
+        abort();
+    }
     size_t payload_bytes = (size_t)(data_count * 2 + node_count) * sizeof(int64_t);
     hamt_node_t* n = (hamt_node_t*)rc_alloc(RC_TYPE_DICT,
         sizeof(hamt_node_t) + payload_bytes);

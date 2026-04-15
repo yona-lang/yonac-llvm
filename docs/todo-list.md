@@ -112,6 +112,59 @@ builds" and the `Set.union` crash were both root-caused and fixed as
 part of the Perceus-for-dicts-and-sets work — see the Performance
 section entry below for details.
 
+### Code Quality (2026-04-15 audit)
+
+Findings from a sweep over `src/Codegen.cpp`, `src/codegen/*.cpp`,
+`src/parser/*.cpp`, `src/runtime/*.c`. Most were addressed in the
+same session; deferred items carry a rationale.
+
+**Done**
+- [x] Integer-overflow guards in `yona_rt_seq_alloc` +
+  `yona_rt_seq_get` RBT bounds check + `hamt_alloc` count validation.
+- [x] Runtime guards unit test (`test/runtime_guards_test.cpp`).
+- [x] `Codegen.h` file-level architecture comment covering the 5
+  parallel state machines and the TransferScope invariant.
+- [x] Sharpened `TransferScope` doc with the pre_blocks-before-
+  branch-BB-create invariant and the pool UAF it prevents. (Did not
+  move to a new header — the struct is 20 lines, co-located with its
+  only consumer.)
+- [x] Split `CodegenFunction.cpp` (2171 → 1058 lines) by moving
+  call-site dispatch into `CodegenApply.cpp` (1191 lines).
+- [x] Removed the dead `is_last_use_` field — was referenced only by
+  stale documentation; actual last-use detection runs via
+  `count_identifier_refs` at call sites.
+- [x] Transfer-scope asymmetry fixtures
+  (`transfer_if_asymmetric.yona`, `transfer_nested_scopes.yona`,
+  `transfer_case_arm_skip.yona`) — direct regression coverage for
+  the per-branch Perceus work.
+
+**Deferred (with rationale)**
+- [ ] **O(1) transfer_scope BB detection** — a truly O(1)
+  replacement for the pre_blocks walk requires hooking every BB
+  creation (LLVM doesn't expose BB ordinal positions). Lazy-compute
+  at scope_exit breaks correctness for nested constructs. The
+  current O(n) eager capture is correct; profiling doesn't flag it
+  as a hotspot. Revisit only if compile time becomes an issue.
+- [ ] **Unify transferred_seqs_/transferred_maps_** — the two sets
+  differ behaviorally: `transferred_seqs_` participates in per-branch
+  transfer_scope compensating drops; `transferred_maps_` only
+  suppresses the function-exit drop. Unifying storage while
+  preserving split behavior requires type-tagging every transfer-
+  scope operation — more code than the duplication saves. Revisit
+  if a third transfer class appears.
+- [ ] **Relax stream fusion gate** — fusion currently requires
+  `count_identifier_refs(let_body, name) == 1`. Relaxing to "single-
+  use on each path" would require duplicating the generator AST into
+  each branch (no current support in `codegen_fused_seq_generator`).
+  Revisit with a concrete benchmark showing measurable loss.
+- [ ] **Skip rc_inc for always-transferred params** — audit finding
+  misidentified the code location. The actual rc_inc emission at
+  `CodegenFunction.cpp → CodegenApply.cpp:emit_direct_call` is
+  already gated on `count_identifier_refs` single-use detection for
+  SEQ, SET, and DICT args. No low-risk win remains without rethinking
+  the ownership model.
+
+
 ### Performance
 - [ ] **Raise/longjmp cleanup for owned seqs** — phase 3 of the
   Perceus work (not yet done). An uncaught raise that propagates out
