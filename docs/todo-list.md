@@ -133,12 +133,26 @@ section entry below for details.
 
 
 ### Performance
-- [ ] **Raise/longjmp cleanup for owned seqs** — phase 3 of the
-  Perceus work (not yet done). An uncaught raise that propagates out
-  of a function with owned seq params skips the function-exit rc_dec,
-  leaking the param. Fix: thread-local pending-drops list, pushed at
-  function entry and flushed by setjmp unwind handlers. Needed before
-  we can call this convention robust in exceptional paths.
+- [ ] **Exception-safe Perceus cleanup** (epic, design-first). A
+  `raise` that propagates through frames with owned heap values
+  (seqs, sets, dicts, strings, ADTs, closures) skips their
+  function-exit rc_decs — each such frame leaks its params. The
+  normal-path rc counting is correct (verified: alloc-stats show 0
+  leaks on list/build/queens workloads); only the exceptional path
+  leaks, and no current test exercises it.
+  Two viable approaches:
+  - **(A) Thread-local drop stack**: push (ptr, ctype) per owned
+    heap param at function entry; pop on normal exit; `yona_rt_raise`
+    walks entries from current len back to the try-block's saved
+    mark, rc_dec'ing each. Simple; adds a push/pop per heap param
+    per call (needs benchmarking on list_/queens).
+  - **(B) LLVM EH migration**: replace setjmp/longjmp with
+    invoke/landingpad. Each heap-owning function gets a cleanup
+    landingpad that runs rc_dec and resumes unwinding. Cleaner,
+    zero-cost on the happy path, but a bigger codegen change.
+  Decide direction, add a test that catches the leak (e.g. a function
+  that conses a seq and raises mid-recursion, handled by an outer
+  try), then implement and measure against the benchmark matrix.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 - [ ] **Explore JIT compilation potential** — research task. Investigate
