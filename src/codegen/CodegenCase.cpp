@@ -78,50 +78,57 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
         }
     }
     if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
-        // Two regimes for head-tail binding depending on whether we own
-        // the scrutinee or are borrowing it from our caller:
+        // Ownership model — Perceus-linear (phase 1, single-use):
         //
-        //   BORROWED SCRUTINEE (scrutinee is a live function parameter or a
-        //   let-bound name still referenced elsewhere): the in-place tail
-        //   fast path would mutate a seq the caller still expects intact,
-        //   so we rc_inc first and let seq_tail force the shared/copy
-        //   path. The `t` binding gets its own rc=1 ref and we drop both
-        //   t and the incremented scrut at arm exit.
+        //   OWNED SCRUTINEE (scrut is a single-use identifier in the
+        //   enclosing function body, or is a temporary): we hand ownership
+        //   to seq_tail_consume, which returns either the same pointer
+        //   (rc==1 in-place) or a fresh copy + rc_dec of the old. We then
+        //   drop just `t` at arm exit. Keeps the hot foldl/scanl pattern
+        //   on the in-place fast path and closes most of the list_* gap.
         //
-        //   OWNED SCRUTINEE (scrutinee is a temporary value, or a let-bound
-        //   seq not used after the case): we hand ownership to
-        //   seq_tail_consume, which returns either the same pointer
-        //   (in-place) or a fresh copy + rc_dec of the old. We then drop
-        //   just `t` at arm exit. This keeps the hot foldl/scanl pattern
-        //   on the fast in-place path, which is the main perf win.
+        //   BORROWED SCRUTINEE (scrut is an identifier used more than
+        //   once in the function body): in-place tail would mutate a seq
+        //   that other uses expect intact, so we rc_inc first and let
+        //   seq_tail force the copy path. Drop both t and the incremented
+        //   scrut at arm exit.
         //
-        // Detecting "borrowed": if the scrutinee expression compiles to
-        // an LLVM Argument, it's a function parameter — caller borrows
-        // it back. Anything else is a local SSA value, owned by us.
-        // A second condition for "borrowed": the arm body refers to the
-        // scrutinee by name, meaning the scrutinee is re-used after the
-        // tail and can't be mutated in place.
-        bool scrut_is_arg = llvm::isa<llvm::Argument>(seq_ptr);
-        bool scrut_reused = false;
+        // Scrut is "owned" when:
+        //   - It's not an identifier (temporary expression result), or
+        //   - It's an identifier with exactly one textual occurrence in
+        //     the enclosing function body (so this case IS that occurrence).
+        bool owned = true;
         if (node->expr->get_type() == AST_IDENTIFIER_EXPR) {
             auto scrut_name = static_cast<IdentifierExpr*>(node->expr)->name->value;
-            scrut_reused = count_identifier_refs(clause->body, scrut_name) > 0;
+            // current_fn_body_ covers the whole function including sibling
+            // arms, guards, and let bindings. A count of 1 means this
+            // scrutinee is the single occurrence — safe to consume.
+            if (current_fn_body_) {
+                int uses = count_identifier_refs(current_fn_body_, scrut_name);
+                owned = (uses <= 1);
+            } else {
+                // No enclosing function body (top-level expression) — use
+                // clause body count as before.
+                owned = (count_identifier_refs(clause->body, scrut_name) == 0);
+            }
         }
-        bool borrowed = scrut_is_arg || scrut_reused;
 
         llvm::Value* tv;
-        if (borrowed) {
+        if (owned) {
+            tv = builder_->CreateCall(rt_.seq_tail_consume_, {seq_ptr});
+            // Mark the scrutinee Value as transferred so downstream scope
+            // cleanups (let scope exit, function exit) skip its rc_dec.
+            transferred_seqs_.insert(seq_ptr);
+        } else {
             emit_rc_inc(seq_ptr, CType::SEQ);
             tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
-        } else {
-            tv = builder_->CreateCall(rt_.seq_tail_consume_, {seq_ptr});
         }
         auto* pv = static_cast<PatternValue*>(htp->tail);
         if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
             named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
         if (!arm_drop_stack_.empty()) {
             arm_drop_stack_.back().push_back({tv, CType::SEQ});
-            if (borrowed)
+            if (!owned)
                 arm_drop_stack_.back().push_back({seq_ptr, CType::SEQ});
         }
     }
@@ -140,6 +147,21 @@ bool Codegen::codegen_pattern_seq(SeqPattern* sp, const TypedValue& scrutinee,
         builder_->CreateCondBr(
             builder_->CreateICmpEQ(count, ConstantInt::get(LType::getInt64Ty(*context_), 0)),
             body_bb, next_bb);
+        // Perceus-linear: under callee-owns, an empty-seq arm doesn't
+        // consume the scrutinee through any pattern-match call. Drop it
+        // directly at the start of the body so the owned ref doesn't
+        // leak. (This is not routed through arm_drop_stack because that
+        // path's transferred_seqs_ skip would also fire on this drop —
+        // the scrut may have been marked transferred by a sibling
+        // head-tail arm's consume, but at runtime only ONE arm runs,
+        // and this arm didn't actually consume.)
+        if (scrutinee.type == CType::SEQ && scrutinee.val &&
+            !scrutinee.val->getType()->isStructTy()) {
+            auto saved_ip = builder_->saveIP();
+            builder_->SetInsertPoint(body_bb);
+            emit_rc_dec(scrutinee.val, CType::SEQ);
+            builder_->restoreIP(saved_ip);
+        }
     } else {
         builder_->CreateBr(body_bb);
     }
@@ -613,10 +635,13 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         // Emit arm-scope drops for pattern-bound heap values BEFORE the arm
         // branches to the merge block. If the body value is one of the
         // scheduled drops (e.g., `[h|t] -> t`), skip that drop — the value
-        // escapes the arm and the caller becomes its owner.
+        // escapes the arm and the caller becomes its owner. Also skip
+        // values whose seq ownership was transferred to a consumer during
+        // the body (user-defined call or nested pattern-match consume).
         if (!arm_drop_stack_.empty()) {
             for (auto& [val, ct] : arm_drop_stack_.back()) {
                 if (val == body_tv.val) continue;
+                if (ct == CType::SEQ && transferred_seqs_.count(val)) continue;
                 emit_rc_dec(val, ct);
             }
             arm_drop_stack_.pop_back();

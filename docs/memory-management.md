@@ -175,36 +175,57 @@ let x = create() in body
 
 This is implemented in `codegen_let` (`CodegenExpr.cpp`).
 
-## Hybrid Perceus DUP/DROP
+## Perceus DUP/DROP — unified (as of 2026-04-15)
 
-For non-seq heap types (closures, strings, ADTs, tuples), the codegen uses
-a Perceus-inspired callee-owns convention:
+All heap types — including seqs — now follow the Perceus-linear
+callee-owns convention:
 
-**At call sites** (`codegen_apply`):
-- For each named heap-typed arg that is NOT a seq: `rc_inc` (DUP)
-- Temps (not in `named_values_`) keep their initial rc=1
+**At call sites** (`codegen_apply` → `emit_direct_call`):
+- For each heap-typed named arg: `rc_inc` (DUP) unless we can prove this
+  is the last use of the binding. For SEQ args we check `count_identifier_refs`
+  against the enclosing function body — count=1 means single-use and we
+  skip the DUP, marking the Value* as transferred.
+- Temps (not in `named_values_`) keep their initial rc=1 and are marked
+  transferred.
+- `transferred_seqs_` — set of Value*s whose ownership was handed off.
+  Used to skip redundant drops at scope exits.
 
 **At function exit** (`compile_function`):
-- For each non-seq heap-typed param: runtime `icmp eq` with return value
-- If param != return: `rc_dec` (DROP)
-- If param == return: skip (ownership transferred to caller)
-- Params consumed by `seq_tail` (tracked in `consumed_params_`) are skipped
+- For each heap-typed param: `rc_dec` (DROP) unless the param is in
+  `transferred_seqs_` (meaning a consumer inside the body already
+  absorbed the ref) or a runtime-check `icmp eq` with the return value
+  shows param-is-return (ownership transferred to caller).
 
-**Seqs use callee-borrows** (no DUP/DROP) because the seq unique-owner
-optimization is incompatible with DUP-induced rc>1 at chunk boundaries.
-Seq temps are freed by the different-type temp cleanup at call sites.
+**Pattern-match head-tail** (`codegen_pattern_headtail`):
+- If the scrutinee is a single-use identifier in the enclosing function
+  body (count=1 via `count_identifier_refs`), hand it to
+  `yona_rt_seq_tail_consume`. Consume returns the tail with the seq's
+  ownership transferred — in-place on rc=1, copy + rc_dec on rc>1.
+- If the scrutinee is multi-use, `rc_inc` it first and use the plain
+  `yona_rt_seq_tail` + arm-exit drop of both tail and incremented scrut.
+- Empty-seq arm (`[] -> …`): explicit `rc_dec` of the scrutinee at the
+  body_bb entry (no pattern consume happened on this path).
 
-### Why Hybrid?
+### Why this works now but didn't before
 
-Full Perceus (DUP/DROP for all types including seqs) was implemented and
-extensively tested. DUP-induced rc>1 on seq chunks triggers glibc-specific
-tcache metadata corruption at chunk boundaries (N>64 elements). ASan and
-valgrind find zero memory errors — the issue is in how atomic rc_dec
-cascades interact with glibc's internal tcache linked lists, not in our
-code. This is a known class of allocator-level constraints (discussed in
-the Koka Perceus paper). The hybrid approach gives Perceus benefits for
-closures/ADTs/tuples/strings while keeping fast in-place seq operations
-via the callee-borrows convention.
+Earlier attempts hit "glibc tcache corruption" on long seq chains because
+every allocation went through the tcache free-list. The current fix flows
+seq_cons/seq_tail ownership through `rc_alloc`/`pool_free` with a fixed
+slab allocator (see Slab-based pool allocator section) that avoids
+tcache entirely. Combined with the `transferred_seqs_` tracking and the
+fixed `count_identifier_refs` traversal (previously dropping arguments
+inside curried `ExprCall` chains, which made single-use detection miss
+the common `safe col placed 1` pattern), full Perceus for seqs is now
+both correct and a 2-3× win on foldl-style list benchmarks.
+
+### Known residual
+
+A multi-use seq captured by a closure that's then referenced in several
+call arms (`let tryCol col = … safe col placed 1 … col :: placed … end`
+from bench/core/queens.yona) leaks under the single-use heuristic. The
+fix is flow-sensitive per-branch last-use analysis — queued as
+task #117. Until then queens has ~35 MB peak RSS; list_*-style programs
+are leak-free.
 
 ## Seq Unique-Owner Optimization
 

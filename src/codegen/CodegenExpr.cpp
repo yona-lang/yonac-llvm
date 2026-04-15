@@ -263,8 +263,18 @@ int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
     if (ty == AST_APPLY_EXPR) {
         auto* e = static_cast<ApplyExpr*>(node);
         int c = 0;
-        if (auto* nc = dynamic_cast<NameCall*>(e->call))
+        if (auto* nc = dynamic_cast<NameCall*>(e->call)) {
             c += (nc->name->value == name) ? 1 : 0;
+        } else if (auto* ec = dynamic_cast<ExprCall*>(e->call)) {
+            // Curried application: `f a b c` parses as `((f a) b) c`,
+            // a chain of ApplyExprs wrapped in ExprCall. Recurse into
+            // the inner expression so identifiers in earlier args (like
+            // `b` in `f a b c`) get counted instead of being silently
+            // dropped — that drop was the root cause of the Perceus
+            // single-use detection mis-counting placed in `safe col
+            // placed 1`.
+            if (ec->expr) c += count_identifier_refs(ec->expr, name);
+        }
         for (auto& arg : e->args) {
             if (std::holds_alternative<ExprNode*>(arg))
                 c += count_identifier_refs(std::get<ExprNode*>(arg), name);
@@ -555,6 +565,13 @@ void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
         emit_rc_inc(result.val, result.type);
         for (size_t i = 0; i < scope_bindings.size(); i++) {
             if (i < binding_is_arena.size() && binding_is_arena[i])
+                continue;
+            // Perceus-linear: skip rc_dec for seq bindings whose ownership
+            // was transferred to a consumer (user-defined call or pattern
+            // match consume). Without this, we'd double-drop a binding the
+            // callee already freed.
+            if (scope_bindings[i].type == CType::SEQ &&
+                transferred_seqs_.count(scope_bindings[i].val))
                 continue;
             emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
         }

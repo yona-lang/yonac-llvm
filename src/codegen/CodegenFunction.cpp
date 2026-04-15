@@ -331,13 +331,22 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
             named_values_[def.param_names[pi]] = {param, CType::INT};
         }
 
-        // Compile body
+        // Compile body. Stash body AST for Perceus-linear single-use
+        // detection on seq params referenced inside. transferred_seqs_
+        // is restored at the bottom of this branch, after any exit
+        // drops — so body-local transfers are visible then.
+        auto saved_fn_body = current_fn_body_;
+        auto saved_transferred = transferred_seqs_;
+        transferred_seqs_.clear();
         TypedValue body_tv;
         if (!node->bodies.empty()) {
             auto* body_node = node->bodies[0];
-            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body_node))
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body_node)) {
+                current_fn_body_ = bwg->expr;
                 body_tv = codegen(bwg->expr);
+            }
         }
+        current_fn_body_ = saved_fn_body;
 
         // Coerce body result to match the function's declared return type
         if (body_tv && body_tv.val) {
@@ -440,6 +449,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         last_lambda_name_ = fn_name;
         named_values_[fn_name] = {closure, CType::FUNCTION, {ret_ctype}};
+        transferred_seqs_ = saved_transferred;
         return {closure, CType::FUNCTION, {ret_ctype}};
     }
 
@@ -764,13 +774,24 @@ Codegen::CompiledFunction Codegen::compile_function(
     tco_param_ctypes_ = has_self_tail_call ? param_ctypes : std::vector<CType>{};
     tco_cleanup_done_ = false;
 
-    // Compile body
+    // Compile body. Stash the body AST so nested codegen steps (notably
+    // codegen_pattern_headtail) can run single-use counts against the
+    // full function body for Perceus-linear scrutinee detection.
+    // Note: transferred_seqs_ is restored AFTER the function-exit drops
+    // below — we need the body's transfer marks to be visible when we
+    // decide which seq params to rc_dec at exit.
+    auto saved_fn_body = current_fn_body_;
+    auto saved_transferred = transferred_seqs_;
+    transferred_seqs_.clear();
     TypedValue body_tv;
     if (!def.ast->bodies.empty()) {
         auto* body = def.ast->bodies[0];
-        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            current_fn_body_ = bwg->expr;
             body_tv = codegen(bwg->expr);
+        }
     }
+    current_fn_body_ = saved_fn_body;
 
     CType ret_ctype = body_tv ? body_tv.type : CType::INT;
 
@@ -900,18 +921,22 @@ Codegen::CompiledFunction Codegen::compile_function(
             ret_ctype = body_tv ? body_tv.type : CType::INT;
         }
         if (!builder_->GetInsertBlock()->getTerminator()) {
-            // Perceus callee-owns DROP for non-seq heap params.
-            // Skip if TCO already handled cleanup before the tail call.
+            // Perceus callee-owns DROP for all heap params (seqs under the
+            // new Perceus-linear ABI, plus non-seq types that were always
+            // callee-owns). Skip if TCO already handled cleanup before
+            // the tail call, and skip params whose ownership was
+            // transferred during body codegen (tracked in transferred_seqs_).
             if (body_tv.val && !tco_cleanup_done_) {
                 auto ptr_ty = PointerType::get(*context_, 0);
                 for (size_t pi = 0; pi < def.param_names.size(); pi++) {
                     if (pi >= param_ctypes.size()) continue;
                     CType ct = param_ctypes[pi];
-                    if (ct == CType::SEQ) continue;
                     if (!is_heap_type(ct)) continue;
                     if (pi >= fn->arg_size()) continue;
                     auto* param = fn->getArg(pi);
                     if (param->getType()->isStructTy()) continue;
+                    if (ct == CType::SEQ && transferred_seqs_.count(param))
+                        continue;
 
                     Value* param_ptr = param;
                     Value* ret_ptr = body_tv.val;
@@ -965,6 +990,10 @@ Codegen::CompiledFunction Codegen::compile_function(
     compiled_functions_[name] = cf;
     named_values_[name] = {fn, CType::FUNCTION};
 
+    // Restore transferred_seqs_ from saved now that function-exit drops
+    // are emitted — the function's body-local transfers should not leak
+    // out to the enclosing scope's transfer tracking.
+    transferred_seqs_ = saved_transferred;
     return cf;
 }
 
@@ -1614,19 +1643,33 @@ TypedValue Codegen::codegen_curry_apply(const std::string& fn_name, CompiledFunc
 
 TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunction& cf,
                                       const std::vector<TypedValue>& all_args) {
-    // Perceus DUP for non-seq heap args. Seqs use callee-borrows because
-    // DUP-induced rc>1 is incompatible with seq unique-owner optimization.
+    // Perceus DUP for heap args. Standard rule: at non-last-use sites we
+    // rc_inc so the consumed-by-callee ref doesn't pull the caller's
+    // binding out from under us. Last-use (or single-use globally) sites
+    // skip the inc and transfer the existing ref directly — this is what
+    // unlocks the in-place tail fast path in the foldl/map/filter
+    // recursion, where each recursive call passes the pattern-bound `t`
+    // exactly once.
     for (size_t ai = 0; ai < all_args.size(); ai++) {
         CType ct = all_args[ai].type;
-        if (ct == CType::SEQ) continue;
         if (!is_heap_type(ct)) continue;
         if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
         if (all_args[ai].val->getType()->isStructTy()) continue;
-        bool is_named = false;
+        std::string named_as;
         for (auto& [k, v] : named_values_)
-            if (v.val == all_args[ai].val) { is_named = true; break; }
-        if (is_named)
-            emit_rc_inc(all_args[ai].val, ct);
+            if (v.val == all_args[ai].val) { named_as = k; break; }
+        if (named_as.empty()) continue;  // anonymous → transfer (no inc)
+        // For SEQ args, skip the inc when the binding has exactly one
+        // textual occurrence in the enclosing function body — that
+        // single use is also the last use, so we can transfer.
+        if (ct == CType::SEQ && current_fn_body_) {
+            int uses = count_identifier_refs(current_fn_body_, named_as);
+            if (uses <= 1) {
+                transferred_seqs_.insert(all_args[ai].val);
+                continue;
+            }
+        }
+        emit_rc_inc(all_args[ai].val, ct);
     }
 
     std::vector<Value*> call_args;
@@ -1782,7 +1825,12 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
     else if (cf.fn == current_fn)
         call_inst->setTailCall(true);
 
-    // Drop seq temps whose type differs from return (callee-borrows for seqs).
+    // Perceus-linear: user-defined callees are callee-owns for seq args.
+    // For ANONYMOUS seq args (fresh expression results): ownership passes
+    // cleanly to the callee — mark as transferred so outer scope cleanups
+    // skip their rc_dec. For NAMED args we needed an rc_inc BEFORE the
+    // call (otherwise the callee might free our only ref) — that's
+    // handled in the precall_seq_dups loop above where args were prepared.
     for (size_t ai = 0; ai < all_args.size(); ai++) {
         if (all_args[ai].type != CType::SEQ) continue;
         if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
@@ -1790,9 +1838,8 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         bool is_named = false;
         for (auto& [k, v] : named_values_)
             if (v.val == all_args[ai].val) { is_named = true; break; }
-        if (is_named) continue;
-        if (all_args[ai].type == cf.return_type) continue;
-        emit_rc_dec(all_args[ai].val, all_args[ai].type);
+        if (!is_named)
+            transferred_seqs_.insert(all_args[ai].val);
     }
 
     TypedValue result{call_inst, cf.return_type};

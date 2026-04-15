@@ -159,6 +159,24 @@ private:
     // arm and drops + pops on exit.
     std::vector<std::vector<std::pair<llvm::Value*, CType>>> arm_drop_stack_;
 
+    // ===== Perceus linear: seq ownership tracking =====
+    //
+    // Last-use analysis populated by annotate_last_uses() before each
+    // function body is compiled. Maps IdentifierExpr* → true when this
+    // occurrence is the variable's last textual occurrence on its
+    // control-flow path. Flow-sensitive over if/case branches.
+    std::unordered_map<ast::IdentifierExpr*, bool> is_last_use_;
+
+    // Set of Value*s whose seq ownership has been transferred to a
+    // consumer (user-defined function or pattern-match consume). At
+    // scope exit (let cleanup, function exit), skip rc_dec for these.
+    std::unordered_set<llvm::Value*> transferred_seqs_;
+
+    // The body AST of the function currently being compiled. Used by
+    // codegen_pattern_headtail for single-use scrutinee detection (the
+    // Perceus-linear owned-scrutinee fast path).
+    ast::AstNode* current_fn_body_ = nullptr;
+
     // Closure devirtualization: map closure Value* → underlying Function*
     // When a known lambda is wrapped in a closure, we remember the mapping
     // so indirect closure calls can be replaced with direct calls.

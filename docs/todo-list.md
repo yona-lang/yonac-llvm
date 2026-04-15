@@ -12,71 +12,69 @@
 
 ## Benchmark Results
 
-Rerun on LLVM 22, 2026-04-14, 10 iterations. Sorted by Yona/C ratio.
+Rerun on LLVM 22, 2026-04-15, 10 iterations, post-Perceus. Sorted by Yona/C ratio.
 
-> **Head-tail drop fix (2026-04-14)**: `case seq of [h|t] -> …` arms now
-> rc_inc the scrutinee + force `seq_tail` onto the copy path, and rc_dec
-> both at arm exit. This plugs a seq leak that pushed `queens` to 43 MB /
-> 10.9x C; post-fix queens is 2.4 MB (matching C) but jumped in wall
-> time from 14ms to 36ms because every tail now copies. Several list_*
-> benchmarks also regressed on time and memory — tracked as separate
-> perf/correctness followups in the open list.
+> **Perceus callee-owns for seqs (2026-04-15)**: the big one. Seq
+> function parameters now follow the Perceus-linear model — caller
+> transfers ownership at the call site, callee consumes (via pattern
+> match or transfer onward) or drops at exit. Key pieces:
+> (a) last-use detection via single-use count over the enclosing
+> function body (fixed a bug in `count_identifier_refs` that silently
+> dropped arguments in curried apply chains — `safe col placed 1`
+> wasn't counting `placed`);
+> (b) transferred-seq tracking so let-scope and function-exit drops
+> skip already-transferred bindings;
+> (c) unconditional scrutinee drop on the empty-seq arm (no
+> pattern-match consume there);
+> (d) `codegen_pattern_headtail` uses `seq_tail_consume` whenever the
+> scrut is single-use function-wide, falling back to rc_inc + copy for
+> multi-use scrutinees.
 >
-> **RBT chunk leak fix (2026-04-14)**: the RBT seq's cons-promote and
-> tail-chain-pop paths were over-rc_inc'ing head_next — leaking one ref
-> on nearly every chunk for large (>32-element) seqs. `list_sum` showed
-> 312 chunk allocs and only 1 free. Fixed by making ownership transfer
-> cleanly in the unique paths: when `r->head_next` is rewritten to point
-> at a different chunk, the rc is transferred, not duplicated. 312/312
-> freed after the fix.
+> Results on list_* benchmarks (the target):
+> - list_sum: 2.1ms 9.1MB → **0.93ms 3.1MB** (2.3× faster, 3× less mem)
+> - list_reverse: 2.7ms 9.1MB → **1.0ms 3.0MB** (2.7× faster, 3× less mem)
+> - list_map_filter: 1.6ms 5.8MB → **0.83ms 2.9MB** (2× faster, 2× less mem)
 >
-> **Head-tail consume path (2026-04-14)**: added `yona_rt_seq_tail_consume`
-> for ownership-transfer pattern matching. `case scrut of [h|t] -> …`
-> now picks one of two paths at compile time: when `scrut` is a local
-> SSA value (not a function param, not re-referenced in the arm body)
-> we hand it to consume and drop just `t` at arm exit — preserving the
-> in-place fast path when the scrut is unique. When `scrut` is a
-> function Argument or the body re-references it, we stick with the
-> rc_inc + borrow-path that was added for the queens fix. The list_*
-> benchmarks sit in the second bucket (scrut is foldl's seq param), so
-> they still pay the copy cost; a further improvement would require
-> either changing the callee-borrows convention for seq params or
-> removing the defensive rc_inc on let-bound seqs.
+> Residual: `queens` is 2× faster (36ms → 17ms) but gained a 35 MB leak
+> from its tryCol-closure + multi-use `placed` pattern. That specific
+> leak requires full flow-sensitive last-use analysis to fix properly
+> (the current single-use heuristic misses the pattern where a capture
+> is used in multiple call arms). Queued as followup task #117.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| par_map | 0.54ms | 0.64ms | **0.8x** | 2.4 | 2.4 |
-| tak | 66ms | 64ms | **1.0x** | 2.4 | 2.2 |
-| parallel_async | 102ms | 101ms | **1.0x** | 2.8 | 2.5 |
+| par_map | 0.56ms | 0.68ms | **0.8x** | 2.4 | 2.4 |
+| parallel_async | 101ms | 102ms | **1.0x** | 2.8 | 2.4 |
 | sequential_async | 402ms | 401ms | **1.0x** | 2.8 | 2.2 |
-| file_read | 0.78ms | 0.70ms | 1.1x | 3.6 | 3.3 |
-| seq_map | 0.55ms | 0.51ms | 1.1x | 2.4 | 2.2 |
-| process_exec | 1.2ms | 1.0ms | 1.1x | 3.9 | 3.9 |
-| sum_squares | 0.55ms | 0.50ms | 1.1x | 2.4 | 2.2 |
-| int_array_fill_sum | 0.63ms | 0.53ms | 1.2x | 2.6 | 2.3 |
-| binary_write_read | 3.5ms | 2.9ms | 1.2x | 12.5 | 7.3 |
-| binary_read_chunks | 0.83ms | 0.64ms | 1.3x | 2.5 | 2.2 |
-| channel_pipeline | 1.3ms | 0.96ms | 1.4x | 3.2 | 2.3 |
-| channel_fanin | 1.5ms | 1.1ms | 1.4x | 3.3 | 2.3 |
-| channel_throughput | 1.8ms | 1.2ms | 1.5x | 3.5 | 2.2 |
-| file_parallel_read | 1.3ms | 0.79ms | 1.6x | 5.8 | 5.4 |
-| file_write_read | 1.4ms | 0.85ms | 1.7x | 4.8 | 3.2 |
-| sieve | 0.91ms | 0.50ms | 1.8x | 3.2 | 2.1 |
-| list_map_filter | 1.4ms | 0.73ms | 2.0x | 5.8 | 3.1 |
-| set_build | 1.3ms | 0.59ms | 2.2x | 3.4 | 2.3 |
-| sort | 1.1ms | 0.51ms | 2.2x | 2.9 | 2.2 |
-| dict_build | 1.4ms | 0.63ms | 2.2x | 3.4 | 2.4 |
-| fibonacci | 15ms | 6.2ms | 2.4x | 2.4 | 2.2 |
-| ackermann | 165ms | 62ms | 2.7x | 2.6 | 2.4 |
-| file_readlines_large | 44ms | 14ms | 3.1x | 2.6 | 2.2 |
-| file_write_read_large | 46ms | 14ms | 3.3x | 107 | 2.3 |
-| int_array_sum | 1.8ms | 0.52ms | 3.5x | 2.6 | 2.3 |
-| int_array_map | 1.8ms | 0.52ms | 3.5x | 2.7 | 2.4 |
-| list_sum | 2.1ms | 0.58ms | 3.6x | 9.1 | 2.6 |
-| file_read_large | 13ms | 3.0ms | 4.2x | 55 | 2.3 |
-| list_reverse | 2.7ms | 0.61ms | 4.4x | 9.1 | 2.5 |
-| file_parallel_read_large | 8.6ms | 1.3ms | 6.7x | 37 | 2.4 |
-| queens | 36ms | 2.3ms | 15.2x | 2.4 | 2.2 |
+| tak | 66ms | 63ms | **1.1x** | 2.4 | 2.2 |
+| seq_map | 0.55ms | 0.48ms | 1.1x | 2.4 | 2.2 |
+| int_array_fill_sum | 0.56ms | 0.51ms | 1.1x | 2.5 | 2.3 |
+| sum_squares | 0.54ms | 0.48ms | 1.1x | 2.4 | 2.1 |
+| binary_read_chunks | 0.84ms | 0.74ms | 1.1x | 2.5 | 2.3 |
+| list_map_filter | 0.83ms | 0.74ms | 1.1x | 2.9 | 3.0 |
+| process_exec | 1.2ms | 1.0ms | 1.2x | 3.8 | 3.9 |
+| file_read | 0.88ms | 0.71ms | 1.2x | 3.6 | 3.3 |
+| binary_write_read | 3.6ms | 2.7ms | 1.3x | 12.5 | 7.2 |
+| channel_pipeline | 1.3ms | 0.93ms | 1.4x | 3.3 | 2.2 |
+| channel_fanin | 1.6ms | 1.1ms | 1.4x | 3.2 | 2.4 |
+| channel_throughput | 1.8ms | 1.3ms | 1.4x | 3.5 | 2.3 |
+| list_sum | 0.93ms | 0.58ms | **1.6x** | 3.1 | 2.6 |
+| file_write_read | 1.4ms | 0.84ms | 1.7x | 4.8 | 3.2 |
+| file_parallel_read | 1.4ms | 0.86ms | 1.7x | 6.0 | 5.5 |
+| list_reverse | 1.0ms | 0.61ms | **1.7x** | 3.0 | 2.6 |
+| set_build | 1.3ms | 0.68ms | 1.9x | 3.4 | 2.3 |
+| dict_build | 1.4ms | 0.64ms | 2.1x | 3.4 | 2.4 |
+| sieve | 1.1ms | 0.48ms | 2.3x | 3.0 | 2.2 |
+| fibonacci | 15ms | 6.2ms | 2.5x | 2.4 | 2.2 |
+| sort | 1.7ms | 0.68ms | 2.5x | 8.1 | 2.1 |
+| ackermann | 168ms | 62ms | 2.7x | 2.5 | 2.4 |
+| file_readlines_large | 41ms | 14ms | 2.8x | 2.6 | 2.3 |
+| file_write_read_large | 46ms | 14ms | 3.4x | 107 | 2.2 |
+| int_array_map | 2.0ms | 0.53ms | 3.7x | 3.1 | 2.4 |
+| int_array_sum | 2.0ms | 0.49ms | 4.0x | 2.9 | 2.3 |
+| file_read_large | 12ms | 2.8ms | 4.3x | 55 | 2.3 |
+| file_parallel_read_large | 8.1ms | 1.3ms | 6.1x | 37 | 2.3 |
+| queens | 17ms | 2.4ms | **7.3x** | 37 | 2.2 |
 
 Erlang reference impls (bench/reference/*.erl) exist for all 17 Yona benchmarks
 but are not yet wired into the runner's comparison output — that's a runner
