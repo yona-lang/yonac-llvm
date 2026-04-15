@@ -35,48 +35,70 @@ Rerun on LLVM 22, 2026-04-15, 10 iterations, post-Perceus. Sorted by Yona/C rati
 > - list_reverse: 2.7ms 9.1MB → **1.0ms 3.0MB** (2.7× faster, 3× less mem)
 > - list_map_filter: 1.6ms 5.8MB → **0.83ms 2.9MB** (2× faster, 2× less mem)
 >
-> Residual: `queens` is 2× faster (36ms → 17ms). Post-if-scoping fix
-> (commit c2e2f39) memory is 21 MB, down from the 37 MB peak right
-> after the initial Perceus switch. The same per-branch transfer
-> tracking still needs to extend to case arms to close the rest of
-> the queens leak — see task #117. (The current single-use heuristic
-> misses the pattern where a capture
-> is used in multiple call arms). Queued as followup task #117.
+> Results on `queens`: 36ms → 17ms (2× faster), 43 MB → **2.4 MB**
+> after generalizing per-branch `transferred_seqs_` tracking to both
+> if-expressions and case arms (TransferScope helper). Fixed a
+> dominance bug where the pre_blocks snapshot included the newly
+> created then_bb — the block was then (incorrectly) considered
+> "droppable across branches" and values defined inside it got
+> rc_dec'd in sibling branches. Moved `transfer_scope_enter()` ahead
+> of branch-block creation so pre_blocks only captures truly
+> pre-existing blocks.
+>
+> **Perceus callee-owns for dicts and sets (2026-04-15)**: extended
+> the seq ABI to Set/Dict HAMT operations. Runtime: `yona_rt_set_insert`
+> / `yona_rt_dict_put` consume their input on path-copy (rc_dec old
+> when returning a new pointer); `set_ensure_hamt` consumes the flat
+> set when converting. Codegen: new `transferred_maps_` set (separate
+> from `transferred_seqs_` so the per-branch transfer-scope logic in
+> if/case doesn't misdrop Set/Dict values as SEQs); populated by
+> `codegen_extern_call` for Set/Dict ops where arg0 and return are
+> map-typed, and by `emit_direct_call` for single-use Set/Dict args
+> to user-defined functions; consumed by `cleanup_let_scope` and the
+> function-exit DROP check. Also fixed a HAMT size-tracking bug —
+> same-key updates through a child sub-node were incrementing `size`
+> regardless of whether the recursion inserted or replaced (broke
+> `Set.union` correctness). Results: **0 DICT leaks** on 10k-insert
+> `dict_build`/`set_build` with `let` binding (was 316/1000 before,
+> ~24% leak). Root-caused an earlier blocker: two sequential
+> `build N {}` calls and `Set.union` both crashed with pool UAF via
+> double-dec when extern_call aliased %s and a deeper recursion
+> freed the shared object.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| par_map | 0.56ms | 0.68ms | **0.8x** | 2.4 | 2.4 |
-| parallel_async | 101ms | 102ms | **1.0x** | 2.8 | 2.4 |
-| sequential_async | 402ms | 401ms | **1.0x** | 2.8 | 2.2 |
-| tak | 66ms | 63ms | **1.1x** | 2.4 | 2.2 |
-| seq_map | 0.55ms | 0.48ms | 1.1x | 2.4 | 2.2 |
-| int_array_fill_sum | 0.56ms | 0.51ms | 1.1x | 2.5 | 2.3 |
-| sum_squares | 0.54ms | 0.48ms | 1.1x | 2.4 | 2.1 |
-| binary_read_chunks | 0.84ms | 0.74ms | 1.1x | 2.5 | 2.3 |
-| list_map_filter | 0.83ms | 0.74ms | 1.1x | 2.9 | 3.0 |
-| process_exec | 1.2ms | 1.0ms | 1.2x | 3.8 | 3.9 |
-| file_read | 0.88ms | 0.71ms | 1.2x | 3.6 | 3.3 |
-| binary_write_read | 3.6ms | 2.7ms | 1.3x | 12.5 | 7.2 |
-| channel_pipeline | 1.3ms | 0.93ms | 1.4x | 3.3 | 2.2 |
-| channel_fanin | 1.6ms | 1.1ms | 1.4x | 3.2 | 2.4 |
-| channel_throughput | 1.8ms | 1.3ms | 1.4x | 3.5 | 2.3 |
-| list_sum | 0.93ms | 0.58ms | **1.6x** | 3.1 | 2.6 |
-| file_write_read | 1.4ms | 0.84ms | 1.7x | 4.8 | 3.2 |
-| file_parallel_read | 1.4ms | 0.86ms | 1.7x | 6.0 | 5.5 |
-| list_reverse | 1.0ms | 0.61ms | **1.7x** | 3.0 | 2.6 |
-| set_build | 1.3ms | 0.68ms | 1.9x | 3.4 | 2.3 |
-| dict_build | 1.4ms | 0.64ms | 2.1x | 3.4 | 2.4 |
-| sieve | 1.1ms | 0.48ms | 2.3x | 3.0 | 2.2 |
-| fibonacci | 15ms | 6.2ms | 2.5x | 2.4 | 2.2 |
-| sort | 1.7ms | 0.68ms | 2.5x | 8.1 | 2.1 |
-| ackermann | 168ms | 62ms | 2.7x | 2.5 | 2.4 |
-| file_readlines_large | 41ms | 14ms | 2.8x | 2.6 | 2.3 |
-| file_write_read_large | 46ms | 14ms | 3.4x | 107 | 2.2 |
-| int_array_map | 2.0ms | 0.53ms | 3.7x | 3.1 | 2.4 |
-| int_array_sum | 2.0ms | 0.49ms | 4.0x | 2.9 | 2.3 |
-| file_read_large | 12ms | 2.8ms | 4.3x | 55 | 2.3 |
-| file_parallel_read_large | 8.1ms | 1.3ms | 6.1x | 37 | 2.3 |
-| queens | 17ms | 2.5ms | **6.8x** | 21 | 2.2 |
+| par_map | 0.60ms | 0.80ms | **0.7x** | 2.4 | 2.4 |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.7 | 2.3 |
+| sequential_async | 402ms | 401ms | **1.0x** | 2.8 | 2.1 |
+| tak | 65ms | 64ms | **1.0x** | 2.4 | 2.2 |
+| file_read | 0.82ms | 0.81ms | **1.0x** | 3.6 | 3.3 |
+| int_array_fill_sum | 0.58ms | 0.52ms | 1.1x | 2.4 | 2.2 |
+| list_map_filter | 0.90ms | 0.84ms | 1.1x | 2.9 | 3.0 |
+| seq_map | 0.62ms | 0.55ms | 1.1x | 2.4 | 2.2 |
+| binary_read_chunks | 1.0ms | 0.77ms | 1.3x | 2.4 | 2.2 |
+| binary_write_read | 4.0ms | 3.2ms | 1.2x | 12.4 | 7.2 |
+| process_exec | 1.4ms | 1.0ms | 1.3x | 3.8 | 3.8 |
+| channel_pipeline | 1.5ms | 1.1ms | 1.3x | 3.3 | 2.2 |
+| file_parallel_read | 1.2ms | 0.96ms | 1.3x | 5.8 | 5.2 |
+| sum_squares | 0.81ms | 0.57ms | 1.4x | 2.4 | 2.2 |
+| channel_fanin | 1.7ms | 1.2ms | 1.5x | 3.3 | 2.3 |
+| list_reverse | 1.0ms | 0.66ms | 1.5x | 3.1 | 2.5 |
+| channel_throughput | 2.1ms | 1.3ms | 1.6x | 3.4 | 2.2 |
+| list_sum | 1.1ms | 0.66ms | 1.7x | 3.0 | 2.5 |
+| file_write_read | 1.7ms | 0.92ms | 1.8x | 4.6 | 3.2 |
+| sieve | 1.2ms | 0.59ms | 2.0x | 3.0 | 2.0 |
+| set_build | 1.5ms | 0.63ms | 2.4x | 3.1 | 2.2 |
+| dict_build | 1.4ms | 0.68ms | 2.1x | 3.2 | 2.4 |
+| fibonacci | 15ms | 6.5ms | 2.4x | 2.3 | 2.1 |
+| ackermann | 161ms | 61ms | 2.6x | 2.7 | 1.9 |
+| int_array_sum | 1.9ms | 0.59ms | 3.3x | 2.9 | 2.2 |
+| sort | 1.7ms | 0.58ms | 2.9x | 7.9 | 2.1 |
+| file_readlines_large | 48ms | 15ms | 3.3x | 2.6 | 2.2 |
+| int_array_map | 1.9ms | 0.62ms | 3.2x | 2.9 | 2.4 |
+| file_write_read_large | 50ms | 15ms | 3.4x | 107 | 2.2 |
+| file_read_large | 13ms | 3.1ms | 4.3x | 55 | 2.3 |
+| file_parallel_read_large | 9.6ms | 1.5ms | 6.2x | 37 | 2.4 |
+| queens | 15ms | 2.4ms | **6.3x** | 2.3 | 2.2 |
 
 Erlang reference impls (bench/reference/*.erl) exist for all 17 Yona benchmarks
 but are not yet wired into the runner's comparison output — that's a runner
@@ -84,18 +106,13 @@ enhancement, not a benchmark change.
 
 ## Remaining Work
 
+### Bugs
+None currently tracked. The "HAMT pool UAF on two sequential Set
+builds" and the `Set.union` crash were both root-caused and fixed as
+part of the Perceus-for-dicts-and-sets work — see the Performance
+section entry below for details.
+
 ### Performance
-- [ ] **Per-case-arm flow-sensitive transfer tracking for seqs** — the
-  Perceus callee-owns conversion landed (commit b3ddc46) and then was
-  extended with per-branch `transferred_seqs_` scoping at if-expressions
-  (c2e2f39). Queens memory dropped 43 MB → 21 MB along the way. What
-  still leaks: pattern-match case arms where one arm transfers the
-  tail but another doesn't (e.g. safe's `if queen == q then false
-  else … safe queen rest (col+1)` — the recursive arm transfers
-  `rest` while the sibling arms don't). Extending the if-expression
-  scoping logic to case expressions should eliminate most of queens'
-  remaining 170k seq leak. ~100 lines in codegen_case mirroring the
-  per-branch snapshot/diff logic in codegen_if.
 - [ ] **Raise/longjmp cleanup for owned seqs** — phase 3 of the
   Perceus work (not yet done). An uncaught raise that propagates out
   of a function with owned seq params skips the function-exit rc_dec,
