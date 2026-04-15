@@ -195,14 +195,9 @@ section entry below for details.
 - [ ] LSP server
 
 ### Benchmarks
-- [ ] **Erlang/OTP reference implementations** — add Erlang reference impls
-  for concurrency benchmarks (parallel_async, sequential_async, par_map,
-  channel_throughput, channel_pingpong, channel_pipeline, channel_workers,
-  channel_actor). Erlang is the gold standard for actor-model concurrency
-  with cheap processes (~300B/process), built-in mailboxes, and preemptive
-  scheduling — directly comparable to Yona's structured concurrency +
-  channels. Should also add: fibonacci, ackermann, tak, sieve, sort,
-  queens, list_sum (for non-concurrency comparison). Files: `bench/reference/*.erl`.
+- (all benchmarks now have reference impls in C + Erlang + Haskell +
+  Java + Node.js + Python; see `bench/reference/` and
+  [benchmark-results.md](./benchmark-results.md))
 
 ### Distribution
 - [ ] Windows installer (NSIS/WiX)
@@ -260,13 +255,22 @@ section entry below for details.
 
 ### Data Structures
 - Persistent Seq RBT (flat <=32, head chain + back trie + tail buffer >32)
-- Persistent Dict (HAMT, splitmix64, O(1) amortized, transient inserts)
+- Persistent Dict (HAMT, splitmix64, O(1) amortized, transient inserts,
+  size-delta tracking for same-key replaces via child-recurse)
 - Persistent Set (HAMT-backed, union/intersection/difference)
 
 ### Memory Management
 - Atomic RC (`RELAXED` inc, `ACQ_REL` dec)
 - Recursive destructors for all container types (heap_mask bitmasks)
-- Hybrid Perceus DUP/DROP (callee-owns for non-seq, callee-borrows for seq)
+- Perceus-linear callee-owns ABI for seqs, sets, and dicts — single-use
+  detection at call sites skips the rc_inc and transfers ownership to
+  the callee; runtime consume paths rc_dec on path-copy so callers
+  don't double-drop
+- Per-branch `transferred_seqs_` / `transferred_maps_` scoping in
+  if-expressions and case arms — compensating rc_decs emitted only
+  where needed so one-arm-transfers don't leak on the other arm, and
+  SSA dominance is preserved via the pre_blocks snapshot taken before
+  branch-block creation
 - Let-bound seq protection (rc_inc prevents in-place tail mutation)
 - Slab-based pool allocator (5 size classes)
 - Arena allocation for non-escaping let-bound values
