@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1211 assertions across 204 test cases (all passing)
+- **Tests**: 1213 assertions across 204 test cases (all passing)
 - **Benchmarks**: 34/34 passing (rerun 2026-04-14, LLVM 22, 10 iters at -O2)
 - **Stdlib**: ~37 modules (non-blocking Std\IO, Std\Stream, Std\Constants\{Num,Math,Platform}, Std\Channel, Std\Task)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -35,10 +35,12 @@ Rerun on LLVM 22, 2026-04-15, 10 iterations, post-Perceus. Sorted by Yona/C rati
 > - list_reverse: 2.7ms 9.1MB → **1.0ms 3.0MB** (2.7× faster, 3× less mem)
 > - list_map_filter: 1.6ms 5.8MB → **0.83ms 2.9MB** (2× faster, 2× less mem)
 >
-> Residual: `queens` is 2× faster (36ms → 17ms) but gained a 35 MB leak
-> from its tryCol-closure + multi-use `placed` pattern. That specific
-> leak requires full flow-sensitive last-use analysis to fix properly
-> (the current single-use heuristic misses the pattern where a capture
+> Residual: `queens` is 2× faster (36ms → 17ms). Post-if-scoping fix
+> (commit c2e2f39) memory is 21 MB, down from the 37 MB peak right
+> after the initial Perceus switch. The same per-branch transfer
+> tracking still needs to extend to case arms to close the rest of
+> the queens leak — see task #117. (The current single-use heuristic
+> misses the pattern where a capture
 > is used in multiple call arms). Queued as followup task #117.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
@@ -74,7 +76,7 @@ Rerun on LLVM 22, 2026-04-15, 10 iterations, post-Perceus. Sorted by Yona/C rati
 | int_array_sum | 2.0ms | 0.49ms | 4.0x | 2.9 | 2.3 |
 | file_read_large | 12ms | 2.8ms | 4.3x | 55 | 2.3 |
 | file_parallel_read_large | 8.1ms | 1.3ms | 6.1x | 37 | 2.3 |
-| queens | 17ms | 2.4ms | **7.3x** | 37 | 2.2 |
+| queens | 17ms | 2.5ms | **6.8x** | 21 | 2.2 |
 
 Erlang reference impls (bench/reference/*.erl) exist for all 17 Yona benchmarks
 but are not yet wired into the runner's comparison output — that's a runner
@@ -83,35 +85,23 @@ enhancement, not a benchmark change.
 ## Remaining Work
 
 ### Performance
-- [ ] **Seq calling convention: callee-borrows → callee-owns (Perceus-linear)** —
-  highest-value open perf item. The current callee-borrows convention for
-  seq parameters forces `seq_tail` onto the copy path at every function
-  boundary, because in-place mutation under a borrowed seq isn't safe (the
-  caller might look at it again). That's why list_sum/list_reverse/
-  list_map_filter pay 2-4x vs C and queens pays 15x.
-
-  Switching seq params to callee-owns (the Perceus linear model, already
-  used for non-seq types in Yona) means: caller transfers ownership on
-  call; callee rc_decs at function exit unless it forwarded the seq. The
-  in-place `seq_tail` fast path then fires in foldl/map/filter/zip, which
-  is the hot pattern for nearly every list-heavy program.
-
-  Staged:
-  (1) last-use dataflow analysis (~200 lines) + codegen_apply transfer
-      emission for a whitelisted set of fold-style functions; verify
-      list_* drops to ~1.5x.
-  (2) generalize to all seq params; remove the defensive rc_incs in
-      codegen_let_aliases and codegen_pattern_headtail; update the ~25
-      extern C stdlib wrappers to rc_dec seq args on exit.
-  (3) raise/longjmp cleanup so an uncaught raise doesn't leak owned seq
-      params — needs either thread-local pending-drops lists or a
-      codegen-installed setjmp unwind handler. This is the nastiest piece
-      and can ship with a documented caveat initially.
-
-  Scope: ~700 lines across codegen, runtime helpers, and stdlib C
-  wrappers. Requires .yonai ABI bump (rebuild stdlib). Cross-module
-  GENFN monomorphization must stay consistent on both sides.
-
+- [ ] **Per-case-arm flow-sensitive transfer tracking for seqs** — the
+  Perceus callee-owns conversion landed (commit b3ddc46) and then was
+  extended with per-branch `transferred_seqs_` scoping at if-expressions
+  (c2e2f39). Queens memory dropped 43 MB → 21 MB along the way. What
+  still leaks: pattern-match case arms where one arm transfers the
+  tail but another doesn't (e.g. safe's `if queen == q then false
+  else … safe queen rest (col+1)` — the recursive arm transfers
+  `rest` while the sibling arms don't). Extending the if-expression
+  scoping logic to case expressions should eliminate most of queens'
+  remaining 170k seq leak. ~100 lines in codegen_case mirroring the
+  per-branch snapshot/diff logic in codegen_if.
+- [ ] **Raise/longjmp cleanup for owned seqs** — phase 3 of the
+  Perceus work (not yet done). An uncaught raise that propagates out
+  of a function with owned seq params skips the function-exit rc_dec,
+  leaking the param. Fix: thread-local pending-drops list, pushed at
+  function entry and flushed by setjmp unwind handlers. Needed before
+  we can call this convention robust in exceptional paths.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 - [ ] **Explore JIT compilation potential** — research task. Investigate
