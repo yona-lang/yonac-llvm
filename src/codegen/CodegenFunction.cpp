@@ -763,8 +763,13 @@ Codegen::CompiledFunction Codegen::compile_function(
             pname = def.param_names[i];
             ct = (i < args.size()) ? args[i].type : CType::INT;
             if (i < args.size()) st = args[i].subtypes;
-            // For FUNCTION args, look up return type and propagate
-            // closure devirtualization info (known Function* for the param).
+            // For FUNCTION args, look up return type for type propagation.
+            // Do NOT propagate closure_known_fn_ to formal params — the
+            // compiled function is cached and may be called with different
+            // closures. Devirtualizing here hardcodes the first closure's
+            // function pointer into the IR, producing wrong results for
+            // subsequent calls with different closures (see bug: "Closure
+            // devirtualization with polymorphic HOFs" in todo-list.md).
             if (ct == CType::FUNCTION && i < args.size() && args[i].val) {
                 if (auto* fn_val = dyn_cast<Function>(args[i].val)) {
                     if (st.empty()) {
@@ -773,10 +778,6 @@ Codegen::CompiledFunction Codegen::compile_function(
                             st = {cf_it->second.return_type};
                     }
                 }
-                // Propagate known closure → Function* to the param
-                auto kf_it = closure_known_fn_.find(args[i].val);
-                if (kf_it != closure_known_fn_.end())
-                    closure_known_fn_[&arg] = kf_it->second;
             }
         } else {
             pname = def.free_vars[i - def.param_names.size()];

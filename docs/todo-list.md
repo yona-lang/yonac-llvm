@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1258 assertions across 209 test cases (all passing)
+- **Tests**: 1260 assertions across 209 test cases (all passing)
 - **Benchmarks**: 34/34 passing (rerun 2026-04-16, LLVM 22, 10 iters at -O2)
 - **Stdlib**: ~37 modules (non-blocking Std\IO, Std\Stream, Std\Constants\{Num,Math,Platform}, Std\Channel, Std\Task)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -57,16 +57,7 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 ## Remaining Work
 
 ### Bugs
-- [ ] **Closure devirtualization with polymorphic HOFs**: when a
-  function like `foldl` is compiled at the first call site where
-  `fn = \a b -> a + b`, the closure is devirtualized to a direct
-  `add`. The compiled function is cached and reused for subsequent
-  calls with DIFFERENT closures (e.g., `\a b -> a * b`), which
-  silently produces wrong results. Repro:
-  `let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in let s = foldl (\a b -> a + b) 0 [1,2,3] in let p = foldl (\a b -> a * b) 1 [1,2,3] in (s, p)`
-  → expected `(6, 6)`, got `(6, 7)`. Fix: don't devirtualize closure
-  params in polymorphic HOFs (the closure varies across call sites),
-  or key the compiled-function cache on the closure identity.
+None currently tracked.
 
 ### Code Quality — deferred from 2026-04-15 audit
 - [ ] **O(1) transfer_scope BB detection** — a true O(1) replacement
