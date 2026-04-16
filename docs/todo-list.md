@@ -57,13 +57,17 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 ## Remaining Work
 
 ### Bugs
-- [ ] **Sort benchmark RBT leak** (8669 RBT leaked, 244 SEQ, 264
-  RBT_CHUNK). `insert x sorted` receives `sorted` via Perceus
-  transfer (single-use, no caller inc) but inc's it for multi-use
-  in the body (case scrutinee + `x :: sorted`). The function-exit
-  dec undoes the inc but doesn't free the transferred ownership ref.
-  The transfer_scope compensating dec on the head-tail arm should
-  handle this, but may not fire due to scrutinee type propagation.
+- [ ] **Sort benchmark RBT leak** (8669 RBT leaked). Root cause:
+  `insert`'s `sorted` param is compiled as `i64` (generic closure
+  convention) instead of `ptr/SEQ`. All Perceus tracking (empty-arm
+  dec, transfer_scope, function-exit dec) is bypassed. Attempted
+  fix (CType upgrade INT→SEQ at compile_function) caused heap
+  corruption: the double-dec (transfer_scope + function-exit) over-
+  freed RBT shared subtrees at the flat→RBT boundary (n≥33).
+  Correct fix: propagate SEQ type through the closure calling
+  convention so `insert`'s param is ptr from the start, or add
+  a callee-side rc_dec for i64 params used as seq case scrutinees
+  with proper inc/dec accounting for RBT structural sharing.
   Repro: `bench/core/sort.yona` with `YONA_ALLOC_STATS=1`.
 
 ### Code Quality — deferred from 2026-04-15 audit

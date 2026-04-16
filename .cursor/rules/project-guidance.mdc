@@ -1,0 +1,33 @@
+---
+description: Core repo guidance for Yona compiler work
+alwaysApply: true
+---
+
+# Yona Compiler Guidance
+
+Use these commands by default:
+- Configure/build: `cmake --preset x64-debug-linux` then `cmake --build --preset build-debug-linux`
+- Tests: `ctest --preset unit-tests-linux` or `./out/build/x64-debug-linux/tests`
+- Format: `./scripts/format.sh`
+- Docs: `python3 scripts/gendocs.py`
+
+Compiler model:
+- Pipeline is Lexer -> Parser -> AST -> LLVM codegen -> native executable
+- New language features usually require coordinated lexer, parser, AST, and codegen updates
+- AST changes must update `include/ast.h`, `include/ast_visitor.h`, and codegen
+- Modules are top-level declarations; exported cross-module generics rely on `.yonai` source metadata
+
+Yona conventions:
+- Do not nest `let`; use multi-binding
+- Do not wrap `do` in `let`
+- Use comma-separated imports and `with` for resources
+- Prefer pure Yona over C whenever the feature does not require syscalls, layout control, foreign bindings, or measured hot-path optimization
+- Prelude types/functions are always available: `Some`, `None`, `Ok`, `Err`, `Linear`, `Iterator`, `foldl`, `foldr`, `identity`, `const`, `flip`, `compose`
+
+Testing and bug handling:
+- Add focused tests when language/runtime behavior changes and follow nearby test patterns
+- If you discover a compiler/runtime bug, append it to `docs/todo-list.md` with a one-line repro and stop to ask which bug to fix next
+
+Memory/runtime notes:
+- Heap objects use reference counting with recursive destructors
+- Closures, ADTs, tuples, sequences, sets, and dicts may carry heap ownership and require correct transfer/drop behavior
