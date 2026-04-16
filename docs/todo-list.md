@@ -144,6 +144,48 @@ None currently tracked.
   codec for a wire format (MessagePack, CBOR, or custom). Foundation for
   distributed Yona (message passing), persistence, and interop.
 
+### Language — Safety & Ownership
+- [ ] **Use-site exhaustiveness for Result/Option** (Gleam-inspired).
+  If a function returns `Result a e` or `Option a`, the call site
+  must either pattern-match both arms or explicitly propagate.
+  Enforced at compile time by the refinement checker — no new syntax
+  needed. The prelude already defines `Result` and `Option`; this
+  adds a rule: "unmatched Result/Option at a call site is a compile
+  error". Prevents silently ignoring errors. ~200 lines in
+  `RefinementChecker`.
+- [ ] **Borrow annotations for read-only parameters** (Rust-inspired).
+  The biggest remaining perf gap vs C: every multi-use heap param
+  pays `rc_inc` at the call site and `rc_dec` at function exit. If
+  the type system could distinguish "reading, not storing" (a
+  borrow), those inc/dec pairs vanish. Start as opt-in annotation
+  (`@borrow` or `&`), enforced by the linearity checker. A borrowed
+  param cannot be stored into a heap structure, returned, or
+  captured — only read. This subsumes the "skip rc_inc for
+  unused/always-transferred params" item from the code-quality
+  audit. Scope: ~500 lines (type annotation + linearity check +
+  codegen skip).
+
+### Language — Architecture & Infrastructure
+- [ ] **Per-task-group arenas** — each task group allocates from a
+  bump arena that's freed wholesale on group completion. Leverages
+  existing arena + escape analysis (`include/EscapeAnalysis.h`) +
+  the structured concurrency plan. Kills the "raise leaks heap
+  values" problem entirely for task groups (no per-object rc_dec
+  needed on unwind — just free the arena). ~300 lines.
+- [ ] **Supervisors as effect handlers** — model Erlang-style
+  supervision trees via the existing algebraic effect system. A
+  supervisor is a `handle ... with` that catches child-task failures
+  and decides restart/escalate/ignore. No compiled functional
+  language has this. Depends on structured concurrency landing first.
+- [ ] **Content-addressed code** (Unison-inspired). Functions
+  identified by hash of their AST, not by name. Enables: perfect
+  caching (same function = same hash = skip recompile), zero-conflict
+  merges, refactoring without breakage. Yona's `.yonai` interface
+  files with GENFN source are already halfway there — they embed
+  source for cross-module monomorphization. Content-addressing would
+  make this principled. Research-phase; significant tooling impact
+  (package manager, LSP, VCS integration).
+
 ### Language — Metaprogramming & Introspection
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
