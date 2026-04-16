@@ -695,10 +695,26 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 
     // Register immediately so recursive calls find this function
+    // ===== Borrow inference (must run BEFORE preliminary cf registration
+    // so recursive calls see the borrow info) =====
+    std::vector<bool> borrowed(def.param_names.size(), false);
+    if (!def.ast->bodies.empty()) {
+        auto* body = def.ast->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+                if (pi >= param_ctypes.size()) continue;
+                if (!is_heap_type(param_ctypes[pi])) continue;
+                if (!has_escaping_use(bwg->expr, def.param_names[pi], true))
+                    borrowed[pi] = true;
+            }
+        }
+    }
+
     CompiledFunction cf_preliminary;
     cf_preliminary.fn = fn;
     cf_preliminary.return_type = preliminary_ret;
     cf_preliminary.param_types = param_ctypes;
+    cf_preliminary.borrowed_params = borrowed;
     cf_preliminary.capture_names = def.free_vars;
     compiled_functions_[name] = cf_preliminary;
     named_values_[name] = {fn, CType::FUNCTION};
@@ -1105,6 +1121,9 @@ Codegen::CompiledFunction Codegen::compile_function(
                     if (pi >= fn->arg_size()) continue;
                     auto* param = fn->getArg(pi);
                     if (param->getType()->isStructTy()) continue;
+                    // Borrow inference: borrowed params don't need rc_dec.
+                    if (pi < borrowed.size() && borrowed[pi])
+                        continue;
                     // transferred_seqs_ tracks SEQ Perceus last-use;
                     // transferred_maps_ tracks SET/DICT callee-owns via
                     // extern ops (see codegen_extern_call).
@@ -1156,6 +1175,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     cf.fn = fn;
     cf.return_type = ret_ctype;
     cf.param_types = param_ctypes;
+    cf.borrowed_params = borrowed;
     cf.capture_names = def.free_vars;
     if (body_tv && ret_ctype == CType::ADT && !body_tv.adt_type_name.empty())
         cf.return_adt_name = body_tv.adt_type_name;

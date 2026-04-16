@@ -707,6 +707,10 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         for (auto& [k, v] : named_values_)
             if (v.val == all_args[ai].val) { named_as = k; break; }
         if (named_as.empty()) continue;  // anonymous → transfer (no inc)
+        // Borrow inference: if the callee borrows this param, no rc_inc
+        // needed — the caller retains ownership and the callee only reads.
+        if (ai < cf.borrowed_params.size() && cf.borrowed_params[ai])
+            continue;
         // For SEQ args, skip the inc when the binding has exactly one
         // textual occurrence in the enclosing function body — that
         // single use is also the last use, so we can transfer.

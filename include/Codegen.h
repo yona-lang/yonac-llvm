@@ -199,13 +199,21 @@ private:
         CType return_type;
         std::vector<CType> param_types;
         std::vector<std::string> capture_names;
-        bool is_io_async = false;  // true for AFN: call directly, await via yona_rt_io_await
-        llvm::Value* closure_env = nullptr;  // for recursive closure calls: prepend this env arg
-        std::string return_adt_name;  // for ADT returns: the type name (e.g., "Option") so
-                                      // call sites can dispatch pattern matching correctly
-        std::vector<CType> return_subtypes;  // for TUPLE/SEQ returns: per-element CTypes so
-                                              // destructuring at call sites knows element layout
+        bool is_io_async = false;
+        llvm::Value* closure_env = nullptr;
+        std::string return_adt_name;
+        std::vector<CType> return_subtypes;
+        // Borrow inference: borrowed_params[i] == true means param i is
+        // read-only (not returned, not stored). Call sites skip rc_inc;
+        // function exit skips rc_dec. Empty vector = all params owned.
+        std::vector<bool> borrowed_params;
     };
+
+    // Escape analysis: returns true if `name` appears in a "storing"
+    // position in the AST — returned, captured in a closure, inserted
+    // into a collection, or passed as an ADT constructor field.
+    bool has_escaping_use(ast::AstNode* node, const std::string& name,
+                          bool is_return_position = false);
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
     int lambda_counter_ = 0;

@@ -166,6 +166,17 @@ TEST_CASE("With expression generates close call") {
     CHECK(ir_contains(ir, "yona_rt_close"));
 }
 
+TEST_CASE("Borrow inference eliminates rc_inc for closure param in foldl") {
+    auto ir = compile_to_ir(
+        "let foldl fn acc seq = case seq of [] -> acc; "
+        "[h|t] -> foldl fn (fn acc h) t end in "
+        "foldl (\\a b -> a + b) 0 [1,2,3]");
+    // fn is borrowed (not returned, not captured) → no rc_inc call
+    // instruction in the foldl function body. The declaration may
+    // still exist, so check for the "call" form specifically.
+    CHECK(!ir_contains(ir, "call void @yona_rt_rc_inc"));
+}
+
 // with expression E2E test is in test/codegen/with_value.yona fixture
 
 TEST_CASE("Function generates internal LLVM function") {

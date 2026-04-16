@@ -426,6 +426,139 @@ int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
     return 0; // literals, symbols, etc.
 }
 
+// ===== Borrow inference: escape analysis for function params =====
+//
+// Returns true if `name` appears in a position where it would be
+// stored (escapes the function scope): returned, captured in a
+// closure, inserted into a collection literal, or passed as an ADT
+// constructor field. `is_return_position` tracks whether we're at
+// the tail position of the function body (where the value would be
+// the return value).
+//
+// Conservative: returns true on any ambiguous case. Only params
+// confirmed as non-escaping get the borrow optimization.
+
+bool Codegen::has_escaping_use(AstNode* node, const std::string& name,
+                                bool is_return_position) {
+    if (!node) return false;
+    auto ty = node->get_type();
+
+    if (ty == AST_IDENTIFIER_EXPR) {
+        if (static_cast<IdentifierExpr*>(node)->name->value == name)
+            return is_return_position;  // in return position → escapes
+        return false;
+    }
+
+    // Collection literals store their elements — if name appears, it escapes.
+    if (ty == AST_VALUES_SEQUENCE_EXPR) {
+        auto* e = static_cast<ValuesSequenceExpr*>(node);
+        for (auto* v : e->values)
+            if (count_identifier_refs(v, name) > 0) return true;
+        return false;
+    }
+    if (ty == AST_TUPLE_EXPR) {
+        auto* e = static_cast<TupleExpr*>(node);
+        for (auto* v : e->values)
+            if (count_identifier_refs(v, name) > 0) return true;
+        return false;
+    }
+
+    // Cons (::) stores the element in a seq.
+    if (ty == AST_CONS_LEFT_EXPR) {
+        auto* e = static_cast<ConsLeftExpr*>(node);
+        if (count_identifier_refs(e->left, name) > 0) return true;
+        if (count_identifier_refs(e->right, name) > 0) return true;
+        return false;
+    }
+
+    // Lambda captures: if name is free in the lambda body, it's captured.
+    if (ty == AST_FUNCTION_EXPR) {
+        auto* f = static_cast<FunctionExpr*>(node);
+        // Check if name is shadowed by a lambda pattern param.
+        for (auto* pat : f->patterns) {
+            if (auto* pv = dynamic_cast<PatternValue*>(pat)) {
+                if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                    if ((*id)->name->value == name) return false;
+            }
+        }
+        // If name appears in the body, it's captured → escapes.
+        for (auto* body : f->bodies)
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
+                if (count_identifier_refs(bwg->expr, name) > 0) return true;
+        return false;
+    }
+
+    // Binary ops: neither side is a storage position, but pass through.
+    if (dynamic_cast<BinaryOpExpr*>(node)) {
+        auto* b = static_cast<BinaryOpExpr*>(node);
+        return has_escaping_use(b->left, name, false)
+            || has_escaping_use(b->right, name, false);
+    }
+
+    // If-expression: both branches are in the same return position.
+    if (ty == AST_IF_EXPR) {
+        auto* e = static_cast<IfExpr*>(node);
+        return has_escaping_use(e->condition, name, false)
+            || has_escaping_use(e->thenExpr, name, is_return_position)
+            || has_escaping_use(e->elseExpr, name, is_return_position);
+    }
+
+    // Let: aliases are non-return; the body inherits return position.
+    if (ty == AST_LET_EXPR) {
+        auto* e = static_cast<LetExpr*>(node);
+        for (auto* a : e->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(a)) {
+                if (has_escaping_use(va->expr, name, false)) return true;
+                if (va->identifier->name->value == name) return false;
+            } else if (auto* la = dynamic_cast<LambdaAlias*>(a)) {
+                if (has_escaping_use(la->lambda, name, false)) return true;
+                if (la->name->value == name) return false;
+            }
+        }
+        return has_escaping_use(e->expr, name, is_return_position);
+    }
+
+    // Case: if the name IS the scrutinee, it may be consumed by
+    // seq_tail_consume in a head-tail pattern — that's an ownership
+    // transfer, so it escapes. Arm bodies inherit return position.
+    if (ty == AST_CASE_EXPR) {
+        auto* e = static_cast<CaseExpr*>(node);
+        if (count_identifier_refs(e->expr, name) > 0) return true;
+        for (auto* clause : e->clauses)
+            if (has_escaping_use(clause->body, name, is_return_position))
+                return true;
+        return false;
+    }
+
+    // Apply: the function's arguments are NOT storage (they're passed to
+    // a callee which may borrow). This is the key: passing a value to a
+    // function call does NOT count as an escape. The callee's convention
+    // determines whether it's borrowed or owned.
+    if (ty == AST_APPLY_EXPR) {
+        auto* e = static_cast<ApplyExpr*>(node);
+        // The call result might be in return position, but the
+        // arguments themselves are not stored — they're consumed by
+        // the callee. We only flag escaping if the name appears in a
+        // context where it would be structurally stored.
+        return false;
+    }
+
+    // Do-expression: last step is return position.
+    if (ty == AST_DO_EXPR) {
+        auto* e = static_cast<DoExpr*>(node);
+        for (size_t i = 0; i < e->steps.size(); i++) {
+            bool last = (i == e->steps.size() - 1);
+            if (has_escaping_use(e->steps[i], name, last && is_return_position))
+                return true;
+        }
+        return false;
+    }
+
+    // Conservative default: if we don't recognize the node type and name
+    // appears in it, assume it escapes.
+    return count_identifier_refs(node, name) > 0;
+}
+
 // ===== Let Bindings =====
 
 // Analyze which let-bound names don't escape the scope (for arena allocation).

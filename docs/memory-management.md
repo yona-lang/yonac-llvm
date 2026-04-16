@@ -10,6 +10,10 @@ uses **reference counting** with several optimizations:
 - **Recursive destructors** for all container types
 - **Perceus-linear callee-owns ABI** for seqs, sets, and dicts —
   last-use args transferred without a DUP, callees consume on path-copy
+- **Automatic borrow inference** — non-escaping heap params (not
+  returned, not captured, not stored) skip rc_inc at the call site
+  and rc_dec at function exit. Eliminates refcount overhead for
+  closure params in HOFs (foldl, map, filter)
 - **Per-branch transfer_scope** (if + case arms) — asymmetric
   transfers emit compensating rc_decs only on branches that didn't
   transfer, with SSA dominance preserved by snapshotting pre_blocks
