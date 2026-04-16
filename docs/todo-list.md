@@ -185,6 +185,27 @@ None currently tracked.
   make this principled. Research-phase; significant tooling impact
   (package manager, LSP, VCS integration).
 
+### Language — GPU / Heterogeneous Compute
+- [ ] **Std\GPU module** (pragmatic first step). Explicit GPU dispatch
+  for FloatArray/IntArray operations:
+  `reduceGPU (\a b -> a + b) 0.0 (mapGPU (\x -> x * x) arr)`.
+  Implemented as Vulkan compute shaders compiled from SPIR-V at build
+  time. ~500 lines runtime (Vulkan init, buffer management, dispatch)
+  + ~200 lines codegen (emit SPIR-V for the lambda). No new syntax.
+  Yona is uniquely suited: (1) no aliasing — persistent data structures
+  guarantee no data races by construction, (2) effect tracking — pure
+  functions are GPU-eligible without annotation, (3) unboxed arrays
+  (IntArray/FloatArray) are contiguous with no per-element headers —
+  zero-copy GPU upload, (4) LTO infrastructure extends naturally to
+  GPU kernel extraction.
+- [ ] **Transparent GPU lowering** (future). Compiler automatically
+  lowers FloatArray.map/foldl to GPU when the array is large enough
+  and the lambda is pure. Transparent, like Yona's transparent async.
+  Inspired by: Halide (algorithm/schedule separation — effects as
+  schedules), Julia (@cuda JIT specialization — maps to Yona's
+  deferred compilation), ArrayFire/Accelerate (combinator fusion →
+  GPU dispatch — maps to Yona's stream fusion).
+
 ### Language — Metaprogramming & Introspection
 - [ ] **Multi-Stage Programming** — compile-time computation.
   `static regex_compile pattern = ...` compiles regex at build time.
