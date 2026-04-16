@@ -360,6 +360,11 @@ static rbt_t* flat_to_rbt_for_snoc(int64_t* flat, int64_t elem) {
 
 /* ===== Cons (prepend) — O(1) amortized ===== */
 
+/* Callee-borrows: seq's refcount is NOT modified. The codegen is
+ * responsible for managing the input's lifetime — it emits rc_dec
+ * for anonymous intermediates after cons returns. This preserves the
+ * unique-owner (rc==1) in-place mutation path which is critical for
+ * foldl+cons patterns (e.g. reverse, build). */
 int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
     int64_t len = seq[0];
 
@@ -410,20 +415,7 @@ int64_t* yona_rt_seq_cons(int64_t elem, int64_t* seq) {
         return (int64_t*)nr;
     }
 
-    /* Head_buf full: chain it into head_next (1/32 cons calls).
-     *
-     * c->next takes the old r->head_next. Whether we need to rc_inc that
-     * old chunk depends on whether r survives:
-     *  - Unique path: we mutate r and set r->head_next = c. Ownership of
-     *    the old head_next transfers from r to c (via c->next); rc stays
-     *    the same, so NO rc_inc.
-     *  - Non-unique path: r is kept and nr is allocated. Both nr (via
-     *    c->next) and the original r reference the old head_next; we
-     *    need rc_inc so both owners are counted.
-     *
-     * Previously this always rc_inc'd, which leaked one ref on every
-     * chunk in every build (~1 leak per 32 cons operations). Observed
-     * as the RBT_CHUNK leak in bench/collections/list_sum. */
+    /* Head_buf full: chain it into head_next (1/32 cons calls). */
     rbt_chunk_t* c = chunk_alloc();
     c->count = r->head_cnt;
     memcpy(c->elems, r->head_buf, (size_t)r->head_cnt * sizeof(int64_t));
@@ -612,6 +604,7 @@ int64_t* yona_rt_seq_tail_consume(int64_t* seq) {
 
 /* ===== Snoc (append) — O(1) amortized ===== */
 
+/* Callee-borrows (same as cons). */
 int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem) {
     int64_t len = seq[0];
 
@@ -662,6 +655,7 @@ int64_t* yona_rt_seq_snoc(int64_t* seq, int64_t elem) {
 
 /* ===== Join (concat) — O(n) ===== */
 
+/* Callee-borrows (same as cons). */
 int64_t* yona_rt_seq_join(int64_t* a, int64_t* b) {
     int64_t la = yona_rt_seq_length(a), lb = yona_rt_seq_length(b);
     if (la == 0) return b;

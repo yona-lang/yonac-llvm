@@ -240,6 +240,32 @@ TypedValue Codegen::codegen_cons(ConsLeftExpr* node) {
     if (seq_ptr->getType()->isIntegerTy())
         seq_ptr = builder_->CreateIntToPtr(seq_ptr, PointerType::get(*context_, 0));
     auto* result = builder_->CreateCall(rt_.seq_cons_, {elem_val, seq_ptr}, "cons");
+    // Perceus: seq_cons is callee-borrows (preserves unique-owner
+    // in-place path). For ANONYMOUS intermediate seqs (expression
+    // results with no named binding), the cons result replaces the
+    // intermediate — emit rc_dec on the old seq when cons copied
+    // (result != input). Named bindings are managed by function-exit
+    // cleanup; anonymous temporaries have no other cleanup path.
+    if (seq.type == CType::SEQ && seq.val && !isa<Constant>(seq.val)
+        && !seq.val->getType()->isStructTy()) {
+        bool is_named = false;
+        for (auto& [k, v] : named_values_)
+            if (v.val == seq.val) { is_named = true; break; }
+        if (!is_named) {
+            // Anonymous: cons may have copied. Emit conditional dec.
+            auto* ptr_ty = PointerType::get(*context_, 0);
+            auto* is_same = builder_->CreateICmpEQ(result, seq_ptr, "cons_inplace");
+            auto* dec_bb = BasicBlock::Create(*context_, "cons.dec",
+                builder_->GetInsertBlock()->getParent());
+            auto* cont_bb = BasicBlock::Create(*context_, "cons.cont",
+                builder_->GetInsertBlock()->getParent());
+            builder_->CreateCondBr(is_same, cont_bb, dec_bb);
+            builder_->SetInsertPoint(dec_bb);
+            emit_rc_dec(seq_ptr, CType::SEQ);
+            builder_->CreateBr(cont_bb);
+            builder_->SetInsertPoint(cont_bb);
+        }
+    }
     // Mark the new seq as containing heap elements so the destructor walks
     // and frees them. yona_rt_seq_cons inherits the source seq's heap_flag,
     // but on `x :: []` the right side is empty with heap_flag=0, so we
