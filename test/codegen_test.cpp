@@ -248,6 +248,94 @@ TEST_CASE("Fixture-based codegen tests") {
 
 } // Codegen E2E
 
+// ===== Perceus exception cleanup (phase 3) =====
+//
+// Verifies that when `raise` unwinds past frames that own heap values
+// (seq/set/dict/etc.), those values are rc_dec'd rather than leaked.
+// The fixture perceus_raise_no_leak.yona raises mid-recursion inside
+// a try/catch; without phase-3 cleanup, each intermediate `acc` binding
+// leaks one SEQ on the raise path.
+//
+// We compile the fixture, link it the same way the E2E suite does, run
+// it with YONA_ALLOC_STATS=1, and parse stderr for `leaked=N` on each
+// type tag. All must be zero.
+
+TEST_SUITE("PerceusExceptionCleanup") {
+
+TEST_CASE("raise through heap-owning frames does not leak") {
+    // Reuse the E2E fixture by running the full compile-link pipeline
+    // with YONA_ALLOC_STATS=1 and capturing stderr.
+    fs::path fixtures_dir;
+    for (auto& dir : {"test/codegen", "../test/codegen", "../../test/codegen"}) {
+        if (fs::exists(dir) && fs::is_directory(dir)) {
+            fixtures_dir = dir; break;
+        }
+    }
+    REQUIRE(!fixtures_dir.empty());
+    string source = read_file(fixtures_dir / "perceus_raise_no_leak.yona");
+    REQUIRE(!source.empty());
+
+    // Compile + link (duplicates compile_and_run's skeleton to add env)
+    parser::Parser parser;
+    Codegen codegen("perceus_raise_test");
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
+    }
+    DiagnosticEngine tc_diag;
+    typechecker::TypeChecker type_checker(tc_diag);
+    codegen.load_prelude(&parser, &type_checker);
+    istringstream stream(source);
+    auto pr = parser.parse_input(stream);
+    REQUIRE(pr.node);
+    type_checker.check(pr.node.get());
+    REQUIRE(!type_checker.has_direct_errors());
+    auto module = codegen.compile(pr.node.get());
+    REQUIRE(module);
+
+    string obj_path = "/tmp/yona_perceus_raise.o";
+    REQUIRE(codegen.emit_object_file(obj_path));
+
+    // Reuse runtime obj that compile_and_run built (always re-link).
+    string rt_path = "/tmp/compiled_runtime_test.o";
+    REQUIRE(fs::exists(rt_path));
+    string exe_path = "/tmp/yona_perceus_raise";
+    string link_cmd = "cc " + obj_path + " " + rt_path +
+                      " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    // Run with YONA_ALLOC_STATS=1. Stderr contains the stats lines;
+    // stdout contains the Yona-printed result.
+    string cmd = "YONA_ALLOC_STATS=1 " + exe_path + " 2>&1";
+    array<char, 512> buf;
+    string combined;
+    FILE* pipe = popen(cmd.c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buf.data(), buf.size(), pipe)) combined += buf.data();
+    pclose(pipe);
+
+    INFO("Full output:\n" << combined);
+    // Check that the program produced output (didn't crash).
+    // Note: the try/catch result printer has a known issue with
+    // mismatched types; we verify correctness via the E2E fixture
+    // and leak-freedom via alloc_stats below.
+    CHECK(combined.find("alloc-stats") != string::npos);
+
+    // Any `leaked=N` with N>0 fails the test.
+    size_t pos = 0;
+    while ((pos = combined.find("leaked=", pos)) != string::npos) {
+        pos += 7;
+        size_t end = pos;
+        while (end < combined.size() && isdigit((unsigned char)combined[end])) end++;
+        string n = combined.substr(pos, end - pos);
+        CHECK_MESSAGE(n == "0",
+            "Found leaked=" << n << " in alloc stats — raise unwind is not "
+            "releasing heap-owning frames. Output:\n" << combined);
+        pos = end;
+    }
+}
+
+} // PerceusExceptionCleanup
+
 // ===== Module Compilation Tests =====
 
 TEST_SUITE("Codegen Modules") {

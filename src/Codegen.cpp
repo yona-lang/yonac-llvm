@@ -453,6 +453,13 @@ void Codegen::declare_runtime() {
     auto setjmp_fn = decl("setjmp", i32, {ptr});
     setjmp_fn->addFnAttr(llvm::Attribute::ReturnsTwice);
     rt_.raise_->addFnAttr(llvm::Attribute::NoReturn);
+
+    // Perceus phase 3: frame-scoped heap cleanup on raise. See
+    // src/runtime/exceptions.c for the runtime layout.
+    rt_.frame_push_     = decl("yona_rt_frame_push", vd, {ptr});
+    rt_.frame_pop_      = decl("yona_rt_frame_pop", vd, {ptr});
+    rt_.frame_transfer_ = decl("yona_rt_frame_transfer", vd, {ptr});
+    rt_.try_depth_      = decl("yona_rt_try_depth", i32, {});
 }
 
 void Codegen::report_error(const SourceLocation& loc, const std::string& message) {

@@ -495,8 +495,10 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
         bool a0_map = (a0 == CType::SET || a0 == CType::DICT);
         bool ret_map = (ret_ctype == CType::SET || ret_ctype == CType::DICT);
         if (a0_map && ret_map) {
-            if (all_args[0].val && !isa<Constant>(all_args[0].val))
+            if (all_args[0].val && !isa<Constant>(all_args[0].val)) {
                 transferred_maps_.insert(all_args[0].val);
+                emit_frame_transfer(all_args[0].val);
+            }
         }
     }
 
@@ -712,6 +714,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
             int uses = count_identifier_refs(current_fn_body_, named_as);
             if (uses <= 1) {
                 transferred_seqs_.insert(all_args[ai].val);
+                emit_frame_transfer(all_args[ai].val);
                 continue;
             }
         }
@@ -722,6 +725,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
             int uses = count_identifier_refs(current_fn_body_, named_as);
             if (uses <= 1) {
                 transferred_maps_.insert(all_args[ai].val);
+                emit_frame_transfer(all_args[ai].val);
                 continue;
             }
         }
@@ -900,6 +904,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                 transferred_seqs_.insert(all_args[ai].val);
             else
                 transferred_maps_.insert(all_args[ai].val);
+            emit_frame_transfer(all_args[ai].val);
         }
     }
 

@@ -240,6 +240,16 @@ private:
     // transfer_scope logic — it only suppresses the function-exit DROP.
     std::unordered_set<llvm::Value*> transferred_maps_;
 
+    // Perceus phase 3: stack-allocated yona_frame_t for the function
+    // currently being compiled (nullptr when the fn has no heap params).
+    // Transfer sites emit yona_rt_frame_transfer(ptr) to NULL the drop
+    // slot so a raise-unwind doesn't double-dec something a callee now
+    // owns. Saved/restored around nested compile_function calls.
+    llvm::Value* current_frame_alloca_ = nullptr;
+    llvm::StructType* yona_frame_ty_ = nullptr;
+    llvm::StructType* get_frame_type();
+    void emit_frame_transfer(llvm::Value* ptr);
+
     // The body AST of the function currently being compiled. Used by
     // codegen_pattern_headtail for single-use scrutinee detection (the
     // Perceus-linear owned-scrutinee fast path).
@@ -438,6 +448,9 @@ private:
         // Exceptions
         llvm::Function *try_begin_ = nullptr, *try_end_ = nullptr, *raise_ = nullptr,
             *get_exc_sym_ = nullptr, *get_exc_msg_ = nullptr;
+        // Perceus phase 3: frame-scoped heap cleanup on raise unwind
+        llvm::Function *frame_push_ = nullptr, *frame_pop_ = nullptr,
+            *frame_transfer_ = nullptr, *try_depth_ = nullptr;
         // Closures
         llvm::Function *closure_create_ = nullptr, *closure_set_cap_ = nullptr,
             *closure_get_cap_ = nullptr, *closure_set_heap_mask_ = nullptr,

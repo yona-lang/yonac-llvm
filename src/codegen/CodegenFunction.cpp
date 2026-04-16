@@ -19,8 +19,44 @@ namespace yona::compiler::codegen {
 static constexpr int CLOSURE_FIELD_FN = 0;      // fn_ptr
 static constexpr int CLOSURE_FIELD_ARITY = 2;   // arity
 static constexpr int CLOSURE_HDR_SIZE = 5;       // fn_ptr, ret_type, arity, num_captures, heap_mask
+
+// Perceus phase 3: match YONA_MAX_FRAME_DROPS in src/runtime/exceptions.c
+static constexpr int YONA_MAX_FRAME_DROPS = 16;
+
 using namespace llvm;
 using LType = llvm::Type;
+
+// Layout must match yona_frame_t in src/runtime/exceptions.c:
+//   struct yona_frame { yona_frame* prev; int drop_count; int pad;
+//                       void* drops[YONA_MAX_FRAME_DROPS]; }
+StructType* Codegen::get_frame_type() {
+    if (yona_frame_ty_) return yona_frame_ty_;
+    auto* ptr_ty = PointerType::get(*context_, 0);
+    auto* i32_ty = LType::getInt32Ty(*context_);
+    auto* drops_arr_ty = ArrayType::get(ptr_ty, YONA_MAX_FRAME_DROPS);
+    yona_frame_ty_ = StructType::create(*context_,
+        {ptr_ty, i32_ty, i32_ty, drops_arr_ty},
+        "yona_frame_t");
+    return yona_frame_ty_;
+}
+
+// Emit a yona_rt_frame_transfer(ptr) call — no-op unless the ptr is in
+// the currently active frame's drops. Safe to call unconditionally from
+// any transfer site; the runtime does a bounded linear scan.
+void Codegen::emit_frame_transfer(Value* ptr) {
+    // Only emit when the current function has a frame (non-TCO function
+    // with heap params). Most hot-path functions (foldl, map, filter)
+    // are TCO and skip frame setup, so this is a no-op for them.
+    if (!current_frame_alloca_ || !rt_.frame_transfer_ || !ptr) return;
+    if (!builder_->GetInsertBlock()) return;
+    auto* ptr_ty = PointerType::get(*context_, 0);
+    Value* arg = ptr;
+    if (arg->getType()->isIntegerTy())
+        arg = builder_->CreateIntToPtr(arg, ptr_ty);
+    else if (!arg->getType()->isPointerTy())
+        return;
+    builder_->CreateCall(rt_.frame_transfer_, {arg});
+}
 
 // Forward declarations for type annotation support
 static CType yona_type_to_ctype(const types::Type& t) {
@@ -789,7 +825,6 @@ Codegen::CompiledFunction Codegen::compile_function(
     // If found, we'll move RC cleanup before the call so LLVM TCE works.
     bool has_self_tail_call = false;
     {
-        // Scan AST: is the body (or a case/if branch) a call to this function?
         std::function<bool(AstNode*)> check_tail = [&](AstNode* n) -> bool {
             if (!n) return false;
             if (n->get_type() == AST_APPLY_EXPR) {
@@ -814,6 +849,87 @@ Codegen::CompiledFunction Codegen::compile_function(
             auto* body = def.ast->bodies[0];
             if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body))
                 has_self_tail_call = check_tail(bwg->expr);
+        }
+    }
+
+    // ===== Perceus phase 3: frame setup =====
+    // If this function has any heap-typed pointer params, alloca a
+    // yona_frame_t on the entry block, fill in its drops[] with the
+    // param pointers, and push it onto the thread-local frame chain.
+    // A raise unwinding past this frame's return will rc_dec all
+    // still-live drops. Transfers (single-use arg consumed by callee)
+    // NULL their slot via yona_rt_frame_transfer so we don't double-dec.
+    auto saved_frame_alloca = current_frame_alloca_;
+    current_frame_alloca_ = nullptr;
+    {
+        std::vector<Value*> heap_param_ptrs;
+        auto* ptr_ty = PointerType::get(*context_, 0);
+        for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+            if (pi >= param_ctypes.size()) continue;
+            CType ct = param_ctypes[pi];
+            if (!is_heap_type(ct)) continue;
+            if (pi >= fn->arg_size()) continue;
+            auto* param = fn->getArg(pi);
+            if (param->getType()->isStructTy()) continue;
+            if (!param->getType()->isPointerTy() && !param->getType()->isIntegerTy()) continue;
+            Value* p = param;
+            if (p->getType()->isIntegerTy())
+                p = builder_->CreateIntToPtr(p, ptr_ty);
+            heap_param_ptrs.push_back(p);
+        }
+        // Skip frame setup for TCO functions: LLVM's TailCallElimination
+        // converts tail calls into loops and moves non-alloca instructions
+        // (stores + push) into the loop header, causing re-push per
+        // iteration. TCO + raise is rare; those params leak on unwind.
+        if (!heap_param_ptrs.empty()
+            && heap_param_ptrs.size() <= (size_t)YONA_MAX_FRAME_DROPS
+            && builder_->GetInsertBlock()
+            && !has_self_tail_call) {
+            auto* i32_ty = LType::getInt32Ty(*context_);
+            auto* i64_ty = LType::getInt64Ty(*context_);
+            // Zero-cost when no try block is active: check the TLS
+            // depth flag and skip all frame work on the fast path.
+            // Only emit the frame alloca, stores, and push when
+            // depth > 0 (inside a try). This keeps the hot path at
+            // one TLS load + one branch (well-predicted taken).
+            auto* depth_global = module_->getOrInsertGlobal(
+                "yona_try_depth", i32_ty);
+            if (auto* gv = dyn_cast<GlobalVariable>(depth_global)) {
+                gv->setThreadLocal(true);
+                gv->setThreadLocalMode(GlobalVariable::InitialExecTLSModel);
+            }
+            auto* depth = builder_->CreateLoad(i32_ty, depth_global, "try_depth");
+            auto* in_try = builder_->CreateICmpSGT(depth,
+                ConstantInt::get(i32_ty, 0), "in_try");
+            auto* entry_end_bb = builder_->GetInsertBlock();
+            auto* frame_setup_bb = BasicBlock::Create(*context_, "frame.setup", fn);
+            auto* frame_cont_bb = BasicBlock::Create(*context_, "frame.cont", fn);
+            builder_->CreateCondBr(in_try, frame_setup_bb, frame_cont_bb);
+
+            // Cold path: allocate frame on stack, fill drops, push.
+            builder_->SetInsertPoint(frame_setup_bb);
+            auto* frame_ty = get_frame_type();
+            auto* drops_arr_ty = ArrayType::get(ptr_ty, YONA_MAX_FRAME_DROPS);
+            auto* frame = builder_->CreateAlloca(frame_ty, nullptr, "yona_frame");
+            auto* dc_gep = builder_->CreateStructGEP(frame_ty, frame, 1);
+            builder_->CreateStore(ConstantInt::get(i32_ty,
+                (int32_t)heap_param_ptrs.size()), dc_gep);
+            auto* drops_base = builder_->CreateStructGEP(frame_ty, frame, 3);
+            for (size_t idx = 0; idx < heap_param_ptrs.size(); idx++) {
+                auto* slot = builder_->CreateConstInBoundsGEP2_32(
+                    drops_arr_ty, drops_base, 0, (unsigned)idx);
+                builder_->CreateStore(heap_param_ptrs[idx], slot);
+            }
+            builder_->CreateCall(rt_.frame_push_, {frame});
+            builder_->CreateBr(frame_cont_bb);
+
+            // Merge: PHI selects between frame (cold) and null (hot).
+            // frame_pop is a no-op when ptr is null.
+            builder_->SetInsertPoint(frame_cont_bb);
+            auto* frame_phi = builder_->CreatePHI(ptr_ty, 2, "frame_ptr");
+            frame_phi->addIncoming(frame, frame_setup_bb);
+            frame_phi->addIncoming(Constant::getNullValue(ptr_ty), entry_end_bb);
+            current_frame_alloca_ = frame_phi;
         }
     }
 
@@ -870,7 +986,10 @@ Codegen::CompiledFunction Codegen::compile_function(
         }
 
         if (body_tv.val->getType() != ret_type) {
-            // Remove the function and recreate with correct return type
+            // Remove the function and recreate with correct return type.
+            // Phase 3: the frame alloca lives in the old fn's entry block;
+            // erasing the fn destroys it. Must nullptr before erase.
+            current_frame_alloca_ = nullptr;
             fn->eraseFromParent();
             auto new_fn_type = llvm::FunctionType::get(body_tv.val->getType(), param_types, false);
             fn = Function::Create(new_fn_type, Function::InternalLinkage, name, module_.get());
@@ -1015,11 +1134,16 @@ Codegen::CompiledFunction Codegen::compile_function(
                     }
                 }
             }
+            if (current_frame_alloca_)
+                builder_->CreateCall(rt_.frame_pop_, {current_frame_alloca_});
             builder_->CreateRet(body_tv.val);
         }
     } else {
-        if (!builder_->GetInsertBlock()->getTerminator())
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            if (current_frame_alloca_)
+                builder_->CreateCall(rt_.frame_pop_, {current_frame_alloca_});
             builder_->CreateRet(Constant::getNullValue(ret_type));
+        }
     }
 
     // Restore
@@ -1052,6 +1176,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     // out to the enclosing scope's transfer tracking.
     transferred_seqs_ = saved_transferred;
     transferred_maps_ = saved_transferred_maps;
+    current_frame_alloca_ = saved_frame_alloca;
     return cf;
 }
 

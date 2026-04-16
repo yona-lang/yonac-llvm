@@ -115,6 +115,10 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
 
         llvm::Value* tv;
         if (owned) {
+            // Phase 3: mark the scrutinee transferred in any active frame
+            // BEFORE the runtime consume so a raise during the consume
+            // (shouldn't happen, but defensive) doesn't double-dec.
+            emit_frame_transfer(seq_ptr);
             tv = builder_->CreateCall(rt_.seq_tail_consume_, {seq_ptr});
             // Mark the scrutinee Value as transferred so downstream scope
             // cleanups (let scope exit, function exit) skip its rc_dec.
@@ -159,6 +163,7 @@ bool Codegen::codegen_pattern_seq(SeqPattern* sp, const TypedValue& scrutinee,
             !scrutinee.val->getType()->isStructTy()) {
             auto saved_ip = builder_->saveIP();
             builder_->SetInsertPoint(body_bb);
+            emit_frame_transfer(scrutinee.val);
             emit_rc_dec(scrutinee.val, CType::SEQ);
             builder_->restoreIP(saved_ip);
             // Mark the scrutinee as already-drained on this path so the
