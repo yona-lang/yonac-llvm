@@ -57,7 +57,14 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 ## Remaining Work
 
 ### Bugs
-None currently tracked.
+- [ ] **Sort benchmark RBT leak** (8669 RBT leaked, 244 SEQ, 264
+  RBT_CHUNK). `insert x sorted` receives `sorted` via Perceus
+  transfer (single-use, no caller inc) but inc's it for multi-use
+  in the body (case scrutinee + `x :: sorted`). The function-exit
+  dec undoes the inc but doesn't free the transferred ownership ref.
+  The transfer_scope compensating dec on the head-tail arm should
+  handle this, but may not fire due to scrutinee type propagation.
+  Repro: `bench/core/sort.yona` with `YONA_ALLOC_STATS=1`.
 
 ### Code Quality — deferred from 2026-04-15 audit
 - [ ] **O(1) transfer_scope BB detection** — a true O(1) replacement
