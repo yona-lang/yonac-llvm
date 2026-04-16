@@ -4,7 +4,7 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1253 assertions across 208 test cases (all passing)
+- **Tests**: 1258 assertions across 209 test cases (all passing)
 - **Benchmarks**: 34/34 passing (rerun 2026-04-16, LLVM 22, 10 iters at -O2)
 - **Stdlib**: ~37 modules (non-blocking Std\IO, Std\Stream, Std\Constants\{Num,Math,Platform}, Std\Channel, Std\Task)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
@@ -12,44 +12,43 @@
 
 ## Benchmark Results
 
-Rerun on LLVM 22, 2026-04-16, 10 iterations, post-Perceus phase 3
-(exception-safe frame cleanup). Startup-adjusted times; sorted by
-Yona/C ratio.
+Rerun on LLVM 22, 2026-04-16, 10 iterations, post-borrow-inference.
+Startup-adjusted times; sorted by Yona/C ratio.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| sum_squares | 0.01ms | 0.02ms | **0.5x** | 2.4 | 2.2 |
-| par_map | 0.01ms | 0.26ms | **0.0x** | 2.4 | 2.4 |
-| file_read | 0.24ms | 0.26ms | **0.9x** | 3.6 | 3.3 |
-| seq_map | 0.01ms | 0.01ms | **1.0x** | 2.4 | 2.1 |
-| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.5 |
+| int_array_fill_sum | 0.01ms | 0.05ms | **0.2x** | 2.6 | 2.3 |
+| sum_squares | 0.01ms | 0.01ms | **0.8x** | 2.4 | 2.2 |
+| file_read | 0.23ms | 0.27ms | **0.9x** | 3.5 | 3.3 |
+| par_map | 0.01ms | 0.23ms | **~0x** | 2.4 | 2.4 |
+| seq_map | 0.01ms | 0.01ms | **1.0x** | 2.4 | 2.2 |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.3 |
 | sequential_async | 401ms | 401ms | **1.0x** | 2.8 | 2.2 |
-| tak | 73ms | 68ms | 1.1x | 2.3 | 2.1 |
-| process_exec | 0.65ms | 0.58ms | 1.1x | 3.9 | 3.9 |
-| binary_read_chunks | 0.28ms | 0.23ms | 1.2x | 2.5 | 2.3 |
-| binary_write_read | 3.1ms | 2.5ms | 1.2x | 12.4 | 7.3 |
-| list_map_filter | 0.31ms | 0.23ms | 1.3x | 3.3 | 3.1 |
-| channel_pipeline | 0.74ms | 0.44ms | 1.7x | 3.2 | 2.3 |
-| channel_fanin | 1.1ms | 0.64ms | 1.7x | 3.3 | 2.4 |
-| channel_throughput | 1.2ms | 0.83ms | 1.5x | 3.5 | 2.2 |
-| file_parallel_read | 0.59ms | 0.36ms | 1.6x | 6.0 | 5.4 |
-| int_array_fill_sum | 0.03ms | 0.02ms | 2.0x | 2.6 | 2.3 |
-| file_write_read | 0.88ms | 0.38ms | 2.3x | 4.8 | 3.2 |
-| fibonacci | 16ms | 6.0ms | 2.5x | 2.4 | 2.2 |
-| ackermann | 174ms | 66ms | 2.6x | 2.7 | 2.4 |
-| list_sum | 0.39ms | 0.13ms | 3.1x | 3.2 | 2.6 |
-| file_write_read_large | 46ms | 15ms | 3.2x | 107 | 2.3 |
-| list_reverse | 0.48ms | 0.14ms | 3.5x | 3.2 | 2.6 |
-| file_readlines_large | 54ms | 15ms | 3.6x | 2.5 | 2.2 |
-| file_read_large | 13ms | 2.6ms | 4.6x | 55 | 2.3 |
-| set_build | 1.0ms | 0.18ms | 5.8x | 3.6 | 2.3 |
-| dict_build | 1.0ms | 0.17ms | 6.0x | 3.5 | 2.5 |
-| file_parallel_read_large | 7.8ms | 0.91ms | 8.5x | 37 | 2.4 |
-| queens | 19ms | 2.0ms | 8.8x | 2.4 | 2.2 |
-| sieve | 0.35ms | 0.03ms | 10.4x | 3.0 | 2.2 |
-| sort | 0.97ms | 0.07ms | 13.3x | 7.9 | 2.2 |
-| int_array_map | 1.5ms | 0.06ms | 23.5x | 3.3 | 2.4 |
-| int_array_sum | 1.5ms | 0.04ms | 37.5x | 3.3 | 2.3 |
+| tak | 73ms | 66ms | 1.1x | 2.4 | 2.2 |
+| process_exec | 0.69ms | 0.58ms | 1.2x | 3.9 | 4.0 |
+| list_map_filter | 0.30ms | 0.25ms | 1.2x | 3.3 | 3.1 |
+| binary_read_chunks | 0.28ms | 0.22ms | 1.3x | 2.5 | 2.3 |
+| binary_write_read | 3.1ms | 2.5ms | 1.2x | 12.5 | 7.3 |
+| channel_throughput | 1.2ms | 0.86ms | 1.4x | 3.5 | 2.2 |
+| channel_pipeline | 0.76ms | 0.50ms | 1.5x | 3.2 | 2.3 |
+| channel_fanin | 1.1ms | 0.67ms | 1.6x | 3.3 | 2.4 |
+| file_parallel_read | 0.59ms | 0.34ms | 1.7x | 6.0 | 5.5 |
+| file_write_read | 0.84ms | 0.39ms | 2.2x | 4.8 | 3.2 |
+| list_sum | 0.34ms | 0.14ms | 2.4x | 3.1 | 2.6 |
+| fibonacci | 16ms | 6.3ms | 2.5x | 2.4 | 2.2 |
+| ackermann | 178ms | 66ms | 2.7x | 2.5 | 2.4 |
+| list_reverse | 0.48ms | 0.17ms | 2.9x | 3.1 | 2.6 |
+| file_write_read_large | 49ms | 15ms | 3.4x | 107 | 2.3 |
+| file_readlines_large | 53ms | 15ms | 3.5x | 2.6 | 2.1 |
+| file_read_large | 13ms | 2.4ms | 5.1x | 55 | 2.3 |
+| sieve | 0.39ms | 0.07ms | 6.1x | 3.1 | 2.1 |
+| dict_build | 0.98ms | 0.16ms | 6.3x | 3.6 | 2.4 |
+| set_build | 1.1ms | 0.15ms | 7.2x | 3.6 | 2.3 |
+| file_parallel_read_large | 8.0ms | 1.0ms | 7.8x | 37 | 2.4 |
+| queens | 18ms | 2.1ms | 8.5x | 2.4 | 2.2 |
+| sort | 1.0ms | 0.05ms | 18.8x | 7.9 | 2.2 |
+| int_array_map | 1.5ms | 0.06ms | 27.6x | 3.3 | 2.4 |
+| int_array_sum | 1.6ms | 0.04ms | 36.3x | 3.3 | 2.3 |
 
 Full multi-language matrix in [benchmark-results.md](./benchmark-results.md).
 Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
