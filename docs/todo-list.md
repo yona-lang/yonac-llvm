@@ -58,16 +58,22 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 
 ### Bugs
 - [ ] **Sort benchmark RBT leak** (8669 RBT leaked). Root cause:
-  `insert`'s `sorted` param is compiled as `i64` (generic closure
-  convention) instead of `ptr/SEQ`. All Perceus tracking (empty-arm
-  dec, transfer_scope, function-exit dec) is bypassed. Attempted
-  fix (CType upgrade INT→SEQ at compile_function) caused heap
-  corruption: the double-dec (transfer_scope + function-exit) over-
-  freed RBT shared subtrees at the flat→RBT boundary (n≥33).
-  Correct fix: propagate SEQ type through the closure calling
-  convention so `insert`'s param is ptr from the start, or add
-  a callee-side rc_dec for i64 params used as seq case scrutinees
-  with proper inc/dec accounting for RBT structural sharing.
+  closure calling convention erases all arg types to `i64`. When
+  `insert` is called through `\acc x -> insert x acc`, the `sorted`
+  param compiles as i64 instead of ptr/SEQ, bypassing ALL Perceus
+  tracking (empty-arm dec, transfer_scope, function-exit dec, borrow
+  inference). CType upgrade (INT→SEQ) was attempted twice — first
+  at case codegen level, then at compile_function level — both
+  caused heap corruption: the arm_drop dec + transfer_scope
+  compensating dec freed sorted while foldl still held a ref (double
+  free via RBT structural sharing cascading through shared subtrees).
+  Correct fix: **preserve types through the closure convention**.
+  When a closure calls a known function, compile that function with
+  ptr params for heap-typed args (not i64). emit_direct_call already
+  handles i64→ptr coercion. This requires plumbing actual CTypes
+  from the enclosing scope (foldl's acc = SEQ) through the lambda's
+  params into the deferred function's compile_function call.
+  Scope: ~100 lines in closure codegen + emit_direct_call.
   Repro: `bench/core/sort.yona` with `YONA_ALLOC_STATS=1`.
 
 ### Code Quality — deferred from 2026-04-15 audit
