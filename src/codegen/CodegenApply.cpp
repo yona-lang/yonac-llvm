@@ -917,6 +917,10 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
             bool is_pass_through = false;
             if (pi < call_args.size() && call_args[pi] == param)
                 is_pass_through = true;
+            // Skip if already consumed by a callee-owns extern op
+            // (e.g., Dict.put / Set.insert transferred the param)
+            if (transferred_maps_.count(param)) continue;
+            if (transferred_seqs_.count(param)) continue;
 
             if (!is_pass_through) {
                 emit_rc_dec(param, ct);

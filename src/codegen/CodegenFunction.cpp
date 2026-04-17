@@ -891,8 +891,20 @@ Codegen::CompiledFunction Codegen::compile_function(
             if (!n) return false;
             if (n->get_type() == AST_APPLY_EXPR) {
                 auto* app = static_cast<ApplyExpr*>(n);
-                if (auto* nc = dynamic_cast<NameCall*>(app->call))
-                    if (nc->name->value == name) return true;
+                // Walk curried apply chain: `f a b` parses as `((f a) b)`.
+                // The root NameCall is at the innermost ExprCall.
+                ApplyExpr* cur = app;
+                while (cur) {
+                    if (auto* nc = dynamic_cast<NameCall*>(cur->call)) {
+                        if (nc->name->value == name) return true;
+                        break;
+                    }
+                    if (auto* ec = dynamic_cast<ExprCall*>(cur->call)) {
+                        if (auto* inner = dynamic_cast<ApplyExpr*>(ec->expr))
+                            cur = inner;
+                        else break;
+                    } else break;
+                }
             }
             if (n->get_type() == AST_CASE_EXPR) {
                 auto* ce = static_cast<CaseExpr*>(n);
