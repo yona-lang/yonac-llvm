@@ -579,6 +579,51 @@ Codegen::CompiledFunction Codegen::compile_function(
         param_ctypes.push_back(ct);
     }
 
+    // CType upgrade: when an i64 param is used as a seq case scrutinee,
+    // upgrade to SEQ/ptr so Perceus fires. The matching rc_inc is handled
+    // by the caller-side conditional dec in codegen_higher_order_call.
+    if (!def.ast->bodies.empty()) {
+        auto* body = def.ast->bodies[0];
+        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+            std::function<bool(AstNode*, const std::string&)> has_seq_case;
+            has_seq_case = [&](AstNode* n, const std::string& pname) -> bool {
+                if (!n) return false;
+                if (n->get_type() == AST_CASE_EXPR) {
+                    auto* ce = static_cast<CaseExpr*>(n);
+                    if (ce->expr && ce->expr->get_type() == AST_IDENTIFIER_EXPR) {
+                        auto* id = static_cast<IdentifierExpr*>(ce->expr);
+                        if (id->name->value == pname) {
+                            for (auto* cl : ce->clauses) {
+                                auto pt = cl->pattern->get_type();
+                                if (pt == AST_SEQ_PATTERN || pt == AST_HEAD_TAILS_PATTERN)
+                                    return true;
+                            }
+                        }
+                    }
+                    for (auto* cl : ce->clauses)
+                        if (has_seq_case(cl->body, pname)) return true;
+                }
+                if (n->get_type() == AST_IF_EXPR) {
+                    auto* ie = static_cast<IfExpr*>(n);
+                    return has_seq_case(ie->thenExpr, pname)
+                        || has_seq_case(ie->elseExpr, pname);
+                }
+                if (n->get_type() == AST_LET_EXPR)
+                    return has_seq_case(static_cast<LetExpr*>(n)->expr, pname);
+                return false;
+            };
+            auto* ptr_ty_local = PointerType::get(*context_, 0);
+            for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+                if (pi >= param_ctypes.size()) continue;
+                if (param_ctypes[pi] != CType::INT) continue;
+                if (has_seq_case(bwg->expr, def.param_names[pi])) {
+                    param_ctypes[pi] = CType::SEQ;
+                    param_types[pi] = ptr_ty_local;
+                }
+            }
+        }
+    }
+
     // Add free variable types
     std::vector<TypedValue> capture_values;
     for (auto& fv : def.free_vars) {
@@ -965,8 +1010,10 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto saved_fn_body = current_fn_body_;
     auto saved_transferred = transferred_seqs_;
     auto saved_transferred_maps = transferred_maps_;
+    auto saved_closure_consumed = closure_consumed_flags_;
     transferred_seqs_.clear();
     transferred_maps_.clear();
+    closure_consumed_flags_.clear();
     TypedValue body_tv;
     if (!def.ast->bodies.empty()) {
         auto* body = def.ast->bodies[0];
@@ -1126,31 +1173,63 @@ Codegen::CompiledFunction Codegen::compile_function(
                     if (pi < borrowed.size() && borrowed[pi])
                         continue;
                     // transferred_seqs_ tracks SEQ Perceus last-use;
-                    // transferred_maps_ tracks SET/DICT callee-owns via
-                    // extern ops (see codegen_extern_call).
+                    // transferred_maps_ tracks SET/DICT callee-owns AND
+                    // closure-consumed heap args (any type).
                     if (ct == CType::SEQ && transferred_seqs_.count(param))
                         continue;
-                    if ((ct == CType::SET || ct == CType::DICT)
-                        && transferred_maps_.count(param))
+                    if (transferred_maps_.count(param))
                         continue;
 
-                    Value* param_ptr = param;
-                    Value* ret_ptr = body_tv.val;
-                    if (param_ptr->getType()->isIntegerTy())
-                        param_ptr = builder_->CreateIntToPtr(param_ptr, ptr_ty);
-                    if (ret_ptr->getType()->isIntegerTy())
-                        ret_ptr = builder_->CreateIntToPtr(ret_ptr, ptr_ty);
-                    if (param_ptr->getType()->isPointerTy() && ret_ptr->getType()->isPointerTy()) {
-                        auto* is_same = builder_->CreateICmpEQ(param_ptr, ret_ptr, "param_is_ret");
-                        auto* drop_bb = BasicBlock::Create(*context_, "drop_param", fn);
-                        auto* cont_bb = BasicBlock::Create(*context_, "cont", fn);
-                        builder_->CreateCondBr(is_same, cont_bb, drop_bb);
-                        builder_->SetInsertPoint(drop_bb);
-                        emit_rc_dec(param, ct);
-                        builder_->CreateBr(cont_bb);
-                        builder_->SetInsertPoint(cont_bb);
+                    // If a closure call already consumed this param at
+                    // runtime (result != param), skip the function-exit
+                    // dec to avoid double-free.
+                    auto ccf_it = closure_consumed_flags_.find(param);
+                    if (ccf_it != closure_consumed_flags_.end()) {
+                        auto* consumed_val = builder_->CreateLoad(
+                            LType::getInt1Ty(*context_), ccf_it->second, "consumed");
+                        auto* not_consumed = builder_->CreateNot(consumed_val, "not_consumed");
+                        auto* check_bb = BasicBlock::Create(*context_, "check_param", fn);
+                        auto* skip_bb = BasicBlock::Create(*context_, "skip_param", fn);
+                        builder_->CreateCondBr(not_consumed, check_bb, skip_bb);
+                        builder_->SetInsertPoint(check_bb);
+                        // Normal param_is_ret check for non-consumed path
+                        Value* param_ptr = param;
+                        Value* ret_ptr = body_tv.val;
+                        if (param_ptr->getType()->isIntegerTy())
+                            param_ptr = builder_->CreateIntToPtr(param_ptr, ptr_ty);
+                        if (ret_ptr->getType()->isIntegerTy())
+                            ret_ptr = builder_->CreateIntToPtr(ret_ptr, ptr_ty);
+                        if (param_ptr->getType()->isPointerTy() && ret_ptr->getType()->isPointerTy()) {
+                            auto* is_same = builder_->CreateICmpEQ(param_ptr, ret_ptr, "param_is_ret");
+                            auto* drop_bb = BasicBlock::Create(*context_, "drop_param", fn);
+                            builder_->CreateCondBr(is_same, skip_bb, drop_bb);
+                            builder_->SetInsertPoint(drop_bb);
+                            emit_rc_dec(param, ct);
+                            builder_->CreateBr(skip_bb);
+                        } else {
+                            emit_rc_dec(param, ct);
+                            builder_->CreateBr(skip_bb);
+                        }
+                        builder_->SetInsertPoint(skip_bb);
                     } else {
-                        emit_rc_dec(param, ct);
+                        Value* param_ptr = param;
+                        Value* ret_ptr = body_tv.val;
+                        if (param_ptr->getType()->isIntegerTy())
+                            param_ptr = builder_->CreateIntToPtr(param_ptr, ptr_ty);
+                        if (ret_ptr->getType()->isIntegerTy())
+                            ret_ptr = builder_->CreateIntToPtr(ret_ptr, ptr_ty);
+                        if (param_ptr->getType()->isPointerTy() && ret_ptr->getType()->isPointerTy()) {
+                            auto* is_same = builder_->CreateICmpEQ(param_ptr, ret_ptr, "param_is_ret");
+                            auto* drop_bb = BasicBlock::Create(*context_, "drop_param", fn);
+                            auto* cont_bb = BasicBlock::Create(*context_, "cont", fn);
+                            builder_->CreateCondBr(is_same, cont_bb, drop_bb);
+                            builder_->SetInsertPoint(drop_bb);
+                            emit_rc_dec(param, ct);
+                            builder_->CreateBr(cont_bb);
+                            builder_->SetInsertPoint(cont_bb);
+                        } else {
+                            emit_rc_dec(param, ct);
+                        }
                     }
                 }
             }
@@ -1197,6 +1276,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     // out to the enclosing scope's transfer tracking.
     transferred_seqs_ = saved_transferred;
     transferred_maps_ = saved_transferred_maps;
+    closure_consumed_flags_ = saved_closure_consumed;
     current_frame_alloca_ = saved_frame_alloca;
     return cf;
 }

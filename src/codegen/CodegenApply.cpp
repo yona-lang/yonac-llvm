@@ -360,6 +360,48 @@ TypedValue Codegen::codegen_higher_order_call(const std::string& fn_name, const 
             if (args_consumed < vals.size()) {
                 current_closure = result; // already ptr type
             } else {
+                // Perceus: when a callee chain (lambda → CType-upgraded
+                // function) handles the ownership drop for a heap-typed
+                // arg, foldl's function-exit must NOT also dec it. But we
+                // don't know at compile time whether the callee dec'd —
+                // it depends on the runtime path (empty arm vs head-tail,
+                // in-place vs copy). Use the result != arg test as a
+                // proxy: if the closure returned a DIFFERENT pointer, the
+                // arg was consumed (by the callee's Perceus or by the
+                // operation itself). Store the flag in an alloca so the
+                // function-exit can check it at runtime.
+                for (size_t ai = 0; ai < all_args.size(); ai++) {
+                    if (!is_heap_type(all_args[ai].type)) continue;
+                    if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
+                    if (all_args[ai].val->getType()->isStructTy()) continue;
+                    bool is_named = false;
+                    for (auto& [k, v] : named_values_)
+                        if (v.val == all_args[ai].val) { is_named = true; break; }
+                    if (!is_named) continue;
+                    Value* arg_ptr = all_args[ai].val;
+                    Value* res_ptr = result;
+                    if (arg_ptr->getType()->isIntegerTy())
+                        arg_ptr = builder_->CreateIntToPtr(arg_ptr, ptr_ty);
+                    if (res_ptr->getType()->isIntegerTy())
+                        res_ptr = builder_->CreateIntToPtr(res_ptr, ptr_ty);
+                    if (arg_ptr->getType()->isPointerTy() && res_ptr->getType()->isPointerTy()) {
+                        auto* consumed = builder_->CreateICmpNE(arg_ptr, res_ptr, "closure_consumed");
+                        // Store in an alloca so function-exit can load it
+                        // (the icmp is in a case arm; function-exit is at merge).
+                        auto* flag_alloca = closure_consumed_flags_[all_args[ai].val];
+                        if (!flag_alloca) {
+                            auto* fn_parent = builder_->GetInsertBlock()->getParent();
+                            IRBuilder<> entry_ir(&fn_parent->getEntryBlock(),
+                                                  fn_parent->getEntryBlock().begin());
+                            flag_alloca = entry_ir.CreateAlloca(
+                                LType::getInt1Ty(*context_), nullptr, "consumed_flag");
+                            entry_ir.CreateStore(
+                                ConstantInt::getFalse(*context_), flag_alloca);
+                            closure_consumed_flags_[all_args[ai].val] = flag_alloca;
+                        }
+                        builder_->CreateStore(consumed, flag_alloca);
+                    }
+                }
                 return {result, ret_ctype};
             }
         }

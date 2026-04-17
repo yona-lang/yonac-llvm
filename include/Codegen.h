@@ -248,6 +248,12 @@ private:
     // transfer_scope logic — it only suppresses the function-exit DROP.
     std::unordered_set<llvm::Value*> transferred_maps_;
 
+    // Runtime-decided "consumed by closure call" flags. When a heap-typed
+    // arg is passed to a closure and the closure returns a different ptr,
+    // the callee chain freed the arg. The function-exit dec must check
+    // this flag at runtime to avoid double-free.
+    std::unordered_map<llvm::Value*, llvm::Value*> closure_consumed_flags_;
+
     // Perceus phase 3: stack-allocated yona_frame_t for the function
     // currently being compiled (nullptr when the fn has no heap params).
     // Transfer sites emit yona_rt_frame_transfer(ptr) to NULL the drop

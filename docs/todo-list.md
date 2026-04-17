@@ -57,7 +57,7 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 ## Remaining Work
 
 ### Bugs
-- [ ] **Sort benchmark RBT leak** (8669 RBT leaked). Root cause:
+- [x] **Sort benchmark RBT leak** — FIXED (2026-04-17). Root cause was:
   closure calling convention erases all arg types to `i64`, bypassing
   Perceus tracking for heap values passed through lambdas.
   Three fixes attempted:

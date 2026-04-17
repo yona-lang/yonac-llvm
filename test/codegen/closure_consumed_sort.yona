@@ -1,0 +1,7 @@
+let insert x sorted = case sorted of
+    [] -> [x]
+    [h|t] -> if x <= h then x :: sorted else h :: (insert x t)
+end in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+let range s e = if s > e then [] else s :: (range (s+1) e) in
+case foldl (\acc x -> insert x acc) [] (range 1 40) of [h|_] -> h end
