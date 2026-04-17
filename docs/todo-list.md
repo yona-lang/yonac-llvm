@@ -58,22 +58,27 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 
 ### Bugs
 - [ ] **Sort benchmark RBT leak** (8669 RBT leaked). Root cause:
-  closure calling convention erases all arg types to `i64`. When
-  `insert` is called through `\acc x -> insert x acc`, the `sorted`
-  param compiles as i64 instead of ptr/SEQ, bypassing ALL Perceus
-  tracking (empty-arm dec, transfer_scope, function-exit dec, borrow
-  inference). CType upgrade (INT→SEQ) was attempted twice — first
-  at case codegen level, then at compile_function level — both
-  caused heap corruption: the arm_drop dec + transfer_scope
-  compensating dec freed sorted while foldl still held a ref (double
-  free via RBT structural sharing cascading through shared subtrees).
-  Correct fix: **preserve types through the closure convention**.
-  When a closure calls a known function, compile that function with
-  ptr params for heap-typed args (not i64). emit_direct_call already
-  handles i64→ptr coercion. This requires plumbing actual CTypes
-  from the enclosing scope (foldl's acc = SEQ) through the lambda's
-  params into the deferred function's compile_function call.
-  Scope: ~100 lines in closure codegen + emit_direct_call.
+  closure calling convention erases all arg types to `i64`, bypassing
+  Perceus tracking for heap values passed through lambdas.
+  Three fixes attempted:
+  **(1)** CType upgrade (INT→SEQ in compile_function) — caused heap
+  corruption: callee (insert) dec'd but caller (foldl via closure)
+  didn't inc, so insert's Perceus over-freed.
+  **(2)** CType upgrade + closure-call rc_inc (in
+  codegen_higher_order_call) — fixed sort (0 leaks, 9.5x ratio!)
+  but regressed list_reverse from 2.9x → 11.5x because the inc
+  prevented unique-owner in-place cons mutation (RC=2 → copies).
+  **(3)** The fundamental tension: sort's lambda chains to a function
+  that decs (insert, CType-upgraded Perceus), reverse's lambda
+  chains to one that doesn't (cons, callee-borrows). The closure
+  call site can't distinguish — it's opaque.
+  **Correct fix**: closure convention redesign. Either: (a) annotate
+  closures with their RC convention (borrow vs own per param) so
+  the call site inc's only when needed, or (b) specialize the
+  closure at the call site (monomorphize on RC convention) so each
+  call gets the right inc/skip. Scope: ~200 lines of closure codegen
+  refactor. The sort leak is a memory waste but the program is
+  correct; list_reverse O(n²) regression is worse. Prioritize.
   Repro: `bench/core/sort.yona` with `YONA_ALLOC_STATS=1`.
 
 ### Code Quality — deferred from 2026-04-15 audit
