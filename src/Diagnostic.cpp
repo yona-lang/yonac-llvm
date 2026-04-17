@@ -30,6 +30,7 @@ void DiagnosticEngine::enable_wall() {
     enable_warning(WarningFlag::IncompletePatterns);
     enable_warning(WarningFlag::OverlappingPatterns);
     enable_warning(WarningFlag::UnhandledEffect);
+    enable_warning(WarningFlag::UnmatchedAdt);
 }
 
 void DiagnosticEngine::enable_wextra() {
@@ -107,6 +108,7 @@ std::string DiagnosticEngine::flag_name(WarningFlag f) {
         case WarningFlag::IncompletePatterns: return "incomplete-patterns";
         case WarningFlag::OverlappingPatterns:return "overlapping-patterns";
         case WarningFlag::UnhandledEffect:   return "unhandled-effect";
+        case WarningFlag::UnmatchedAdt:    return "unmatched-adt";
     }
     return "unknown";
 }

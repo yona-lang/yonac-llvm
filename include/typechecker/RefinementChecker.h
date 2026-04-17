@@ -31,6 +31,8 @@
 
 namespace yona::compiler::typechecker {
 
+class TypeChecker;
+
 /// An integer interval [lo, hi].
 struct Interval {
     int64_t lo = std::numeric_limits<int64_t>::min();
@@ -89,7 +91,8 @@ struct BuiltinRefinement {
 
 class RefinementChecker {
 public:
-    explicit RefinementChecker(DiagnosticEngine& diag);
+    /// \p tc optional; when set, warns on discarded algebraic values (see \c warn_if_discarded_adt).
+    explicit RefinementChecker(DiagnosticEngine& diag, TypeChecker* tc = nullptr);
 
     /// Register a refined type alias.
     void register_refined_type(const std::string& name,
@@ -111,6 +114,10 @@ private:
     void check_apply(ast::ApplyExpr* node, const FactEnv& facts);
     void check_if(ast::IfExpr* node, FactEnv& facts);
 
+    /// If \p tc was provided and \p expr has a named-sum type (App other than Seq/Set/Dict),
+    /// emit \c WarningFlag::UnmatchedAdt (enable with \c -Wall or \c enable_warning).
+    void warn_if_discarded_adt(ast::AstNode* expr);
+
     /// Extract the variable name from an argument expression (if it's an identifier).
     static std::string arg_var_name(ast::AstNode* node);
 
@@ -121,6 +128,7 @@ private:
     void establish_let_facts(const std::string& name, ast::AstNode* expr, FactEnv& facts);
 
     DiagnosticEngine& diag_;
+    TypeChecker* tc_ = nullptr;
     int error_count_ = 0;
 
     /// Registry of refined type aliases.

@@ -1125,6 +1125,63 @@ TEST_CASE("RefinementChecker: arithmetic propagation add") {
     CHECK(!rc.has_errors());
 }
 
+TEST_CASE("RefinementChecker: discarded Option in do warns (-Wunmatched-adt)") {
+    DiagnosticEngine diag;
+    diag.enable_warning(WarningFlag::UnmatchedAdt);
+    TypeChecker tc(diag);
+    yona::parser::Parser parser;
+    parser.register_prelude_constructors();
+    tc.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
+
+    std::istringstream stream("let f x = Some x in do f 1; () end");
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node);
+    tc.check(result.node.get());
+    REQUIRE(!tc.has_direct_errors());
+
+    RefinementChecker rc(diag, &tc);
+    rc.check(result.node.get());
+    CHECK(diag.warning_count() >= 1);
+}
+
+TEST_CASE("RefinementChecker: let _ = Option warns") {
+    DiagnosticEngine diag;
+    diag.enable_warning(WarningFlag::UnmatchedAdt);
+    TypeChecker tc(diag);
+    yona::parser::Parser parser;
+    parser.register_prelude_constructors();
+    tc.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
+
+    std::istringstream stream("let f x = Some x in let _ = f 1 in ()");
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node);
+    tc.check(result.node.get());
+    REQUIRE(!tc.has_direct_errors());
+
+    RefinementChecker rc(diag, &tc);
+    rc.check(result.node.get());
+    CHECK(diag.warning_count() >= 1);
+}
+
+TEST_CASE("RefinementChecker: let r = Option does not warn unmatched-adt") {
+    DiagnosticEngine diag;
+    diag.enable_warning(WarningFlag::UnmatchedAdt);
+    TypeChecker tc(diag);
+    yona::parser::Parser parser;
+    parser.register_prelude_constructors();
+    tc.register_adt("Option", {"a"}, {{"Some", 1}, {"None", 0}});
+
+    std::istringstream stream("let f x = Some x in let r = f 1 in ()");
+    auto result = parser.parse_input(stream);
+    REQUIRE(result.node);
+    tc.check(result.node.get());
+    REQUIRE(!tc.has_direct_errors());
+
+    RefinementChecker rc(diag, &tc);
+    rc.check(result.node.get());
+    CHECK(diag.warning_count() == 0);
+}
+
 } // RefinementChecker
 
 // ===== Linearity Checker Tests =====

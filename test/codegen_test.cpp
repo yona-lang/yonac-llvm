@@ -9,6 +9,7 @@
 #include "Codegen.h"
 #include "Diagnostic.h"
 #include "typechecker/TypeChecker.h"
+#include "repo_paths.h"
 
 using namespace std;
 using namespace yona;
@@ -40,6 +41,8 @@ static string compile_and_run(const string& code) {
     parser::Parser parser;
 
     Codegen codegen("test_module");
+    if (fs::exists(yona::test::lib_dir()))
+        codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
         if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
     }
@@ -65,15 +68,35 @@ static string compile_and_run(const string& code) {
     string rt_path = "/tmp/compiled_runtime_test.o";
     bool need_recompile = !fs::exists(rt_path);
     if (!need_recompile) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate) &&
-                fs::last_write_time(candidate) > fs::last_write_time(rt_path)) {
-                need_recompile = true; break;
+        auto cr = yona::test::src_dir() / "compiled_runtime.c";
+        if (fs::exists(cr) && fs::last_write_time(cr) > fs::last_write_time(rt_path))
+            need_recompile = true;
+        if (!need_recompile) {
+            for (auto& dir : {".", "src", "../src", "../../src"}) {
+                auto candidate = fs::path(dir) / "compiled_runtime.c";
+                if (fs::exists(candidate) &&
+                    fs::last_write_time(candidate) > fs::last_write_time(rt_path)) {
+                    need_recompile = true; break;
+                }
             }
         }
     }
     if (need_recompile) {
+        auto cr_main = yona::test::src_dir() / "compiled_runtime.c";
+        if (fs::exists(cr_main)) {
+            string src_dir = yona::test::src_dir().string();
+            string cmd = "cc -c " + cr_main.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
+            if (system(cmd.c_str()) == 0) {
+                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                    auto plat_src = yona::test::src_dir() / "runtime" / "platform" / pf;
+                    if (fs::exists(plat_src)) {
+                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                    }
+                }
+            }
+        } else {
         for (auto& dir : {".", "src", "../src", "../../src"}) {
             auto candidate = fs::path(dir) / "compiled_runtime.c";
             if (fs::exists(candidate)) {
@@ -92,10 +115,23 @@ static string compile_and_run(const string& code) {
                 break;
             }
         }
+        }
     }
 
     // Compile regex runtime if PCRE2 is available
     string regex_obj = "";
+    {
+        auto regex_src = yona::test::src_dir() / "runtime" / "regex.c";
+        if (fs::exists(regex_src)) {
+            regex_obj = "/tmp/yona_regex_test.o";
+            if (!fs::exists(regex_obj) ||
+                fs::last_write_time(regex_src) > fs::last_write_time(regex_obj)) {
+                string cmd = "cc -c " + regex_src.string() + " -o " + regex_obj + " 2>/dev/null";
+                if (system(cmd.c_str()) != 0) regex_obj = "";
+            }
+        }
+    }
+    if (regex_obj.empty()) {
     for (auto& dir : {".", "src", "../src", "../../src"}) {
         auto regex_src = fs::path(dir) / "runtime" / "regex.c";
         if (fs::exists(regex_src)) {
@@ -107,6 +143,7 @@ static string compile_and_run(const string& code) {
             }
             break;
         }
+    }
     }
 
     string exe_path = "/tmp/yona_codegen_test";
@@ -198,17 +235,9 @@ TEST_CASE("Multi-arg function generates correct signature") {
 TEST_SUITE("Codegen E2E") {
 
 TEST_CASE("Fixture-based codegen tests") {
-    // Find the test fixtures directory
-    fs::path fixtures_dir;
-    for (auto& dir : {"test/codegen", "../test/codegen", "../../test/codegen"}) {
-        if (fs::exists(dir) && fs::is_directory(dir)) {
-            fixtures_dir = dir;
-            break;
-        }
-    }
-
-    if (fixtures_dir.empty()) {
-        WARN("Could not find test/codegen fixtures directory");
+    fs::path fixtures_dir = yona::test::codegen_fixtures_dir();
+    if (!fs::exists(fixtures_dir) || !fs::is_directory(fixtures_dir)) {
+        WARN("Could not find test/codegen fixtures directory (YONA_SOURCE_DIR)");
         return;
     }
 
@@ -276,19 +305,16 @@ TEST_SUITE("PerceusExceptionCleanup") {
 TEST_CASE("raise through heap-owning frames does not leak") {
     // Reuse the E2E fixture by running the full compile-link pipeline
     // with YONA_ALLOC_STATS=1 and capturing stderr.
-    fs::path fixtures_dir;
-    for (auto& dir : {"test/codegen", "../test/codegen", "../../test/codegen"}) {
-        if (fs::exists(dir) && fs::is_directory(dir)) {
-            fixtures_dir = dir; break;
-        }
-    }
-    REQUIRE(!fixtures_dir.empty());
+    fs::path fixtures_dir = yona::test::codegen_fixtures_dir();
+    REQUIRE(fs::is_directory(fixtures_dir));
     string source = read_file(fixtures_dir / "perceus_raise_no_leak.yona");
     REQUIRE(!source.empty());
 
     // Compile + link (duplicates compile_and_run's skeleton to add env)
     parser::Parser parser;
     Codegen codegen("perceus_raise_test");
+    if (fs::exists(yona::test::lib_dir()))
+        codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
         if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
     }
@@ -748,6 +774,7 @@ TEST_CASE("Warning flag names") {
     CHECK(DiagnosticEngine::flag_name(WarningFlag::MissingSignature) == "missing-signature");
     CHECK(DiagnosticEngine::flag_name(WarningFlag::IncompletePatterns) == "incomplete-patterns");
     CHECK(DiagnosticEngine::flag_name(WarningFlag::OverlappingPatterns) == "overlapping-patterns");
+    CHECK(DiagnosticEngine::flag_name(WarningFlag::UnmatchedAdt) == "unmatched-adt");
 }
 
 TEST_CASE("Parser errors route through DiagnosticEngine") {
@@ -894,15 +921,10 @@ TEST_CASE("Regex module: matches, find, replace, split") {
     }
 
     // Compile the Regex module
-    string regex_mod_src;
-    for (auto& dir : {".", "lib", "../lib", "../../lib"}) {
-        auto candidate = fs::path(dir) / "Std" / "Regex.yona";
-        if (fs::exists(candidate)) {
-            ifstream f(candidate);
-            regex_mod_src = string(istreambuf_iterator<char>(f), {});
-            break;
-        }
-    }
+    auto regex_yona = yona::test::lib_dir() / "Std" / "Regex.yona";
+    REQUIRE(fs::exists(regex_yona));
+    ifstream f(regex_yona);
+    string regex_mod_src((istreambuf_iterator<char>(f)), istreambuf_iterator<char>());
     REQUIRE(!regex_mod_src.empty());
 
     parser::Parser mp;
@@ -929,6 +951,8 @@ TEST_CASE("Regex module: matches, find, replace, split") {
         Codegen expr_codegen("regex_test");
         // Add module search paths for .yonai (generated + stdlib)
         expr_codegen.module_paths_.push_back("/tmp/yona_regex_lib");
+        if (fs::exists(yona::test::lib_dir()))
+            expr_codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
         for (auto& dir : {".", "lib", "../lib", "../../lib"})
             if (fs::exists(dir)) expr_codegen.module_paths_.push_back(fs::canonical(dir).string());
         auto expr_mod = expr_codegen.compile(expr_result.node.get());

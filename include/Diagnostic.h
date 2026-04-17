@@ -21,6 +21,7 @@ enum class WarningFlag {
     IncompletePatterns,
     OverlappingPatterns,
     UnhandledEffect,
+    UnmatchedAdt,
 };
 
 /// Structured error codes for --explain support.

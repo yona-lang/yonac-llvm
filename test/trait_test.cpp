@@ -7,6 +7,7 @@
 #include <filesystem>
 #include "Parser.h"
 #include "Codegen.h"
+#include "repo_paths.h"
 
 using namespace std;
 using namespace yona;
@@ -640,6 +641,8 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
     parser::Parser p1;
     Codegen mod_codegen("trait_mod");
     // Load prelude so Show/Eq/Ord/Hash traits are available
+    if (fs::exists(yona::test::lib_dir()))
+        mod_codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"})
         if (fs::exists(dir)) { mod_codegen.module_paths_.push_back(fs::canonical(dir).string()); break; }
     mod_codegen.load_prelude(&p1);
@@ -666,6 +669,8 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
 
     Codegen expr_codegen("trait_test");
     expr_codegen.module_paths_.push_back("/tmp/yona_trait_lib");
+    if (fs::exists(yona::test::lib_dir()))
+        expr_codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"})
         if (fs::exists(dir)) { expr_codegen.module_paths_.push_back(fs::canonical(dir).string()); break; }
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
@@ -676,28 +681,47 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
 
     string rt_path = "/tmp/compiled_runtime_test.o";
     if (!fs::exists(rt_path)) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate)) {
-                string src_dir = string(dir);
-                system(("cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                    if (fs::exists(plat_src)) {
-                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                    }
+        auto cr = yona::test::src_dir() / "compiled_runtime.c";
+        if (fs::exists(cr)) {
+            string src_dir = yona::test::src_dir().string();
+            system(("cc -c " + cr.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
+            for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                auto plat_src = yona::test::src_dir() / "runtime" / "platform" / pf;
+                if (fs::exists(plat_src)) {
+                    string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                    system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                    system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
                 }
-                break;
+            }
+        } else {
+            for (auto& dir : {".", "src", "../src", "../../src"}) {
+                auto candidate = fs::path(dir) / "compiled_runtime.c";
+                if (fs::exists(candidate)) {
+                    string src_dir = string(dir);
+                    system(("cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
+                    for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
+                        auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
+                        if (fs::exists(plat_src)) {
+                            string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
+                            system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
+                            system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
+                        }
+                    }
+                    break;
+                }
             }
         }
     }
 
     string prelude_obj;
-    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
-        auto candidate = fs::path(dir) / "Prelude.o";
-        if (fs::exists(candidate)) { prelude_obj = candidate.string(); break; }
+    auto po = yona::test::lib_dir() / "Prelude.o";
+    if (fs::exists(po))
+        prelude_obj = po.string();
+    else {
+        for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+            auto candidate = fs::path(dir) / "Prelude.o";
+            if (fs::exists(candidate)) { prelude_obj = candidate.string(); break; }
+        }
     }
 
     string exe_path = "/tmp/yona_derive_test_exe";

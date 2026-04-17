@@ -204,7 +204,7 @@ int main(int argc, char* argv[]) {
         codegen.set_type_checker(&type_checker);
 
         // Refinement checking (non-blocking)
-        typechecker::RefinementChecker refinement_checker(diag);
+        typechecker::RefinementChecker refinement_checker(diag, &type_checker);
         refinement_checker.check(parse_result.node.get());
 
         // Linearity checking (non-blocking)

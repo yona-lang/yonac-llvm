@@ -189,6 +189,12 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(doctest)
 
+# Absolute repo path for tests (fixtures, lib/, src/) regardless of process CWD (e.g. CTest).
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/test/yona_test_config.h.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/test_config/yona_test_config.h"
+	@ONLY)
+
 add_executable(
 	tests
 	${all_TESTS}
@@ -205,7 +211,10 @@ target_compile_definitions(tests PRIVATE YONA_STATIC_BUILD)
 
 # Include CTest
 include(CTest)
-target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(tests PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${CMAKE_CURRENT_SOURCE_DIR}/test
+	${CMAKE_CURRENT_BINARY_DIR}/test_config)
 
 # Register the test executable with CTest
 add_test(NAME doctest_tests COMMAND tests)

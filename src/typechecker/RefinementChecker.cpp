@@ -5,9 +5,27 @@
 /// Verifies built-in and user-registered refinement predicates at call sites.
 
 #include "typechecker/RefinementChecker.h"
+#include "typechecker/TypeChecker.h"
 
 namespace yona::compiler::typechecker {
 using namespace yona::ast;
+
+namespace {
+
+/// Named type applications that are collections, not user ADT sums.
+bool is_collection_app(const MonoType* t) {
+    if (!t || t->tag != MonoType::App) return false;
+    const std::string& n = t->type_name;
+    return n == "Seq" || n == "Set" || n == "Dict";
+}
+
+/// Algebraic (sum) type in the type checker: App("Option", ...) etc., excluding collections.
+bool is_tracked_adt_shape(MonoTypePtr t) {
+    if (!t || t->tag != MonoType::App) return false;
+    return !is_collection_app(t);
+}
+
+} // namespace
 
 // ===== Interval Arithmetic =====
 
@@ -118,7 +136,8 @@ FactEnv FactEnv::with_excluded(const std::string& var, int64_t value) const {
 
 // ===== RefinementChecker =====
 
-RefinementChecker::RefinementChecker(DiagnosticEngine& diag) : diag_(diag) {
+RefinementChecker::RefinementChecker(DiagnosticEngine& diag, TypeChecker* tc)
+    : diag_(diag), tc_(tc) {
     // Register built-in function refinement requirements
     builtin_refinements_["head"] = {0, BuiltinRefinement::NonEmpty};
     builtin_refinements_["tail"] = {0, BuiltinRefinement::NonEmpty};
@@ -140,6 +159,18 @@ const RefinedTypeInfo* RefinementChecker::lookup(const std::string& name) const 
 void RefinementChecker::check(AstNode* node) {
     FactEnv facts;
     check_node(node, facts);
+}
+
+void RefinementChecker::warn_if_discarded_adt(AstNode* expr) {
+    if (!tc_ || !expr) return;
+    MonoTypePtr raw = tc_->type_of(expr);
+    if (!raw) return;
+    MonoTypePtr t = tc_->zonk(raw);
+    if (!t || t->tag == MonoType::Var) return;
+    if (!is_tracked_adt_shape(t)) return;
+    diag_.warning(expr->source_context,
+                  "ADT value of type " + pretty_print(t) + " not handled at call site",
+                  WarningFlag::UnmatchedAdt);
 }
 
 std::string RefinementChecker::arg_var_name(AstNode* node) {
@@ -170,8 +201,11 @@ void RefinementChecker::check_node(AstNode* node, FactEnv& facts) {
             break;
         case AST_DO_EXPR: {
             auto* doex = static_cast<DoExpr*>(node);
-            for (auto* step : doex->steps)
-                check_node(step, facts);
+            for (size_t i = 0; i < doex->steps.size(); ++i) {
+                check_node(doex->steps[i], facts);
+                if (i + 1 < doex->steps.size())
+                    warn_if_discarded_adt(doex->steps[i]);
+            }
             break;
         }
         case AST_DIVIDE_EXPR: {
@@ -277,6 +311,8 @@ void RefinementChecker::check_let(LetExpr* node, FactEnv& facts) {
     for (auto* alias : node->aliases) {
         if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
             check_node(va->expr, facts);
+            if (va->identifier->name->value == "_")
+                warn_if_discarded_adt(va->expr);
             establish_let_facts(va->identifier->name->value, va->expr, facts);
         } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
             check_node(la->lambda, facts);

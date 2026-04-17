@@ -147,14 +147,9 @@ None currently tracked.
   distributed Yona (message passing), persistence, and interop.
 
 ### Language — Safety & Ownership
-- [ ] **Use-site exhaustiveness for Result/Option** (Gleam-inspired).
-  If a function returns `Result a e` or `Option a`, the call site
-  must either pattern-match both arms or explicitly propagate.
-  Enforced at compile time by the refinement checker — no new syntax
-  needed. The prelude already defines `Result` and `Option`; this
-  adds a rule: "unmatched Result/Option at a call site is a compile
-  error". Prevents silently ignoring errors. ~200 lines in
-  `RefinementChecker`.
+- [x] **Use-site handling for algebraic types** — `-Wunmatched-adt` (`--Wall`):
+  discarded `App` types except `Seq`/`Set`/`Dict` in non-final `do` steps
+  or `let _ = ...` emit a warning (see `RefinementChecker` + `TypeChecker`).
 - [ ] **Borrow annotations for read-only parameters** (Rust-inspired).
   The biggest remaining perf gap vs C: every multi-use heap param
   pays `rc_inc` at the call site and `rc_dec` at function exit. If
