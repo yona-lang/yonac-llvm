@@ -4,51 +4,52 @@
 
 - **Compiler**: Yona → LLVM IR → native executable via `yonac`
 - **REPL**: `yona` — compile-and-run interactive mode
-- **Tests**: 1260 assertions across 209 test cases (all passing)
-- **Benchmarks**: 34/34 passing (rerun 2026-04-16, LLVM 22, 10 iters at -O2)
+- **Tests**: 1262 assertions across 209 test cases (all passing)
+- **Benchmarks**: 34/34 passing (rerun 2026-04-17, LLVM 22, 10 iters at -O2)
 - **Stdlib**: ~37 modules (non-blocking Std\IO, Std\Stream, Std\Constants\{Num,Math,Platform}, Std\Channel, Std\Task)
 - **Features**: Algebraic effects, transparent async, persistent data structures, traits
 - **Packaging**: Docker, Homebrew, RPM, DEB, GitHub Releases
 
 ## Benchmark Results
 
-Rerun on LLVM 22, 2026-04-16, 10 iterations, post-borrow-inference.
+Rerun on LLVM 22, 2026-04-17, 10 iterations, post-TCO-fix.
 Startup-adjusted times; sorted by Yona/C ratio.
 
 | Benchmark | Yona | C | Ratio | Yona MB | C MB |
 |-----------|------|---|-------|---------|------|
-| int_array_fill_sum | 0.01ms | 0.05ms | **0.2x** | 2.6 | 2.3 |
-| sum_squares | 0.01ms | 0.01ms | **0.8x** | 2.4 | 2.2 |
-| file_read | 0.23ms | 0.27ms | **0.9x** | 3.5 | 3.3 |
-| par_map | 0.01ms | 0.23ms | **~0x** | 2.4 | 2.4 |
-| seq_map | 0.01ms | 0.01ms | **1.0x** | 2.4 | 2.2 |
-| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.3 |
+| list_map_filter | 0.14ms | 0.55ms | **0.2x** | 2.7 | 3.0 |
+| int_array_fill_sum | 0.03ms | 0.03ms | **0.2x** | 2.5 | 2.3 |
+| sum_squares | 0.01ms | 0.04ms | **0.2x** | 2.4 | 2.2 |
+| binary_read_chunks | 0.30ms | 0.50ms | **0.6x** | 2.5 | 2.3 |
+| list_sum | 0.09ms | 0.13ms | **0.7x** | 2.6 | 2.6 |
+| file_read | 0.22ms | 0.26ms | **0.8x** | 3.6 | 3.3 |
+| process_exec | 0.67ms | 0.76ms | **0.9x** | 3.9 | 3.9 |
+| par_map | 0.01ms | 0.22ms | **~0x** | 2.4 | 2.4 |
+| parallel_async | 101ms | 101ms | **1.0x** | 2.8 | 2.4 |
 | sequential_async | 401ms | 401ms | **1.0x** | 2.8 | 2.2 |
-| tak | 73ms | 66ms | 1.1x | 2.4 | 2.2 |
-| process_exec | 0.69ms | 0.58ms | 1.2x | 3.9 | 4.0 |
-| list_map_filter | 0.30ms | 0.25ms | 1.2x | 3.3 | 3.1 |
-| binary_read_chunks | 0.28ms | 0.22ms | 1.3x | 2.5 | 2.3 |
-| binary_write_read | 3.1ms | 2.5ms | 1.2x | 12.5 | 7.3 |
-| channel_throughput | 1.2ms | 0.86ms | 1.4x | 3.5 | 2.2 |
-| channel_pipeline | 0.76ms | 0.50ms | 1.5x | 3.2 | 2.3 |
-| channel_fanin | 1.1ms | 0.67ms | 1.6x | 3.3 | 2.4 |
-| file_parallel_read | 0.59ms | 0.34ms | 1.7x | 6.0 | 5.5 |
-| file_write_read | 0.84ms | 0.39ms | 2.2x | 4.8 | 3.2 |
-| list_sum | 0.34ms | 0.14ms | 2.4x | 3.1 | 2.6 |
-| fibonacci | 16ms | 6.3ms | 2.5x | 2.4 | 2.2 |
-| ackermann | 178ms | 66ms | 2.7x | 2.5 | 2.4 |
-| list_reverse | 0.48ms | 0.17ms | 2.9x | 3.1 | 2.6 |
-| file_write_read_large | 49ms | 15ms | 3.4x | 107 | 2.3 |
-| file_readlines_large | 53ms | 15ms | 3.5x | 2.6 | 2.1 |
-| file_read_large | 13ms | 2.4ms | 5.1x | 55 | 2.3 |
-| sieve | 0.39ms | 0.07ms | 6.1x | 3.1 | 2.1 |
-| dict_build | 0.98ms | 0.16ms | 6.3x | 3.6 | 2.4 |
-| set_build | 1.1ms | 0.15ms | 7.2x | 3.6 | 2.3 |
-| file_parallel_read_large | 8.0ms | 1.0ms | 7.8x | 37 | 2.4 |
-| queens | 18ms | 2.1ms | 8.5x | 2.4 | 2.2 |
-| sort | 1.0ms | 0.05ms | 18.8x | 7.9 | 2.2 |
-| int_array_map | 1.5ms | 0.06ms | 27.6x | 3.3 | 2.4 |
-| int_array_sum | 1.6ms | 0.04ms | 36.3x | 3.3 | 2.3 |
+| int_array_fill_sum | 0.03ms | 0.03ms | **1.0x** | 2.5 | 2.3 |
+| tak | 75ms | 68ms | 1.1x | 2.4 | 2.2 |
+| channel_pipeline | 0.72ms | 0.56ms | 1.3x | 3.2 | 2.3 |
+| binary_write_read | 3.4ms | 2.6ms | 1.3x | 12.5 | 7.3 |
+| file_parallel_read | 0.63ms | 0.50ms | 1.3x | 5.9 | 5.2 |
+| channel_throughput | 1.3ms | 0.91ms | 1.4x | 3.6 | 2.2 |
+| channel_fanin | 1.2ms | 0.71ms | 1.6x | 3.2 | 2.4 |
+| list_reverse | 0.29ms | 0.15ms | 2.0x | 2.9 | 2.6 |
+| file_write_read | 0.90ms | 0.42ms | 2.1x | 4.8 | 3.2 |
+| fibonacci | 17ms | 6.3ms | 2.6x | 2.4 | 2.1 |
+| ackermann | 177ms | 67ms | 2.6x | 2.6 | 2.4 |
+| seq_map | 0.03ms | 0.01ms | 2.8x | 2.4 | 2.2 |
+| file_write_read_large | 51ms | 15ms | 3.4x | 107 | 2.2 |
+| file_readlines_large | 55ms | 16ms | 3.5x | 2.6 | 2.2 |
+| sieve | 0.42ms | 0.10ms | 4.2x | 2.8 | 2.2 |
+| file_read_large | 14ms | 2.7ms | 4.8x | 55 | 2.3 |
+| dict_build | 0.89ms | 0.17ms | 5.2x | 3.1 | 2.5 |
+| set_build | 0.90ms | 0.13ms | 6.9x | 3.1 | 2.3 |
+| file_parallel_read_large | 8.8ms | 1.2ms | 7.1x | 37 | 2.4 |
+| queens | 17ms | 2.1ms | 7.6x | 2.4 | 2.2 |
+| sort | 0.52ms | 0.07ms | 7.7x | 2.6 | 2.2 |
+| int_array_map | 1.4ms | 0.11ms | 13.2x | 2.8 | 2.4 |
+| int_array_sum | 1.4ms | 0.09ms | 16.9x | 2.7 | 2.2 |
 
 Full multi-language matrix in [benchmark-results.md](./benchmark-results.md).
 Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
@@ -81,11 +82,13 @@ None currently tracked.
 
 ### Performance
 - [ ] **LLVM EH migration** — replace setjmp/longjmp with
-  invoke/landingpad. Each heap-owning function gets a cleanup
-  landingpad that runs rc_dec and resumes unwinding. Would eliminate
-  the phase-3 TLS depth check entirely (true zero-cost happy path).
-  Bigger codegen change: every call that can raise becomes an
-  invoke, and the landingpad must handle all owned drops. ~500 lines.
+  invoke/landingpad. The phase-3 TLS depth check overhead is now
+  minimal after the curried-TCO fix (most hot functions are TCO →
+  no frame setup). The remaining overhead (~2 cycles per non-TCO
+  function entry) is negligible. The main benefit of LLVM EH would
+  be correctness: cleanup landingpads handle ALL owned values (not
+  just params), and let-bound seqs also get freed on unwind. Defer
+  until a concrete correctness issue motivates it. ~500 lines.
 - [ ] **Profile-guided optimization** — runtime profiling for LLVM.
   Low priority: static branch hints already capture most benefit.
 - [ ] **Explore JIT compilation potential** — research task. Investigate
