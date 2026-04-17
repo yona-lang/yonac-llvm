@@ -57,29 +57,7 @@ Reference impls in C, Erlang, Haskell, Java, Node.js, Python under
 ## Remaining Work
 
 ### Bugs
-- [x] **Sort benchmark RBT leak** — FIXED (2026-04-17). Root cause was:
-  closure calling convention erases all arg types to `i64`, bypassing
-  Perceus tracking for heap values passed through lambdas.
-  Three fixes attempted:
-  **(1)** CType upgrade (INT→SEQ in compile_function) — caused heap
-  corruption: callee (insert) dec'd but caller (foldl via closure)
-  didn't inc, so insert's Perceus over-freed.
-  **(2)** CType upgrade + closure-call rc_inc (in
-  codegen_higher_order_call) — fixed sort (0 leaks, 9.5x ratio!)
-  but regressed list_reverse from 2.9x → 11.5x because the inc
-  prevented unique-owner in-place cons mutation (RC=2 → copies).
-  **(3)** The fundamental tension: sort's lambda chains to a function
-  that decs (insert, CType-upgraded Perceus), reverse's lambda
-  chains to one that doesn't (cons, callee-borrows). The closure
-  call site can't distinguish — it's opaque.
-  **Correct fix**: closure convention redesign. Either: (a) annotate
-  closures with their RC convention (borrow vs own per param) so
-  the call site inc's only when needed, or (b) specialize the
-  closure at the call site (monomorphize on RC convention) so each
-  call gets the right inc/skip. Scope: ~200 lines of closure codegen
-  refactor. The sort leak is a memory waste but the program is
-  correct; list_reverse O(n²) regression is worse. Prioritize.
-  Repro: `bench/core/sort.yona` with `YONA_ALLOC_STATS=1`.
+None currently tracked.
 
 ### Code Quality — deferred from 2026-04-15 audit
 - [ ] **O(1) transfer_scope BB detection** — a true O(1) replacement
