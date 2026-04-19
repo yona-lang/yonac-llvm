@@ -165,6 +165,44 @@ static string compile_and_run(const string& code) {
     return result;
 }
 
+/* Perceus/link tests link against /tmp/compiled_runtime_test.o; compile_and_run
+ * creates it on demand. Call this before linking when not using compile_and_run. */
+static void ensure_compiled_runtime_test_obj() {
+    (void)compile_and_run("0");
+}
+
+/* Link yona .o + runtime, run with YONA_ALLOC_STATS=1; fail if any tag shows leaked>0. */
+static void assert_linked_yona_zero_alloc_leaks(const string& obj_path,
+                                                const string& exe_path) {
+    const string rt_path = "/tmp/compiled_runtime_test.o";
+    REQUIRE(fs::exists(rt_path));
+    string link_cmd = "cc " + obj_path + " " + rt_path +
+                      " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
+    REQUIRE(system(link_cmd.c_str()) == 0);
+
+    string cmd = "YONA_ALLOC_STATS=1 " + exe_path + " 2>&1";
+    array<char, 512> buf;
+    string combined;
+    FILE* pipe = popen(cmd.c_str(), "r");
+    REQUIRE(pipe != nullptr);
+    while (fgets(buf.data(), buf.size(), pipe)) combined += buf.data();
+    pclose(pipe);
+
+    INFO("Full output:\n" << combined);
+    CHECK(combined.find("alloc-stats") != string::npos);
+
+    size_t pos = 0;
+    while ((pos = combined.find("leaked=", pos)) != string::npos) {
+        pos += 7;
+        size_t end = pos;
+        while (end < combined.size() && isdigit((unsigned char)combined[end])) end++;
+        string n = combined.substr(pos, end - pos);
+        CHECK_MESSAGE(n == "0",
+            "Found leaked=" << n << " in alloc stats. Output:\n" << combined);
+        pos = end;
+    }
+}
+
 static string read_file(const fs::path& path) {
     ifstream f(path);
     if (!f.is_open()) return "";
@@ -303,6 +341,7 @@ TEST_CASE("Fixture-based codegen tests") {
 TEST_SUITE("PerceusExceptionCleanup") {
 
 TEST_CASE("raise through heap-owning frames does not leak") {
+    ensure_compiled_runtime_test_obj();
     // Reuse the E2E fixture by running the full compile-link pipeline
     // with YONA_ALLOC_STATS=1 and capturing stderr.
     fs::path fixtures_dir = yona::test::codegen_fixtures_dir();
@@ -332,43 +371,68 @@ TEST_CASE("raise through heap-owning frames does not leak") {
     string obj_path = "/tmp/yona_perceus_raise.o";
     REQUIRE(codegen.emit_object_file(obj_path));
 
-    // Reuse runtime obj that compile_and_run built (always re-link).
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    REQUIRE(fs::exists(rt_path));
-    string exe_path = "/tmp/yona_perceus_raise";
-    string link_cmd = "cc " + obj_path + " " + rt_path +
-                      " -lm -lpthread -rdynamic -o " + exe_path + " 2>/dev/null";
-    REQUIRE(system(link_cmd.c_str()) == 0);
+    assert_linked_yona_zero_alloc_leaks(obj_path, "/tmp/yona_perceus_raise");
+}
 
-    // Run with YONA_ALLOC_STATS=1. Stderr contains the stats lines;
-    // stdout contains the Yona-printed result.
-    string cmd = "YONA_ALLOC_STATS=1 " + exe_path + " 2>&1";
-    array<char, 512> buf;
-    string combined;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    REQUIRE(pipe != nullptr);
-    while (fgets(buf.data(), buf.size(), pipe)) combined += buf.data();
-    pclose(pipe);
+TEST_CASE("raise through grouped-let task group frees bump arena") {
+    ensure_compiled_runtime_test_obj();
+    fs::path fixtures_dir = yona::test::codegen_fixtures_dir();
+    REQUIRE(fs::is_directory(fixtures_dir));
+    string source = read_file(fixtures_dir / "task_group_raise_arena.yona");
+    REQUIRE(!source.empty());
 
-    INFO("Full output:\n" << combined);
-    // Check that the program produced output (didn't crash).
-    // Note: the try/catch result printer has a known issue with
-    // mismatched types; we verify correctness via the E2E fixture
-    // and leak-freedom via alloc_stats below.
-    CHECK(combined.find("alloc-stats") != string::npos);
-
-    // Any `leaked=N` with N>0 fails the test.
-    size_t pos = 0;
-    while ((pos = combined.find("leaked=", pos)) != string::npos) {
-        pos += 7;
-        size_t end = pos;
-        while (end < combined.size() && isdigit((unsigned char)combined[end])) end++;
-        string n = combined.substr(pos, end - pos);
-        CHECK_MESSAGE(n == "0",
-            "Found leaked=" << n << " in alloc stats — raise unwind is not "
-            "releasing heap-owning frames. Output:\n" << combined);
-        pos = end;
+    parser::Parser parser;
+    Codegen codegen("task_group_raise_arena_test");
+    if (fs::exists(yona::test::lib_dir()))
+        codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
     }
+    DiagnosticEngine tc_diag;
+    typechecker::TypeChecker type_checker(tc_diag);
+    codegen.load_prelude(&parser, &type_checker);
+    istringstream stream(source);
+    auto pr = parser.parse_input(stream);
+    REQUIRE(pr.node);
+    type_checker.check(pr.node.get());
+    REQUIRE(!type_checker.has_direct_errors());
+    auto module = codegen.compile(pr.node.get());
+    REQUIRE(module);
+
+    string obj_path = "/tmp/yona_task_group_raise_arena.o";
+    REQUIRE(codegen.emit_object_file(obj_path));
+
+    assert_linked_yona_zero_alloc_leaks(obj_path, "/tmp/yona_task_group_raise_arena");
+}
+
+TEST_CASE("grouped let task group happy path (no raise)") {
+    ensure_compiled_runtime_test_obj();
+    string source =
+        "let a = [1, 2], b = [3, 4] in case a of [x|_] -> case b of [y|_] -> x + y; "
+        "_ -> 0 end; _ -> 0 end";
+    string actual = compile_and_run(source);
+    CHECK(actual == "4");
+    // Same program through link + alloc stats (arena + group teardown on success path)
+    parser::Parser parser;
+    Codegen codegen("task_group_happy_test");
+    if (fs::exists(yona::test::lib_dir()))
+        codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
+    for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"}) {
+        if (fs::exists(dir)) codegen.module_paths_.push_back(fs::canonical(dir).string());
+    }
+    DiagnosticEngine tc_diag;
+    typechecker::TypeChecker type_checker(tc_diag);
+    codegen.load_prelude(&parser, &type_checker);
+    istringstream stream(source);
+    auto pr = parser.parse_input(stream);
+    REQUIRE(pr.node);
+    type_checker.check(pr.node.get());
+    REQUIRE(!type_checker.has_direct_errors());
+    auto happy_mod = codegen.compile(pr.node.get());
+    REQUIRE(happy_mod);
+    string obj_path = "/tmp/yona_task_group_happy.o";
+    REQUIRE(codegen.emit_object_file(obj_path));
+    assert_linked_yona_zero_alloc_leaks(obj_path, "/tmp/yona_task_group_happy");
 }
 
 } // PerceusExceptionCleanup

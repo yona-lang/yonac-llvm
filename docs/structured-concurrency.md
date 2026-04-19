@@ -81,17 +81,20 @@ typedef struct yona_task_group {
     uint64_t* io_children;     // io_uring operation IDs
     int64_t first_error;       // error symbol from first failure
     const char* first_error_msg;
+    void* arena;               // bump arena for parent-thread scope (see below)
 } yona_task_group_t;
 ```
 
 API:
 - `yona_rt_group_begin()` — create a group
+- `yona_rt_group_attach_arena(group, arena)` — attach bump arena created with `yona_rt_arena_create` (codegen for multi-binding `let`)
 - `yona_rt_group_register(group, promise)` — add thread-pool child
 - `yona_rt_group_register_io(group, io_id)` — add io_uring child
 - `yona_rt_group_cancel(group)` — set cancelled flag
 - `yona_rt_group_is_cancelled(group)` — check flag (for Cancel.check)
 - `yona_rt_group_await_all(group)` — wait for all children, re-raise first error
-- `yona_rt_group_end(group)` — cleanup
+- `yona_rt_group_end(group)` — destroy attached arena (if any), mutex/cond, free group
+- `yona_rt_group_arena_bind_push(group)` / `yona_rt_group_arena_bind_pop()` — TLS stack keyed by `yona_try_depth` so `yona_rt_raise` can call `yona_rt_group_end` for in-flight groups before `longjmp` (success path pops after `group_end`)
 
 ### Worker Error Capture
 
@@ -108,9 +111,14 @@ When a group is cancelled, `ring_cancel(target_id)` submits `IORING_OP_ASYNC_CAN
 
 In `codegen_let` (`src/codegen/CodegenExpr.cpp`):
 1. Multi-binding let blocks emit `group_begin()` before alias codegen
-2. Async calls use grouped variants (`async_call_grouped`)
-3. After body codegen: `group_await_all()` + `group_end()`
-4. `current_group_` tracks the active group (like `handler_stack_` for effects)
+2. A **task-group bump arena** is always created (`arena_create`), attached with `group_attach_arena`, and registered via `group_arena_bind_push` for exception-safe teardown
+3. `current_arena_` points at that arena for **alias codegen and the let body**, so non-escaping heap (`analyze_let_escaping`) bump-allocates into the group arena
+4. Async calls use grouped variants (`async_call_grouped`) — worker threads do **not** receive the parent arena (v1); async RHS stay on `rc_alloc`
+5. On fall-through: `group_await_all()` → `cleanup_let_scope` (skips `rc_dec` for arena payloads) → `group_arena_bind_pop` → `group_end()` (destroys arena + frees group)
+6. If the body already terminated (`raise`, etc.), await/cleanup/end are skipped in IR; `yona_rt_raise` walks the bind stack and calls `group_end` for each deeper task group before `longjmp`
+7. `current_group_` tracks the active group (like `handler_stack_` for effects)
+
+Benchmark: `bench/concurrency/task_group_arena.yona` (one outer two-binding `let` with small seq literals, then 50k iterations of an inner tail-recursive counter) plus `bench/reference/task_group_arena.c` for a stack-only C baseline.
 
 ## Comparison
 

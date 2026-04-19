@@ -50,7 +50,8 @@ bench/
     fibonacci.yona       # Recursive Fibonacci (function call overhead)
     tak.yona             # Takeuchi function (deep recursion)
     sieve.yona           # Sieve of Eratosthenes (list filtering)
-  collections/           # Collection operation benchmarks
+    collections/           # Collection operation benchmarks
+    concurrency/task_group_arena.yona  # multi-binding let + bump arena (vs C stack loop)
     list_sum.yona        # Sum 100K elements (fold)
     list_reverse.yona    # Reverse 10K list (foldl + cons)
     list_map_filter.yona # Map + filter + fold pipeline

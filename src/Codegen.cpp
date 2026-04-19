@@ -360,6 +360,9 @@ void Codegen::declare_runtime() {
     rt_.group_is_cancelled_ = decl("yona_rt_group_is_cancelled", i64, {group_ptr});
     rt_.async_call_grouped_ = decl("yona_rt_async_call_grouped", promise_ptr, {fn_ptr_ty, i64, group_ptr});
     rt_.async_call_thunk_grouped_ = decl("yona_rt_async_call_thunk_grouped", promise_ptr, {thunk_ptr_ty, group_ptr});
+    rt_.group_attach_arena_ = decl("yona_rt_group_attach_arena", vd, {group_ptr, ptr});
+    rt_.group_arena_bind_push_ = decl("yona_rt_group_arena_bind_push", vd, {group_ptr});
+    rt_.group_arena_bind_pop_ = decl("yona_rt_group_arena_bind_pop", vd, {});
 
     // ADT runtime (recursive types)
     auto i8 = LType::getInt8Ty(*context_);

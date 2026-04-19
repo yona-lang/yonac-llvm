@@ -359,6 +359,12 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         auto saved_values = named_values_;
         auto saved_di_scope = debug_.scope;
         auto saved_debug_loc = builder_->getCurrentDebugLocation();
+        // Nested LLVM functions must not inherit the enclosing function's
+        // task-group arena / group pointers (SSA values in the outer fn).
+        auto saved_outer_arena = current_arena_;
+        auto saved_outer_group = current_group_;
+        current_arena_ = nullptr;
+        current_group_ = nullptr;
 
         // Create debug info for closure function
         if (debug_.enabled && debug_.builder && debug_.file) {
@@ -455,6 +461,8 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         }
 
         // Restore state
+        current_arena_ = saved_outer_arena;
+        current_group_ = saved_outer_group;
         named_values_ = saved_values;
         debug_.scope = saved_di_scope;
         if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);
@@ -770,6 +778,10 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto saved_values = named_values_;
     auto saved_di_scope = debug_.scope;
     auto saved_debug_loc = builder_->getCurrentDebugLocation();
+    auto saved_outer_arena = current_arena_;
+    auto saved_outer_group = current_group_;
+    current_arena_ = nullptr;
+    current_group_ = nullptr;
 
     // Create debug info for this function
     if (debug_.enabled && debug_.builder && debug_.file) {
@@ -1258,6 +1270,8 @@ Codegen::CompiledFunction Codegen::compile_function(
     }
 
     // Restore
+    current_arena_ = saved_outer_arena;
+    current_group_ = saved_outer_group;
     named_values_ = saved_values;
     debug_.scope = saved_di_scope;
     if (saved_block) builder_->SetInsertPoint(saved_block, saved_point);

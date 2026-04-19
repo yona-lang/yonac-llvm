@@ -785,7 +785,8 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
 // Clean up scope: RC decrement bindings, destroy arena, clean deferred generators.
 void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
                                  const std::vector<bool>& binding_is_arena,
-                                 const TypedValue& result, llvm::Value* arena) {
+                                 const TypedValue& result, llvm::Value* arena,
+                                 bool destroy_arena_at_end) {
     if (!scope_bindings.empty() && result && result.val) {
         emit_rc_inc(result.val, result.type);
         for (size_t i = 0; i < scope_bindings.size(); i++) {
@@ -804,7 +805,7 @@ void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
             emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
         }
     }
-    if (arena)
+    if (arena && destroy_arena_at_end)
         builder_->CreateCall(rt_.arena_destroy_, {arena});
 }
 
@@ -814,20 +815,27 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     // 1. Escape analysis
     auto non_escaping = analyze_let_escaping(node);
 
-    // 2. Arena setup
+    const bool has_group = node->aliases.size() > 1;
+    // 2. Arena: task groups always get a parent-thread bump arena (freed with
+    //    the group / on raise unwind). Other multi-binding lets use escape-based
+    //    arena only when enough bindings qualify.
     auto saved_arena = current_arena_;
-    auto* arena = setup_let_arena(non_escaping);
+    llvm::Value* arena = nullptr;
+    const bool group_arena_lifecycle = has_group;
+    if (has_group) {
+        auto i64_ty = LType::getInt64Ty(*context_);
+        arena = builder_->CreateCall(rt_.arena_create_,
+            {ConstantInt::get(i64_ty, ARENA_DEFAULT_SIZE)}, "let_group_arena");
+    } else {
+        arena = setup_let_arena(non_escaping);
+    }
 
-    // 3. Structured concurrency: create a task group for async let bindings.
-    //    The group ensures all async children complete before the scope exits,
-    //    with error propagation and cancellation.
+    // 3. Structured concurrency: task group + arena attach + TLS bind for raise
     auto saved_group = current_group_;
-    bool has_group = false;
-    // Detect if any alias might produce async work (we'll create the group
-    // eagerly — if no async work happens, the group is cheap to create/destroy)
-    if (node->aliases.size() > 1) {
+    if (has_group) {
         current_group_ = builder_->CreateCall(rt_.group_begin_, {}, "let_group");
-        has_group = true;
+        builder_->CreateCall(rt_.group_attach_arena_, {current_group_, arena});
+        builder_->CreateCall(rt_.group_arena_bind_push_, {current_group_});
     }
 
     // 4. Codegen all aliases
@@ -835,21 +843,39 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     std::vector<bool> binding_is_arena;
     codegen_let_aliases(node, arena, non_escaping, scope_bindings, binding_is_arena);
 
-    // 5. Codegen body
+    // 5. Task group: use bump arena for the let body too (non-escaping gating unchanged)
+    if (has_group && arena)
+        current_arena_ = arena;
+
+    // 6. Codegen body
     auto result = codegen(node->expr);
 
-    // 6. Structured concurrency: await all group children before cleanup
-    if (has_group) {
+    if (has_group && arena)
+        current_arena_ = saved_arena;
+
+    const bool body_terminated = builder_->GetInsertBlock()->getTerminator() != nullptr;
+
+    // 7. Await children before scope cleanup (only on fall-through path; raise/
+    //    other terminators skip IR here — runtime unwind calls yona_rt_group_end).
+    if (has_group && !body_terminated)
         builder_->CreateCall(rt_.group_await_all_, {current_group_});
-        builder_->CreateCall(rt_.group_end_, {current_group_});
+
+    // 8. Cleanup scope (group arena: yona_rt_group_end destroys bump memory)
+    if (!body_terminated)
+        cleanup_let_scope(scope_bindings, binding_is_arena, result, arena,
+                          !group_arena_lifecycle);
+
+    if (has_group) {
+        if (!body_terminated) {
+            builder_->CreateCall(rt_.group_arena_bind_pop_, {});
+            builder_->CreateCall(rt_.group_end_, {current_group_});
+        }
         current_group_ = saved_group;
     }
 
-    // 7. Cleanup scope
-    cleanup_let_scope(scope_bindings, binding_is_arena, result, arena);
     current_arena_ = saved_arena;
 
-    // 6. Clean up deferred generators not consumed by fusion
+    // 9. Clean up deferred generators not consumed by fusion
     for (auto* alias : node->aliases)
         if (auto* va = dynamic_cast<ValueAlias*>(alias))
             deferred_generators_.erase(va->identifier->name->value);

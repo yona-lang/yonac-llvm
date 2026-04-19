@@ -60,6 +60,46 @@ _Thread_local int yona_try_depth = 0;
 int yona_rt_try_depth(void) { return yona_try_depth; }
 
 extern void yona_rt_rc_dec(void* ptr);
+extern void yona_rt_group_end(void* g);
+
+/* Task-group arena bindings: wholesale-free bump memory on raise unwind.
+ * Each push records the task group and yona_try_depth at entry; raise
+ * destroys arenas for bindings deeper than the catch we're jumping to. */
+#define YONA_MAX_GROUP_ARENA_BIND 32
+typedef struct {
+    void* group; /* yona_task_group_t* */
+    int try_depth;
+} yona_group_arena_bind_t;
+
+static _Thread_local yona_group_arena_bind_t yona_group_arena_stack[YONA_MAX_GROUP_ARENA_BIND];
+static _Thread_local int yona_group_arena_sp = 0;
+
+void yona_rt_group_arena_bind_push(void* group) {
+    if (yona_group_arena_sp >= YONA_MAX_GROUP_ARENA_BIND) {
+        fprintf(stderr, "Fatal: task-group arena bind stack overflow\n");
+        abort();
+    }
+    yona_group_arena_stack[yona_group_arena_sp].group = group;
+    yona_group_arena_stack[yona_group_arena_sp].try_depth = yona_try_depth;
+    yona_group_arena_sp++;
+}
+
+void yona_rt_group_arena_bind_pop(void) {
+    if (yona_group_arena_sp <= 0) return;
+    yona_group_arena_sp--;
+}
+
+static void yona_rt_group_arena_unwind_to(int target_try_depth) {
+    while (yona_group_arena_sp > 0) {
+        yona_group_arena_bind_t* top = &yona_group_arena_stack[yona_group_arena_sp - 1];
+        if (top->try_depth <= target_try_depth) break;
+        void* g = top->group;
+        yona_group_arena_sp--;
+        /* Full group teardown (arena + mutex + free), matching codegen's
+         * normal group_end path — must run before longjmp skips it. */
+        yona_rt_group_end(g);
+    }
+}
 
 void yona_rt_frame_push(yona_frame_t* f) {
     /* The codegen's inline depth check (yona_rt_try_depth) already
@@ -160,6 +200,8 @@ void yona_rt_raise(int64_t symbol, const char* message) {
     /* Phase 3: unwind owned-heap frames before longjmp blows past
      * their function-exit cleanups. */
     yona_rt_unwind_frames_to(yona_exc.saved_frame[yona_exc.depth]);
+    /* Task-group bump arenas: free wholesale for scopes being torn past. */
+    yona_rt_group_arena_unwind_to(yona_exc.depth);
     longjmp(yona_exc.buf[yona_exc.depth], 1);
 }
 

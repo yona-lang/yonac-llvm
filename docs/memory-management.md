@@ -151,6 +151,25 @@ Benefits:
 - No per-object free (bulk deallocation)
 - No RC overhead for arena values (sentinel skips rc_dec)
 
+### Task-group arenas (structured concurrency)
+
+Multi-binding `let` blocks (implicit **task group**, see `docs/structured-concurrency.md`)
+always allocate a bump arena on the **parent thread**, attach it to the
+`yona_task_group_t`, and route non-escaping bindings plus the let **body**
+through `current_arena_` into that arena. On normal completion,
+`yona_rt_group_end` destroys the arena wholesale after `cleanup_let_scope`
+(so arena-backed seq/tuple/dict payloads are not individually `rc_dec`'d).
+
+On **`raise`**, `yona_rt_raise` (`src/runtime/exceptions.c`) walks a small
+TLS stack of active task groups (recorded at `group_arena_bind_push` time
+with the current `yona_try_depth`) and calls `yona_rt_group_end` for each
+scope being unwound past the target `catch` — so bump memory and the group
+struct are reclaimed even when LLVM never reaches the normal `group_end`
+call site.
+
+Async work scheduled into the thread pool does **not** use this arena (v1);
+only synchronous codegen in the enclosing function uses the bump pointer.
+
 ## Recursive Destructors
 
 When `rc_dec` brings refcount to 0, the runtime recursively frees children

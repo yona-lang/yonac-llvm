@@ -458,7 +458,9 @@ private:
         llvm::Function *group_begin_ = nullptr, *group_register_ = nullptr,
             *group_register_io_ = nullptr, *group_await_all_ = nullptr,
             *group_end_ = nullptr, *group_cancel_ = nullptr, *group_is_cancelled_ = nullptr,
-            *async_call_grouped_ = nullptr, *async_call_thunk_grouped_ = nullptr;
+            *async_call_grouped_ = nullptr, *async_call_thunk_grouped_ = nullptr,
+            *group_attach_arena_ = nullptr,
+            *group_arena_bind_push_ = nullptr, *group_arena_bind_pop_ = nullptr;
         // Exceptions
         llvm::Function *try_begin_ = nullptr, *try_end_ = nullptr, *raise_ = nullptr,
             *get_exc_sym_ = nullptr, *get_exc_msg_ = nullptr;
@@ -548,7 +550,8 @@ private:
                               std::vector<bool>& binding_is_arena);
     void cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
                             const std::vector<bool>& binding_is_arena,
-                            const TypedValue& result, llvm::Value* arena);
+                            const TypedValue& result, llvm::Value* arena,
+                            bool destroy_arena_at_end = true);
 
     TypedValue codegen_if(IfExpr* node);
     TypedValue codegen_case(CaseExpr* node);

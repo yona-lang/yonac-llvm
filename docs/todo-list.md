@@ -163,12 +163,13 @@ None currently tracked.
   codegen skip).
 
 ### Language — Architecture & Infrastructure
-- [ ] **Per-task-group arenas** — each task group allocates from a
+- [x] **Per-task-group arenas** — each task group allocates from a
   bump arena that's freed wholesale on group completion. Leverages
   existing arena + escape analysis (`include/EscapeAnalysis.h`) +
   the structured concurrency plan. Kills the "raise leaks heap
-  values" problem entirely for task groups (no per-object rc_dec
-  needed on unwind — just free the arena). ~300 lines.
+  values" problem for task groups on `raise` unwind (TLS bind stack
+  + `yona_rt_group_end` from `exceptions.c`) and on success via codegen.
+  Benchmark: `bench/concurrency/task_group_arena.yona`.
 - [ ] **Supervisors as effect handlers** — model Erlang-style
   supervision trees via the existing algebraic effect system. A
   supervisor is a `handle ... with` that catches child-task failures

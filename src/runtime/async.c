@@ -11,6 +11,8 @@
 
 #include <unistd.h>
 
+void yona_rt_arena_destroy(void* arena_ptr);
+
 #define YONA_POOL_SIZE 8
 #define YONA_GROUP_INITIAL_CAP 8
 
@@ -47,6 +49,8 @@ typedef struct yona_task_group {
     int64_t first_error_symbol;
     const char* first_error_msg;
     int has_error;
+    /* Bump arena for structured-concurrency scope (parent thread only) */
+    void* arena;
     /* Synchronization */
     pthread_mutex_t mutex;
     pthread_cond_t done_cond;
@@ -98,8 +102,22 @@ int yona_rt_group_is_cancelled(yona_task_group_t* g) {
 /* Await all children, then re-raise first error if any */
 int64_t yona_rt_group_await_all(yona_task_group_t* g);  /* forward decl — needs async_await */
 
-void yona_rt_group_end(yona_task_group_t* g) {
+void yona_rt_group_attach_arena(yona_task_group_t* g, void* arena) {
     if (!g) return;
+    g->arena = arena;
+}
+
+void yona_rt_group_detach_arena(void* g_ptr) {
+    yona_task_group_t* g = (yona_task_group_t*)g_ptr;
+    if (!g || !g->arena) return;
+    yona_rt_arena_destroy(g->arena);
+    g->arena = NULL;
+}
+
+void yona_rt_group_end(void* g_ptr) {
+    yona_task_group_t* g = (yona_task_group_t*)g_ptr;
+    if (!g) return;
+    yona_rt_group_detach_arena(g);
     pthread_mutex_destroy(&g->mutex);
     pthread_cond_destroy(&g->done_cond);
     free(g->children);
