@@ -31,9 +31,16 @@ if(POLICY CMP0135)
 	set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 endif()
 
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+	cmake_policy(SET CMP0167 NEW)
+endif()
 
 project(YONAC_LLVM LANGUAGES CXX C)
+
+if(WIN32)
+	# Prevent Windows.h min/max macros from breaking std::min / std::max in LLVM and libc++.
+	add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -106,9 +113,22 @@ file(GLOB_RECURSE all_lib_SRCS
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/seq\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/hamt\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/exceptions\\.c$")
-list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/async\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/closures\\.c$")
-list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/channel\\.c$")
+# Platform layer: OS TUs + async/channel sources (#included from compiled_runtime.c only).
+list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/platform/.*\\.c$")
+if(WIN32)
+	list(APPEND all_lib_SRCS
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/file_windows.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/os_windows.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/net_windows.c"
+	)
+else()
+	list(APPEND all_lib_SRCS
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/file_linux.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/os_linux.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/net_linux.c"
+	)
+endif()
 if(NOT PCRE2_FOUND)
     list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/regex\\.c$")
 endif()
@@ -142,6 +162,9 @@ target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib_static PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(yona_lib_static PRIVATE ${llvm_libs})
+if(WIN32)
+	target_link_libraries(yona_lib_static PRIVATE ws2_32 dbghelp)
+endif()
 if(PCRE2_FOUND)
     target_link_libraries(yona_lib_static PRIVATE ${PCRE2_LIBRARIES})
     target_include_directories(yona_lib_static PRIVATE ${PCRE2_INCLUDE_DIRS})
@@ -153,13 +176,16 @@ target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 target_link_libraries(yona_lib PRIVATE ${llvm_libs})
+if(WIN32)
+	target_link_libraries(yona_lib PRIVATE ws2_32 dbghelp)
+endif()
 if(PCRE2_FOUND)
     target_link_libraries(yona_lib PRIVATE ${PCRE2_LIBRARIES})
     target_include_directories(yona_lib PRIVATE ${PCRE2_INCLUDE_DIRS})
 endif()
 
-# For DLL builds on Windows, we need to export symbols (only for SHARED libraries)
-if(WIN32 AND BUILD_SHARED_LIBS)
+# yona_lib is always SHARED; Windows needs explicit export for C++ symbols linked by yonac/yona.
+if(WIN32)
 	set_target_properties(yona_lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
@@ -171,13 +197,31 @@ endif ()
 add_executable(yonac ${all_yonac_SRCS})
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yonac PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
+if(WIN32)
+	# Avoid STL/DLL boundary ownership issues on MSVC/UCRT by linking the
+	# compiler driver against the static runtime library.
+	target_link_libraries(yonac PRIVATE yona_lib_static CLI11::CLI11)
+	target_compile_definitions(yonac PRIVATE YONA_STATIC_BUILD)
+else()
+	target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
+endif()
 
 # REPL executable
 add_executable(yona ${all_repl_SRCS})
 target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(yona PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
-target_link_libraries(yona PRIVATE yona_lib)
+if(WIN32)
+	target_link_libraries(yona PRIVATE yona_lib_static)
+	target_compile_definitions(yona PRIVATE YONA_STATIC_BUILD)
+else()
+	target_link_libraries(yona PRIVATE yona_lib)
+endif()
+
+if(WIN32)
+	# repl uses popen; map to _popen on UCRT (same header as tests).
+	target_compile_options(yona PRIVATE
+		"-include" "${CMAKE_CURRENT_BINARY_DIR}/test_config/yona_test_config.h")
+endif()
 
 enable_testing()
 
@@ -216,24 +260,40 @@ target_include_directories(tests PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/test
 	${CMAKE_CURRENT_BINARY_DIR}/test_config)
 
+if(WIN32)
+	# Tests use popen/pclose; force-include maps them to _popen/_pclose on UCRT.
+	target_compile_options(tests PRIVATE
+		"-include" "${CMAKE_CURRENT_BINARY_DIR}/test_config/yona_test_config.h")
+endif()
+
 # Register the test executable with CTest
 add_test(NAME doctest_tests COMMAND tests)
 
 # Set working directory for the test to the binary directory
+set(_yona_path_env "YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code:${CMAKE_CURRENT_SOURCE_DIR}/lib")
+set(_ctest_env "${_yona_path_env}")
+if(WIN32)
+	# Shell-out compile/link in tests uses YONAC_CC; CTest often runs without LLVM on PATH.
+	get_filename_component(_cxx_bindir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+	if(EXISTS "${_cxx_bindir}/clang.exe")
+		string(APPEND _ctest_env ";YONAC_CC=${_cxx_bindir}/clang.exe")
+	endif()
+endif()
+
 set_tests_properties(doctest_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     LABELS "unit"
-    ENVIRONMENT "YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code:${CMAKE_CURRENT_SOURCE_DIR}/lib"
+    ENVIRONMENT "${_ctest_env}"
 )
 
 # Set up test environment
 if(APPLE)
 	set_tests_properties(doctest_tests PROPERTIES
-		ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH};YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code:${CMAKE_CURRENT_SOURCE_DIR}/lib"
+		ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{DYLD_LIBRARY_PATH};${_ctest_env}"
 	)
 elseif(UNIX)
 	set_tests_properties(doctest_tests PROPERTIES
-		ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH};YONA_PATH=${CMAKE_CURRENT_SOURCE_DIR}/test/code:${CMAKE_CURRENT_SOURCE_DIR}/lib"
+		ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_CURRENT_BINARY_DIR}:$ENV{LD_LIBRARY_PATH};${_ctest_env}"
 	)
 endif()
 

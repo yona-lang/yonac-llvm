@@ -1,0 +1,72 @@
+Yona Benchmarks — -O2, 10 iterations
+============================================================
+  Startup (cold-start no-op, time/RSS): Yona=16.3ms/?, C=11.3ms/?, Erl=1153ms/?, Hs=22.9ms/?, Java=61.8ms/?, Node=42.7ms/?, Py=26.7ms/?
+
+  [concurrency]
+    parallel_async..............    127ms→111ms               ?  Erl:   1270ms→117ms              ?  0.9x  Java:    172ms→110ms              ?  1.0x  Node:    154ms→112ms              ?  1.0x  Py:    220ms→193ms              ?  0.6x
+
+============================================================
+  O2: 1/1 passed
+
+{
+  "O2": [
+    {
+      "name": "concurrency/parallel_async",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "400",
+      "times_ms": [
+        152.6861,
+        123.7731,
+        123.6756,
+        122.6471,
+        124.2796,
+        122.7481,
+        126.4794,
+        125.5196,
+        121.0819,
+        126.2185
+      ],
+      "min_ms": 121.0819,
+      "avg_ms": 126.9109,
+      "max_ms": 152.6861,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 110.6029,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0,
+      "erl_avg_ms": 1270.19932,
+      "erl_avg_ms_adj": 117.38085333333333,
+      "erl_startup_ms": 1152.8184666666666,
+      "erl_rss_kb": 0,
+      "erl_rss_kb_adj": 0,
+      "erl_startup_rss_kb": 0,
+      "erl_ratio": 0.09991416150340877,
+      "erl_ratio_adj": 0.9422567382937184,
+      "java_avg_ms": 172.15414,
+      "java_avg_ms_adj": 110.38757333333334,
+      "java_startup_ms": 61.76656666666667,
+      "java_rss_kb": 0,
+      "java_rss_kb_adj": 0,
+      "java_startup_rss_kb": 0,
+      "java_ratio": 0.7371934244509019,
+      "java_ratio_adj": 1.001950642270362,
+      "js_avg_ms": 154.34018,
+      "js_avg_ms_adj": 111.65224666666666,
+      "js_startup_ms": 42.68793333333334,
+      "js_rss_kb": 0,
+      "js_rss_kb_adj": 0,
+      "js_startup_rss_kb": 0,
+      "js_ratio": 0.8222803679508472,
+      "js_ratio_adj": 0.9906016520222881,
+      "py_avg_ms": 219.60984,
+      "py_avg_ms_adj": 192.9364733333333,
+      "py_startup_ms": 26.673366666666666,
+      "py_rss_kb": 0,
+      "py_rss_kb_adj": 0,
+      "py_startup_rss_kb": 0,
+      "py_ratio": 0.577892593519489,
+      "py_ratio_adj": 0.5732607116173059
+    }
+  ]
+}

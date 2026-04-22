@@ -29,6 +29,7 @@ class Yona < Formula
     (lib/"yona/src/runtime").install Dir["src/runtime/*.c"]
     (lib/"yona/src/runtime").install Dir["src/runtime/*.h"] if Dir["src/runtime/*.h"].any?
     (lib/"yona/src/runtime/platform").install Dir["src/runtime/platform/*"]
+    (lib/"yona/include/yona/runtime").install Dir["include/yona/runtime/*.h"]
   end
 
   test do

@@ -16,19 +16,125 @@ Usage:
 import argparse
 import json
 import os
-import resource
 import subprocess
 import sys
 import time
+import tempfile
+import shutil
+import ctypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BENCH_DIR = ROOT / "bench"
-YONAC = ROOT / "out" / "build" / "x64-debug-linux" / "yonac"
-BUILD_DIR = Path("/tmp/yona_bench")
+def _default_yonac():
+    candidates = [
+        ROOT / "out" / "build" / "x64-debug-linux" / "yonac",
+        ROOT / "out" / "build" / "x64-release-linux" / "yonac",
+        ROOT / "out" / "build" / "x64-debug" / "yonac.exe",
+        ROOT / "out" / "build" / "x64-release" / "yonac.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
 
-# Per-benchmark timeout (seconds) — prevents runaway benchmarks
-BENCH_TIMEOUT = 10
+
+YONAC = _default_yonac()
+BUILD_DIR = Path(tempfile.gettempdir()) / "yona_bench"
+STARTUP_CACHE_VERSION = "v2"
+
+# Per-benchmark timeout (seconds) — prevents runaway benchmarks while keeping
+# slower VM startup / process-heavy rows reliable on Windows.
+BENCH_TIMEOUT = 30
+
+
+def with_exe_suffix(path):
+    if os.name == "nt" and path.suffix.lower() != ".exe":
+        return Path(str(path) + ".exe")
+    return path
+
+
+def _ref_source(stem: str, ext: str, platform_specific: bool = False):
+    """Pick platform-specific ref first when available.
+
+    On Windows we prefer `name.win.ext` and fall back to `name.ext`.
+    Other platforms keep using `name.ext` unchanged.
+    """
+    if platform_specific and os.name == "nt":
+        win_src = BENCH_DIR / "reference" / f"{stem}.win.{ext}"
+        if win_src.exists():
+            return win_src
+    src = BENCH_DIR / "reference" / f"{stem}.{ext}"
+    return src if src.exists() else None
+
+
+def _write_bytes(path, chunk: bytes, total: int):
+    with open(path, "wb") as f:
+        left = total
+        while left > 0:
+            n = min(left, len(chunk))
+            f.write(chunk[:n])
+            left -= n
+
+
+def _ensure_text_fixture(path: Path, total_bytes: int, newline_count: int):
+    """Create deterministic LF-only text fixture with exact byte size."""
+    if path.exists() and path.stat().st_size == total_bytes:
+        raw = path.read_bytes()
+        if raw.count(b"\n") == newline_count:
+            max_line = 0
+            cur = 0
+            for b in raw:
+                if b == 0x0A:
+                    if cur > max_line:
+                        max_line = cur
+                    cur = 0
+                else:
+                    cur += 1
+            if max_line <= 1023:
+                return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if newline_count <= 0 or total_bytes <= newline_count:
+        raise ValueError(f"invalid fixture shape for {path}")
+    text_bytes = total_bytes - newline_count
+    base_len = text_bytes // newline_count
+    extra = text_bytes % newline_count
+    if base_len <= 0:
+        raise ValueError(f"invalid fixture line size for {path}")
+    with open(path, "wb") as f:
+        for i in range(newline_count):
+            line_len = base_len + (1 if i < extra else 0)
+            f.write(b"a" * line_len)
+            f.write(b"\n")
+
+
+def _normalize_lf(path: Path):
+    if not path.exists():
+        return
+    raw = path.read_bytes()
+    if b"\r\n" not in raw:
+        return
+    path.write_bytes(raw.replace(b"\r\n", b"\n"))
+
+
+def ensure_benchmark_data():
+    data_dir = BENCH_DIR / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    # Keep canonical LF text sizes so benchmark expected outputs are cross-platform stable.
+    _ensure_text_fixture(data_dir / "bench_text.txt", total_bytes=1206681, newline_count=20000)
+    _ensure_text_fixture(data_dir / "large_text.txt", total_bytes=55022092, newline_count=500000)
+    chunk_sizes = [9101111, 9101111, 9101111, 9101109]  # sum = 36404442
+    for i, size in enumerate(chunk_sizes, start=1):
+        p = data_dir / f"chunk_{i}.txt"
+        if not p.exists() or p.stat().st_size != size:
+            _write_bytes(p, b"c", size)
+    # Binary fixture for binary I/O benches (5 MiB).
+    bin_path = data_dir / "bench_binary.bin"
+    if not bin_path.exists() or bin_path.stat().st_size != 5 * 1024 * 1024:
+        pat = bytes(range(256))
+        _write_bytes(bin_path, pat, 5 * 1024 * 1024)
+    # If git checkout converted line endings, normalize back to LF.
+    _normalize_lf(data_dir / "bench_text.txt")
 
 
 def find_benchmarks(filter_name=None):
@@ -61,7 +167,15 @@ def compile_yona(source, opt_level, exe_path):
 
 
 def compile_c(c_file, exe_path):
-    cmd = ["cc", "-O2", "-lm", "-o", str(exe_path), str(c_file)]
+    cc = os.environ.get("YONAC_CC")
+    if not cc:
+        cc = (shutil.which("clang")
+              or shutil.which("cc")
+              or shutil.which("gcc")
+              or "clang")
+    cmd = [cc, "-O2", "-o", str(exe_path), str(c_file)]
+    if os.name != "nt":
+        cmd.insert(2, "-lm")
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         return result.returncode == 0
@@ -72,10 +186,10 @@ def compile_c(c_file, exe_path):
 # Reference-language registry. Each entry returns a runnable command list for
 # /usr/bin/time or None if prerequisites are missing.
 def _prep_c(stem, build_dir):
-    src = BENCH_DIR / "reference" / (stem + ".c")
-    if not src.exists():
+    src = _ref_source(stem, "c", platform_specific=True)
+    if src is None:
         return None
-    exe = build_dir / f"ref_c_{stem}"
+    exe = with_exe_suffix(build_dir / f"ref_c_{stem}")
     if not compile_c(src, exe):
         return None
     return [str(exe)]
@@ -86,8 +200,8 @@ def _prep_erl(stem, build_dir):
     benchmark run measures compiled Erlang, not the escript interpreter.
     The .erl file is expected to define `main/1`; we convert it to a
     regular module, compile with erlc, and invoke via erl -noshell."""
-    src = BENCH_DIR / "reference" / (stem + ".erl")
-    if not src.exists():
+    src = _ref_source(stem, "erl")
+    if src is None:
         return None
     from shutil import which
     if not which("erl") or not which("erlc"):
@@ -128,8 +242,8 @@ def _prep_java(stem, build_dir):
     """Compile a Java reference with javac; invoke via `java ClassName`.
     The .java file is expected to define a top-level class matching `stem`
     (or one with a `main(String[])` method)."""
-    src = BENCH_DIR / "reference" / (stem + ".java")
-    if not src.exists():
+    src = _ref_source(stem, "java")
+    if src is None:
         return None
     from shutil import which
     if not which("java") or not which("javac"):
@@ -161,20 +275,26 @@ def _prep_java(stem, build_dir):
 
 def _prep_hs(stem, build_dir):
     """Compile a Haskell reference with ghc -O2 (native binary)."""
-    src = BENCH_DIR / "reference" / (stem + ".hs")
-    if not src.exists():
+    src = _ref_source(stem, "hs")
+    if src is None:
         return None
     from shutil import which
-    if not which("ghc"):
+    ghc_cmd = None
+    if which("ghc"):
+        ghc_cmd = ["ghc"]
+    elif which("stack"):
+        # Fallback when users have Stack installed but ghc isn't on PATH.
+        ghc_cmd = ["stack", "ghc", "--"]
+    if not ghc_cmd:
         return None
-    exe = build_dir / f"ref_hs_{stem}"
+    exe = with_exe_suffix(build_dir / f"ref_hs_{stem}")
     if not exe.exists() or src.stat().st_mtime > exe.stat().st_mtime:
         # -outputdir keeps .hi/.o clutter inside build_dir rather than
         # next to the source.
         hdir = build_dir / f"hs_{stem}"
         hdir.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
-            ["ghc", "-O2", "-outputdir", str(hdir), "-o", str(exe), str(src)],
+            ghc_cmd + ["-O2", "-outputdir", str(hdir), "-o", str(exe), str(src)],
             capture_output=True, text=True, timeout=60,
         )
         if result.returncode != 0 or not exe.exists():
@@ -184,8 +304,8 @@ def _prep_hs(stem, build_dir):
 
 def _prep_js(stem, build_dir):
     """Node.js reference — no compile step, invoke `node file.js` directly."""
-    src = BENCH_DIR / "reference" / (stem + ".js")
-    if not src.exists():
+    src = _ref_source(stem, "js")
+    if src is None:
         return None
     from shutil import which
     if not which("node"):
@@ -195,24 +315,25 @@ def _prep_js(stem, build_dir):
 
 def _prep_py(stem, build_dir):
     """Python reference — no compile step, invoke `python3 file.py` directly."""
-    src = BENCH_DIR / "reference" / (stem + ".py")
-    if not src.exists():
+    src = _ref_source(stem, "py")
+    if src is None:
         return None
     from shutil import which
-    if not which("python3"):
+    py = which("python") or which("python3") or sys.executable
+    if not py:
         return None
-    return ["python3", str(src)]
+    return [py, str(src)]
 
 
 def _prep_go(stem, build_dir):
     """Compile a Go reference with `go build`."""
-    src = BENCH_DIR / "reference" / (stem + ".go")
-    if not src.exists():
+    src = _ref_source(stem, "go")
+    if src is None:
         return None
     from shutil import which
     if not which("go"):
         return None
-    exe = build_dir / f"ref_go_{stem}"
+    exe = with_exe_suffix(build_dir / f"ref_go_{stem}")
     if not exe.exists() or src.stat().st_mtime > exe.stat().st_mtime:
         result = subprocess.run(
             ["go", "build", "-o", str(exe), str(src)],
@@ -235,7 +356,22 @@ def measure_startup(lang, build_dir, iterations=3):
     if cache.exists():
         try:
             parts = cache.read_text().strip().split()
-            return float(parts[0]), (int(parts[1]) if len(parts) > 1 else 0)
+            # v2 format: "<version> <avg_ms> <peak_rss_kb>"
+            if len(parts) >= 3 and parts[0] == STARTUP_CACHE_VERSION:
+                avg_ms = float(parts[1])
+                peak_rss = int(parts[2])
+                # On Windows we now expect startup RSS to be measurable.
+                # If legacy zero-RSS slipped in, force recompute.
+                if os.name == "nt" and peak_rss <= 0:
+                    raise ValueError("stale startup RSS cache")
+                return avg_ms, peak_rss
+            # Legacy cache support (v1): "<avg_ms> [peak_rss_kb]"
+            if len(parts) >= 2:
+                avg_ms = float(parts[0])
+                peak_rss = int(parts[1])
+                if os.name == "nt" and peak_rss <= 0:
+                    raise ValueError("stale legacy startup RSS cache")
+                return avg_ms, peak_rss
         except (ValueError, IndexError):
             pass
     probe_dir = build_dir / "_startup"
@@ -244,12 +380,15 @@ def measure_startup(lang, build_dir, iterations=3):
     from shutil import which
     cmd = None
     if lang == "c":
-        if not which("cc"):
+        cc = which(os.environ.get("YONAC_CC", "")) if os.environ.get("YONAC_CC") else None
+        if not cc:
+            cc = which("clang") or which("cc")
+        if not cc:
             return 0.0, 0
         src = probe_dir / "startup.c"
         src.write_text("int main(void){return 0;}\n")
-        exe = probe_dir / "startup_c"
-        if subprocess.run(["cc", "-O2", "-o", str(exe), str(src)],
+        exe = with_exe_suffix(probe_dir / "startup_c")
+        if subprocess.run([cc, "-O2", "-o", str(exe), str(src)],
                           capture_output=True, timeout=30).returncode != 0:
             return 0.0, 0
         cmd = [str(exe)]
@@ -273,13 +412,18 @@ def measure_startup(lang, build_dir, iterations=3):
             return 0.0, 0
         cmd = ["java", "-cp", str(probe_dir), "startup_java"]
     elif lang == "hs":
-        if not which("ghc"):
+        ghc_cmd = None
+        if which("ghc"):
+            ghc_cmd = ["ghc"]
+        elif which("stack"):
+            ghc_cmd = ["stack", "ghc", "--"]
+        if not ghc_cmd:
             return 0.0, 0
         src = probe_dir / "startup_hs.hs"
         src.write_text("main = return ()\n")
-        exe = probe_dir / "startup_hs"
+        exe = with_exe_suffix(probe_dir / "startup_hs")
         if subprocess.run(
-            ["ghc", "-O2", "-outputdir", str(probe_dir), "-o", str(exe), str(src)],
+            ghc_cmd + ["-O2", "-outputdir", str(probe_dir), "-o", str(exe), str(src)],
             capture_output=True, timeout=60,
         ).returncode != 0:
             return 0.0, 0
@@ -291,17 +435,18 @@ def measure_startup(lang, build_dir, iterations=3):
         src.write_text("")
         cmd = ["node", str(src)]
     elif lang == "py":
-        if not which("python3"):
+        py = which("python") or which("python3") or sys.executable
+        if not py:
             return 0.0, 0
         src = probe_dir / "startup.py"
         src.write_text("")
-        cmd = ["python3", str(src)]
+        cmd = [py, str(src)]
     elif lang == "go":
         if not which("go"):
             return 0.0, 0
         src = probe_dir / "startup.go"
         src.write_text("package main\nfunc main(){}\n")
-        exe = probe_dir / "startup_go"
+        exe = with_exe_suffix(probe_dir / "startup_go")
         if subprocess.run(["go", "build", "-o", str(exe), str(src)],
                           capture_output=True, timeout=60).returncode != 0:
             return 0.0, 0
@@ -309,7 +454,7 @@ def measure_startup(lang, build_dir, iterations=3):
     elif lang == "yona":
         src = probe_dir / "startup.yona"
         src.write_text("0\n")
-        exe = probe_dir / "startup_yona"
+        exe = with_exe_suffix(probe_dir / "startup_yona")
         if not compile_yona(src, 2, exe):
             return 0.0, 0
         cmd = [str(exe)]
@@ -329,7 +474,7 @@ def measure_startup(lang, build_dir, iterations=3):
         return 0.0, 0
     avg_ms = sum(times) / len(times)
     peak_rss = max(rss_values) if rss_values else 0
-    cache.write_text(f"{avg_ms} {peak_rss}\n")
+    cache.write_text(f"{STARTUP_CACHE_VERSION} {avg_ms} {peak_rss}\n")
     return avg_ms, peak_rss
 
 
@@ -344,29 +489,60 @@ REF_LANGS = {
 }
 
 
+def _windows_peak_working_set_kb(proc: subprocess.Popen) -> int:
+    """Return peak working set (KB) for a finished Windows process."""
+    if os.name != "nt":
+        return 0
+    try:
+        class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.c_uint32),
+                ("PageFaultCount", ctypes.c_uint32),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = PROCESS_MEMORY_COUNTERS()
+        counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+        ok = ctypes.windll.psapi.GetProcessMemoryInfo(
+            ctypes.c_void_p(proc._handle),
+            ctypes.byref(counters),
+            counters.cb,
+        )
+        if not ok:
+            return 0
+        return int(counters.PeakWorkingSetSize // 1024)
+    except Exception:
+        return 0
+
+
 def run_once(cmd_or_exe):
     """Run a command once. `cmd_or_exe` is a str (path) or a list of args.
     Returns (output, time_ms, peak_rss_kb) or None on failure."""
     try:
         cmd = cmd_or_exe if isinstance(cmd_or_exe, list) else [str(cmd_or_exe)]
-        cmd = ["/usr/bin/time", "-v"] + cmd
         start = time.perf_counter_ns()
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=BENCH_TIMEOUT)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = proc.communicate(timeout=BENCH_TIMEOUT)
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
-        output = result.stdout.strip()
-
-        # Parse peak RSS from /usr/bin/time -v output
-        peak_rss_kb = 0
-        for line in result.stderr.split("\n"):
-            if "Maximum resident set size" in line:
-                try:
-                    peak_rss_kb = int(line.strip().split()[-1])
-                except (ValueError, IndexError):
-                    pass
-                break
-
+        if proc.returncode != 0:
+            return None
+        output = stdout.strip()
+        # Cross-platform baseline: wall-clock always reported.
+        # Windows uses peak working set via GetProcessMemoryInfo.
+        peak_rss_kb = _windows_peak_working_set_kb(proc)
         return output, elapsed_ms, peak_rss_kb
     except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except Exception:
+            pass
         return None
     except Exception:
         return None
@@ -462,7 +638,7 @@ def run_suite(benchmarks, opt_level, iterations, compare_langs=()):
             print(f"\n  [{current_category}]")
 
         stem = bench["source"].stem
-        exe = BUILD_DIR / f"{stem}_O{opt_level}"
+        exe = with_exe_suffix(BUILD_DIR / f"{stem}_O{opt_level}")
 
         if not compile_yona(bench["source"], opt_level, exe):
             print(f"    {stem:.<28} COMPILE FAILED")
@@ -605,7 +781,12 @@ def main():
     parser.add_argument("--all-opt-levels", action="store_true", help="Run O0, O1, O2, O3")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--save", action="store_true", help="Save results to bench/history.jsonl")
+    parser.add_argument("--yonac", help="Path to yonac executable")
     args = parser.parse_args()
+
+    global YONAC
+    if args.yonac:
+        YONAC = Path(args.yonac)
 
     # Resolve comparison languages from the various flags.
     compare_langs = []
@@ -628,6 +809,8 @@ def main():
         print(f"Error: yonac not found at {YONAC}")
         print("Run: cmake --build --preset build-debug-linux")
         sys.exit(1)
+
+    ensure_benchmark_data()
 
     benchmarks = find_benchmarks(args.filter)
     if not benchmarks:

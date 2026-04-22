@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 
 extern void* rc_alloc(int64_t type_tag, size_t bytes);
@@ -679,7 +680,7 @@ void yona_rt_print_seq(int64_t* seq) {
     printf("[");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
-        printf("%ld", yona_rt_seq_get(seq, i));
+        printf("%" PRId64, yona_rt_seq_get(seq, i));
     }
     printf("]");
 }

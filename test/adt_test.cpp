@@ -5,8 +5,11 @@
 #include <cstdio>
 #include <array>
 #include <filesystem>
+#include <vector>
 #include "Parser.h"
 #include "Codegen.h"
+#include "repo_paths.h"
+#include "yona_link_util.hpp"
 
 using namespace std;
 using namespace yona;
@@ -25,8 +28,8 @@ static string compile_and_run_adt(const string& mod_source, const string& expr_s
     auto mod = mod_codegen.compile_module(mod_result.value().get());
     if (!mod) return "MOD_CODEGEN_ERROR";
 
-    string mod_obj = "/tmp/adt_mod_test.o";
-    if (!mod_codegen.emit_object_file(mod_obj)) return "MOD_EMIT_ERROR";
+    fs::path mod_obj = yona::test::link::scratch_root() / "adt_mod_test.o";
+    if (!mod_codegen.emit_object_file(mod_obj.string())) return "MOD_EMIT_ERROR";
 
     // Step 2: Compile the expression
     parser::Parser p2;
@@ -38,48 +41,16 @@ static string compile_and_run_adt(const string& mod_source, const string& expr_s
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
     if (!expr_mod) return "EXPR_CODEGEN_ERROR";
 
-    string expr_obj = "/tmp/adt_expr_test.o";
-    if (!expr_codegen.emit_object_file(expr_obj)) return "EXPR_EMIT_ERROR";
+    fs::path expr_obj = yona::test::link::scratch_root() / "adt_expr_test.o";
+    if (!expr_codegen.emit_object_file(expr_obj.string())) return "EXPR_EMIT_ERROR";
 
-    // Step 3: Compile runtime
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate)) {
-                string src_dir = string(dir);
-                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
-                system(cmd.c_str());
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                    if (fs::exists(plat_src)) {
-                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                    }
-                }
-                break;
-            }
-        }
-    }
+    std::vector<fs::path> link_objs = {mod_obj, expr_obj};
+    if (!yona::test::link::append_runtime_objects(link_objs)) return "RT_COMPILE_ERROR";
 
-    // Step 4: Link and run
-    string exe_path = "/tmp/adt_test_exe";
-    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
-                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
-    if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
+    fs::path exe_path = yona::test::link::scratch_root() / ("adt_test_exe" + yona::test::link::exe_suffix());
+    if (!yona::test::link::link_objs_to_exe(link_objs, exe_path)) return "LINK_ERROR";
 
-    array<char, 256> buffer;
-    string result;
-    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
-    if (!pipe) return "RUN_ERROR";
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-        result += buffer.data();
-    }
-    pclose(pipe);
-
-    if (!result.empty() && result.back() == '\n') result.pop_back();
-    return result;
+    return yona::test::link::popen_read_all(exe_path);
 }
 
 // ===== ADT Parsing Tests =====
@@ -315,12 +286,12 @@ end
     Codegen mod_codegen("thunk_mod");
     auto mod = mod_codegen.compile_module(mod_result.value().get());
     REQUIRE(mod != nullptr);
-    string mod_obj = "/tmp/thunk_mod_test.o";
-    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+    fs::path mod_obj = yona::test::link::scratch_root() / "thunk_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj.string()));
 
-    // Emit interface so the expression codegen can resolve imports
-    fs::create_directories("/tmp/yona_lib/Test");
-    REQUIRE(mod_codegen.emit_interface_file("/tmp/yona_lib/Test/Thunk.yonai"));
+    fs::path yona_lib = yona::test::link::scratch_root() / "yona_lib";
+    fs::create_directories(yona_lib / "Test");
+    REQUIRE(mod_codegen.emit_interface_file((yona_lib / "Test" / "Thunk.yonai").string()));
 
     // Step 2: Compile expression that imports from the module
     parser::Parser p2;
@@ -330,45 +301,18 @@ end
     REQUIRE(expr_result.node != nullptr);
 
     Codegen expr_codegen("thunk_test");
-    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    expr_codegen.module_paths_.push_back(yona_lib.string());
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
     REQUIRE(expr_mod != nullptr);
-    string expr_obj = "/tmp/thunk_expr_test.o";
-    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+    fs::path expr_obj = yona::test::link::scratch_root() / "thunk_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj.string()));
 
-    // Step 3: Compile runtime if needed, then link and run
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate)) {
-                string src_dir = string(dir);
-                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
-                system(cmd.c_str());
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                    if (fs::exists(plat_src)) {
-                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                    }
-                }
-                break;
-            }
-        }
-    }
-    string exe_path = "/tmp/thunk_test_exe";
-    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
-                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
-    REQUIRE(system(link_cmd.c_str()) == 0);
+    std::vector<fs::path> thunk_objs = {mod_obj, expr_obj};
+    REQUIRE(yona::test::link::append_runtime_objects(thunk_objs));
+    fs::path exe_path = yona::test::link::scratch_root() / ("thunk_test_exe" + yona::test::link::exe_suffix());
+    REQUIRE(yona::test::link::link_objs_to_exe(thunk_objs, exe_path));
 
-    array<char, 256> buffer;
-    string result;
-    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
-    REQUIRE(pipe != nullptr);
-    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
-    pclose(pipe);
-    if (!result.empty() && result.back() == '\n') result.pop_back();
+    string result = yona::test::link::popen_read_all(exe_path);
 
     CHECK(result == "99");
 }
@@ -391,11 +335,12 @@ takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (t
     Codegen mod_codegen("stream2_mod");
     auto mod = mod_codegen.compile_module(mod_result.value().get());
     REQUIRE(mod != nullptr);
-    string mod_obj = "/tmp/stream2_mod_test.o";
-    REQUIRE(mod_codegen.emit_object_file(mod_obj));
+    fs::path mod_obj = yona::test::link::scratch_root() / "stream2_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj.string()));
 
-    fs::create_directories("/tmp/yona_lib/Test");
-    REQUIRE(mod_codegen.emit_interface_file("/tmp/yona_lib/Test/Stream2.yonai"));
+    fs::path yona_lib = yona::test::link::scratch_root() / "yona_lib_stream2";
+    fs::create_directories(yona_lib / "Test");
+    REQUIRE(mod_codegen.emit_interface_file((yona_lib / "Test" / "Stream2.yonai").string()));
 
     // take 5 naturals starting from 1
     parser::Parser p2;
@@ -405,44 +350,18 @@ takeStream n s = if n <= 0 then [] else case s of End -> []; Next h t -> h :: (t
     REQUIRE(expr_result.node != nullptr);
 
     Codegen expr_codegen("stream2_test");
-    expr_codegen.module_paths_.push_back("/tmp/yona_lib");
+    expr_codegen.module_paths_.push_back(yona_lib.string());
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
     REQUIRE(expr_mod != nullptr);
-    string expr_obj = "/tmp/stream2_expr_test.o";
-    REQUIRE(expr_codegen.emit_object_file(expr_obj));
+    fs::path expr_obj = yona::test::link::scratch_root() / "stream2_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj.string()));
 
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate)) {
-                string src_dir = string(dir);
-                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
-                system(cmd.c_str());
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                    if (fs::exists(plat_src)) {
-                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                    }
-                }
-                break;
-            }
-        }
-    }
-    string exe_path = "/tmp/stream2_test_exe";
-    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
-                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
-    REQUIRE(system(link_cmd.c_str()) == 0);
+    std::vector<fs::path> s2_objs = {mod_obj, expr_obj};
+    REQUIRE(yona::test::link::append_runtime_objects(s2_objs));
+    fs::path exe_path = yona::test::link::scratch_root() / ("stream2_test_exe" + yona::test::link::exe_suffix());
+    REQUIRE(yona::test::link::link_objs_to_exe(s2_objs, exe_path));
 
-    array<char, 256> buffer;
-    string result;
-    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
-    REQUIRE(pipe != nullptr);
-    while (fgets(buffer.data(), buffer.size(), pipe)) result += buffer.data();
-    pclose(pipe);
-    if (!result.empty() && result.back() == '\n') result.pop_back();
+    string result = yona::test::link::popen_read_all(exe_path);
 
     CHECK(result == "[1, 2, 3, 4, 5]");
 }

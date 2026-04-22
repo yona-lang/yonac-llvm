@@ -20,6 +20,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <algorithm>
+#include <vector>
+#include <unordered_set>
 
 #include <CLI/CLI.hpp>
 #include "Parser.h"
@@ -33,6 +35,85 @@ using namespace std;
 using namespace yona;
 using namespace yona::compiler;
 using namespace yona::compiler::codegen;
+
+static const char* yonac_cc_exe() {
+    const char* e = getenv("YONAC_CC");
+    if (e && *e) return e;
+#ifdef _WIN32
+    return "clang";
+#else
+    return "cc";
+#endif
+}
+
+static string shell_stderr_null() {
+#ifdef _WIN32
+    return " 2>nul";
+#else
+    return " 2>/dev/null";
+#endif
+}
+
+static string q_cmd_path(const filesystem::path& p) {
+    return "\"" + p.string() + "\"";
+}
+
+static string llvm_link_executable() {
+#ifdef _WIN32
+    const char* tool = "llvm-link.exe";
+#else
+    const char* tool = "llvm-link";
+#endif
+    const char* cc = getenv("YONAC_CC");
+    if (!cc || !*cc) return tool;
+    filesystem::path cc_path(cc);
+    if (!cc_path.has_parent_path()) return tool;
+    return (cc_path.parent_path() / tool).string();
+}
+
+static const char* const platform_runtime_sources[] = {
+#ifdef _WIN32
+    "file_windows.c", "net_windows.c", "os_windows.c",
+#else
+    "file_linux.c", "net_linux.c", "os_linux.c",
+#endif
+};
+
+static filesystem::path canonical_if_exists(const filesystem::path& p) {
+    std::error_code ec;
+    if (!filesystem::exists(p, ec)) return {};
+    auto c = filesystem::weakly_canonical(p, ec);
+    return ec ? p : c;
+}
+
+static void push_unique_root(vector<filesystem::path>& roots,
+                             unordered_set<string>& seen,
+                             const filesystem::path& p) {
+    auto c = canonical_if_exists(p);
+    if (c.empty()) return;
+    string k = c.string();
+    if (seen.insert(k).second) roots.push_back(c);
+}
+
+static vector<filesystem::path> discover_sysroots(const char* argv0, const string& sysroot_opt) {
+    vector<filesystem::path> roots;
+    unordered_set<string> seen;
+
+    if (!sysroot_opt.empty()) push_unique_root(roots, seen, filesystem::path(sysroot_opt));
+    if (const char* h = getenv("YONA_HOME")) {
+        if (*h) push_unique_root(roots, seen, filesystem::path(h));
+    }
+    if (argv0 && *argv0) {
+        auto exe = canonical_if_exists(filesystem::path(argv0).parent_path());
+        if (!exe.empty()) {
+            push_unique_root(roots, seen, exe);
+            push_unique_root(roots, seen, exe.parent_path());
+        }
+    }
+    push_unique_root(roots, seen, filesystem::current_path());
+    push_unique_root(roots, seen, filesystem::current_path().parent_path());
+    return roots;
+}
 
 static bool is_module_source(const string& source) {
     auto it = source.begin();
@@ -57,12 +138,15 @@ int main(int argc, char* argv[]) {
     bool flag_debug = false;
     int opt_level = 2;
     vector<string> include_paths;
+    string sysroot_path;
     string explain_code;
 
     app.add_option("input", input_file, "Input .yona file");
     app.add_option("-e,--expression", expression, "Compile expression");
     app.add_option("-o,--output", output_file, "Output file");
     app.add_option("-I,--include", include_paths, "Module search paths (for .yonai files)");
+    app.add_option("--sysroot", sysroot_path,
+                   "Yona distribution root (used to find lib/ and runtime objects)");
     app.add_option("-O", opt_level, "Optimization level (0-3, default 2)")
        ->check(CLI::Range(0, 3));
     app.add_flag("--emit-ir", emit_ir, "Print LLVM IR instead of compiling");
@@ -121,7 +205,11 @@ int main(int argc, char* argv[]) {
             else
                 output_file = "a.o";
         } else {
+#ifdef _WIN32
+            output_file = "a.exe";
+#else
             output_file = "a.out";
+#endif
         }
     }
 
@@ -140,30 +228,32 @@ int main(int argc, char* argv[]) {
     if (flag_debug) codegen.set_debug_info(true, filename);
     codegen.set_opt_level(opt_level);
 
-    // Set module search paths for import resolution
-    codegen.module_paths_ = include_paths;
+    vector<filesystem::path> sysroots = discover_sysroots(argc > 0 ? argv[0] : nullptr, sysroot_path);
+
+    // Set module search paths for import resolution.
+    unordered_set<string> module_seen;
+    auto add_module_path = [&](const filesystem::path& p) {
+        auto c = canonical_if_exists(p);
+        if (c.empty()) return;
+        string s = c.string();
+        if (module_seen.insert(s).second) codegen.module_paths_.push_back(s);
+    };
+    for (const auto& inc : include_paths) add_module_path(inc);
     if (!input_file.empty()) {
         auto parent = filesystem::path(input_file).parent_path();
-        if (!parent.empty())
-            codegen.module_paths_.push_back(parent.string());
+        if (!parent.empty()) add_module_path(parent);
     }
-    codegen.module_paths_.push_back(".");
-    // Auto-discover lib/ for Prelude and stdlib (relative to cwd, exe, or common locations)
+    add_module_path(".");
+    for (const auto& root : sysroots) {
+        add_module_path(root / "lib");
+        add_module_path(root / "share" / "yona" / "lib");
+    }
+    // Backward-compatible relative probing.
     for (auto& candidate : {"lib", "../lib", "../../lib", "../../../lib"}) {
-        if (filesystem::exists(filesystem::path(candidate) / "Prelude.yonai")) {
-            codegen.module_paths_.push_back(filesystem::canonical(candidate).string());
+        auto c = canonical_if_exists(filesystem::path(candidate));
+        if (!c.empty() && filesystem::exists(c / "Prelude.yonai")) {
+            add_module_path(c);
             break;
-        }
-    }
-    // Also check relative to executable
-    if (argc > 0) {
-        auto exe_dir = filesystem::path(argv[0]).parent_path();
-        for (auto& rel : {"../lib", "../../lib", "../../../lib"}) {
-            auto candidate = exe_dir / rel;
-            if (filesystem::exists(candidate / "Prelude.yonai")) {
-                codegen.module_paths_.push_back(filesystem::canonical(candidate).string());
-                break;
-            }
         }
     }
 
@@ -246,35 +336,105 @@ int main(int argc, char* argv[]) {
 
     if (emit_obj) return 0;
 
-    // Link expression into executable
-    auto exe_dir = filesystem::path(argv[0]).parent_path();
+    // Link expression into executable.
+    auto exe_dir = canonical_if_exists(filesystem::path(argv[0]).parent_path());
+    if (exe_dir.empty()) exe_dir = filesystem::current_path();
     string rt_obj = (exe_dir / "compiled_runtime.o").string();
     string rt_bc = (exe_dir / "compiled_runtime.bc").string();
+    vector<string> rt_extra_objs; /* platform .o files linked alongside rt_obj */
 
-    // Find runtime source and compile to both .o (for linking) and .bc (for LTO)
-    for (auto& dir : {".", "..", "../.."}) {
-        auto candidate = filesystem::path(dir) / "src" / "compiled_runtime.c";
-        if (filesystem::exists(candidate)) {
-            string src_dir = (filesystem::path(dir) / "src").string();
+    auto find_packaged_runtime_objects = [&]() -> bool {
+        for (const auto& root : sysroots) {
+            for (const auto& base : {root / "runtime", root / "lib" / "yona" / "runtime"}) {
+                auto main_o = canonical_if_exists(base / "compiled_runtime.o");
+                if (main_o.empty()) continue;
+                rt_obj = main_o.string();
+                rt_extra_objs.clear();
+                for (const char* pf : platform_runtime_sources) {
+                    auto a = canonical_if_exists(base / ("crt_" + string(pf) + ".o"));
+                    auto b = canonical_if_exists(base / (string(pf) + ".o"));
+                    if (!a.empty()) rt_extra_objs.push_back(a.string());
+                    else if (!b.empty()) rt_extra_objs.push_back(b.string());
+                }
+                return true;
+            }
+        }
+        return false;
+    };
 
-            if (!filesystem::exists(rt_obj)) {
-                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_obj;
-                system(cmd.c_str());
-                // Compile platform layer
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = filesystem::path(dir) / "src" / "runtime" / "platform" / pf;
-                    if (filesystem::exists(plat_src)) {
-                        string plat_obj = rt_obj + "." + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj).c_str());
-                        system(("ld -r " + rt_obj + " " + plat_obj + " -o " + rt_obj + ".merged && mv " + rt_obj + ".merged " + rt_obj).c_str());
-                        filesystem::remove(plat_obj);
-                    }
+    bool have_packaged_runtime = find_packaged_runtime_objects();
+
+    // Find runtime source and compile to both .o (for linking) and .bc (for LTO) if needed.
+    if (!have_packaged_runtime) {
+        for (const auto& root : sysroots) {
+            auto candidate = root / "src" / "compiled_runtime.c";
+            if (!filesystem::exists(candidate)) continue;
+            filesystem::path src_dir_p = root / "src";
+            filesystem::path inc_dir_p = root / "include";
+            string i_flags = " -I" + q_cmd_path(src_dir_p) + " -I" + q_cmd_path(inc_dir_p);
+
+            vector<string> plat_pf;
+            vector<string> plat_obj_paths;
+            for (const char* pf : platform_runtime_sources) {
+                auto plat_src = root / "src" / "runtime" / "platform" / pf;
+                if (filesystem::exists(plat_src)) {
+                    plat_pf.push_back(pf);
+                    plat_obj_paths.push_back((exe_dir / ("crt_" + string(pf) + ".o")).string());
                 }
             }
 
+            bool need_rt = !filesystem::exists(filesystem::path(rt_obj));
+            for (const auto& po : plat_obj_paths) {
+                if (!filesystem::exists(filesystem::path(po))) {
+                    need_rt = true;
+                    break;
+                }
+            }
+
+            if (need_rt) {
+                const char* cc = yonac_cc_exe();
+                string main_cmd = string(cc) + " -c " + q_cmd_path(candidate) + i_flags + " -o " +
+                                   q_cmd_path(filesystem::path(rt_obj)) + shell_stderr_null();
+                if (system(main_cmd.c_str()) != 0) {
+                    cerr << "Error: failed to compile compiled_runtime.c (set YONAC_CC or install clang in PATH)"
+                         << endl;
+                    return 1;
+                }
+                for (size_t i = 0; i < plat_pf.size(); ++i) {
+                    auto plat_src = root / "src" / "runtime" / "platform" / plat_pf[i];
+                    string plat_cmd = string(cc) + " -c " + q_cmd_path(plat_src) + i_flags + " -o " +
+                                       q_cmd_path(filesystem::path(plat_obj_paths[i])) + shell_stderr_null();
+                    if (system(plat_cmd.c_str()) != 0) {
+                        cerr << "Error: failed to compile runtime platform " << plat_pf[i] << endl;
+                        return 1;
+                    }
+                }
+#ifndef _WIN32
+                for (size_t i = 0; i < plat_obj_paths.size(); ++i) {
+                    string merged = rt_obj + ".merged";
+                    string merge_cmd = string(cc) + " -r " + q_cmd_path(filesystem::path(rt_obj)) + " " +
+                                       q_cmd_path(filesystem::path(plat_obj_paths[i])) + " -o " +
+                                       q_cmd_path(filesystem::path(merged)) + shell_stderr_null();
+                    if (system(merge_cmd.c_str()) != 0) {
+                        cerr << "Error: failed to merge runtime objects" << endl;
+                        return 1;
+                    }
+                    filesystem::remove(rt_obj);
+                    filesystem::rename(merged, rt_obj);
+                    filesystem::remove(plat_obj_paths[i]);
+                }
+#else
+                rt_extra_objs = plat_obj_paths;
+#endif
+            }
+#ifdef _WIN32
+            else {
+                rt_extra_objs = plat_obj_paths;
+            }
+#endif
+
             // Compile to LLVM bitcode for LTO (enables runtime function inlining).
             // Merge all runtime sources (main + platform) into one bitcode.
-            // Regenerate if .bc doesn't exist or source is newer
             bool need_bc = !filesystem::exists(rt_bc);
             if (!need_bc && filesystem::exists(candidate)) {
                 auto bc_time = filesystem::last_write_time(rt_bc);
@@ -283,28 +443,26 @@ int main(int argc, char* argv[]) {
             }
             if (need_bc) {
                 string bc_main = rt_bc + ".main";
-                string bc_cmd = "clang -emit-llvm -O2 -c " + candidate.string() +
-                    " -I" + src_dir + " -o " + bc_main + " 2>/dev/null";
+                string bc_cmd = string(yonac_cc_exe()) + " -emit-llvm -O2 -c " + q_cmd_path(candidate) +
+                    i_flags + " -o " + q_cmd_path(filesystem::path(bc_main)) + shell_stderr_null();
                 system(bc_cmd.c_str());
 
-                // Compile platform files and link with llvm-link
                 vector<string> bc_files = {bc_main};
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = filesystem::path(dir) / "src" / "runtime" / "platform" / pf;
+                for (const char* pf : platform_runtime_sources) {
+                    auto plat_src = root / "src" / "runtime" / "platform" / pf;
                     if (filesystem::exists(plat_src)) {
                         string plat_bc = rt_bc + "." + string(pf) + ".bc";
-                        system(("clang -emit-llvm -O2 -c " + plat_src.string() +
-                            " -I" + src_dir + " -o " + plat_bc + " 2>/dev/null").c_str());
+                        system((string(yonac_cc_exe()) + " -emit-llvm -O2 -c " + q_cmd_path(plat_src) +
+                                   i_flags + " -o " + q_cmd_path(filesystem::path(plat_bc)) + shell_stderr_null())
+                                   .c_str());
                         bc_files.push_back(plat_bc);
                     }
                 }
-                // Link all bitcode files into one
-                string link_bc = "llvm-link";
-                for (auto& f : bc_files) link_bc += " " + f;
-                link_bc += " -o " + rt_bc + " 2>/dev/null";
+                string link_bc = llvm_link_executable();
+                for (const auto& f : bc_files) link_bc += " " + q_cmd_path(filesystem::path(f));
+                link_bc += " -o " + q_cmd_path(filesystem::path(rt_bc)) + shell_stderr_null();
                 system(link_bc.c_str());
-                // Clean up intermediate files
-                for (auto& f : bc_files) filesystem::remove(f);
+                for (const auto& f : bc_files) filesystem::remove(f);
             }
             break;
         }
@@ -335,12 +493,21 @@ int main(int argc, char* argv[]) {
     }
 
     // When LTO merged the runtime, don't link rt_obj separately (avoid dups).
-    // -rdynamic exports symbols for backtrace_symbols() stack traces.
-    string link_cmd = lto_active
-        ? "cc " + obj_file
-        : "cc " + obj_file + " " + rt_obj;
-    if (!prelude_obj.empty()) link_cmd += " " + prelude_obj;
-    link_cmd += " -lm -lpthread -rdynamic -o " + output_file;
+    // Unix: -rdynamic exports symbols for backtrace_symbols() stack traces.
+    const char* cc_link = yonac_cc_exe();
+    string link_cmd = string(cc_link) + " " + q_cmd_path(filesystem::path(obj_file));
+    if (!lto_active) {
+        link_cmd += " " + q_cmd_path(filesystem::path(rt_obj));
+#ifdef _WIN32
+        for (const auto& ex : rt_extra_objs) link_cmd += " " + q_cmd_path(filesystem::path(ex));
+#endif
+    }
+    if (!prelude_obj.empty()) link_cmd += " " + q_cmd_path(filesystem::path(prelude_obj));
+#ifdef _WIN32
+    link_cmd += " -o " + q_cmd_path(filesystem::path(output_file)) + " -lws2_32 -ldbghelp";
+#else
+    link_cmd += " -lm -lpthread -rdynamic -o " + q_cmd_path(filesystem::path(output_file));
+#endif
     int link_result = system(link_cmd.c_str());
     filesystem::remove(obj_file);
 

@@ -6,8 +6,8 @@
  * type-specific post-processing (close fd, null-terminate buffer, etc).
  */
 
-#include "../platform.h"
-#include "uring.h"
+#include "yona/runtime/platform.h"
+#include "yona/runtime/uring.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -376,6 +376,41 @@ int yona_platform_remove_file(const char* path) { return (remove(path) == 0) ? 0
 
 int64_t yona_platform_file_size(const char* path) {
     struct stat st; if (stat(path, &st) != 0) return -1; return (int64_t)st.st_size;
+}
+
+int64_t yona_platform_open_file_handle(const char* path, int64_t mode_tag) {
+    int flags = O_RDONLY;
+    if (mode_tag == 1) flags = O_WRONLY | O_CREAT | O_TRUNC;       /* Write */
+    else if (mode_tag == 2) flags = O_RDWR | O_CREAT;              /* ReadWrite */
+    else if (mode_tag == 3) flags = O_WRONLY | O_CREAT | O_APPEND; /* Append */
+    return (int64_t)open(path, flags, 0644);
+}
+
+int64_t yona_platform_close_file_handle(int fd) {
+    return (int64_t)close(fd);
+}
+
+int64_t yona_platform_seek_file_handle(int fd, int64_t offset, int64_t whence_tag) {
+    int whence = SEEK_SET;
+    if (whence_tag == 1) whence = SEEK_CUR;
+    else if (whence_tag == 2) whence = SEEK_END;
+    return (int64_t)lseek(fd, (off_t)offset, whence);
+}
+
+int64_t yona_platform_tell_file_handle(int fd) {
+    return (int64_t)lseek(fd, 0, SEEK_CUR);
+}
+
+int64_t yona_platform_advance_file_handle(int fd, int64_t delta) {
+    return (int64_t)lseek(fd, (off_t)delta, SEEK_CUR);
+}
+
+int64_t yona_platform_flush_file_handle(int fd) {
+    return fsync(fd) == 0 ? 1 : 0;
+}
+
+int64_t yona_platform_truncate_file_handle(int fd, int64_t length) {
+    return ftruncate(fd, (off_t)length) == 0 ? 1 : 0;
 }
 
 int64_t* yona_platform_list_dir(const char* path) {

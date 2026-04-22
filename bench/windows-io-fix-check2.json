@@ -1,0 +1,253 @@
+Yona Benchmarks — -O2, 3 iterations
+============================================================
+  Startup (cold-start no-op, time/RSS): Yona=16.3ms/?
+
+  [io]
+    binary_read_chunks..........  28.3ms→12.0ms               ?
+    binary_write_read...........  29.3ms→13.0ms               ?
+    file_parallel_read..........   26.2ms→9.9ms               ?
+    file_parallel_read_large....  34.8ms→18.5ms               ?
+    file_read...................  29.1ms→12.8ms               ?
+    file_read_large.............  39.1ms→22.8ms               ?
+    file_readlines..............  35.7ms→19.4ms               ?
+    file_readlines_large........  98.9ms→82.6ms               ?
+    file_write_read.............  28.6ms→12.3ms               ?
+    file_write_read_large.......   106ms→89.6ms               ?
+    process_exec................  60.9ms→44.6ms               ?
+    process_spawn...............          354ms               ?
+
+============================================================
+  O2: 12/12 passed
+
+{
+  "O2": [
+    {
+      "name": "io/binary_read_chunks",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "5242880",
+      "times_ms": [
+        56.467,
+        13.5226,
+        14.792
+      ],
+      "min_ms": 13.5226,
+      "avg_ms": 28.26053333333333,
+      "max_ms": 56.467,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 11.952533333333331,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/binary_write_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "5242880",
+      "times_ms": [
+        55.6511,
+        15.9457,
+        16.2003
+      ],
+      "min_ms": 15.9457,
+      "avg_ms": 29.2657,
+      "max_ms": 55.6511,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 12.957699999999999,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_parallel_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "3620043",
+      "times_ms": [
+        53.1008,
+        13.7802,
+        11.7986
+      ],
+      "min_ms": 11.7986,
+      "avg_ms": 26.226533333333332,
+      "max_ms": 53.1008,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 9.918533333333333,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_parallel_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "36404442",
+      "times_ms": [
+        65.4053,
+        20.1833,
+        18.8541
+      ],
+      "min_ms": 18.8541,
+      "avg_ms": 34.814233333333334,
+      "max_ms": 65.4053,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 18.506233333333334,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "1206681",
+      "times_ms": [
+        64.0454,
+        12.5167,
+        10.8154
+      ],
+      "min_ms": 10.8154,
+      "avg_ms": 29.125833333333333,
+      "max_ms": 64.0454,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 12.817833333333333,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "55022092",
+      "times_ms": [
+        69.9638,
+        23.687,
+        23.6585
+      ],
+      "min_ms": 23.6585,
+      "avg_ms": 39.103100000000005,
+      "max_ms": 69.9638,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 22.795100000000005,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_readlines",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "1186681",
+      "times_ms": [
+        75.2779,
+        15.8632,
+        15.9927
+      ],
+      "min_ms": 15.8632,
+      "avg_ms": 35.71126666666667,
+      "max_ms": 75.2779,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 19.403266666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_readlines_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "54522092",
+      "times_ms": [
+        127.9295,
+        85.3618,
+        83.4478
+      ],
+      "min_ms": 83.4478,
+      "avg_ms": 98.91303333333333,
+      "max_ms": 127.9295,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 82.60503333333332,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_write_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "1206681",
+      "times_ms": [
+        60.4091,
+        12.5557,
+        12.8039
+      ],
+      "min_ms": 12.5557,
+      "avg_ms": 28.589566666666666,
+      "max_ms": 60.4091,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 12.281566666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_write_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "55022092",
+      "times_ms": [
+        123.5795,
+        82.9017,
+        111.1633
+      ],
+      "min_ms": 82.9017,
+      "avg_ms": 105.8815,
+      "max_ms": 123.5795,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 89.5735,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/process_exec",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "14",
+      "times_ms": [
+        98.2558,
+        41.589,
+        42.7738
+      ],
+      "min_ms": 41.589,
+      "avg_ms": 60.87286666666666,
+      "max_ms": 98.2558,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 44.56486666666666,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/process_spawn",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "48893",
+      "times_ms": [
+        391.9476,
+        323.6599,
+        347.0763
+      ],
+      "min_ms": 323.6599,
+      "avg_ms": 354.22793333333334,
+      "max_ms": 391.9476,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 337.91993333333335,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    }
+  ]
+}

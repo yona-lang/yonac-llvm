@@ -5,9 +5,11 @@
 #include <cstdio>
 #include <array>
 #include <filesystem>
+#include <vector>
 #include "Parser.h"
 #include "Codegen.h"
 #include "repo_paths.h"
+#include "yona_link_util.hpp"
 
 using namespace std;
 using namespace yona;
@@ -28,13 +30,13 @@ static string compile_and_run_trait(const string& mod_source, const string& expr
     if (!mod) return "MOD_CODEGEN_ERROR";
     if (mod_codegen.error_count_ > 0) return "MOD_CODEGEN_ERRORS";
 
-    string mod_obj = "/tmp/trait_mod_test.o";
-    if (!mod_codegen.emit_object_file(mod_obj)) return "MOD_EMIT_ERROR";
+    fs::path mod_obj = yona::test::link::scratch_root() / "trait_mod_test.o";
+    if (!mod_codegen.emit_object_file(mod_obj.string())) return "MOD_EMIT_ERROR";
 
-    // Emit interface file at the correct path for module resolution
-    fs::path iface_dir = fs::path("/tmp/yona_trait_lib") / fs::path(mod_name).parent_path();
+    fs::path trait_lib = yona::test::link::scratch_root() / "yona_trait_lib";
+    fs::path iface_dir = trait_lib / fs::path(mod_name).parent_path();
     fs::create_directories(iface_dir);
-    string iface = (fs::path("/tmp/yona_trait_lib") / mod_name).string() + ".yonai";
+    string iface = (trait_lib / mod_name).string() + ".yonai";
     if (!mod_codegen.emit_interface_file(iface)) return "IFACE_EMIT_ERROR";
 
     // Step 2: Compile the expression
@@ -44,52 +46,20 @@ static string compile_and_run_trait(const string& mod_source, const string& expr
     if (!expr_result.node) return "EXPR_PARSE_ERROR";
 
     Codegen expr_codegen("trait_test");
-    expr_codegen.module_paths_.push_back("/tmp/yona_trait_lib");
+    expr_codegen.module_paths_.push_back(trait_lib.string());
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
     if (!expr_mod) return "EXPR_CODEGEN_ERROR";
 
-    string expr_obj = "/tmp/trait_expr_test.o";
-    if (!expr_codegen.emit_object_file(expr_obj)) return "EXPR_EMIT_ERROR";
+    fs::path expr_obj = yona::test::link::scratch_root() / "trait_expr_test.o";
+    if (!expr_codegen.emit_object_file(expr_obj.string())) return "EXPR_EMIT_ERROR";
 
-    // Step 3: Compile runtime
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
-        for (auto& dir : {".", "src", "../src", "../../src"}) {
-            auto candidate = fs::path(dir) / "compiled_runtime.c";
-            if (fs::exists(candidate)) {
-                string src_dir = string(dir);
-                string cmd = "cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null";
-                system(cmd.c_str());
-                for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                    auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                    if (fs::exists(plat_src)) {
-                        string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                        system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                        system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                    }
-                }
-                break;
-            }
-        }
-    }
+    std::vector<fs::path> trait_objs = {mod_obj, expr_obj};
+    if (!yona::test::link::append_runtime_objects(trait_objs)) return "RT_COMPILE_ERROR";
 
-    // Step 4: Link and run
-    string exe_path = "/tmp/trait_test_exe";
-    string link_cmd = "cc " + mod_obj + " " + expr_obj + " " + rt_path +
-                      " -lm -lpthread -o " + exe_path + " 2>/dev/null";
-    if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
+    fs::path exe_path = yona::test::link::scratch_root() / ("trait_test_exe" + yona::test::link::exe_suffix());
+    if (!yona::test::link::link_objs_to_exe(trait_objs, exe_path)) return "LINK_ERROR";
 
-    array<char, 256> buffer;
-    string result;
-    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
-    if (!pipe) return "RUN_ERROR";
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-        result += buffer.data();
-    }
-    pclose(pipe);
-
-    if (!result.empty() && result.back() == '\n') result.pop_back();
-    return result;
+    return yona::test::link::popen_read_all(exe_path);
 }
 
 // ===== Trait Parsing Tests =====
@@ -654,12 +624,13 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
     if (!mod) return "MOD_CODEGEN_ERROR";
     if (mod_codegen.error_count_ > 0) return "MOD_CODEGEN_ERRORS";
 
-    string mod_obj = "/tmp/trait_mod_test.o";
-    if (!mod_codegen.emit_object_file(mod_obj)) return "MOD_EMIT_ERROR";
+    fs::path trait_lib = yona::test::link::scratch_root() / "yona_trait_lib_derive";
+    fs::path mod_obj = yona::test::link::scratch_root() / "trait_derive_mod_test.o";
+    if (!mod_codegen.emit_object_file(mod_obj.string())) return "MOD_EMIT_ERROR";
 
-    fs::path iface_dir = fs::path("/tmp/yona_trait_lib") / fs::path(mod_name).parent_path();
+    fs::path iface_dir = trait_lib / fs::path(mod_name).parent_path();
     fs::create_directories(iface_dir);
-    string iface = (fs::path("/tmp/yona_trait_lib") / mod_name).string() + ".yonai";
+    string iface = (trait_lib / mod_name).string() + ".yonai";
     if (!mod_codegen.emit_interface_file(iface)) return "IFACE_EMIT_ERROR";
 
     parser::Parser p2;
@@ -668,7 +639,7 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
     if (!expr_result.node) return "EXPR_PARSE_ERROR";
 
     Codegen expr_codegen("trait_test");
-    expr_codegen.module_paths_.push_back("/tmp/yona_trait_lib");
+    expr_codegen.module_paths_.push_back(trait_lib.string());
     if (fs::exists(yona::test::lib_dir()))
         expr_codegen.module_paths_.push_back(fs::canonical(yona::test::lib_dir()).string());
     for (auto& dir : {"lib", "../lib", "../../lib", "../../../lib"})
@@ -676,42 +647,10 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
     auto expr_mod = expr_codegen.compile(expr_result.node.get());
     if (!expr_mod) return "EXPR_CODEGEN_ERROR";
 
-    string expr_obj = "/tmp/trait_expr_test.o";
-    if (!expr_codegen.emit_object_file(expr_obj)) return "EXPR_EMIT_ERROR";
+    fs::path expr_obj = yona::test::link::scratch_root() / "trait_derive_expr_test.o";
+    if (!expr_codegen.emit_object_file(expr_obj.string())) return "EXPR_EMIT_ERROR";
 
-    string rt_path = "/tmp/compiled_runtime_test.o";
-    if (!fs::exists(rt_path)) {
-        auto cr = yona::test::src_dir() / "compiled_runtime.c";
-        if (fs::exists(cr)) {
-            string src_dir = yona::test::src_dir().string();
-            system(("cc -c " + cr.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
-            for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                auto plat_src = yona::test::src_dir() / "runtime" / "platform" / pf;
-                if (fs::exists(plat_src)) {
-                    string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                    system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                    system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                }
-            }
-        } else {
-            for (auto& dir : {".", "src", "../src", "../../src"}) {
-                auto candidate = fs::path(dir) / "compiled_runtime.c";
-                if (fs::exists(candidate)) {
-                    string src_dir = string(dir);
-                    system(("cc -c " + candidate.string() + " -I" + src_dir + " -o " + rt_path + " 2>/dev/null").c_str());
-                    for (auto& pf : {"file_linux.c", "net_linux.c", "os_linux.c"}) {
-                        auto plat_src = fs::path(dir) / "runtime" / "platform" / pf;
-                        if (fs::exists(plat_src)) {
-                            string plat_obj = "/tmp/yona_plat_" + string(pf) + ".o";
-                            system(("cc -c " + plat_src.string() + " -I" + src_dir + " -o " + plat_obj + " 2>/dev/null").c_str());
-                            system(("ld -r " + rt_path + " " + plat_obj + " -o /tmp/yona_rt_merged.o 2>/dev/null && mv /tmp/yona_rt_merged.o " + rt_path).c_str());
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
+    if (!yona::test::link::ensure_runtime_objects()) return "RT_COMPILE_ERROR";
 
     string prelude_obj;
     auto po = yona::test::lib_dir() / "Prelude.o";
@@ -724,22 +663,13 @@ static string compile_and_run_derive(const string& mod_source, const string& exp
         }
     }
 
-    string exe_path = "/tmp/yona_derive_test_exe";
-    string link_cmd = "cc " + expr_obj + " " + mod_obj + " " + rt_path;
-    if (!prelude_obj.empty()) link_cmd += " " + prelude_obj;
-    link_cmd += " -lm -lpthread -rdynamic -o " + exe_path;
-    if (system(link_cmd.c_str()) != 0) return "LINK_ERROR";
+    fs::path exe_path = yona::test::link::scratch_root() / ("yona_derive_test_exe" + yona::test::link::exe_suffix());
+    vector<fs::path> objs = {expr_obj, mod_obj};
+    if (!yona::test::link::append_runtime_objects(objs)) return "RT_COMPILE_ERROR";
+    if (!prelude_obj.empty()) objs.push_back(fs::path(prelude_obj));
+    if (!yona::test::link::link_objs_to_exe(objs, exe_path)) return "LINK_ERROR";
 
-    array<char, 256> buffer;
-    string result;
-    FILE* pipe = popen((exe_path + " 2>/dev/null").c_str(), "r");
-    if (!pipe) return "RUN_ERROR";
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
-        result += buffer.data();
-    pclose(pipe);
-
-    if (!result.empty() && result.back() == '\n') result.pop_back();
-    return result;
+    return yona::test::link::popen_read_all(exe_path);
 }
 
 TEST_CASE("Derive Show for enum type") {

@@ -60,13 +60,13 @@ I/O modules use platform-specific implementations:
 
 ```
 src/runtime/
-  platform.h              # Portable interface
+  include/yona/runtime/platform.h   # Portable interface
   platform/
-    uring.h               # Shared io_uring infrastructure (Linux)
+    include/yona/runtime/uring.h      # Shared io_uring infrastructure (Linux)
     file_linux.c          # File I/O via io_uring
     net_linux.c           # TCP/UDP networking via io_uring
     os_linux.c            # Console I/O, process, environment
 ```
 
-Future: macOS (kqueue), Windows (IOCP) implementations providing
-the same `platform.h` interface.
+Current status: Linux and Windows both ship native platform backends with the
+same `yona/runtime/platform.h` ABI. macOS kqueue parity remains planned.

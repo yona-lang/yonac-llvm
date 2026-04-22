@@ -8,6 +8,7 @@
 #include "Codegen.h"
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Type.h>
 #include <llvm/BinaryFormat/Dwarf.h>
 #include <iostream>
@@ -682,7 +683,23 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
                 }
             }
 
+            int total_refs = count_identifier_refs(node->expr, vname);
+            for (size_t aj = ai + 1; aj < node->aliases.size(); aj++) {
+                auto* other = node->aliases[aj];
+                if (auto* vb = dynamic_cast<ValueAlias*>(other))
+                    total_refs += count_identifier_refs(vb->expr, vname);
+                else if (auto* lb = dynamic_cast<LambdaAlias*>(other))
+                    total_refs += count_identifier_refs(lb->lambda, vname);
+                else if (auto* pb = dynamic_cast<PatternAlias*>(other))
+                    total_refs += count_identifier_refs(pb->expr, vname);
+            }
             bool use_arena = arena && non_escaping.count(vname);
+#ifdef _WIN32
+            // Windows: arena-backed seq values are currently unsafe when consumed
+            // in later expressions (e.g. grouped-let pattern matching). Keep
+            // arena allocation only for bindings that are never referenced.
+            if (use_arena && total_refs > 0) use_arena = false;
+#endif
             if (use_arena) current_arena_ = arena;
             auto tv = codegen(va->expr);
             if (use_arena) current_arena_ = saved_arena;
@@ -697,16 +714,7 @@ void Codegen::codegen_let_aliases(LetExpr* node, llvm::Value* arena,
                 // and the protection is unnecessary — saving a copy on
                 // the downstream seq_tail_consume fast path.
                 if (tv.type == CType::SEQ && tv.val && !llvm::isa<llvm::Constant>(tv.val)) {
-                    int uses = count_identifier_refs(node->expr, vname);
-                    for (size_t aj = ai + 1; aj < node->aliases.size(); aj++) {
-                        auto* other = node->aliases[aj];
-                        if (auto* vb = dynamic_cast<ValueAlias*>(other))
-                            uses += count_identifier_refs(vb->expr, vname);
-                        else if (auto* lb = dynamic_cast<LambdaAlias*>(other))
-                            uses += count_identifier_refs(lb->lambda, vname);
-                        else if (auto* pb = dynamic_cast<PatternAlias*>(other))
-                            uses += count_identifier_refs(pb->expr, vname);
-                    }
+                    int uses = total_refs;
                     if (uses > 1)
                         emit_rc_inc(tv.val, CType::SEQ);
                 }
@@ -843,9 +851,13 @@ TypedValue Codegen::codegen_let(LetExpr* node) {
     std::vector<bool> binding_is_arena;
     codegen_let_aliases(node, arena, non_escaping, scope_bindings, binding_is_arena);
 
-    // 5. Task group: use bump arena for the let body too (non-escaping gating unchanged)
+    // 5. Task group body allocation policy:
+    // On Windows, keep alias allocations arena-backed for leak-free raise unwind,
+    // but keep body temporaries on RC heap to avoid grouped-let seq crash.
+#ifndef _WIN32
     if (has_group && arena)
         current_arena_ = arena;
+#endif
 
     // 6. Codegen body
     auto result = codegen(node->expr);
@@ -1181,10 +1193,34 @@ TypedValue Codegen::codegen_try_catch(TryCatchExpr* node) {
     auto catch_bb = BasicBlock::Create(*context_, "catch.entry", fn);
     auto merge_bb = BasicBlock::Create(*context_, "try.merge");
 
-    // Push jmp_buf slot, then call setjmp in THIS function's stack frame
+    // SJLJ try-entry. We deliberately bypass the C runtime's setjmp/longjmp:
+    // on Windows MSVC, setjmp records SEH unwind state and longjmp walks the
+    // SEH chain — fatal when raise() longjmps from a worker frame back into
+    // codegen-emitted main, which has no SEH metadata. llvm.eh.sjlj.setjmp +
+    // __builtin_longjmp save only FP/SP/IP, so they work uniformly across
+    // platforms. The buffer (void*[5]) is owned by the runtime via try_push.
+    //
+    // Per llvm.eh.sjlj.setjmp's contract: store frameaddress in slot 0 and
+    // stacksave in slot 2 before calling the intrinsic; the intrinsic fills
+    // the resume IP in slot 1.
     auto jmp_buf_ptr = builder_->CreateCall(rt_.try_begin_, {}, "jmp.buf");
-    auto setjmp_fn = module_->getFunction("setjmp");
-    auto try_result = builder_->CreateCall(setjmp_fn, {jmp_buf_ptr}, "try.setjmp");
+    auto* ptr_ty = llvm::PointerType::get(*context_, 0);
+    auto* fa_fn = llvm::Intrinsic::getOrInsertDeclaration(
+        module_.get(), llvm::Intrinsic::frameaddress, {ptr_ty});
+    auto* ss_fn = llvm::Intrinsic::getOrInsertDeclaration(
+        module_.get(), llvm::Intrinsic::stacksave, {ptr_ty});
+    auto* sj_fn = llvm::Intrinsic::getOrInsertDeclaration(
+        module_.get(), llvm::Intrinsic::eh_sjlj_setjmp);
+    auto* fa = builder_->CreateCall(fa_fn, {ConstantInt::get(i32_ty, 0)}, "sjlj.fp");
+    builder_->CreateStore(fa, jmp_buf_ptr);
+    auto* sp = builder_->CreateCall(ss_fn, {}, "sjlj.sp");
+    auto* sp_slot = builder_->CreateGEP(ptr_ty, jmp_buf_ptr,
+                                        ConstantInt::get(i32_ty, 2), "sjlj.sp.slot");
+    builder_->CreateStore(sp, sp_slot);
+    auto try_result = builder_->CreateCall(sj_fn, {jmp_buf_ptr}, "try.setjmp");
+    // The function containing eh.sjlj.setjmp must not be inlined, otherwise
+    // the saved frame/stack pointers would be invalidated on longjmp.
+    fn->addFnAttr(llvm::Attribute::NoInline);
     auto is_exc = builder_->CreateICmpNE(try_result, ConstantInt::get(i32_ty, 0));
     builder_->CreateCondBr(is_exc, catch_bb, try_bb);
 

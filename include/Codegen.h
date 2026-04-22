@@ -453,7 +453,7 @@ private:
             *adt_get_field_ = nullptr, *adt_set_field_ = nullptr, *adt_set_heap_mask_ = nullptr;
         // Async
         llvm::Function *async_call_ = nullptr, *async_call_thunk_ = nullptr,
-            *async_await_ = nullptr, *io_await_ = nullptr;
+            *async_await_ = nullptr, *async_await_keep_ = nullptr, *io_await_ = nullptr;
         // Task groups (structured concurrency)
         llvm::Function *group_begin_ = nullptr, *group_register_ = nullptr,
             *group_register_io_ = nullptr, *group_await_all_ = nullptr,

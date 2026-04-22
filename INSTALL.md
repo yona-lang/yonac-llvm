@@ -4,9 +4,9 @@
 
 All platforms require:
 - **LLVM 16+** (for code generation backend)
-- **CMake 3.10+** and **Ninja** (for building from source)
-- **C++23 capable compiler** (clang recommended)
-- **PCRE2** (optional, for Std\Regex module)
+- **CMake 3.10+** and **Ninja** (for building from source; on **Windows** use the **Windows** section: Ninja + Clang from a prebuilt LLVM + MSVC toolset)
+- **C++23 capable compiler** (clang recommended; Windows presets use Clang with the MSVC linker)
+- **PCRE2** (optional, for Std\Regex module; on Windows you typically need a manual/vcpkg setup because `pkg-config` is uncommon)
 
 ## Linux (Fedora/RHEL)
 
@@ -58,16 +58,64 @@ brew install yona-lang/tap/yona
 
 ## Windows
 
-```powershell
-# Install LLVM from https://releases.llvm.org/
-# Install CMake from https://cmake.org/download/
-# Install Ninja from https://ninja-build.org/
+Windows presets (`x64-debug`, `x64-release`) use **Ninja** and expect **Clang** as the compiler (same as CI). **MSVC** with the **Desktop development with C++** workload (or Build Tools + Windows SDK) must be installed so the MSVC linker and libraries are available.
 
+### 1. Install tools
+
+- **CMake** 3.29+ (3.30+ recommended if you enable newer CMake policies elsewhere). [cmake.org/download](https://cmake.org/download/)
+- **Ninja**: [ninja-build.org](https://github.com/ninja-build/ninja/releases) or `winget install Ninja-build.Ninja`
+- **LLVM for Windows**: use a **prebuilt** `clang+llvm-*-x86_64-pc-windows-msvc` archive from the [LLVM project releases](https://github.com/llvm/llvm-project/releases) (search the page for `windows-msvc`). Extract it to a short path such as `C:\LLVM`. This avoids link errors from LLVM builds that were produced on another machine with hard-coded Visual Studio paths (see *Troubleshooting* below).
+- **Optional — PCRE2** for `Std\Regex`: there is no `pkg-config` on a typical Windows dev shell, so CMake usually skips PCRE2 unless you point CMake at a build of PCRE2 yourself (e.g. vcpkg). The rest of the compiler and runtime still build without it.
+
+The CMake toolchain defaults `LLVM_INSTALL_PREFIX` to `C:/local/LLVM` if the variable is unset. Set it explicitly if you extracted LLVM somewhere else (for example `C:\LLVM`).
+
+### 2. Configure and build (PowerShell)
+
+Open **x64 Native Tools** or **Developer PowerShell for VS** (so `cl`, the linker, and SDK paths are on `PATH`). If you have **both Visual Studio 2022 and 2026** (folder `18`), still use a **2022**-aware developer shell for this project when linking against typical Windows LLVM binaries: their import libraries often reference **`...\Microsoft Visual Studio\2022\...`** paths, which a 2026-only environment does not provide.
+
+Then:
+
+```powershell
 git clone https://github.com/yona-lang/yonac-llvm.git
 cd yonac-llvm
+
+# Point at your extracted LLVM (example: C:\LLVM)
+$env:LLVM_INSTALL_PREFIX = "C:\LLVM"
+$env:CC  = "C:\LLVM\bin\clang.exe"
+$env:CXX = "C:\LLVM\bin\clang++.exe"
+
 cmake --preset x64-release
 cmake --build --preset build-release
 ```
+
+Binaries are written under `out\build\x64-release\`, for example `yonac.exe`, `yona.exe`, and `yona_lib.dll`.
+
+**`yonac` linking a full executable (not `--emit-obj` / `--emit-ir`):** the CLI shells out to compile `src/compiled_runtime.c` and the platform layer, then link. On Windows it uses **`clang`** by default (or **`YONAC_CC`** if set) and links **`ws2_32`** / **`dbghelp`**. Put the same LLVM `bin` directory on `PATH`, or set `YONAC_CC` to the full path of `clang.exe` so the subprocess can find the compiler. Optional LTO uses **`llvm-link.exe`** next to that `clang` when `YONAC_CC` is set.
+
+### 3. Tests (Windows)
+
+```powershell
+ctest --preset unit-tests-windows
+```
+
+### Troubleshooting (Windows)
+
+- **`diaguids.lib` / DIA SDK / path under `...\Microsoft Visual Studio\2022\...` missing when linking**  
+  Your `lib\LLVM*.lib` files were built expecting a different Visual Studio layout (year, SKU, and edition). **Installing VS 2026 does not replace those 2022 paths** if LLVM was built against **Visual Studio 2022**. You still need the **2022** C++ workload (and usually the **DIA SDK** under that install). Prefer the official **clang+llvm** Windows `.tar.xz` from the LLVM releases page, extracted to a clean prefix (e.g. `C:\LLVM`), with `LLVM_INSTALL_PREFIX` and `CC`/`CXX` set as above.
+
+  **Community vs Enterprise:** the error may mention `...\2022\Enterprise\DIA SDK\...` while you only have **VS 2022 Community** (same tree under `Community` instead of `Enterprise`). The file is usually present as `...\2022\Community\DIA SDK\lib\amd64\diaguids.lib`. Because LLVM’s libs reference the **Enterprise** path literally, create a **directory junction** once (requires **Administrator** Command Prompt or PowerShell, and `Enterprise` must not already exist):
+
+  ```text
+  mklink /J "C:\Program Files\Microsoft Visual Studio\2022\Enterprise" "C:\Program Files\Microsoft Visual Studio\2022\Community"
+  ```
+
+  That makes any `...\2022\Enterprise\...` path resolve to the same files as your Community install. Alternatively install the **Debugging Tools for Windows** / DIA workload for the **exact** edition named in the linker error (still fails if the folder name is wrong, e.g. Enterprise vs Community).
+
+- **`Policy CMP0167 is not known`**  
+  Use a newer CMake (3.30+), or use a checkout that guards optional policies for older CMake (supported on 3.29).
+
+- **`LLVMConfig.cmake` not found**  
+  Set `LLVM_INSTALL_PREFIX` to the **root** of the extracted LLVM tree (the directory that contains `bin`, `lib`, `include`).
 
 ## Docker
 
@@ -94,12 +142,23 @@ yonac fib.yona -o fib
 yona
 ```
 
+On Windows, use the same commands after adding `out\build\x64-release` (or your preset’s output directory) to `PATH`, or invoke the full path, for example `.\out\build\x64-release\yonac.exe -e "1 + 2"`.
+
 ## Running Tests
 
 ```bash
-# Via CTest
+# Via CTest (Linux)
 ctest --preset unit-tests-linux
 
-# Directly
+# Via CTest (Windows)
+ctest --preset unit-tests-windows
+
+# Via CTest (macOS)
+ctest --preset unit-tests-macos
+
+# Directly (Linux / macOS)
 ./out/build/x64-release-linux/tests
+
+# Directly (Windows, after configuring the matching preset)
+.\out\build\x64-release\tests.exe
 ```

@@ -1,0 +1,223 @@
+Yona Benchmarks — -O2, 3 iterations
+============================================================
+  Startup (cold-start no-op, time/RSS): Yona=16.3ms/?
+
+  [io]
+    binary_read_chunks..........  36.5ms→20.2ms               ?
+    binary_write_read...........  32.6ms→16.3ms               ?
+    file_parallel_read..........  26.9ms→10.6ms               ?
+    file_parallel_read_large....  42.9ms→26.6ms               ?
+    file_read...................  40.2ms→23.9ms               ?
+    file_read_large.............  39.3ms→23.0ms               ?
+    file_readlines.............. WRONG (expected 1186681, got 28190)
+    file_readlines_large........ WRONG (expected 54522092, got 508190)
+    file_write_read.............  34.0ms→17.7ms               ?
+    file_write_read_large.......    144ms→128ms               ?
+    process_exec................  58.9ms→42.6ms               ?
+    process_spawn...............          396ms               ?
+
+============================================================
+  O2: 10/12 passed
+
+{
+  "O2": [
+    {
+      "name": "io/binary_read_chunks",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "5242880",
+      "times_ms": [
+        81.6982,
+        14.2018,
+        13.7055
+      ],
+      "min_ms": 13.7055,
+      "avg_ms": 36.53516666666667,
+      "max_ms": 81.6982,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 20.22716666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/binary_write_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "5242880",
+      "times_ms": [
+        66.6371,
+        16.0994,
+        15.1687
+      ],
+      "min_ms": 15.1687,
+      "avg_ms": 32.63506666666667,
+      "max_ms": 66.6371,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 16.327066666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_parallel_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "3620043",
+      "times_ms": [
+        56.8169,
+        12.4644,
+        11.4058
+      ],
+      "min_ms": 11.4058,
+      "avg_ms": 26.8957,
+      "max_ms": 56.8169,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 10.587700000000002,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_parallel_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "36404442",
+      "times_ms": [
+        88.8587,
+        20.5818,
+        19.1487
+      ],
+      "min_ms": 19.1487,
+      "avg_ms": 42.86306666666667,
+      "max_ms": 88.8587,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 26.55506666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "1206681",
+      "times_ms": [
+        98.2544,
+        11.6577,
+        10.6098
+      ],
+      "min_ms": 10.6098,
+      "avg_ms": 40.173966666666665,
+      "max_ms": 98.2544,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 23.865966666666665,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "55022092",
+      "times_ms": [
+        70.1941,
+        24.4348,
+        23.1937
+      ],
+      "min_ms": 23.1937,
+      "avg_ms": 39.2742,
+      "max_ms": 70.1941,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 22.9662,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_readlines",
+      "status": "wrong_output"
+    },
+    {
+      "name": "io/file_readlines_large",
+      "status": "wrong_output"
+    },
+    {
+      "name": "io/file_write_read",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "1206681",
+      "times_ms": [
+        71.4989,
+        17.1144,
+        13.3009
+      ],
+      "min_ms": 13.3009,
+      "avg_ms": 33.9714,
+      "max_ms": 71.4989,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 17.663400000000003,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/file_write_read_large",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "55022092",
+      "times_ms": [
+        193.8507,
+        107.3035,
+        131.3833
+      ],
+      "min_ms": 107.3035,
+      "avg_ms": 144.17916666666665,
+      "max_ms": 193.8507,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 127.87116666666665,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/process_exec",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "14",
+      "times_ms": [
+        93.9823,
+        42.2138,
+        40.4033
+      ],
+      "min_ms": 40.4033,
+      "avg_ms": 58.86646666666667,
+      "max_ms": 93.9823,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 42.55846666666667,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    },
+    {
+      "name": "io/process_spawn",
+      "status": "ok",
+      "opt_level": 2,
+      "output": "48893",
+      "times_ms": [
+        448.2175,
+        374.4092,
+        364.7724
+      ],
+      "min_ms": 364.7724,
+      "avg_ms": 395.79970000000003,
+      "max_ms": 448.2175,
+      "peak_rss_kb": 0,
+      "avg_ms_adj": 379.49170000000004,
+      "startup_ms": 16.308,
+      "peak_rss_kb_adj": 0,
+      "startup_rss_kb": 0
+    }
+  ]
+}

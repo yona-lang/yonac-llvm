@@ -43,8 +43,18 @@ typedef struct yona_frame {
 
 _Thread_local yona_frame_t* yona_current_frame = NULL;
 
+/* SJLJ jmp_buf: 5 pointers per LLVM's llvm.eh.sjlj.setjmp / __builtin_setjmp
+ * contract (frame, pc, sp, plus 2 target-reserved slots). Both worker threads
+ * and codegen-emitted try/catch save into the same slots, so the runtime longjmp
+ * (__builtin_longjmp) is layout-compatible with both. We do NOT use the C runtime's
+ * setjmp/longjmp here: on Windows MSVC, setjmp uses SEH-based unwinding that walks
+ * the SEH chain on longjmp and crashes when we longjmp from a worker frame back into
+ * codegen-emitted main (which has no SEH metadata). __builtin_setjmp/longjmp save
+ * only FP/SP/IP, never touch the SEH chain, and behave identically across platforms. */
+typedef void* yona_sjlj_buf_t[5];
+
 typedef struct {
-    jmp_buf buf[YONA_MAX_TRY_DEPTH];
+    yona_sjlj_buf_t buf[YONA_MAX_TRY_DEPTH];
     int depth;
     yona_exception_t current;
     yona_frame_t* saved_frame[YONA_MAX_TRY_DEPTH];
@@ -141,8 +151,9 @@ static void yona_rt_unwind_frames_to(yona_frame_t* stop) {
 }
 
 // yona_rt_try_push: push a jmp_buf slot, return pointer to it.
-// The caller must call setjmp on the returned pointer directly
-// (setjmp must execute in the caller's stack frame).
+// The caller must call __builtin_setjmp / llvm.eh.sjlj.setjmp on the returned
+// pointer directly (setjmp must execute in the caller's stack frame). Buffer
+// is laid out as void*[5]; see yona_sjlj_buf_t above.
 void* yona_rt_try_push(void) {
     if (yona_exc.depth >= YONA_MAX_TRY_DEPTH) {
         fprintf(stderr, "Fatal: try/catch nesting depth exceeded\n");
@@ -150,7 +161,7 @@ void* yona_rt_try_push(void) {
     }
     yona_exc.saved_frame[yona_exc.depth] = yona_current_frame;
     yona_try_depth = yona_exc.depth + 1;
-    return &yona_exc.buf[yona_exc.depth++];
+    return yona_exc.buf[yona_exc.depth++];
 }
 
 void yona_rt_try_end(void) {
@@ -202,7 +213,16 @@ void yona_rt_raise(int64_t symbol, const char* message) {
     yona_rt_unwind_frames_to(yona_exc.saved_frame[yona_exc.depth]);
     /* Task-group bump arenas: free wholesale for scopes being torn past. */
     yona_rt_group_arena_unwind_to(yona_exc.depth);
-    longjmp(yona_exc.buf[yona_exc.depth], 1);
+#if defined(__clang__) || defined(__GNUC__)
+    __builtin_longjmp(yona_exc.buf[yona_exc.depth], 1);
+#else
+    /* MSVC build of yona_lib.dll is loaded only by yonac.exe (compiler driver),
+     * which never executes user IR — try/catch unwinding is dead code there.
+     * User programs always link against the clang-built runtime where the
+     * __builtin_* path is taken. Abort if we somehow reach here under MSVC. */
+    fprintf(stderr, "Fatal: yona_rt_raise called in MSVC-built runtime\n");
+    abort();
+#endif
 }
 
 int64_t yona_rt_get_exception_symbol(void) {

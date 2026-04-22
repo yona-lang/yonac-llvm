@@ -39,7 +39,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           DIST=yona-${VERSION}-linux-${{ matrix.arch }}
-          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
           cp out/build/x64-release-linux/yonac ${DIST}/bin/
           cp out/build/x64-release-linux/yona ${DIST}/bin/
           cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
@@ -47,6 +47,7 @@ jobs:
           cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/platform/* ${DIST}/src/runtime/platform/
+          cp include/yona/runtime/*.h ${DIST}/include/yona/runtime/
           cp LICENSE.txt README.md INSTALL.md CHANGELOG.md ${DIST}/
           tar czf ${DIST}.tar.gz ${DIST}
 
@@ -75,7 +76,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           DIST=yona-${VERSION}-macos-$(uname -m)
-          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
           cp out/build/x64-release-macos/yonac ${DIST}/bin/
           cp out/build/x64-release-macos/yona ${DIST}/bin/
           cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
@@ -83,6 +84,7 @@ jobs:
           cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/platform/* ${DIST}/src/runtime/platform/
+          cp include/yona/runtime/*.h ${DIST}/include/yona/runtime/
           cp LICENSE.txt README.md INSTALL.md CHANGELOG.md ${DIST}/
           tar czf ${DIST}.tar.gz ${DIST}
 

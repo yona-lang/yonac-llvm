@@ -1171,7 +1171,9 @@ TypedValue Codegen::auto_await(TypedValue tv) {
     if (tv.is_io_promise) {
         awaited = builder_->CreateCall(rt_.io_await_, {tv.val}, "io_await");
     } else {
-        awaited = builder_->CreateCall(rt_.async_await_, {tv.val}, "await");
+        llvm::Function* await_fn =
+            current_group_ ? rt_.async_await_keep_ : rt_.async_await_;
+        awaited = builder_->CreateCall(await_fn, {tv.val}, "await");
     }
 
     // The awaited value's type is stored in subtypes[0]

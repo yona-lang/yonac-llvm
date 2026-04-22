@@ -71,7 +71,7 @@ pfor (\item -> upload item) items
 
 ## Architecture
 
-### Task Group Runtime (`src/runtime/async.c`)
+### Task Group Runtime (`src/runtime/platform/async_posix.c` / `async_win32.c`)
 
 ```c
 typedef struct yona_task_group {
@@ -103,7 +103,7 @@ Worker threads wrap task execution in `setjmp`. On exception:
 2. Group cancelled flag set → siblings skip execution
 3. `group_await_all` re-raises the error on the caller's thread
 
-### io_uring Cancellation (`src/runtime/platform/uring.h`)
+### io_uring Cancellation (`include/yona/runtime/uring.h`)
 
 When a group is cancelled, `ring_cancel(target_id)` submits `IORING_OP_ASYNC_CANCEL` SQEs for each pending io_uring operation. The kernel cancels in-flight operations, which complete with `res = -ECANCELED`. The await path handles this by cleaning up the I/O context.
 

@@ -10,8 +10,8 @@
  *   - writeStdin: write to subprocess stdin pipe
  */
 
-#include "../platform.h"
-#include "uring.h"
+#include "yona/runtime/platform.h"
+#include "yona/runtime/uring.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,6 +121,11 @@ int64_t yona_platform_exec_status(const char* cmd) {
     int status = system(cmd);
     if (status == -1) return -1;
     return WEXITSTATUS(status);
+}
+
+int64_t yona_platform_exit_process(int64_t code) {
+    exit((int)code);
+    return 0; /* unreachable */
 }
 
 /* ===== spawn: fork/exec with pipe setup ===== */

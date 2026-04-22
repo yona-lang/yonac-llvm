@@ -6,4 +6,6 @@ def sieve(n):
             for j in range(i*i, n+1, i):
                 is_prime[j] = False
     return sum(is_prime)
-print(sieve(100000))
+
+
+print(sieve(500))

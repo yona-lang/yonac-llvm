@@ -6,18 +6,34 @@
  * printing, string operations, memory management.
  */
 
+#if defined(_WIN32)
+#ifndef _CRT_DECLARE_NONSTDC_NAMES
+#define _CRT_DECLARE_NONSTDC_NAMES 1
+#endif
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <math.h>
 #include <ctype.h>
+#if !defined(_WIN32)
 #include <pthread.h>
+#endif
 #include <setjmp.h>
 #include <time.h>
+#if defined(_WIN32)
+#include <io.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#else
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#endif
 #if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
 #define YONA_HAS_BACKTRACE 1
@@ -63,7 +79,7 @@ typedef struct pool_block {
     struct pool_block* next;
 } pool_block_t;
 
-static __thread pool_block_t* pool_freelist[POOL_CLASSES] = {0};
+static _Thread_local pool_block_t* pool_freelist[POOL_CLASSES] = {0};
 
 static int pool_class_for(size_t total_bytes) {
     for (int i = 0; i < POOL_CLASSES; i++) {
@@ -82,7 +98,7 @@ typedef struct slab {
     char data[];  /* flexible array of SLAB_BLOCKS * block_size bytes */
 } slab_t;
 
-static __thread slab_t* pool_slabs[POOL_CLASSES] = {0};
+static _Thread_local slab_t* pool_slabs[POOL_CLASSES] = {0};
 
 /* Allocation statistics — enabled when YONA_ALLOC_STATS env var is set at
  * program start. The atomic increments are cheap; the report destructor
@@ -119,7 +135,10 @@ static const char* yona_tag_name(int tag) {
         default: return "other";
     }
 }
-__attribute__((destructor)) static void yona_alloc_report(void) {
+/* Register via atexit so we run before the C runtime tears down stdio.
+ * On Windows, __attribute__((destructor)) executes after CRT stream
+ * shutdown and crashed when this function tried to fprintf(stderr, …). */
+static void yona_alloc_report(void) {
     if (!getenv("YONA_ALLOC_STATS")) return;
     fprintf(stderr, "[alloc-stats] allocs=%lld frees=%lld slab_bytes=%lld\n",
             atomic_load(&yona_alloc_n), atomic_load(&yona_free_n),
@@ -130,6 +149,16 @@ __attribute__((destructor)) static void yona_alloc_report(void) {
         if (a == 0 && f == 0) continue;
         fprintf(stderr, "[alloc-stats]   tag=%s allocs=%lld frees=%lld leaked=%lld\n",
                 yona_tag_name(t), a, f, a - f);
+    }
+    fflush(stderr);
+}
+static _Atomic int yona_alloc_report_registered = 0;
+static inline void yona_alloc_report_maybe_register(void) {
+    int expected = 0;
+    if (atomic_compare_exchange_strong_explicit(
+            &yona_alloc_report_registered, &expected, 1,
+            memory_order_acq_rel, memory_order_acquire)) {
+        atexit(yona_alloc_report);
     }
 }
 #define YONA_ALLOC_INC_TAG(tag) do { \
@@ -212,6 +241,7 @@ static void pool_free(void* ptr, size_t total_bytes) {
 #define DECODE_STRING_LEN(encoded) ((size_t)((encoded) >> 16))
 
 void* rc_alloc(int64_t type_tag, size_t payload_bytes) {
+    yona_alloc_report_maybe_register();
     size_t total = RC_HEADER_SIZE * sizeof(int64_t) + payload_bytes;
     int cls = pool_class_for(total);
     int64_t* raw = (int64_t*)pool_alloc(total);
@@ -442,6 +472,7 @@ typedef struct yona_arena {
 } yona_arena_t;
 
 void* yona_rt_arena_create(int64_t size) {
+    yona_alloc_report_maybe_register();
     if (size <= 0) size = YONA_ARENA_DEFAULT_SIZE;
     yona_arena_t* arena = (yona_arena_t*)malloc(sizeof(yona_arena_t) + size);
     arena->base = (char*)(arena + 1);
@@ -758,7 +789,7 @@ void yona_rt_print_int_array(int64_t* arr) {
     printf("IntArray[");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
-        printf("%ld", arr[1 + i]);
+        printf("%" PRId64, arr[1 + i]);
     }
     printf("]");
 }
@@ -953,7 +984,7 @@ int64_t yona_rt_string_length_fast(const char* str) {
 
 
 void yona_rt_print_int(int64_t value) {
-    printf("%ld", value);
+    printf("%" PRId64, value);
 }
 
 void yona_rt_print_float(double value) {
@@ -1210,7 +1241,7 @@ void yona_rt_print_set(int64_t* set) {
         printf("{");
         for (int64_t i = 0; i < len; i++) {
             if (i > 0) printf(", ");
-            printf("%ld", elems[2 + i]);
+            printf("%" PRId64, elems[2 + i]);
         }
         printf("}");
         return;
@@ -1219,7 +1250,7 @@ void yona_rt_print_set(int64_t* set) {
     printf("{");
     for (int64_t i = 0; i < len; i++) {
         if (i > 0) printf(", ");
-        printf("%ld", set[i + 2]);
+        printf("%" PRId64, set[i + 2]);
     }
     printf("}");
 }
@@ -1891,11 +1922,12 @@ const char* yona_Std_Encoding__htmlEscape(const char* s) {
 }
 
 /* ===== Platform I/O wrappers ===== */
-/* Platform-specific implementations are in src/runtime/platform/ and
- * compiled as separate translation units. See CMakeLists.txt. */
-#include "runtime/platform.h"
+/* Platform-specific implementations are in src/runtime/platform/ (C sources)
+ * with shared headers in include/yona/runtime/. See CMakeLists.txt. */
+#include "yona/runtime/platform.h"
 
-/* yona_rt_io_await is implemented in platform/file_linux.c (uses io_uring) */
+/* yona_rt_io_await: platform/file_linux.c (io_uring) on Linux;
+ * platform/file_windows.c (direct-result table) on Windows. */
 
 /* Resource cleanup for `with` expression. Closes file descriptors,
  * sockets, or other resources based on the value type. */
@@ -1903,7 +1935,7 @@ void yona_rt_close(int64_t handle) {
     /* Only close valid-looking file descriptors (small positive integers).
      * Arbitrary i64 values (pointers, large ints) are not fds. */
     if (handle > 2 && handle < 65536)
-        close((int)handle);
+        yona_platform_close_file_handle((int)handle);
 }
 
 /* Std\IO — non-blocking writes via io_uring, non-blocking line reads
@@ -1960,7 +1992,7 @@ int64_t yona_Std_IO__isTty(int64_t fd) {
 /* Synchronous: fsync(fd). Most io_uring writes are durable at
  * completion; this is a backstop for user-managed buffers. */
 int64_t yona_Std_IO__flushFd(int64_t fd) {
-    return fsync((int)fd) == 0 ? 1 : 0;
+    return yona_platform_flush_file_handle((int)fd);
 }
 
 /* Std\File — async ops return uring ID, sync ops return directly */
@@ -2081,12 +2113,7 @@ static int fh_fd(int64_t handle_i64) {
 int64_t yona_Std_File__openFile(const char* path, int64_t mode_i64) {
     int64_t* mode_adt = (int64_t*)(intptr_t)mode_i64;
     int64_t mode_tag = mode_adt[0];  /* recursive ADT layout: [tag, num_fields, heap_mask, ...] */
-    int flags = O_RDONLY;
-    if (mode_tag == 1) flags = O_WRONLY | O_CREAT | O_TRUNC;       /* Write */
-    else if (mode_tag == 2) flags = O_RDWR | O_CREAT;              /* ReadWrite */
-    else if (mode_tag == 3) flags = O_WRONLY | O_CREAT | O_APPEND; /* Append */
-
-    int fd = open(path, flags, 0644);
+    int fd = (int)yona_platform_open_file_handle(path, mode_tag);
     if (fd < 0) {
         extern void yona_rt_raise(int64_t tag, const char* msg);
         yona_rt_raise(0, "cannot open file");
@@ -2105,7 +2132,7 @@ int64_t yona_Std_File__openFile(const char* path, int64_t mode_i64) {
 /* closeFileHandle: extract fd from FileHandle ADT and close it */
 int64_t yona_Std_File__closeFileHandle(int64_t handle_i64) {
     int fd = fh_fd(handle_i64);
-    close(fd);
+    yona_platform_close_file_handle(fd);
     return 0;
 }
 
@@ -2113,11 +2140,11 @@ int64_t yona_Std_File__closeFileHandle(int64_t handle_i64) {
  * Uses io_uring pread with userspace position tracking. */
 int64_t yona_Std_File__readBytes(int64_t handle, int64_t count) {
     int fd = fh_fd(handle);
-    off_t pos = lseek(fd, 0, SEEK_CUR);
+    int64_t pos = yona_platform_tell_file_handle(fd);
     if (pos < 0) pos = 0;
     extern int64_t yona_platform_read_fd_bytes_submit(int fd, int64_t count, int64_t offset);
-    int64_t id = yona_platform_read_fd_bytes_submit(fd, count, (int64_t)pos);
-    lseek(fd, pos + count, SEEK_SET);
+    int64_t id = yona_platform_read_fd_bytes_submit(fd, count, pos);
+    yona_platform_seek_file_handle(fd, pos + count, 0);
     return id;
 }
 
@@ -2127,11 +2154,11 @@ int64_t yona_Std_File__writeBytes(int64_t handle, int64_t bytes_i64) {
     void* bytes = (void*)(intptr_t)bytes_i64;
     int64_t* b = (int64_t*)bytes;
     int64_t len = b[0];
-    off_t pos = lseek(fd, 0, SEEK_CUR);
+    int64_t pos = yona_platform_tell_file_handle(fd);
     if (pos < 0) pos = 0;
     extern int64_t yona_platform_write_fd_bytes_submit(int fd, void* bytes, int64_t offset);
-    int64_t id = yona_platform_write_fd_bytes_submit(fd, bytes, (int64_t)pos);
-    lseek(fd, pos + len, SEEK_SET);
+    int64_t id = yona_platform_write_fd_bytes_submit(fd, bytes, pos);
+    yona_platform_seek_file_handle(fd, pos + len, 0);
     return id;
 }
 
@@ -2140,29 +2167,25 @@ int64_t yona_Std_File__seek(int64_t handle, int64_t offset, int64_t whence_i64) 
     int fd = fh_fd(handle);
     int64_t* whence_adt = (int64_t*)(intptr_t)whence_i64;
     int64_t whence_tag = whence_adt[0];
-    int w = SEEK_SET;
-    if (whence_tag == 1) w = SEEK_CUR;
-    else if (whence_tag == 2) w = SEEK_END;
-    off_t result = lseek(fd, (off_t)offset, w);
-    return (int64_t)result;
+    return yona_platform_seek_file_handle(fd, offset, whence_tag);
 }
 
 /* tell: get current file position */
 int64_t yona_Std_File__tell(int64_t handle) {
     int fd = fh_fd(handle);
-    return (int64_t)lseek(fd, 0, SEEK_CUR);
+    return yona_platform_tell_file_handle(fd);
 }
 
 /* flush: fsync */
 int64_t yona_Std_File__flush(int64_t handle) {
     int fd = fh_fd(handle);
-    return fsync(fd) == 0 ? 1 : 0;
+    return yona_platform_flush_file_handle(fd);
 }
 
 /* truncate: ftruncate */
 int64_t yona_Std_File__truncate(int64_t handle, int64_t length) {
     int fd = fh_fd(handle);
-    return ftruncate(fd, (off_t)length) == 0 ? 1 : 0;
+    return yona_platform_truncate_file_handle(fd, length);
 }
 
 /* readChunks: create streaming binary chunk iterator from FileHandle */
@@ -2180,8 +2203,7 @@ const char* yona_Std_Process__getcwd(void) {
     return yona_platform_getcwd();
 }
 int64_t yona_Std_Process__exit(int64_t code) {
-    exit((int)code);
-    return 0; /* unreachable */
+    return yona_platform_exit_process(code);
 }
 const char* yona_Std_Process__exec(const char* cmd) {
     return yona_platform_exec(cmd);
@@ -2337,7 +2359,7 @@ int64_t* yona_Std_Http__parseUrl(const char* url) {
     return result;
 }
 
-/* yona_Std_Http__httpGet is implemented in platform/net_linux.c (uses io_uring) */
+/* yona_Std_Http__httpGet: platform/net_linux.c (io_uring) or net_windows.c (Winsock). */
 
 /* Std\Random — pseudo-random number generation */
 
@@ -2385,20 +2407,45 @@ int64_t* yona_Std_Random__shuffle(int64_t* seq) {
 
 /* ===== Std\Time — time measurement and utilities ===== */
 
+#if defined(__linux__) || defined(__APPLE__)
 #include <sys/time.h>
+#endif
+
+/* 100-ns intervals from 1601-01-01 to 1970-01-01 */
+#if defined(_WIN32)
+#define YONA_WIN_EPOCH_100NS 116444736000000000ULL
+#endif
 
 /* Current time as epoch milliseconds */
 int64_t yona_Std_Time__now(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
+#if defined(_WIN32)
+	FILETIME ft;
+	ULARGE_INTEGER u;
+	GetSystemTimeAsFileTime(&ft);
+	u.LowPart = ft.dwLowDateTime;
+	u.HighPart = ft.dwHighDateTime;
+	return (int64_t)((u.QuadPart - YONA_WIN_EPOCH_100NS) / 10000ULL);
+#else
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (int64_t)tv.tv_sec * 1000 + (int64_t)tv.tv_usec / 1000;
+#endif
 }
 
 /* Current time as epoch microseconds */
 int64_t yona_Std_Time__nowMicros(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (int64_t)tv.tv_sec * 1000000 + (int64_t)tv.tv_usec;
+#if defined(_WIN32)
+	FILETIME ft;
+	ULARGE_INTEGER u;
+	GetSystemTimeAsFileTime(&ft);
+	u.LowPart = ft.dwLowDateTime;
+	u.HighPart = ft.dwHighDateTime;
+	return (int64_t)((u.QuadPart - YONA_WIN_EPOCH_100NS) / 10ULL);
+#else
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (int64_t)tv.tv_sec * 1000000 + (int64_t)tv.tv_usec;
+#endif
 }
 
 /* Current time as epoch seconds */
@@ -2408,7 +2455,16 @@ int64_t yona_Std_Time__epoch(void) {
 
 /* Sleep for N milliseconds */
 void yona_Std_Time__sleep(int64_t ms) {
-    usleep((useconds_t)(ms * 1000));
+#if defined(_WIN32)
+	if (ms <= 0) return;
+	while (ms > 0) {
+		DWORD chunk = (ms > 0x7FFFFFFF) ? 0x7FFFFFFF : (DWORD)ms;
+		Sleep(chunk);
+		ms -= (int64_t)chunk;
+	}
+#else
+	usleep((useconds_t)(ms * 1000));
+#endif
 }
 
 /* Format epoch seconds as ISO 8601 string (YYYY-MM-DD HH:MM:SS) */
@@ -2572,7 +2628,7 @@ const char* yona_Std_Json__stringify(int64_t value) {
      * the codegen to pass type info. For Phase 5, we provide basic
      * int/string/bool/seq serialization. */
     char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
-    snprintf(r, 32, "%ld", value);
+    snprintf(r, 32, "%" PRId64, value);
     return r;
 }
 
@@ -2903,7 +2959,7 @@ int64_t yona_Std_Types__toInt(const char* s) { return (int64_t)atoll(s); }
 double yona_Std_Types__toFloat(const char* s) { return atof(s); }
 const char* yona_Std_Types__intToString(int64_t n) {
     char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
-    snprintf(r, 32, "%ld", n);
+    snprintf(r, 32, "%" PRId64, n);
     return r;
 }
 const char* yona_Std_Types__floatToString(double f) {
@@ -2923,7 +2979,7 @@ const char* yona_Std_Types__boolToString(int64_t b) {
 
 const char* yona_Prelude__Show_Int__show(int64_t n) {
     char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
-    snprintf(r, 32, "%ld", n);
+    snprintf(r, 32, "%" PRId64, n);
     return r;
 }
 
@@ -3008,7 +3064,7 @@ int64_t yona_Prelude__Ord_String__compare(const char* a, const char* b) {
 /* Symbol instances */
 const char* yona_Prelude__Show_Symbol__show(int64_t sym_id) {
     char* r = (char*)rc_alloc(RC_TYPE_STRING, 32);
-    snprintf(r, 32, ":%ld", sym_id);
+    snprintf(r, 32, ":%" PRId64, sym_id);
     return r;
 }
 int64_t yona_Prelude__Eq_Symbol__eq(int64_t a, int64_t b) { return a == b ? 1 : 0; }
@@ -3054,10 +3110,18 @@ int64_t yona_Prelude__Array_String__get(int64_t arr, int64_t i) {
 /* seq_head and seq_tail are in runtime/seq.c */
 
 /* Async runtime: thread pool, promises, await */
-#include "runtime/async.c"
+#if defined(_WIN32)
+#include "runtime/platform/async_win32.c"
+#else
+#include "runtime/platform/async_posix.c"
+#endif
 
 /* Channels: bounded MPMC for inter-task communication */
-#include "runtime/channel.c"
+#if defined(_WIN32)
+#include "runtime/platform/channel_win32.c"
+#else
+#include "runtime/platform/channel_posix.c"
+#endif
 
 /* Closures: partial application, env-passing convention */
 #include "runtime/closures.c"

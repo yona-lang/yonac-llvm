@@ -47,10 +47,11 @@ install -Dm644 lib/Std/*.yonai %{buildroot}%{_libdir}/yona/lib/Std/
 
 # Runtime source (for LTO)
 install -d %{buildroot}%{_libdir}/yona/src/runtime/platform
+install -d %{buildroot}%{_libdir}/yona/include/yona/runtime
 install -Dm644 src/compiled_runtime.c %{buildroot}%{_libdir}/yona/src/
 install -Dm644 src/runtime/*.c %{buildroot}%{_libdir}/yona/src/runtime/ 2>/dev/null || true
 install -Dm644 src/runtime/platform/*.c %{buildroot}%{_libdir}/yona/src/runtime/platform/
-install -Dm644 src/runtime/platform/*.h %{buildroot}%{_libdir}/yona/src/runtime/platform/
+install -Dm644 include/yona/runtime/*.h %{buildroot}%{_libdir}/yona/include/yona/runtime/
 
 %files
 %license LICENSE.txt

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <map>
+#include <ostream>
 #include <queue>
 #include <string>
 #include <any>

@@ -1,0 +1,281 @@
+#pragma once
+
+/*
+ * Portable compile/link helpers for doctest binaries that shell out to compile
+ * compiled_runtime.c plus platform C sources and link small Yona executables.
+ * Windows: YONAC_CC (default clang), link multiple .o files (lld-link has no -r);
+ * Unix: same multi-.o link (clang -r is optional; not relied on).
+ */
+
+#include "repo_paths.h"
+#include <array>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <utility>
+#include <string>
+#include <vector>
+
+namespace yona::test::link {
+
+inline std::filesystem::path scratch_root() {
+    auto p = yona::test::repo_root() / "test" / "_scratch";
+    std::error_code ec;
+    std::filesystem::create_directories(p, ec);
+    return p;
+}
+
+inline std::string qpath(const std::filesystem::path& p) {
+    return "\"" + p.string() + "\"";
+}
+
+inline const char* cc() {
+    const char* e = std::getenv("YONAC_CC");
+    if (e && *e) return e;
+#ifdef _WIN32
+    return "clang";
+#else
+    return "cc";
+#endif
+}
+
+inline const char* err_null() {
+#ifdef _WIN32
+    return " 2>nul";
+#else
+    return " 2>/dev/null";
+#endif
+}
+
+inline std::string include_flags() {
+    std::ostringstream o;
+    o << " -I" << qpath(yona::test::src_dir()) << " -I" << qpath(yona::test::repo_root() / "include");
+    return o.str();
+}
+
+inline std::vector<std::string> platform_sources() {
+#ifdef _WIN32
+    return {"file_windows.c", "net_windows.c", "os_windows.c"};
+#else
+    return {"file_linux.c", "net_linux.c", "os_linux.c"};
+#endif
+}
+
+inline int sh(const std::string& cmd) {
+    return std::system(cmd.c_str());
+}
+
+/* Paths of compiled_runtime.o then each platform .o (only existing platform sources). */
+inline void runtime_object_paths(std::vector<std::filesystem::path>& out) {
+    namespace fs = std::filesystem;
+    out.clear();
+    out.push_back(scratch_root() / "compiled_runtime_test_cr.o");
+    for (const auto& pf : platform_sources()) {
+        auto ps = yona::test::src_dir() / "runtime" / "platform" / pf;
+        if (fs::exists(ps))
+            out.push_back(scratch_root() / ("compiled_runtime_test_plat_" + pf + ".o"));
+    }
+}
+
+inline bool compile_c_file(const std::filesystem::path& src, const std::filesystem::path& dst_o,
+                           const std::string& extra_flags = "") {
+    std::ostringstream cmd;
+    cmd << cc() << " -c " << qpath(src) << include_flags();
+    if (!extra_flags.empty()) cmd << " " << extra_flags;
+    cmd << " -o " << qpath(dst_o) << err_null();
+    return sh(cmd.str()) == 0;
+}
+
+/* (Re)compile runtime + platform objects when sources are newer than outputs. */
+inline bool ensure_runtime_objects() {
+    namespace fs = std::filesystem;
+    auto cr_src = yona::test::src_dir() / "compiled_runtime.c";
+    if (!fs::exists(cr_src)) return false;
+
+    fs::path cr_o = scratch_root() / "compiled_runtime_test_cr.o";
+    std::vector<std::pair<fs::path, fs::path>> plat; // source, object
+    for (const auto& pf : platform_sources()) {
+        auto ps = yona::test::src_dir() / "runtime" / "platform" / pf;
+        if (!fs::exists(ps)) continue;
+        plat.push_back({ps, scratch_root() / ("compiled_runtime_test_plat_" + pf + ".o")});
+    }
+
+    bool need = !fs::exists(cr_o);
+    if (!need && fs::last_write_time(cr_src) > fs::last_write_time(cr_o)) need = true;
+    /* compiled_runtime.c #includes async_*.c / channel_*.c / seq.c / … — not only its own mtime. */
+    if (!need && fs::exists(cr_o)) {
+        static const char* embedded[] = {
+            "runtime/seq.c",
+            "runtime/hamt.c",
+            "runtime/exceptions.c",
+            "runtime/closures.c",
+#ifdef _WIN32
+            "runtime/platform/async_win32.c",
+            "runtime/platform/channel_win32.c",
+#else
+            "runtime/platform/async_posix.c",
+            "runtime/platform/channel_posix.c",
+#endif
+        };
+        for (const char* rel : embedded) {
+            fs::path p = yona::test::src_dir() / rel;
+            if (!fs::exists(p)) continue;
+            if (fs::last_write_time(p) > fs::last_write_time(cr_o)) {
+                need = true;
+                break;
+            }
+        }
+    }
+    for (const auto& [ps, po] : plat) {
+        if (!fs::exists(po) || fs::last_write_time(ps) > fs::last_write_time(po)) {
+            need = true;
+            break;
+        }
+    }
+    if (!need) return true;
+
+    if (!compile_c_file(cr_src, cr_o)) return false;
+    for (const auto& [ps, po] : plat) {
+        if (!compile_c_file(ps, po)) return false;
+    }
+    return true;
+}
+
+inline bool append_runtime_objects(std::vector<std::filesystem::path>& objs) {
+    if (!ensure_runtime_objects()) return false;
+    std::vector<std::filesystem::path> rt;
+    runtime_object_paths(rt);
+    objs.insert(objs.end(), rt.begin(), rt.end());
+    return true;
+}
+
+/** @deprecated Use append_runtime_objects; kept for a few call sites. */
+inline bool ensure_merged_runtime_obj() {
+    return ensure_runtime_objects();
+}
+
+inline std::string exe_suffix() {
+#ifdef _WIN32
+    return ".exe";
+#else
+    return "";
+#endif
+}
+
+inline bool link_objs_to_exe(const std::vector<std::filesystem::path>& objs,
+                             const std::filesystem::path& exe_out, const std::string& extra_libs = "") {
+    std::ostringstream cmd;
+    cmd << cc();
+    for (const auto& o : objs) cmd << " " << qpath(o);
+    cmd << " -o " << qpath(exe_out);
+#ifdef _WIN32
+    cmd << " -lws2_32 -ldbghelp";
+#else
+    cmd << " -lm -lpthread -rdynamic";
+#endif
+    if (!extra_libs.empty()) cmd << " " << extra_libs;
+    cmd << err_null();
+    return sh(cmd.str()) == 0;
+}
+
+inline std::filesystem::path regex_obj_path() {
+    return scratch_root() / "yona_regex_test.o";
+}
+
+inline bool ensure_regex_obj(std::filesystem::path& out_path) {
+    namespace fs = std::filesystem;
+    auto regex_src = yona::test::src_dir() / "runtime" / "regex.c";
+    if (!fs::exists(regex_src)) {
+        out_path.clear();
+        return false;
+    }
+    out_path = regex_obj_path();
+    bool need = !fs::exists(out_path);
+    if (!need && fs::last_write_time(regex_src) > fs::last_write_time(out_path)) need = true;
+    if (!need) return true;
+    if (!compile_c_file(regex_src, out_path)) {
+        out_path.clear();
+        return false;
+    }
+    return true;
+}
+
+inline std::string pcre_link_flags() {
+    return "-lpcre2-8";
+}
+
+inline std::string path_for_yona_literal(const std::filesystem::path& p) {
+    return p.lexically_normal().generic_string();
+}
+
+inline void rewrite_codegen_fixture_tmp_paths(std::string& s) {
+    namespace fs = std::filesystem;
+    const fs::path base = scratch_root();
+    static const struct {
+        const char* from;
+        const char* rel;
+    } repl[] = {
+        {"/tmp/yona_iter_gen_lines_test.txt", "yona_iter_gen_lines_test.txt"},
+        {"/tmp/yona_binary_test.bin", "yona_binary_test.bin"},
+        {"/tmp/yona_binary_chunks.bin", "yona_binary_chunks.bin"},
+        {"/tmp/yona_binary_seek.bin", "yona_binary_seek.bin"},
+        {"/tmp/yona_test_write.txt", "yona_test_write.txt"},
+        {"/tmp/yona_test_file.txt", "yona_test_file.txt"},
+    };
+    for (const auto& r : repl) {
+        const std::string to = path_for_yona_literal(base / r.rel);
+        for (size_t pos = 0; (pos = s.find(r.from, pos)) != std::string::npos;) {
+            s.replace(pos, std::strlen(r.from), to);
+            pos += to.size();
+        }
+    }
+#ifdef _WIN32
+    {
+        const char* from = "/etc/os-release";
+        const std::string to = path_for_yona_literal(base / "yona_stub_os_release.txt");
+        for (size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos;) {
+            s.replace(pos, std::strlen(from), to);
+            pos += to.size();
+        }
+    }
+    /* cmd.exe: `;` is not a command separator like in sh; use `&&` between echo commands. */
+    {
+        const char* from = R"(spawn "echo line1; echo line2; echo line3")";
+        const char* to = R"(spawn "echo line1&&echo line2&&echo line3")";
+        for (size_t pos = 0; (pos = s.find(from, pos)) != std::string::npos;) {
+            s.replace(pos, std::strlen(from), to);
+            pos += std::strlen(to);
+        }
+    }
+#endif
+}
+
+inline std::string popen_read_all(const std::filesystem::path& exe) {
+    std::string cmd = qpath(exe) + err_null();
+    FILE* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) return "RUN_ERROR";
+    std::string result;
+    std::array<char, 256> buffer{};
+    while (fgets(buffer.data(), (int)buffer.size(), pipe) != nullptr) result += buffer.data();
+    pclose(pipe);
+    if (!result.empty() && (result.back() == '\n' || result.back() == '\r')) result.pop_back();
+    return result;
+}
+
+inline std::string alloc_stats_cmd(const std::filesystem::path& exe) {
+#ifdef _WIN32
+    std::filesystem::path bat = scratch_root() / "yona_alloc_stats_wrap.bat";
+    {
+        std::ofstream out(bat.string(), std::ios::binary);
+        out << "@echo off\r\nset YONA_ALLOC_STATS=1\r\n" << qpath(exe) << " 2>&1\r\n";
+    }
+    return std::string("cmd /c ") + qpath(bat);
+#else
+    return std::string("YONA_ALLOC_STATS=1 ") + qpath(exe) + " 2>&1";
+#endif
+}
+
+} // namespace yona::test::link

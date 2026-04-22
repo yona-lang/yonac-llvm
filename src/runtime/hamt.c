@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 
 extern void* rc_alloc(int64_t type_tag, size_t bytes);
@@ -402,7 +403,7 @@ typedef struct { int first; } print_ctx_t;
 static void hamt_print_entry(int64_t key, int64_t val, void* ctx) {
     print_ctx_t* pc = (print_ctx_t*)ctx;
     if (!pc->first) printf(", ");
-    printf("%ld: %ld", key, val);
+    printf("%" PRId64 ": %" PRId64, key, val);
     pc->first = 0;
 }
 

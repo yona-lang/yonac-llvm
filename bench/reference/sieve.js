@@ -5,4 +5,4 @@ function sieve(n) {
         if (is_prime[i]) for (let j = i*i; j <= n; j += i) is_prime[j] = 0;
     return is_prime.reduce((a, b) => a + b, 0);
 }
-console.log(sieve(100000));
+console.log(sieve(500));

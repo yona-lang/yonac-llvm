@@ -6,9 +6,10 @@
  * and returns the uring ID immediately. Completion via yona_rt_io_await().
  */
 
-#include "../platform.h"
-#include "uring.h"
+#include "yona/runtime/platform.h"
+#include "yona/runtime/uring.h"
 #include <stdio.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -31,7 +32,7 @@ int64_t yona_Std_Net__tcpConnect(const char* host, int64_t port) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    char port_str[8]; snprintf(port_str, sizeof(port_str), "%ld", port);
+    char port_str[8]; snprintf(port_str, sizeof(port_str), "%" PRId64, port);
     if (getaddrinfo(host, port_str, &hints, &res) != 0) return 0;
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd < 0) { freeaddrinfo(res); return 0; }
@@ -230,7 +231,7 @@ int64_t yona_Std_Http__httpGet(const char* url) {
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    char port_str[8]; snprintf(port_str, sizeof(port_str), "%ld", port);
+    char port_str[8]; snprintf(port_str, sizeof(port_str), "%" PRId64, port);
     if (getaddrinfo(host, port_str, &hints, &ai) != 0) return 0;
     int fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
     if (fd < 0) { freeaddrinfo(ai); return 0; }

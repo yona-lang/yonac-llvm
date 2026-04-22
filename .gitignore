@@ -58,6 +58,8 @@ node_modules/
 debug_*
 
 # Test outputs
+test/_scratch/
+
 *.yona
 !test/code/*.yona
 !test/code/**/*.yona

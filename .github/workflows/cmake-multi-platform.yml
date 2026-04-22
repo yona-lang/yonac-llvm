@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
         build_type: [Debug, Release]
         include:
           # Linux Debug
@@ -32,6 +32,24 @@ jobs:
             configure_preset: x64-release-linux
             build_preset: build-release-linux
             test_preset: unit-tests-linux
+            llvm_version: 20
+
+          # Linux arm64 Debug
+          - os: ubuntu-24.04-arm
+            build_type: Debug
+            name: Linux arm64 Debug
+            configure_preset: arm64-debug-linux
+            build_preset: build-debug-linux-arm64
+            test_preset: unit-tests-linux-arm64
+            llvm_version: 20
+
+          # Linux arm64 Release
+          - os: ubuntu-24.04-arm
+            build_type: Release
+            name: Linux arm64 Release
+            configure_preset: arm64-release-linux
+            build_preset: build-release-linux-arm64
+            test_preset: unit-tests-linux-arm64
             llvm_version: 20
 
           # macOS Debug

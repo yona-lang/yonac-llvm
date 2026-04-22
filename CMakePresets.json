@@ -115,6 +115,30 @@
       }
     },
     {
+      "name": "arm64-debug-linux",
+      "displayName": "arm64 Debug Linux",
+      "inherits": "linux-base",
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "arm64-release-linux",
+      "displayName": "arm64 Release Linux",
+      "inherits": "linux-base",
+      "architecture": {
+        "value": "arm64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
       "name": "x64-debug-macos",
       "displayName": "x64 Debug macOS",
       "inherits": "macos-base",
@@ -173,6 +197,22 @@
       ]
     },
     {
+      "name": "build-debug-linux-arm64",
+      "displayName": "Build Debug Linux arm64",
+      "configurePreset": "arm64-debug-linux",
+      "targets": [
+        "all"
+      ]
+    },
+    {
+      "name": "build-release-linux-arm64",
+      "displayName": "Build Release Linux arm64",
+      "configurePreset": "arm64-release-linux",
+      "targets": [
+        "all"
+      ]
+    },
+    {
       "name": "build-debug-macos",
       "displayName": "Build Debug macOS",
       "configurePreset": "x64-debug-macos",
@@ -202,6 +242,14 @@
       "name": "unit-tests-linux",
       "displayName": "Unit Tests (Linux)",
       "configurePreset": "x64-debug-linux",
+      "environment": {
+        "CTEST_OUTPUT_ON_FAILURE": "1"
+      }
+    },
+    {
+      "name": "unit-tests-linux-arm64",
+      "displayName": "Unit Tests (Linux arm64)",
+      "configurePreset": "arm64-debug-linux",
       "environment": {
         "CTEST_OUTPUT_ON_FAILURE": "1"
       }

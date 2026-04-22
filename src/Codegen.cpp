@@ -347,7 +347,8 @@ void Codegen::declare_runtime() {
     rt_.async_call_    = decl("yona_rt_async_call", promise_ptr, {fn_ptr_ty, i64});
     auto thunk_ptr_ty = PointerType::get(llvm::FunctionType::get(i64, {}, false), 0);
     rt_.async_call_thunk_ = decl("yona_rt_async_call_thunk", promise_ptr, {thunk_ptr_ty});
-    rt_.async_await_   = decl("yona_rt_async_await", i64, {promise_ptr});
+    rt_.async_await_       = decl("yona_rt_async_await", i64, {promise_ptr});
+    rt_.async_await_keep_ = decl("yona_rt_async_await_keep", i64, {promise_ptr});
 
     // Task groups (structured concurrency)
     auto group_ptr = ptr; // opaque pointer to yona_task_group_t
@@ -445,16 +446,15 @@ void Codegen::declare_runtime() {
     rt_.box_ = decl("yona_rt_box", ptr, {ptr, i64});
     rt_.close_ = decl("yona_rt_close", vd, {i64});
 
-    // Exception handling (setjmp/longjmp)
+    // Exception handling (SJLJ via llvm.eh.sjlj.setjmp + __builtin_longjmp).
+    // Codegen emits the SJLJ intrinsic in the user's stack frame; runtime
+    // raise() does __builtin_longjmp into that buffer. See exceptions.c.
     auto i32 = LType::getInt32Ty(*context_);
-    rt_.try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns jmp_buf*
+    rt_.try_begin_     = decl("yona_rt_try_push", ptr, {});  // returns void*[5]
     rt_.try_end_       = decl("yona_rt_try_end", vd, {});
     rt_.raise_         = decl("yona_rt_raise", vd, {i64, ptr});
     rt_.get_exc_sym_   = decl("yona_rt_get_exception_symbol", i64, {});
     rt_.get_exc_msg_   = decl("yona_rt_get_exception_message", ptr, {});
-    // Declare C setjmp — must be called from the compiled function's stack frame
-    auto setjmp_fn = decl("setjmp", i32, {ptr});
-    setjmp_fn->addFnAttr(llvm::Attribute::ReturnsTwice);
     rt_.raise_->addFnAttr(llvm::Attribute::NoReturn);
 
     // Perceus phase 3: frame-scoped heap cleanup on raise. See

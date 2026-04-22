@@ -3,14 +3,22 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
+#if defined(_WIN32)
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace yona::compiler {
 
 namespace {
 
 bool stderr_is_tty() {
-    static const bool is_tty = isatty(fileno(stderr));
+#if defined(_WIN32)
+    static const bool is_tty = _isatty(_fileno(stderr)) != 0;
+#else
+    static const bool is_tty = isatty(fileno(stderr)) != 0;
+#endif
     return is_tty;
 }
 
