@@ -81,3 +81,11 @@ Policy:
 ## `yona_io_register_direct_result`
 
 - Shared helper used by `file_windows.c` and `net_windows.c`: registers an opaque pointer (or integer cast through `intptr_t`) for a high direct-result ID range; `yona_rt_io_await` in `file_windows.c` completes those immediately.
+
+## Codegen transfer scopes
+
+- Branch-sensitive Perceus transfer tracking now uses a scope-entry basic-block
+  ordinal watermark (`CodegenExpr` transfer scope helpers) so cross-branch
+  droppability checks are O(1) per value.
+- This keeps if/case compensating drops precise without repeatedly materializing
+  full pre-scope basic-block membership sets.

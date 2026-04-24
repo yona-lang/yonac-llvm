@@ -231,13 +231,49 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
 
 bool Codegen::is_cross_branch_droppable(
     llvm::Value* v,
-    const std::unordered_set<llvm::BasicBlock*>& pre_blocks) {
+    uint64_t pre_scope_block_ordinal) {
     if (llvm::isa<llvm::Argument>(v)) return true;
-    if (auto* inst = llvm::dyn_cast<llvm::Instruction>(v))
-        return pre_blocks.count(inst->getParent()) > 0;
+    if (auto* inst = llvm::dyn_cast<llvm::Instruction>(v)) {
+        auto it = transfer_block_ordinals_.find(inst->getParent());
+        if (it == transfer_block_ordinals_.end()) return false;
+        return it->second <= pre_scope_block_ordinal;
+    }
     // Constants and other non-instruction values are safe to reference
     // from any branch.
     return true;
+}
+
+void Codegen::refresh_transfer_block_ordinals(llvm::Function* fn) {
+    if (!fn) return;
+    if (transfer_block_ordinal_fn_ != fn) {
+        transfer_block_ordinal_fn_ = fn;
+        transfer_block_ordinal_next_ = 0;
+        transfer_block_ordinals_.clear();
+        for (auto& bb : *fn) transfer_block_ordinals_.emplace(&bb, ++transfer_block_ordinal_next_);
+        return;
+    }
+
+    // Common case: new blocks are appended. Walk from tail until the first
+    // known block, then assign ordinals in forward order for the unknown tail.
+    std::vector<llvm::BasicBlock*> tail_unknown;
+    std::vector<llvm::BasicBlock*> all_blocks;
+    all_blocks.reserve(fn->size());
+    for (auto& bb : *fn) all_blocks.push_back(&bb);
+    for (auto it = all_blocks.rbegin(); it != all_blocks.rend(); ++it) {
+        if (transfer_block_ordinals_.count(*it)) break;
+        tail_unknown.push_back(*it);
+    }
+    for (auto it = tail_unknown.rbegin(); it != tail_unknown.rend(); ++it) {
+        transfer_block_ordinals_.emplace(*it, ++transfer_block_ordinal_next_);
+    }
+
+    if (tail_unknown.empty() && transfer_block_ordinals_.size() != fn->size()) {
+        // Fallback path for non-append insertions.
+        for (auto& bb : *fn) {
+            if (!transfer_block_ordinals_.count(&bb))
+                transfer_block_ordinals_.emplace(&bb, ++transfer_block_ordinal_next_);
+        }
+    }
 }
 
 void Codegen::transfer_scope_enter() {
@@ -250,7 +286,8 @@ void Codegen::transfer_scope_enter() {
     s.entry_snapshot = transferred_seqs_;
     if (builder_->GetInsertBlock()) {
         auto* fn = builder_->GetInsertBlock()->getParent();
-        for (auto& bb : *fn) s.pre_blocks.insert(&bb);
+        refresh_transfer_block_ordinals(fn);
+        s.pre_scope_block_ordinal = transfer_block_ordinal_next_;
     }
     transfer_scope_stack_.push_back(std::move(s));
 }
@@ -290,7 +327,7 @@ void Codegen::transfer_scope_exit() {
     // cross-branch droppability so we don't try to drop a value defined
     // inside a branch (SSA-unreachable outside it).
     for (auto* v : any_transferred) {
-        if (!is_cross_branch_droppable(v, scope.pre_blocks)) continue;
+        if (!is_cross_branch_droppable(v, scope.pre_scope_block_ordinal)) continue;
         for (auto& b : scope.branches) {
             if (!b.exit_bb) continue;
             if (b.transfers.count(v)) continue;

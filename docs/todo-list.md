@@ -42,7 +42,7 @@
 
 ### Code quality
 
-- [ ] O(1) transfer-scope basic block detection
+- [x] O(1) transfer-scope basic block detection (scope-entry ordinal watermark + O(1) droppability checks)
 - [ ] Revisit `transferred_seqs_` / `transferred_maps_` unification only if semantics remain explicit
 - [ ] Relax stream-fusion gating only with benchmark evidence
 

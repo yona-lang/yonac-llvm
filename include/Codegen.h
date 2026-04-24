@@ -280,7 +280,7 @@ private:
     // skipped the drop.
     //
     // Protocol:
-    //   transfer_scope_enter()          — snapshot transferred_seqs_ + BBs
+    //   transfer_scope_enter()          — snapshot transferred_seqs_ + pre-scope BB ordinal watermark
     //   for each branch:
     //     transfer_branch_begin()       — reset transferred_seqs_ to snapshot
     //     codegen(branch)               — populates transferred_seqs_
@@ -293,9 +293,10 @@ private:
     //
     // INVARIANT (load-bearing, do not break without updating this doc):
     //   transfer_scope_enter() MUST run before any branch BasicBlock is
-    //   created. pre_blocks captures the function's BB list at entry;
+    //   created. pre_scope_block_ordinal captures the function's BB
+    //   ordinals at entry;
     //   is_cross_branch_droppable() treats an Instruction as droppable
-    //   from a sibling branch iff its parent BB is in pre_blocks. A
+    //   from a sibling branch iff its parent BB ordinal is <= snapshot. A
     //   branch BB created between enter() and first branch codegen
     //   would be (incorrectly) classified as pre-scope, and values
     //   defined inside it would get rc_dec'd from sibling branches
@@ -305,7 +306,7 @@ private:
     //   up above BasicBlock::Create calls. See CodegenExpr.cpp.
     struct TransferScope {
         std::unordered_set<llvm::Value*> entry_snapshot;
-        std::unordered_set<llvm::BasicBlock*> pre_blocks;
+        uint64_t pre_scope_block_ordinal = 0;
         struct Branch {
             llvm::BasicBlock* exit_bb;   // nullptr if terminated (ret/raise)
             std::unordered_set<llvm::Value*> transfers;
@@ -318,9 +319,12 @@ private:
     void transfer_branch_begin();
     void transfer_branch_end(llvm::BasicBlock* exit_bb);
     void transfer_scope_exit();
-    static bool is_cross_branch_droppable(
-        llvm::Value* v,
-        const std::unordered_set<llvm::BasicBlock*>& pre_blocks);
+    bool is_cross_branch_droppable(llvm::Value* v, uint64_t pre_scope_block_ordinal);
+    void refresh_transfer_block_ordinals(llvm::Function* fn);
+
+    llvm::Function* transfer_block_ordinal_fn_ = nullptr;
+    uint64_t transfer_block_ordinal_next_ = 0;
+    std::unordered_map<llvm::BasicBlock*, uint64_t> transfer_block_ordinals_;
 
     // Closure devirtualization: map closure Value* → underlying Function*
     // When a known lambda is wrapped in a closure, we remember the mapping
