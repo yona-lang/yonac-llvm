@@ -64,6 +64,9 @@ Policy:
   but configure-time dependency checks may auto-disable it on toolchains that
   are missing required linker deps (for example, MSVC-compatible LibXml2 on
   Windows for LLVM Windows-manifest support).
+- Embedded-linker dependency detection and Windows LibXml2 fallback are now
+  centralized in `cmake/YonaInProcessLld.cmake` to keep top-level CMake logic
+  readable and packaging behavior consistent.
 - `YONAC_REQUIRE_INPROCESS_LLD=1` forces hard failure when in-process linker
   mode is unavailable or fails, preventing silent fallback in strict CI gates.
 - CMake now produces prebuilt runtime artifacts under build-local `runtime/`

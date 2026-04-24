@@ -22,7 +22,9 @@
 
 ### 3) Distribution readiness
 
-- [ ] Windows installer (NSIS/WiX)
+- [ ] Windows installer productionization (upgrade behavior, signing, final UX polish)
+- [x] Draft WiX v4 installer scaffold (MSI package + staging/build script)
+- [x] Add Windows release CI job emitting zip + MSI artifacts
 - [ ] Final packaging pass for sysroot-based CLI/REPL distribution layout
 - [x] Add dual linker mode control (`--linker-mode` / `YONAC_LINKER_MODE`: `auto|bundled|system|inprocess`)
 - [x] Wire CLI/REPL link-mode plumbing to prefer bundled `lld` in `auto`
@@ -33,7 +35,7 @@
 - [x] Add strict CI gate support via `YONAC_REQUIRE_INPROCESS_LLD=1`
 - [x] Extract embedded-LLD CMake logic into `cmake/YonaInProcessLld.cmake`
 - [ ] Enable embedded LLD backend by default across supported toolchains (resolve remaining dependency gates, e.g. MSVC-compatible LibXml2 on Windows)
-- [ ] Resolve Windows mixed-libxml link closure (`LLVMWindowsManifest` pulling `libxml2.a` vs fetched `LibXml2`)
+- [x] Resolve Windows mixed-libxml link closure (`LLVMWindowsManifest` now retargeted to fetched `LibXml2`)
 - [ ] Implement true embedded LLD backend for Linux/macOS in-process mode
 
 ## Backlog (Open, Not Immediate)

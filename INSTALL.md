@@ -60,6 +60,9 @@ brew install yona-lang/tap/yona
 
 Windows presets (`x64-debug`, `x64-release`) use **Ninja** and expect **Clang** as the compiler (same as CI). **MSVC** with the **Desktop development with C++** workload (or Build Tools + Windows SDK) must be installed so the MSVC linker and libraries are available.
 
+For tagged releases, Windows artifacts include both a portable ZIP and an MSI installer.
+The MSI flow is defined under `packaging/windows/` (`YonaInstaller.wxs`, `build-msi.ps1`).
+
 ### 1. Install tools
 
 - **CMake** 3.29+ (3.30+ recommended if you enable newer CMake policies elsewhere). [cmake.org/download](https://cmake.org/download/)

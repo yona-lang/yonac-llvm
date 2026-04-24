@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.1 (2026-04-24)
+
+### Distribution and Packaging
+- Added Windows WiX v4 installer scaffold (`packaging/windows/`) with MSI build script.
+- Extended release workflow with a Windows release job that publishes both ZIP and MSI artifacts.
+- Kept Linux/macOS packaging aligned with precompiled runtime artifact shipping.
+
+### Toolchain and Linker
+- Modularized embedded linker configuration into `cmake/YonaInProcessLld.cmake`.
+- Fixed Windows embedded-LLD libxml resolution by retargeting `LLVMWindowsManifest` to fetched `LibXml2`, avoiding mixed `.a`/`.lib` linkage.
+- Added stricter release checks for linker-mode/runtime artifact smoke validation on Windows.
+
+### Documentation
+- Updated roadmap/todo status to reflect Windows installer scaffolding and release CI progress.
+- Updated installation and architecture docs for current linker/runtime packaging flow.
+
 ## v0.1.0 (2025-04-06)
 
 Initial release of the Yona compiler targeting LLVM.

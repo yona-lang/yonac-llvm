@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Yona"
+    Manufacturer="Yona Team"
+    Version="$(var.Version)"
+    UpgradeCode="D1C23E94-0ED2-48B5-9D76-1A8F6683E2DE"
+    InstallerVersion="500"
+    Scope="perMachine"
+    Language="1033">
+
+    <SummaryInformation Description="Yona compiler and runtime" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Yona is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="MainFeature" Title="Yona" Level="1">
+      <ComponentGroupRef Id="YonaFiles" />
+      <ComponentRef Id="AddYonaBinToPath" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Yona" />
+    </StandardDirectory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="YonaFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.StagingDir)\bin\**" />
+      <Files Include="$(var.StagingDir)\lib\**" />
+      <Files Include="$(var.StagingDir)\runtime\**" />
+      <Files Include="$(var.StagingDir)\src\**" />
+      <Files Include="$(var.StagingDir)\include\**" />
+      <Files Include="$(var.StagingDir)\LICENSE.txt" />
+      <Files Include="$(var.StagingDir)\README.md" />
+      <Files Include="$(var.StagingDir)\INSTALL.md" />
+      <Files Include="$(var.StagingDir)\CHANGELOG.md" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AddYonaBinToPath" Guid="*">
+        <Environment
+          Id="YonaBinPath"
+          Name="PATH"
+          Action="set"
+          Part="last"
+          Permanent="no"
+          System="yes"
+          Value="[INSTALLFOLDER]bin" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

@@ -179,8 +179,123 @@ jobs:
           name: macos
           path: yona-*-macos-*.tar.gz
 
+  build-windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache LLVM (Windows)
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: C:\LLVM
+          key: llvm-20-1.7
+
+      - name: Install LLVM (Windows)
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $llvmVersion = "20"
+          $llvmMinorVersion = "1.7"
+          $destDir = "C:\LLVM"
+          $llvmBaseUrl = "https://github.com/llvm/llvm-project/releases/download"
+          $llvmTag = "llvmorg-$llvmVersion.$llvmMinorVersion"
+          $llvmArchive = "clang+llvm-$llvmVersion.$llvmMinorVersion-x86_64-pc-windows-msvc.tar.xz"
+          $downloadUrl = "$llvmBaseUrl/$llvmTag/$llvmArchive"
+          $tempArchive = "$env:RUNNER_TEMP\$llvmArchive"
+
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $tempArchive
+          7z x $tempArchive -o"$env:RUNNER_TEMP\llvm-extract" | Out-Null
+          $tarFile = Get-ChildItem "$env:RUNNER_TEMP\llvm-extract" -Filter *.tar | Select-Object -First 1
+          7z x $tarFile.FullName -o"$env:RUNNER_TEMP\llvm-final" | Out-Null
+          $extractedDir = Get-ChildItem "$env:RUNNER_TEMP\llvm-final" -Directory | Select-Object -First 1
+
+          if (Test-Path $destDir) { Remove-Item -Recurse -Force $destDir }
+          Move-Item $extractedDir.FullName $destDir
+
+      - name: Set up LLVM (Windows)
+        shell: pwsh
+        run: |
+          echo "C:\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "LLVM_INSTALL_PREFIX=C:\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CC=C:\LLVM\bin\clang.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "CXX=C:\LLVM\bin\clang++.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install WiX v4 CLI
+        shell: pwsh
+        run: |
+          $installed = dotnet tool list --global | Select-String -Pattern '^\s*wix\s+'
+          if ($installed) {
+            dotnet tool update --global wix --version 4.*
+          } else {
+            dotnet tool install --global wix --version 4.*
+          }
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+          wix --version
+
+      - name: Build release
+        shell: pwsh
+        run: |
+          cmake --preset x64-release -DLLVM_INSTALL_PREFIX=C:/LLVM
+          cmake --build --preset build-release
+
+      - name: Report embedded LLD status
+        shell: pwsh
+        run: |
+          $cache = "out/build/x64-release/CMakeCache.txt"
+          $enabled = (Select-String -Path $cache -Pattern '^YONA_INPROCESS_LLD_AVAILABLE:BOOL=').Line.Split('=')[1]
+          $reason = (Select-String -Path $cache -Pattern '^YONA_INPROCESS_LLD_REASON:STRING=').Line.Split('=')[1]
+          "### Embedded LLD (Windows release)" >> $env:GITHUB_STEP_SUMMARY
+          "- active: `$enabled`" >> $env:GITHUB_STEP_SUMMARY
+          "- reason: `$reason`" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Run tests
+        shell: pwsh
+        run: ctest --preset unit-tests-windows --output-on-failure
+
+      - name: Validate packaged runtime and linker modes
+        shell: pwsh
+        run: |
+          $buildDir = "out/build/x64-release"
+          if (!(Test-Path (Join-Path $buildDir "runtime/compiled_runtime.o"))) { throw "missing runtime/compiled_runtime.o" }
+          if (!(Test-Path (Join-Path $buildDir "runtime/yona_runtime.lib"))) { throw "missing runtime/yona_runtime.lib" }
+
+          $cache = Join-Path $buildDir "CMakeCache.txt"
+          $inprocActive = (Select-String -Path $cache -Pattern '^YONA_INPROCESS_LLD_AVAILABLE:BOOL=').Line.Split('=')[1]
+          if (-not $env:YONAC_CC) { $env:YONAC_CC = "C:\LLVM\bin\clang.exe" }
+
+          & (Join-Path $buildDir "yonac.exe") --sysroot $buildDir --linker-mode system -e "1 + 2" -o (Join-Path $buildDir "release_link_system.exe")
+          $sysOut = & (Join-Path $buildDir "release_link_system.exe")
+          if ("$sysOut".Trim() -ne "3") { throw "system linker smoke failed: $sysOut" }
+
+          if ($inprocActive -eq "TRUE") { $env:YONAC_REQUIRE_INPROCESS_LLD = "1" } else { Remove-Item Env:YONAC_REQUIRE_INPROCESS_LLD -ErrorAction SilentlyContinue }
+          & (Join-Path $buildDir "yonac.exe") --sysroot $buildDir --linker-mode inprocess -e "1 + 2" -o (Join-Path $buildDir "release_link_inprocess.exe")
+          $inprocOut = & (Join-Path $buildDir "release_link_inprocess.exe")
+          if ("$inprocOut".Trim() -ne "3") { throw "inprocess linker smoke failed: $inprocOut" }
+
+      - name: Package (zip + msi)
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v',''
+          ./packaging/windows/build-msi.ps1 -BuildDir "out/build/x64-release" -Version $version
+
+          $stageDir = "out/installer/windows/stage"
+          $zipPath = "yona-$version-windows-x64.zip"
+          if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
+          Compress-Archive -Path (Join-Path $stageDir "*") -DestinationPath $zipPath
+          Copy-Item "out/installer/windows/yona-$version-windows-x64.msi" "."
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            yona-*-windows-*.zip
+            yona-*-windows-*.msi
+
   release:
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -193,7 +308,10 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: yona-*.tar.gz
+          files: |
+            yona-*.tar.gz
+            yona-*-windows-*.zip
+            yona-*-windows-*.msi
           body_path: CHANGELOG.md
           draft: false
           prerelease: false

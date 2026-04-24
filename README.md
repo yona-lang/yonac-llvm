@@ -31,6 +31,11 @@ cmake --build --preset build-release-linux
 
 See [INSTALL.md](INSTALL.md) for macOS, Windows, and Docker instructions.
 
+Prebuilt release artifacts now include:
+- Linux/macOS tarballs
+- Windows ZIP bundle
+- Windows MSI installer (WiX v4-based packaging flow)
+
 ## Language Examples
 
 ```yona
@@ -167,6 +172,7 @@ Source → Lexer → Parser → AST → Codegen (LLVM IR) → Native Executable
 **Project:**
 - [Status & Roadmap](docs/todo-list.md)
 - [Benchmark Results](docs/benchmark-results.md)
+- [Windows Installer Draft](packaging/windows/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 - [API Reference](docs/api/)

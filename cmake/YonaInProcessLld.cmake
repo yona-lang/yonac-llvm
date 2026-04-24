@@ -120,8 +120,18 @@ if(YONA_INPROCESS_LLD_AVAILABLE)
 		Option LibDriver WindowsDriver WindowsManifest LTO DTLTO
 	)
 	if(WIN32 AND YONA_USE_FETCHED_LIBXML2 AND TARGET LibXml2)
-		# LLVMWindowsManifest may inject a host-provided libxml2 path (e.g. MinGW .a).
-		# Replace it with the fetched MSVC-compatible target to avoid mixed-toolchain duplicates.
+		# LLVMWindowsManifest is wired to LibXml2::LibXml2 from FindLibXml2.
+		# On some toolchains this resolves to MinGW-style libxml2.a and conflicts
+		# with the fetched MSVC libxml2. Retarget it to fetched LibXml2 directly.
+		if(TARGET LLVMWindowsManifest)
+			get_target_property(_yona_wm_links LLVMWindowsManifest INTERFACE_LINK_LIBRARIES)
+			if(_yona_wm_links AND NOT _yona_wm_links STREQUAL "_yona_wm_links-NOTFOUND")
+				string(REPLACE "LibXml2::LibXml2" "LibXml2" _yona_wm_links "${_yona_wm_links}")
+				set_target_properties(LLVMWindowsManifest PROPERTIES INTERFACE_LINK_LIBRARIES "${_yona_wm_links}")
+			endif()
+			unset(_yona_wm_links)
+		endif()
+		# Also strip any already-resolved raw path entries, if present.
 		list(FILTER YONA_INPROCESS_LLD_LLVM_LIBS EXCLUDE REGEX "libxml2(\\.a|\\.lib)$")
 	endif()
 	list(APPEND YONA_INPROCESS_LLD_LIBS ${YONA_INPROCESS_LLD_LLVM_LIBS})
