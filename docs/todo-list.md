@@ -5,7 +5,7 @@
 - Compiler: Yona -> LLVM IR -> native executable via `yonac`
 - REPL: `yona` compile-and-run interactive mode
 - Tests: 1275 assertions across 216 test cases (all passing)
-- Windows benchmark run (2026-04-22): 35/35 Yona rows passing, full language matrix (0 missing), peak RSS captured
+- Windows benchmark run (2026-04-24): 35/35 Yona rows passing, report refreshed, perf deltas reviewed
 - Runtime backends: Linux + Windows native paths in place
 
 ## Active Priorities
@@ -15,6 +15,9 @@
 - [ ] Add a benchmark reference conformance check (validate expected output per language lane)
 - [x] Normalize startup-RSS probe cache so startup RSS table is always populated
 - [x] Keep `docs/benchmark-results-windows.md` synced with the latest rerun JSON
+- [x] Run full Windows benchmark matrix, refresh results, and evaluate performance deltas
+- [x] Stabilize Windows perf trend checks (multi-run median/variance) for large-file I/O deltas
+- [ ] Investigate/resolve local Erlang lane toolchain crash (`erl.exe`/`erlc.exe` exit `0xC0000005`) affecting comparison coverage on this host
 
 ### 2) Platform/runtime closure
 

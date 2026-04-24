@@ -1,18 +1,20 @@
 # Benchmark Results - Windows
 
-**Date**: 2026-04-22  
+**Date**: 2026-04-24  
 **Platform**: Windows 11 (build 26220)
 
 **Provenance**: Tables regenerated with:
 
+- `set YONAC_CC=C:\local\LLVM\bin\clang.exe`
 - `python bench/runner.py --yonac out/build/x64-debug/yonac.exe -n 10 -O 2 --compare "c,erl,java,hs,js,py" --json`
-- Raw output: `bench/windows-full-bench-2026-04-22-n10-winrefs-rss.json`
+- Raw output: `bench/windows-full-bench-2026-04-24-n10-v011.json`
 
 ## Summary
 
 - **35/35 benchmarks passing** on Windows (Yona lane).
-- Comparison coverage now has **0 missing cells**.
-- C lanes use Windows-specific C refs when available (`*.win.c`).
+- C lanes use Windows-specific refs (`*.win.c`) when available.
+- Comparison coverage this run: C 35/35, Erlang 0/35, Haskell 35/35, Java 35/35, Node.js 35/35, Python 35/35.
+- Erlang lane unavailable in this environment (`erl.exe`/`erlc.exe` crash with `0xC0000005`).
 
 ## Startup-adjusted numbers
 
@@ -22,91 +24,137 @@ The runner reports adjusted values (`app_time = max(total - startup, 0.01ms)`).
 
 | Runtime | Startup time | Startup RSS |
 |---------|-------------:|------------:|
-| C | 9.05 ms | 3.9 MB |
 | Yona | 10.7 ms | 6.2 MB |
+| C | 9.05 ms | 3.9 MB |
+| Erlang | — | — |
 | Haskell | 26 ms | 10.5 MB |
 | Java | 54.2 ms | 40.3 MB |
-| Python | 22.8 ms | 10.9 MB |
 | Node.js | 40.4 ms | 32.3 MB |
-| Erlang | 1155 ms | 53.2 MB |
+| Python | 22.8 ms | 10.9 MB |
 
 ## CPU / Algorithms (adjusted ms)
 
 | Benchmark | Yona | C | Erlang | Haskell | Java | Node.js | Python |
 |-----------|-----:|--:|-------:|--------:|-----:|--------:|-------:|
-| fibonacci(35) | 102 | 112 | 48.9 | 25 | 7.19 | 53.9 | 680 |
-| tak(30,20,10) | 156 | 161 | 122 | 81.1 | 44.3 | 205 | 2403 |
-| sieve(500) | 3.5 | 0.23 | 0.01 | 0.506 | 0.01 | 0.01 | 0.01 |
-| sort(200) | 0.01 | 0.01 | 0.01 | 0.702 | 11.4 | 1.59 | 2.03 |
-| ackermann(3,11) | 259 | 259 | 349 | 294 | 141 | 228 | 10691 |
-| queens(10) | 15.5 | 20.1 | 13.7 | 11.1 | 7.89 | 13.6 | 85.9 |
-| sum_squares(1M) | 393 | 2.16 | 0.01 | 1.71 | 0.01 | 11 | 69.2 |
+| fibonacci(35) | 107 | 104 | — | 17.1 | 11.4 | 54.3 | 637 |
+| tak(30,20,10) | 156 | 159 | — | 73 | 46 | 204 | 2.27e+03 |
+| sieve(500) | 7.27 | 0.267 | — | 0.01 | 0.01 | 0.01 | 0.01 |
+| sort(200) | 4.54 | 0.549 | — | 0.01 | 10.5 | 2.16 | 6.06 |
+| ackermann(3,11) | 251 | 249 | — | 282 | 147 | 229 | 1.04e+04 |
+| queens(10) | 19.7 | 18.6 | — | 0.01 | 5.76 | 12.7 | 88.1 |
+| sum_squares(1M) | 2.2 | 1.11 | — | 0.01 | 0.01 | 12.3 | 69.6 |
 
 ## Collections (adjusted ms)
 
 | Benchmark | Yona | C | Erlang | Haskell | Java | Node.js | Python |
 |-----------|-----:|--:|-------:|--------:|-----:|--------:|-------:|
-| dict_build (10K) | 13 | 0.01 | 3.44 | 12.4 | 37.5 | 0.01 | 0.01 |
-| set_build (10K) | 11.2 | 0.02 | 0.01 | 6.3 | 0.914 | 0.01 | 0.01 |
-| list_map_filter | 0.01 | 1.59 | 0.01 | 0.01 | 2.53 | 0.01 | 0.01 |
-| list_reverse | 0.01 | 1.57 | 0.01 | 6.42 | 0.01 | 0.01 | 0.01 |
-| list_sum | 0.01 | 0.01 | 0.01 | 0.231 | 0.348 | 0.01 | 0.01 |
-| int_array_fill_sum | 0.01 | 0.027 | 0.01 | 1.34 | 0.01 | 0.01 | 0.01 |
-| int_array_map | 0.01 | 0.418 | 0.01 | 0.673 | 0.01 | 0.01 | 0.01 |
-| int_array_sum | 0.261 | 0.294 | 0.01 | 0.433 | 0.01 | 0.01 | 0.01 |
+| dict_build (10K) | 18.8 | 2.33 | — | 1.94 | 11.9 | 1.6 | 0.7 |
+| set_build (10K) | 17.8 | 1.3 | — | 0.01 | 8.6 | 0.01 | 0.01 |
+| list_map_filter | 3.6 | 4.28 | — | 0.01 | 14.5 | 0.01 | 0.01 |
+| list_reverse | 4.02 | 5.18 | — | 0.01 | 0.01 | 0.01 | 0.01 |
+| list_sum | 2.27 | 1.37 | — | 0.01 | 8.46 | 0.01 | 0.01 |
+| int_array_fill_sum | 2.05 | 1.82 | — | 0.01 | 0.01 | 0.01 | 2.56 |
+| int_array_map | 3.5 | 2.3 | — | 0.01 | 0.01 | 0.01 | 3.18 |
+| int_array_sum | 4.39 | 1.57 | — | 0.01 | 0.01 | 0.01 | 2.55 |
 
 ## Concurrency (adjusted ms)
 
 | Benchmark | Yona | C | Erlang | Haskell | Java | Node.js | Python |
 |-----------|-----:|--:|-------:|--------:|-----:|--------:|-------:|
-| par_map (20 cubes) | 2.28 | 3.26 | 0.01 | 1.68 | 0.01 | 0.01 | 14.5 |
-| parallel_async | 109 | 111 | 107 | 99.5 | 110 | 104 | 191 |
-| sequential_async | 436 | 436 | 423 | 404 | 421 | 424 | 504 |
-| channel_pipeline | 0.01 | 1.85 | 46.8 | 2.22 | 10.9 | 0.01 | 8.06 |
-| channel_fanin | 0.01 | 0.01 | 0.01 | 1.57 | 3.55 | 0.01 | 8.31 |
-| channel_throughput | 0.01 | 0.01 | 50.2 | 2.38 | 16.5 | 0.01 | 11.2 |
-| seq_map | 0.01 | 2.02 | 0.01 | 0.539 | 0.01 | 0.01 | 0.01 |
-| task_group_arena | 0.01 | 0.01 | 0.01 | 0.645 | 0.01 | 0.01 | 0.01 |
+| par_map (20 cubes) | 3.91 | 5.38 | — | 0.01 | 0.931 | 0.01 | 18.2 |
+| parallel_async | 117 | 113 | — | 95.8 | 104 | 106 | 180 |
+| sequential_async | 442 | 437 | — | 397 | 427 | 426 | 507 |
+| channel_pipeline | 2.64 | 0.945 | — | 0.01 | 18 | 0.01 | 10.1 |
+| channel_fanin | 2.58 | 0.427 | — | 0.01 | 7.39 | 0.01 | 11.4 |
+| channel_throughput | 3.64 | 2.12 | — | 0.01 | 22.9 | 0.01 | 13.8 |
+| seq_map | 1.21 | 3.68 | — | 0.01 | 0.01 | 0.01 | 0.01 |
+| task_group_arena | 2.37 | 1.53 | — | 0.01 | 0.01 | 0.01 | 0.01 |
 
 ## I/O - small files (adjusted ms)
 
 | Benchmark | Yona | C | Erlang | Haskell | Java | Node.js | Python |
 |-----------|-----:|--:|-------:|--------:|-----:|--------:|-------:|
-| binary_read_chunks | 1.09 | 0.274 | 0.01 | 8.52 | 0.01 | 0.01 | 0.01 |
-| binary_write_read | 1.67 | 7.85 | 0.01 | 10.7 | 5.56 | 1.19 | 0.075 |
-| file_read | 1.1 | 0.01 | 0.01 | 5.87 | 5.08 | 0.01 | 0.01 |
-| file_write_read | 0.01 | 10.5 | 0.01 | 13.9 | 0.01 | 0.01 | 0.01 |
-| file_parallel_read | 0.01 | 0.01 | 0.08 | 6.37 | 11.5 | 0.01 | 15.7 |
-| file_readlines | 0.01 | 2.4 | 0.459 | 20.6 | 30.9 | 0.01 | 0.01 |
-| process_exec | 21.9 | 43.5 | 33.4 | 51 | 56.3 | 46 | 40.7 |
-| process_spawn | 272 | 228 | 215 | 214 | 255 | 229 | 217 |
+| binary_read_chunks | 5.37 | 1.9 | — | 5.25 | 0.01 | 0.01 | 0.01 |
+| binary_write_read | 5.44 | 5.13 | — | 2.46 | 9.15 | 1.54 | 2.27 |
+| file_read | 1.47 | 2.15 | — | 0.01 | 20.5 | 0.01 | 0.01 |
+| file_write_read | 1.82 | 2.21 | — | 7.83 | 4.88 | 0.953 | 1.84 |
+| file_parallel_read | 2.67 | 2.13 | — | 0.01 | 13.8 | 0.116 | 19.6 |
+| file_readlines | 5.33 | 3.73 | — | 9.47 | 31.6 | 1.49 | 1.23 |
+| process_exec | 27.1 | 43.5 | — | 32.6 | 59 | 41.9 | 44.9 |
+| process_spawn | 225 | 206 | — | 173 | 226 | 207 | 191 |
 
 ## I/O - large files (50 MB, adjusted ms)
 
 | Benchmark | Yona | C | Erlang | Haskell | Java | Node.js | Python |
 |-----------|-----:|--:|-------:|--------:|-----:|--------:|-------:|
-| file_read_large | 7.56 | 26.2 | 4.99 | 18.1 | 21.5 | 45.7 | 15.9 |
-| file_write_read_large | 108 | 150 | 305 | 325 | 85.6 | 138 | 485 |
-| file_parallel_read_large | 6.69 | 0.01 | 1.46 | 17.8 | 29.9 | 6.61 | 25.7 |
-| file_readlines_large | 65.7 | 140 | 23.6 | 22.8 | 79 | 103 | 69 |
+| file_read_large | 12.7 | 29.4 | — | 9.28 | 26.8 | 45 | 18.3 |
+| file_write_read_large | 103 | 159 | — | 137 | 85.1 | 330 | 449 |
+| file_parallel_read_large | 9.66 | 1.68 | — | 3.78 | 28.5 | 9.29 | 28.7 |
+| file_readlines_large | 65.1 | 136 | — | 15.5 | 86 | 103 | 73.2 |
 
 ## Memory (raw peak RSS, MB)
 
-Windows runner now captures per-process peak working set (KB) via native APIs.
+Windows runner captures per-process peak working set (KB) via native APIs.
 The table below summarizes per-runtime peak RSS across benchmark rows.
 
 | Runtime | Min MB | Median MB | Max MB |
 |---------|-------:|----------:|-------:|
-| Yona | 6.2 | 6.6 | 111.3 |
-| C | 4.0 | 4.1 | 8.7 |
-| Erlang | 54.6 | 55.0 | 160.7 |
-| Haskell | 10.6 | 11.8 | 115.3 |
-| Java | 40.4 | 41.6 | 211.1 |
-| Node.js | 33.2 | 34.4 | 138.9 |
-| Python | 10.9 | 11.9 | 115.9 |
+| Yona | 6.2 | 6.7 | 111.3 |
+| C | 4.0 | 4.0 | 8.7 |
+| Haskell | 10.3 | 11.8 | 115.3 |
+| Java | 40.4 | 41.5 | 203.7 |
+| Node.js | 34.6 | 35.7 | 140.4 |
+| Python | 10.9 | 11.8 | 115.9 |
+
+## Delta vs 2026-04-22 run (Yona adjusted time)
+
+- Median delta across shared rows: **-40.2%**
+- Mean delta across shared rows: **-35.0%**
+
+Largest regressions:
+- `file_write_read_large`: +52.7% (67.8 -> 103 ms)
+- `set_build (10K)`: +6.8% (16.7 -> 17.8 ms)
+- `fibonacci(35)`: +1.6% (106 -> 107 ms)
+- `sequential_async`: -0.1% (443 -> 442 ms)
+- `tak(30,20,10)`: -0.4% (157 -> 156 ms)
+- `parallel_async`: -0.7% (118 -> 117 ms)
+
+Largest improvements:
+- `file_write_read`: -79.4% (8.8 -> 1.82 ms)
+- `file_read`: -72.5% (5.33 -> 1.47 ms)
+- `file_parallel_read`: -71.3% (9.29 -> 2.67 ms)
+- `sum_squares(1M)`: -71.3% (7.66 -> 2.2 ms)
+- `seq_map`: -68.0% (3.79 -> 1.21 ms)
+- `list_sum`: -65.6% (6.6 -> 2.27 ms)
+
+## Stability pass (3 full reruns, `-n 10`)
+
+Additional full reruns were captured to estimate run-to-run variance:
+
+- `bench/windows-full-bench-2026-04-24-n10-v011-run1.json`
+- `bench/windows-full-bench-2026-04-24-n10-v011-run2.json`
+- `bench/windows-full-bench-2026-04-24-n10-v011-run3.json`
+
+All three reruns passed **35/35** on the Yona lane.
+
+Large-file I/O (Yona adjusted time) variability summary:
+
+| Benchmark | Run1 | Run2 | Run3 | Median | CV |
+|-----------|-----:|-----:|-----:|-------:|---:|
+| file_read_large | 15.531 | 16.844 | 15.950 | 15.950 | 4.2% |
+| file_write_read_large | 201.256 | 143.128 | 112.032 | 143.128 | 29.8% |
+| file_parallel_read_large | 11.793 | 12.073 | 11.302 | 11.793 | 3.3% |
+| file_readlines_large | 77.622 | 65.338 | 68.099 | 68.099 | 9.2% |
+
+Takeaway:
+
+- `file_write_read_large` is the only consistently high-variance large-file row in this pass.
+- Most other large-file rows are reasonably stable (single-digit CV), so trend claims there are more trustworthy.
+- Across all 35 rows, 15/35 are <=10% CV; short-running microbenches remain the noisiest.
 
 ## Caveats
 
 - Startup-adjusted floor can exaggerate ratios when values clamp to `0.01ms`.
 - This report uses warm-cache behavior for file workloads.
 - Startup RSS values are cached per runtime; rerun after toolchain/runtime changes.
+- Inter-run deltas include noise from filesystem cache and process scheduling.
