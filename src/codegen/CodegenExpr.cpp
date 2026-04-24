@@ -222,12 +222,52 @@ TypedValue Codegen::codegen_comparison(AstNode* left_node, AstNode* right_node, 
 // ===== Flow-sensitive transfer scoping (Perceus-linear branching) =====
 //
 // These helpers wrap the branches of an if/case/... construct so that
-// `transferred_seqs_` reflects what's transferred on the current path
+// Seq-domain transfer tracking reflects what's transferred on the current path
 // rather than in any path's codegen. Asymmetric transfers — values
 // transferred in one branch but not another — get compensating
 // rc_decs emitted at the end of branches that didn't transfer them,
 // so downstream scope cleanups can treat the post-scope set as "union
 // of all branch transfers" without double-dropping.
+
+void Codegen::mark_transferred(llvm::Value* val, TransferDomain domain) {
+    if (!val) return;
+    auto& mask = transferred_values_[val];
+    mask |= static_cast<TransferMask>(domain);
+}
+
+bool Codegen::is_transferred(llvm::Value* val, TransferDomain domain) const {
+    if (!val) return false;
+    auto it = transferred_values_.find(val);
+    if (it == transferred_values_.end()) return false;
+    return (it->second & static_cast<TransferMask>(domain)) != 0;
+}
+
+void Codegen::clear_transferred(TransferDomain domain) {
+    const auto bit = static_cast<TransferMask>(domain);
+    for (auto it = transferred_values_.begin(); it != transferred_values_.end();) {
+        it->second &= static_cast<TransferMask>(~bit);
+        if (it->second == 0) {
+            it = transferred_values_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+std::unordered_set<llvm::Value*> Codegen::snapshot_transferred(TransferDomain domain) const {
+    std::unordered_set<llvm::Value*> out;
+    const auto bit = static_cast<TransferMask>(domain);
+    for (const auto& [val, mask] : transferred_values_) {
+        if ((mask & bit) != 0) out.insert(val);
+    }
+    return out;
+}
+
+void Codegen::restore_transferred(TransferDomain domain,
+                                  const std::unordered_set<llvm::Value*>& snapshot) {
+    clear_transferred(domain);
+    for (auto* v : snapshot) mark_transferred(v, domain);
+}
 
 bool Codegen::is_cross_branch_droppable(
     llvm::Value* v,
@@ -283,7 +323,7 @@ void Codegen::transfer_scope_enter() {
     // sibling branches. See Codegen.h TransferScope doc for the pool
     // UAF that breaking this invariant causes.
     TransferScope s;
-    s.entry_snapshot = transferred_seqs_;
+    s.entry_snapshot = snapshot_transferred(TransferDomain::Seq);
     if (builder_->GetInsertBlock()) {
         auto* fn = builder_->GetInsertBlock()->getParent();
         refresh_transfer_block_ordinals(fn);
@@ -294,14 +334,14 @@ void Codegen::transfer_scope_enter() {
 
 void Codegen::transfer_branch_begin() {
     if (transfer_scope_stack_.empty()) return;
-    transferred_seqs_ = transfer_scope_stack_.back().entry_snapshot;
+    restore_transferred(TransferDomain::Seq, transfer_scope_stack_.back().entry_snapshot);
 }
 
 void Codegen::transfer_branch_end(llvm::BasicBlock* exit_bb) {
     if (transfer_scope_stack_.empty()) return;
     TransferScope::Branch b;
     b.exit_bb = exit_bb;
-    b.transfers = transferred_seqs_;
+    b.transfers = snapshot_transferred(TransferDomain::Seq);
     transfer_scope_stack_.back().branches.push_back(std::move(b));
 }
 
@@ -338,13 +378,13 @@ void Codegen::transfer_scope_exit() {
         }
     }
 
-    // Post-scope transferred_seqs_ is the union over non-terminated
+    // Post-scope seq transfers are the union over non-terminated
     // branches. Any asymmetric transfers were compensated with drops
     // above, so downstream cleanups can skip based on this union.
-    transferred_seqs_ = scope.entry_snapshot;
+    restore_transferred(TransferDomain::Seq, scope.entry_snapshot);
     for (auto& b : scope.branches) {
         if (!b.exit_bb) continue;
-        for (auto* v : b.transfers) transferred_seqs_.insert(v);
+        for (auto* v : b.transfers) mark_transferred(v, TransferDomain::Seq);
     }
 }
 
@@ -842,10 +882,10 @@ void Codegen::cleanup_let_scope(const std::vector<TypedValue>& scope_bindings,
             // match consume, or a Set/Dict callee-owns extern op).
             // Without this, we'd double-drop a binding the callee freed.
             if (scope_bindings[i].type == CType::SEQ &&
-                transferred_seqs_.count(scope_bindings[i].val))
+                is_transferred(scope_bindings[i].val, TransferDomain::Seq))
                 continue;
             if ((scope_bindings[i].type == CType::SET || scope_bindings[i].type == CType::DICT) &&
-                transferred_maps_.count(scope_bindings[i].val))
+                is_transferred(scope_bindings[i].val, TransferDomain::Map))
                 continue;
             emit_rc_dec(scope_bindings[i].val, scope_bindings[i].type);
         }

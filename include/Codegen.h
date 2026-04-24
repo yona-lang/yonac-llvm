@@ -28,10 +28,9 @@
 //      - "Last use" is decided at call sites via count_identifier_refs()
 //        over current_fn_body_ (the AST of the enclosing function). A
 //        single textual occurrence means the argument may transfer.
-//      - transferred_seqs_: Value*s whose SEQ ownership has been handed to
-//        a consumer; function-exit and let-cleanup skip rc_dec for these.
-//      - transferred_maps_: SET/DICT equivalent; kept separate because the
-//        per-branch TransferScope logic operates only on seqs.
+//      - transferred_values_: Value* -> transfer-domain flags, currently
+//        SEQ and MAP (SET/DICT). Storage is unified, but semantics stay
+//        explicit via domain-specific helpers. TransferScope remains SEQ-only.
 //      - TransferScope stack: flow-sensitive transfer tracking across
 //        if/case. Invariant (critical): transfer_scope_enter() must run
 //        BEFORE any branch BasicBlocks are created so the pre_blocks
@@ -81,6 +80,7 @@
 #include <llvm/Target/TargetMachine.h>
 
 #include <string>
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -233,20 +233,21 @@ private:
     // "Last use" is decided on demand at call sites via
     // count_identifier_refs() over the enclosing function body
     // (current_fn_body_). A single-use occurrence is treated as a
-    // transfer; codegen marks the corresponding Value* in
-    // transferred_seqs_ / transferred_maps_ so function-exit and
+    // transfer; codegen marks the corresponding Value* transfer-domain in
+    // transferred_values_ so function-exit and
     // let-scope cleanup skip the rc_dec.
-
-    // Set of Value*s whose seq ownership has been transferred to a
-    // consumer (user-defined function or pattern-match consume). At
-    // scope exit (let cleanup, function exit), skip rc_dec for these.
-    std::unordered_set<llvm::Value*> transferred_seqs_;
-
-    // Set of Value*s whose Set/Dict ownership has been transferred to a
-    // consuming extern call (Set.insert, Dict.put, etc.). Unlike
-    // transferred_seqs_, this set is NOT drained by the per-branch
-    // transfer_scope logic — it only suppresses the function-exit DROP.
-    std::unordered_set<llvm::Value*> transferred_maps_;
+    enum class TransferDomain : uint8_t {
+        Seq = 1u << 0, // branch-scoped Perceus transfer tracking
+        Map = 1u << 1, // SET/DICT callee-owns suppression at cleanup/exit
+    };
+    using TransferMask = uint8_t;
+    std::unordered_map<llvm::Value*, TransferMask> transferred_values_;
+    void mark_transferred(llvm::Value* val, TransferDomain domain);
+    bool is_transferred(llvm::Value* val, TransferDomain domain) const;
+    void clear_transferred(TransferDomain domain);
+    std::unordered_set<llvm::Value*> snapshot_transferred(TransferDomain domain) const;
+    void restore_transferred(TransferDomain domain,
+                             const std::unordered_set<llvm::Value*>& snapshot);
 
     // Runtime-decided "consumed by closure call" flags. When a heap-typed
     // arg is passed to a closure and the closure returns a different ptr,
@@ -274,22 +275,22 @@ private:
     // A "transfer scope" wraps a multi-way branch (if-then-else, case
     // arms) where each branch may transfer a different set of seqs via
     // emit_direct_call or pattern consume. Without per-branch tracking,
-    // flow-insensitive `transferred_seqs_` would be "poisoned" whenever
+    // flow-insensitive seq transfer tracking would be "poisoned" whenever
     // ANY branch's codegen transferred a value — causing leaks when the
     // actual runtime path was a non-transfer branch whose scope cleanup
     // skipped the drop.
     //
     // Protocol:
-    //   transfer_scope_enter()          — snapshot transferred_seqs_ + pre-scope BB ordinal watermark
+    //   transfer_scope_enter()          — snapshot seq transfers + pre-scope BB ordinal watermark
     //   for each branch:
-    //     transfer_branch_begin()       — reset transferred_seqs_ to snapshot
-    //     codegen(branch)               — populates transferred_seqs_
+    //     transfer_branch_begin()       — reset seq transfers to snapshot
+    //     codegen(branch)               — populates seq transfers
     //     transfer_branch_end(exit_bb)  — record this branch's set
     //   transfer_scope_exit()           — compute asymmetric transfers,
     //                                      emit rc_dec before each
     //                                      non-transferring branch's
     //                                      terminator, union into
-    //                                      transferred_seqs_
+    //                                      seq transfers
     //
     // INVARIANT (load-bearing, do not break without updating this doc):
     //   transfer_scope_enter() MUST run before any branch BasicBlock is

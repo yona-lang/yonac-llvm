@@ -122,7 +122,7 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
             tv = builder_->CreateCall(rt_.seq_tail_consume_, {seq_ptr});
             // Mark the scrutinee Value as transferred so downstream scope
             // cleanups (let scope exit, function exit) skip its rc_dec.
-            transferred_seqs_.insert(seq_ptr);
+            mark_transferred(seq_ptr, TransferDomain::Seq);
         } else {
             emit_rc_inc(seq_ptr, CType::SEQ);
             tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
@@ -155,7 +155,7 @@ bool Codegen::codegen_pattern_seq(SeqPattern* sp, const TypedValue& scrutinee,
         // consume the scrutinee through any pattern-match call. Drop it
         // directly at the start of the body so the owned ref doesn't
         // leak. (This is not routed through arm_drop_stack because that
-        // path's transferred_seqs_ skip would also fire on this drop —
+        // path's seq-transfer skip would also fire on this drop —
         // the scrut may have been marked transferred by a sibling
         // head-tail arm's consume, but at runtime only ONE arm runs,
         // and this arm didn't actually consume.)
@@ -170,7 +170,7 @@ bool Codegen::codegen_pattern_seq(SeqPattern* sp, const TypedValue& scrutinee,
             // outer case transfer_scope_exit doesn't emit a compensating
             // second rc_dec when a sibling head-tail arm transferred the
             // same scrutinee via seq_tail_consume.
-            transferred_seqs_.insert(scrutinee.val);
+            mark_transferred(scrutinee.val, TransferDomain::Seq);
         }
     } else {
         builder_->CreateBr(body_bb);
@@ -489,7 +489,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     // some arms transfer a seq (e.g. head-tail consume or passing the
     // scrutinee to a consumer) and others don't, the transfer_scope
     // exit emits compensating rc_decs in the non-transferring arms so
-    // `transferred_seqs_` at merge reflects "transferred on all live
+    // seq transfers at merge reflect "transferred on all live
     // paths" without leaking on the non-transfer paths. This is the
     // case-arm extension of the codegen_if per-branch scoping.
     transfer_scope_enter();
@@ -662,7 +662,8 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         if (!arm_drop_stack_.empty()) {
             for (auto& [val, ct] : arm_drop_stack_.back()) {
                 if (val == body_tv.val) continue;
-                if (ct == CType::SEQ && transferred_seqs_.count(val)) continue;
+                if (ct == CType::SEQ &&
+                    is_transferred(val, TransferDomain::Seq)) continue;
                 emit_rc_dec(val, ct);
             }
             arm_drop_stack_.pop_back();

@@ -423,12 +423,12 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
         }
 
         // Compile body. Stash body AST for Perceus-linear single-use
-        // detection on seq params referenced inside. transferred_seqs_
+        // detection on seq params referenced inside. Transfer tracking
         // is restored at the bottom of this branch, after any exit
         // drops — so body-local transfers are visible then.
         auto saved_fn_body = current_fn_body_;
-        auto saved_transferred = transferred_seqs_;
-        transferred_seqs_.clear();
+        auto saved_transferred = transferred_values_;
+        transferred_values_.clear();
         TypedValue body_tv;
         if (!node->bodies.empty()) {
             auto* body_node = node->bodies[0];
@@ -542,7 +542,7 @@ TypedValue Codegen::codegen_function_def(FunctionExpr* node, const std::string& 
 
         last_lambda_name_ = fn_name;
         named_values_[fn_name] = {closure, CType::FUNCTION, {ret_ctype}};
-        transferred_seqs_ = saved_transferred;
+        transferred_values_ = saved_transferred;
         return {closure, CType::FUNCTION, {ret_ctype}};
     }
 
@@ -1028,15 +1028,13 @@ Codegen::CompiledFunction Codegen::compile_function(
     // Compile body. Stash the body AST so nested codegen steps (notably
     // codegen_pattern_headtail) can run single-use counts against the
     // full function body for Perceus-linear scrutinee detection.
-    // Note: transferred_seqs_ is restored AFTER the function-exit drops
+    // Note: transfer tracking is restored AFTER the function-exit drops
     // below — we need the body's transfer marks to be visible when we
     // decide which seq params to rc_dec at exit.
     auto saved_fn_body = current_fn_body_;
-    auto saved_transferred = transferred_seqs_;
-    auto saved_transferred_maps = transferred_maps_;
+    auto saved_transferred = transferred_values_;
     auto saved_closure_consumed = closure_consumed_flags_;
-    transferred_seqs_.clear();
-    transferred_maps_.clear();
+    transferred_values_.clear();
     closure_consumed_flags_.clear();
     TypedValue body_tv;
     if (!def.ast->bodies.empty()) {
@@ -1183,7 +1181,7 @@ Codegen::CompiledFunction Codegen::compile_function(
             // new Perceus-linear ABI, plus non-seq types that were always
             // callee-owns). Skip if TCO already handled cleanup before
             // the tail call, and skip params whose ownership was
-            // transferred during body codegen (tracked in transferred_seqs_).
+            // transferred during body codegen (tracked in seq-domain transfers).
             if (body_tv.val && !tco_cleanup_done_) {
                 auto ptr_ty = PointerType::get(*context_, 0);
                 for (size_t pi = 0; pi < def.param_names.size(); pi++) {
@@ -1196,12 +1194,12 @@ Codegen::CompiledFunction Codegen::compile_function(
                     // Borrow inference: borrowed params don't need rc_dec.
                     if (pi < borrowed.size() && borrowed[pi])
                         continue;
-                    // transferred_seqs_ tracks SEQ Perceus last-use;
-                    // transferred_maps_ tracks SET/DICT callee-owns AND
-                    // closure-consumed heap args (any type).
-                    if (ct == CType::SEQ && transferred_seqs_.count(param))
+                    // SEQ domain tracks Perceus last-use; MAP domain tracks
+                    // SET/DICT callee-owns and closure-consumed heap args.
+                    if (ct == CType::SEQ &&
+                        is_transferred(param, TransferDomain::Seq))
                         continue;
-                    if (transferred_maps_.count(param))
+                    if (is_transferred(param, TransferDomain::Map))
                         continue;
 
                     // If a closure call already consumed this param at
@@ -1297,11 +1295,10 @@ Codegen::CompiledFunction Codegen::compile_function(
     compiled_functions_[name] = cf;
     named_values_[name] = {fn, CType::FUNCTION};
 
-    // Restore transferred_seqs_ from saved now that function-exit drops
+    // Restore transfer tracking from saved now that function-exit drops
     // are emitted — the function's body-local transfers should not leak
     // out to the enclosing scope's transfer tracking.
-    transferred_seqs_ = saved_transferred;
-    transferred_maps_ = saved_transferred_maps;
+    transferred_values_ = saved_transferred;
     closure_consumed_flags_ = saved_closure_consumed;
     current_frame_alloca_ = saved_frame_alloca;
     return cf;

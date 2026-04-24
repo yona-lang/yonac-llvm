@@ -529,16 +529,15 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
     // (interchangeable since `{}` parses as SET), the callee either mutates
     // in place or path-copies + rc_dec's the old. Mark the arg as
     // transferred so the caller's function-exit DROP doesn't double-dec.
-    // Uses transferred_maps_ (separate from transferred_seqs_) so the
-    // per-branch transfer_scope logic doesn't try to rc_dec these values
-    // as SEQs.
+    // Mark MAP-domain ownership transfer so cleanup/exit skip rc_dec for
+    // consumed SET/DICT values. Per-branch transfer_scope remains SEQ-only.
     if (!all_args.empty()) {
         CType a0 = all_args[0].type;
         bool a0_map = (a0 == CType::SET || a0 == CType::DICT);
         bool ret_map = (ret_ctype == CType::SET || ret_ctype == CType::DICT);
         if (a0_map && ret_map) {
             if (all_args[0].val && !isa<Constant>(all_args[0].val)) {
-                transferred_maps_.insert(all_args[0].val);
+                mark_transferred(all_args[0].val, TransferDomain::Map);
                 emit_frame_transfer(all_args[0].val);
             }
         }
@@ -759,7 +758,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         if (ct == CType::SEQ && current_fn_body_) {
             int uses = count_identifier_refs(current_fn_body_, named_as);
             if (uses <= 1) {
-                transferred_seqs_.insert(all_args[ai].val);
+                mark_transferred(all_args[ai].val, TransferDomain::Seq);
                 emit_frame_transfer(all_args[ai].val);
                 continue;
             }
@@ -770,7 +769,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         if ((ct == CType::SET || ct == CType::DICT) && current_fn_body_) {
             int uses = count_identifier_refs(current_fn_body_, named_as);
             if (uses <= 1) {
-                transferred_maps_.insert(all_args[ai].val);
+                mark_transferred(all_args[ai].val, TransferDomain::Map);
                 emit_frame_transfer(all_args[ai].val);
                 continue;
             }
@@ -919,8 +918,8 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                 is_pass_through = true;
             // Skip if already consumed by a callee-owns extern op
             // (e.g., Dict.put / Set.insert transferred the param)
-            if (transferred_maps_.count(param)) continue;
-            if (transferred_seqs_.count(param)) continue;
+            if (is_transferred(param, TransferDomain::Map)) continue;
+            if (is_transferred(param, TransferDomain::Seq)) continue;
 
             if (!is_pass_through) {
                 emit_rc_dec(param, ct);
@@ -951,9 +950,9 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
             if (v.val == all_args[ai].val) { is_named = true; break; }
         if (!is_named) {
             if (ct == CType::SEQ)
-                transferred_seqs_.insert(all_args[ai].val);
+                mark_transferred(all_args[ai].val, TransferDomain::Seq);
             else
-                transferred_maps_.insert(all_args[ai].val);
+                mark_transferred(all_args[ai].val, TransferDomain::Map);
             emit_frame_transfer(all_args[ai].val);
         }
     }

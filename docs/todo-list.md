@@ -13,10 +13,6 @@
 ### 1) Benchmarking hardening
 
 - [ ] Add a benchmark reference conformance check (validate expected output per language lane)
-- [x] Normalize startup-RSS probe cache so startup RSS table is always populated
-- [x] Keep `docs/benchmark-results-windows.md` synced with the latest rerun JSON
-- [x] Run full Windows benchmark matrix, refresh results, and evaluate performance deltas
-- [x] Stabilize Windows perf trend checks (multi-run median/variance) for large-file I/O deltas
 - [ ] Investigate/resolve local Erlang lane toolchain crash (`erl.exe`/`erlc.exe` exit `0xC0000005`) affecting comparison coverage on this host
 
 ### 2) Platform/runtime closure
@@ -26,27 +22,14 @@
 ### 3) Distribution readiness
 
 - [ ] Windows installer productionization (upgrade behavior, signing, final UX polish)
-- [x] Draft WiX v4 installer scaffold (MSI package + staging/build script)
-- [x] Add Windows release CI job emitting zip + MSI artifacts
 - [ ] Final packaging pass for sysroot-based CLI/REPL distribution layout
-- [x] Add dual linker mode control (`--linker-mode` / `YONAC_LINKER_MODE`: `auto|bundled|system|inprocess`)
-- [x] Wire CLI/REPL link-mode plumbing to prefer bundled `lld` in `auto`
-- [x] Refactor `yonac` linking into an internal "link plan" abstraction
-- [x] Integrate prebuilt runtime objects/static libs into final packaging + compiler flow
-- [x] Add optional in-process linker mode scaffold (`inprocess`) with external fallback
-- [x] Add CI reporting for embedded-LLD activation status and disable reason
-- [x] Add strict CI gate support via `YONAC_REQUIRE_INPROCESS_LLD=1`
-- [x] Extract embedded-LLD CMake logic into `cmake/YonaInProcessLld.cmake`
 - [ ] Enable embedded LLD backend by default across supported toolchains (resolve remaining dependency gates, e.g. MSVC-compatible LibXml2 on Windows)
-- [x] Resolve Windows mixed-libxml link closure (`LLVMWindowsManifest` now retargeted to fetched `LibXml2`)
 - [ ] Implement true embedded LLD backend for Linux/macOS in-process mode
 
 ## Backlog (Open, Not Immediate)
 
 ### Code quality
 
-- [x] O(1) transfer-scope basic block detection (scope-entry ordinal watermark + O(1) droppability checks)
-- [ ] Revisit `transferred_seqs_` / `transferred_maps_` unification only if semantics remain explicit
 - [ ] Relax stream-fusion gating only with benchmark evidence
 
 ### Performance
@@ -91,6 +74,11 @@
 - [x] Docker + Homebrew + RPM + DEB + release workflow
 - [x] Windows benchmark matrix parity (all language cells filled) + native peak RSS capture
 - [x] Startup probe cache normalization (versioned cache + stale Windows RSS invalidation)
+- [x] Windows benchmark refresh + 3x stability reruns (perf deltas + large-file I/O variance)
+- [x] O(1) transfer-scope basic block detection (scope-entry ordinal watermark + O(1) droppability checks)
+- [x] Unified seq/map transfer bookkeeping into explicit domain-tagged transfer tracking
+- [x] Linker/distribution milestone: dual modes, prebuilt runtime packaging, in-process LLD scaffold, CI reporting, and CMake modularization
+- [x] Windows installer milestone: WiX scaffold + Windows release CI artifacts (ZIP + MSI)
 
 ## Notes
 
