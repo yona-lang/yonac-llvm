@@ -14,6 +14,8 @@
 
 #include "Parser.h"
 #include "Codegen.h"
+#include "InProcessLld.h"
+#include "LinkerPlan.h"
 
 using namespace std;
 using namespace yona;
@@ -100,7 +102,11 @@ static vector<fs::path> discover_sysroots(const char* argv0) {
     return roots;
 }
 
-static string compile_and_run(const string& expr, const string& rt_obj, const vector<string>& rt_extra_objs) {
+static string compile_and_run(const string& expr,
+                              const string& rt_obj,
+                              const vector<string>& rt_extra_objs,
+                              const yona::toolchain::LinkerPlan& linker_selection,
+                              bool require_inprocess) {
     Codegen codegen("yona_repl");
     parser::Parser parser;
     istringstream stream(expr);
@@ -116,16 +122,63 @@ static string compile_and_run(const string& expr, const string& rt_obj, const ve
     if (!codegen.emit_object_file(obj.string())) return "Codegen error";
 
     ostringstream link;
-    link << repl_cc() << " " << q(obj) << " " << q(fs::path(rt_obj));
-    for (const auto& ex : rt_extra_objs) link << " " << q(fs::path(ex));
-    link << " -o " << q(exe);
-#ifndef _WIN32
-    link << " -lm -lpthread -rdynamic";
+    int link_result = 1;
+    bool used_inprocess = false;
+    if (linker_selection.use_inprocess_lld && yona::toolchain::inprocess_lld_available()) {
+        std::vector<std::string> lld_args;
+#ifdef _WIN32
+        lld_args.push_back("lld-link");
+        lld_args.push_back("/NOLOGO");
+        lld_args.push_back(obj.string());
+        lld_args.push_back(fs::path(rt_obj).string());
+        for (const auto& ex : rt_extra_objs) lld_args.push_back(fs::path(ex).string());
+        lld_args.push_back("/OUT:" + exe.string());
+        lld_args.push_back("ws2_32.lib");
+        lld_args.push_back("dbghelp.lib");
 #else
-    link << " -lws2_32 -ldbghelp";
+        lld_args.push_back("ld.lld");
+        lld_args.push_back(obj.string());
+        lld_args.push_back(fs::path(rt_obj).string());
+        for (const auto& ex : rt_extra_objs) lld_args.push_back(fs::path(ex).string());
+        lld_args.push_back("-o");
+        lld_args.push_back(exe.string());
+#ifdef __APPLE__
+        lld_args.push_back("-lSystem");
+#else
+        lld_args.push_back("-lm");
+        lld_args.push_back("-lpthread");
+        lld_args.push_back("-rdynamic");
 #endif
-    link << err_null();
-    if (system(link.str().c_str()) != 0) return "Link error";
+#endif
+        yona::toolchain::InProcessLldResult lld_res;
+        used_inprocess = true;
+        if (yona::toolchain::run_inprocess_lld(lld_args, lld_res)) {
+            link_result = 0;
+        } else {
+            if (require_inprocess) {
+                if (!lld_res.stderr_text.empty()) cerr << lld_res.stderr_text << endl;
+                return "Link error";
+            }
+            cerr << "Warning: in-process LLD link failed in REPL, falling back to external linker path.";
+            if (!lld_res.stderr_text.empty()) cerr << " details: " << lld_res.stderr_text;
+            cerr << endl;
+        }
+    }
+    if (!used_inprocess || link_result != 0) {
+        link << repl_cc() << " " << q(obj) << " " << q(fs::path(rt_obj));
+        if (linker_selection.use_bundled_lld) {
+            link << " -fuse-ld=lld -B" << q(linker_selection.bundled_lld_path.parent_path());
+        }
+        for (const auto& ex : rt_extra_objs) link << " " << q(fs::path(ex));
+        link << " -o " << q(exe);
+#ifndef _WIN32
+        link << " -lm -lpthread -rdynamic";
+#else
+        link << " -lws2_32 -ldbghelp";
+#endif
+        link << err_null();
+        if (system(link.str().c_str()) != 0) return "Link error";
+    }
     fs::remove(obj);
 
     // Run and capture output
@@ -144,15 +197,48 @@ static string compile_and_run(const string& expr, const string& rt_obj, const ve
 
 int main(int argc, char* argv[]) {
     vector<fs::path> sysroots = discover_sysroots(argc > 0 ? argv[0] : nullptr);
+    yona::toolchain::LinkerPlan linker_selection;
+    string linker_error;
+    string linker_mode_raw = "auto";
+    if (const char* env_mode = getenv("YONAC_LINKER_MODE")) {
+        if (*env_mode) linker_mode_raw = env_mode;
+    }
+    if (!yona::toolchain::resolve_linker_plan(linker_mode_raw, sysroots, linker_selection, linker_error)) {
+        cerr << "Error: " << linker_error << endl;
+        return 1;
+    }
+    const bool require_inprocess = yona::toolchain::require_inprocess_lld_from_env();
+    if (linker_selection.use_inprocess_lld && !yona::toolchain::inprocess_lld_available()) {
+        if (require_inprocess) {
+            cerr << "Error: inprocess linker mode required but unavailable: "
+                 << yona::toolchain::inprocess_lld_unavailable_reason() << endl;
+            return 1;
+        }
+        cerr << "Warning: inprocess linker mode requested but unavailable: "
+             << yona::toolchain::inprocess_lld_unavailable_reason()
+             << ". Falling back to external linker path." << endl;
+    }
     string rt_obj;
+    bool rt_obj_is_archive = false;
     vector<string> rt_extra_objs;
 
     // Prefer packaged runtime objects from distribution roots.
     for (const auto& root : sysroots) {
         for (const auto& base : {root / "runtime", root / "lib" / "yona" / "runtime"}) {
+            for (const auto& archive_name : {"yona_runtime.lib", "libyona_runtime.lib", "libyona_runtime.a"}) {
+                auto archive = canonical_if_exists(base / archive_name);
+                if (!archive.empty()) {
+                    rt_obj = archive.string();
+                    rt_obj_is_archive = true;
+                    rt_extra_objs.clear();
+                    break;
+                }
+            }
+            if (!rt_obj.empty()) break;
             auto main_o = canonical_if_exists(base / "compiled_runtime.o");
             if (main_o.empty()) continue;
             rt_obj = main_o.string();
+            rt_obj_is_archive = false;
             for (const char* pf : platform_runtime_sources) {
                 auto a = canonical_if_exists(base / ("crt_" + string(pf) + ".o"));
                 auto b = canonical_if_exists(base / (string(pf) + ".o"));
@@ -168,6 +254,7 @@ int main(int argc, char* argv[]) {
         // Fall back to source compile from discovered roots.
         auto out_dir = canonical_if_exists(fs::path(argv[0]).parent_path());
         if (out_dir.empty()) out_dir = repl_temp_dir();
+        rt_obj_is_archive = false;
         for (const auto& root : sysroots) {
             auto src = root / "src" / "compiled_runtime.c";
             if (fs::exists(src)) {
@@ -208,7 +295,8 @@ int main(int argc, char* argv[]) {
         if (line.empty()) continue;
         if (line == ":q" || line == ":quit") break;
 
-        string result = compile_and_run(line, rt_obj, rt_extra_objs);
+        vector<string> link_extra = rt_obj_is_archive ? vector<string>{} : rt_extra_objs;
+        string result = compile_and_run(line, rt_obj, link_extra, linker_selection, require_inprocess);
         if (!result.empty()) cout << result << endl;
     }
 

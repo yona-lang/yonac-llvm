@@ -16,6 +16,8 @@ override_dh_auto_install:
 	cp -r lib/Std/*.yona* $(CURDIR)/debian/yona/usr/lib/yona/lib/Std/ 2>/dev/null || true
 	install -d $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/platform
 	install -d $(CURDIR)/debian/yona/usr/lib/yona/include/yona/runtime
+	install -d $(CURDIR)/debian/yona/usr/lib/yona/runtime
+	cp out/build/x64-release-linux/runtime/* $(CURDIR)/debian/yona/usr/lib/yona/runtime/ 2>/dev/null || true
 	install -Dm644 src/compiled_runtime.c $(CURDIR)/debian/yona/usr/lib/yona/src/
 	cp src/runtime/*.c $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/ 2>/dev/null || true
 	cp src/runtime/platform/* $(CURDIR)/debian/yona/usr/lib/yona/src/runtime/platform/

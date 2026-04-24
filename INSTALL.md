@@ -92,6 +92,20 @@ Binaries are written under `out\build\x64-release\`, for example `yonac.exe`, `y
 
 **`yonac` linking a full executable (not `--emit-obj` / `--emit-ir`):** the CLI shells out to compile `src/compiled_runtime.c` and the platform layer, then link. On Windows it uses **`clang`** by default (or **`YONAC_CC`** if set) and links **`ws2_32`** / **`dbghelp`**. Put the same LLVM `bin` directory on `PATH`, or set `YONAC_CC` to the full path of `clang.exe` so the subprocess can find the compiler. Optional LTO uses **`llvm-link.exe`** next to that `clang` when `YONAC_CC` is set.
 
+**Linker mode selection:** `yonac` supports `--linker-mode auto|bundled|system|inprocess` (or `YONAC_LINKER_MODE`). In `auto`, it prefers bundled `lld` when found under discovered sysroots (`bin/` or `llvm/bin/`) and falls back to the system toolchain linker. Use `bundled` to require packaged `lld` (hard error if missing), `system` to force external linker behavior, or `inprocess` to request embedded-linker mode when available. Embedded-linker wiring is gated by CMake option `YONA_ENABLE_INPROCESS_LLD` (default `ON`), but CMake may auto-disable it when required dependencies are missing on the current toolchain (for example, MSVC-compatible LibXml2 for LLVM Windows manifest support). When unavailable, `inprocess` falls back to the external path with a warning unless `YONAC_REQUIRE_INPROCESS_LLD=1` is set, in which case compile/link fails hard. The REPL (`yona`) currently reads `YONAC_LINKER_MODE` as well.
+
+**Prebuilt runtime artifacts:** build outputs now include precompiled runtime files under `out\build\<preset>\runtime\`:
+- `compiled_runtime.o`
+- `crt_<platform-file>.o` objects (for per-OS runtime TUs)
+- `yona_runtime.lib` (Windows) or `libyona_runtime.a` (Unix)
+
+Release packaging and distro packages copy this `runtime/` directory into the Yona sysroot so `yonac`/`yona` can consume prebuilt runtime artifacts directly.
+
+**Distribution policy assumption:** standard end-user workflows should not require
+an external C compiler. Runtime/stdlib artifacts are expected to be prebuilt and
+packaged. External system compiler usage is considered an explicit advanced
+fallback for development/customization scenarios.
+
 ### 3. Tests (Windows)
 
 ```powershell

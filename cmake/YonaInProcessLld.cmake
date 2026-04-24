@@ -1,0 +1,155 @@
+option(YONA_ENABLE_INPROCESS_LLD "Enable embedded LLD linker backend" ON)
+set(YONA_INPROCESS_LLD_AVAILABLE OFF)
+set(YONA_INPROCESS_LLD_LIBS "")
+set(YONA_INPROCESS_LLD_REASON "disabled by option")
+set(YONA_USE_FETCHED_LIBXML2 OFF)
+set(YONA_USE_SYSTEM_LIBXML2 ON)
+
+if(WIN32 AND YONA_ENABLE_INPROCESS_LLD AND YONA_FETCH_LIBXML2)
+	set(YONA_USE_SYSTEM_LIBXML2 OFF)
+endif()
+
+if(YONA_USE_SYSTEM_LIBXML2)
+	find_package(LibXml2 QUIET)
+endif()
+
+if(YONA_ENABLE_INPROCESS_LLD)
+	if(WIN32 AND YONA_FETCH_LIBXML2 AND NOT YONA_USE_SYSTEM_LIBXML2)
+		FetchContent_Declare(
+			libxml2_src
+			GIT_REPOSITORY https://github.com/GNOME/libxml2.git
+			GIT_TAG v2.12.10
+		)
+		# Build a minimal static libxml2 usable by LLVMWindowsManifest.
+		set(_yona_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
+		set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_ICONV OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_ICU OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_LZMA OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_PROGRAMS OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_PYTHON OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_TESTS OFF CACHE BOOL "" FORCE)
+		set(LIBXML2_WITH_DOCS OFF CACHE BOOL "" FORCE)
+		FetchContent_GetProperties(libxml2_src)
+		if(NOT libxml2_src_POPULATED)
+			FetchContent_Populate(libxml2_src)
+			set(_yona_libxml2_cmakelists "${libxml2_src_SOURCE_DIR}/CMakeLists.txt")
+			file(READ "${_yona_libxml2_cmakelists}" _yona_libxml2_src)
+			string(REPLACE
+				"add_library(LibXml2::LibXml2 ALIAS LibXml2)\n"
+				""
+				_yona_libxml2_src_patched
+				"${_yona_libxml2_src}"
+			)
+			if(NOT _yona_libxml2_src STREQUAL _yona_libxml2_src_patched)
+				file(WRITE "${_yona_libxml2_cmakelists}" "${_yona_libxml2_src_patched}")
+			endif()
+		endif()
+		add_subdirectory("${libxml2_src_SOURCE_DIR}" "${libxml2_src_BINARY_DIR}" EXCLUDE_FROM_ALL)
+		set(BUILD_SHARED_LIBS "${_yona_saved_build_shared_libs}" CACHE BOOL "" FORCE)
+		unset(_yona_saved_build_shared_libs)
+		if(TARGET LibXml2)
+			set(YONA_USE_FETCHED_LIBXML2 ON)
+		else()
+			set(YONA_INPROCESS_LLD_REASON "failed to fetch/build LibXml2::LibXml2 for Windows embedded LLD")
+		endif()
+	endif()
+
+	find_path(YONA_LLD_INCLUDE_DIR lld/Common/Driver.h HINTS ${LLVM_INCLUDE_DIRS})
+	if(YONA_LLD_INCLUDE_DIR)
+		if(WIN32)
+			find_library(YONA_LLD_COMMON_LIB lldCommon HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			find_library(YONA_LLD_COFF_LIB lldCOFF HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			# Fallback for Windows LLVM bundles where find_library misses import libs.
+			if((NOT YONA_LLD_COMMON_LIB OR NOT YONA_LLD_COFF_LIB))
+				set(_yona_lld_lib_dirs ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib" "C:/local/LLVM/lib")
+				foreach(_lib_dir IN LISTS _yona_lld_lib_dirs)
+					if((NOT YONA_LLD_COMMON_LIB) AND EXISTS "${_lib_dir}/lldCommon.lib")
+						set(YONA_LLD_COMMON_LIB "${_lib_dir}/lldCommon.lib")
+					endif()
+					if((NOT YONA_LLD_COFF_LIB) AND EXISTS "${_lib_dir}/lldCOFF.lib")
+						set(YONA_LLD_COFF_LIB "${_lib_dir}/lldCOFF.lib")
+					endif()
+				endforeach()
+			endif()
+			if(YONA_LLD_COMMON_LIB AND YONA_LLD_COFF_LIB)
+				set(YONA_INPROCESS_LLD_AVAILABLE ON)
+				set(YONA_INPROCESS_LLD_LIBS ${YONA_LLD_COMMON_LIB} ${YONA_LLD_COFF_LIB})
+				set(YONA_INPROCESS_LLD_REASON "using lldCommon + lldCOFF")
+			else()
+				set(YONA_INPROCESS_LLD_REASON "missing lldCommon/lldCOFF libraries")
+			endif()
+		elseif(APPLE)
+			find_library(YONA_LLD_COMMON_LIB lldCommon HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			find_library(YONA_LLD_MACHO_LIB lldMachO HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			if(YONA_LLD_COMMON_LIB AND YONA_LLD_MACHO_LIB)
+				set(YONA_INPROCESS_LLD_AVAILABLE ON)
+				set(YONA_INPROCESS_LLD_LIBS ${YONA_LLD_COMMON_LIB} ${YONA_LLD_MACHO_LIB})
+				set(YONA_INPROCESS_LLD_REASON "using lldCommon + lldMachO")
+			else()
+				set(YONA_INPROCESS_LLD_REASON "missing lldCommon/lldMachO libraries")
+			endif()
+		elseif(UNIX)
+			find_library(YONA_LLD_COMMON_LIB lldCommon HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			find_library(YONA_LLD_ELF_LIB lldELF HINTS ${LLVM_LIBRARY_DIRS} "${LLVM_INSTALL_PREFIX}/lib")
+			if(YONA_LLD_COMMON_LIB AND YONA_LLD_ELF_LIB)
+				set(YONA_INPROCESS_LLD_AVAILABLE ON)
+				set(YONA_INPROCESS_LLD_LIBS ${YONA_LLD_COMMON_LIB} ${YONA_LLD_ELF_LIB})
+				set(YONA_INPROCESS_LLD_REASON "using lldCommon + lldELF")
+			else()
+				set(YONA_INPROCESS_LLD_REASON "missing lldCommon/lldELF libraries")
+			endif()
+		endif()
+	else()
+		set(YONA_INPROCESS_LLD_REASON "missing lld/Common/Driver.h include")
+	endif()
+endif()
+
+if(YONA_INPROCESS_LLD_AVAILABLE)
+	# lld drivers reference target init symbols beyond the host arch.
+	llvm_map_components_to_libnames(YONA_INPROCESS_LLD_LLVM_LIBS
+		AArch64Info AArch64Desc AArch64CodeGen AArch64AsmParser
+		ARMInfo ARMDesc ARMCodeGen ARMAsmParser
+		BPFInfo BPFDesc BPFCodeGen BPFAsmParser
+		WebAssemblyInfo WebAssemblyDesc WebAssemblyCodeGen WebAssemblyAsmParser
+		RISCVInfo RISCVDesc RISCVCodeGen RISCVAsmParser
+		NVPTXInfo NVPTXDesc NVPTXCodeGen
+		X86Info X86Desc X86CodeGen X86AsmParser
+		TargetParser MC MCParser AsmParser
+		Option LibDriver WindowsDriver WindowsManifest LTO DTLTO
+	)
+	if(WIN32 AND YONA_USE_FETCHED_LIBXML2 AND TARGET LibXml2)
+		# LLVMWindowsManifest may inject a host-provided libxml2 path (e.g. MinGW .a).
+		# Replace it with the fetched MSVC-compatible target to avoid mixed-toolchain duplicates.
+		list(FILTER YONA_INPROCESS_LLD_LLVM_LIBS EXCLUDE REGEX "libxml2(\\.a|\\.lib)$")
+	endif()
+	list(APPEND YONA_INPROCESS_LLD_LIBS ${YONA_INPROCESS_LLD_LLVM_LIBS})
+	if(WIN32)
+		if(YONA_USE_FETCHED_LIBXML2 AND TARGET LibXml2)
+			list(APPEND YONA_INPROCESS_LLD_LIBS LibXml2)
+			set(YONA_INPROCESS_LLD_REASON "${YONA_INPROCESS_LLD_REASON}; fetched LibXml2 available")
+		elseif(LibXml2_FOUND AND LIBXML2_LIBRARY MATCHES "\\.lib$")
+			list(APPEND YONA_INPROCESS_LLD_LIBS ${LIBXML2_LIBRARIES})
+			set(YONA_INPROCESS_LLD_REASON "${YONA_INPROCESS_LLD_REASON}; linked with LibXml2")
+		else()
+			set(YONA_INPROCESS_LLD_AVAILABLE OFF)
+			set(YONA_INPROCESS_LLD_LIBS "")
+			set(YONA_INPROCESS_LLD_REASON "missing MSVC-compatible LibXml2 required by LLVMWindowsManifest (system/fetch)")
+		endif()
+	endif()
+	if(YONA_INPROCESS_LLD_AVAILABLE)
+		set(YONA_INPROCESS_LLD_REASON "${YONA_INPROCESS_LLD_REASON}; linked with multi-target LLVM components")
+	endif()
+endif()
+
+if(YONA_INPROCESS_LLD_AVAILABLE)
+	message(STATUS "Embedded LLD backend enabled (${YONA_INPROCESS_LLD_REASON})")
+else()
+	message(STATUS "Embedded LLD backend disabled (${YONA_INPROCESS_LLD_REASON})")
+endif()
+
+set(YONA_INPROCESS_LLD_AVAILABLE ${YONA_INPROCESS_LLD_AVAILABLE} CACHE BOOL
+	"Whether embedded LLD backend is active after dependency checks" FORCE)
+set(YONA_INPROCESS_LLD_REASON "${YONA_INPROCESS_LLD_REASON}" CACHE STRING
+	"Reason for embedded LLD enable/disable decision" FORCE)

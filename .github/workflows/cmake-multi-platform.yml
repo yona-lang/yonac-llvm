@@ -24,6 +24,7 @@ jobs:
             build_preset: build-debug-linux
             test_preset: unit-tests-linux
             llvm_version: 20
+            build_dir: x64-debug-linux
 
           # Linux Release
           - os: ubuntu-24.04
@@ -33,6 +34,7 @@ jobs:
             build_preset: build-release-linux
             test_preset: unit-tests-linux
             llvm_version: 20
+            build_dir: x64-release-linux
 
           # Linux arm64 Debug
           - os: ubuntu-24.04-arm
@@ -42,6 +44,7 @@ jobs:
             build_preset: build-debug-linux-arm64
             test_preset: unit-tests-linux-arm64
             llvm_version: 20
+            build_dir: arm64-debug-linux
 
           # Linux arm64 Release
           - os: ubuntu-24.04-arm
@@ -51,6 +54,7 @@ jobs:
             build_preset: build-release-linux-arm64
             test_preset: unit-tests-linux-arm64
             llvm_version: 20
+            build_dir: arm64-release-linux
 
           # macOS Debug
           - os: macos-15
@@ -60,6 +64,7 @@ jobs:
             build_preset: build-debug-macos
             test_preset: unit-tests-macos
             llvm_version: 20
+            build_dir: x64-debug-macos
 
           # macOS Release
           - os: macos-15
@@ -69,6 +74,7 @@ jobs:
             build_preset: build-release-macos
             test_preset: unit-tests-macos
             llvm_version: 20
+            build_dir: x64-release-macos
 
           # Windows Debug
           - os: windows-2025
@@ -79,6 +85,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            build_dir: x64-debug
 
           # Windows Release
           - os: windows-2025
@@ -89,6 +96,7 @@ jobs:
             test_preset: unit-tests-windows
             llvm_version: 20
             llvm_minor_version: 1.7
+            build_dir: x64-release
 
     name: ${{ matrix.name }}
 
@@ -196,6 +204,96 @@ jobs:
       with:
         configurePreset: ${{ matrix.configure_preset }}
         buildPreset: ${{ matrix.build_preset }}
+
+    - name: Report embedded LLD status (Linux/macOS)
+      if: success() && runner.os != 'Windows'
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import os
+        from pathlib import Path
+
+        cache = Path("out/build/${{ matrix.build_dir }}/CMakeCache.txt")
+        text = cache.read_text(encoding="utf-8", errors="ignore")
+        enabled = ""
+        reason = ""
+        for line in text.splitlines():
+            if line.startswith("YONA_INPROCESS_LLD_AVAILABLE:BOOL="):
+                enabled = line.split("=", 1)[1].strip()
+            elif line.startswith("YONA_INPROCESS_LLD_REASON:STRING="):
+                reason = line.split("=", 1)[1].strip()
+        if not enabled:
+            raise SystemExit("Missing YONA_INPROCESS_LLD_AVAILABLE in CMakeCache.txt")
+        if not reason:
+            raise SystemExit("Missing YONA_INPROCESS_LLD_REASON in CMakeCache.txt")
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+            f.write(f"### Embedded LLD ({'${{ matrix.name }}'})\n")
+            f.write(f"- active: `{enabled}`\n")
+            f.write(f"- reason: `{reason}`\n\n")
+        print(f"Embedded LLD active={enabled}; reason={reason}")
+        PY
+
+    - name: Report embedded LLD status (Windows)
+      if: success() && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $cache = "out/build/${{ matrix.build_dir }}/CMakeCache.txt"
+        $enabled = ""
+        $reason = ""
+        foreach ($line in Get-Content $cache) {
+          if ($line -like "YONA_INPROCESS_LLD_AVAILABLE:BOOL=*") {
+            $enabled = $line.Split("=",2)[1]
+          } elseif ($line -like "YONA_INPROCESS_LLD_REASON:STRING=*") {
+            $reason = $line.Split("=",2)[1]
+          }
+        }
+        if (-not $enabled) { throw "Missing YONA_INPROCESS_LLD_AVAILABLE in CMakeCache.txt" }
+        if (-not $reason) { throw "Missing YONA_INPROCESS_LLD_REASON in CMakeCache.txt" }
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Embedded LLD (${{ matrix.name }})"
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- active: \`$enabled\`"
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- reason: \`$reason\`"
+        Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+        Write-Host "Embedded LLD active=$enabled; reason=$reason"
+
+    - name: Validate runtime artifacts and linker modes (Linux/macOS)
+      if: success() && runner.os != 'Windows'
+      shell: bash
+      run: |
+        BUILD_DIR="out/build/${{ matrix.build_dir }}"
+        YONAC="${BUILD_DIR}/yonac"
+        test -f "${BUILD_DIR}/runtime/compiled_runtime.o"
+        test -f "${BUILD_DIR}/runtime/libyona_runtime.a"
+        INPROC_ACTIVE=$(awk -F= '/^YONA_INPROCESS_LLD_AVAILABLE:BOOL=/{print $2}' "${BUILD_DIR}/CMakeCache.txt" | tr -d '\r')
+
+        YONAC_CC="${CC:-clang}" "${YONAC}" --sysroot "${BUILD_DIR}" --linker-mode system -e "1 + 2" -o "${BUILD_DIR}/ci_link_system"
+        [[ "$("${BUILD_DIR}/ci_link_system")" == "3" ]]
+
+        if [[ "${INPROC_ACTIVE}" == "TRUE" ]]; then
+          YONAC_REQUIRE_INPROCESS_LLD=1 YONAC_CC="${CC:-clang}" "${YONAC}" --sysroot "${BUILD_DIR}" --linker-mode inprocess -e "1 + 2" -o "${BUILD_DIR}/ci_link_inprocess"
+        else
+          YONAC_CC="${CC:-clang}" "${YONAC}" --sysroot "${BUILD_DIR}" --linker-mode inprocess -e "1 + 2" -o "${BUILD_DIR}/ci_link_inprocess"
+        fi
+        [[ "$("${BUILD_DIR}/ci_link_inprocess")" == "3" ]]
+
+    - name: Validate runtime artifacts and linker modes (Windows)
+      if: success() && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $buildDir = "out/build/${{ matrix.build_dir }}"
+        $yonac = Join-Path $buildDir "yonac.exe"
+        if (-not $env:YONAC_CC) { $env:YONAC_CC = "C:\LLVM\bin\clang.exe" }
+        if (!(Test-Path (Join-Path $buildDir "runtime/compiled_runtime.o"))) { throw "missing runtime/compiled_runtime.o" }
+        if (!(Test-Path (Join-Path $buildDir "runtime/yona_runtime.lib"))) { throw "missing runtime/yona_runtime.lib" }
+        $active = ((Get-Content (Join-Path $buildDir "CMakeCache.txt")) | Where-Object { $_ -like "YONA_INPROCESS_LLD_AVAILABLE:BOOL=*" } | Select-Object -First 1).Split("=",2)[1]
+
+        & $yonac --sysroot $buildDir --linker-mode system -e "1 + 2" -o (Join-Path $buildDir "ci_link_system.exe")
+        $outSystem = & (Join-Path $buildDir "ci_link_system.exe")
+        if ($outSystem -ne "3") { throw "system linker-mode smoke test failed" }
+
+        if ($active -eq "TRUE") { $env:YONAC_REQUIRE_INPROCESS_LLD = "1" } else { Remove-Item Env:YONAC_REQUIRE_INPROCESS_LLD -ErrorAction SilentlyContinue }
+        & $yonac --sysroot $buildDir --linker-mode inprocess -e "1 + 2" -o (Join-Path $buildDir "ci_link_inprocess.exe")
+        $outInprocess = & (Join-Path $buildDir "ci_link_inprocess.exe")
+        if ($outInprocess -ne "3") { throw "inprocess linker-mode smoke test failed" }
 
     # Run tests directly with doctest JUnit reporter for detailed results
     - name: Run Tests with Detailed Output

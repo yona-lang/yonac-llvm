@@ -74,6 +74,8 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(cli11)
 
+option(YONA_FETCH_LIBXML2 "Fetch/build libxml2 when system package is incompatible for embedded LLD" ON)
+
 # PCRE2 for regex module (optional)
 find_package(PkgConfig)
 if(PkgConfig_FOUND)
@@ -89,6 +91,8 @@ find_package(LLVM CONFIG REQUIRED)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 message(STATUS "LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/YonaInProcessLld.cmake")
 
 # Verify LLVM version is at least 16
 if(${LLVM_VERSION_MAJOR} LESS 16)
@@ -116,19 +120,21 @@ list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/exceptions\\.c$")
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/closures\\.c$")
 # Platform layer: OS TUs + async/channel sources (#included from compiled_runtime.c only).
 list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/platform/.*\\.c$")
+set(YONA_PLATFORM_RUNTIME_SOURCES)
 if(WIN32)
-	list(APPEND all_lib_SRCS
+	list(APPEND YONA_PLATFORM_RUNTIME_SOURCES
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/file_windows.c"
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/os_windows.c"
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/net_windows.c"
 	)
 else()
-	list(APPEND all_lib_SRCS
+	list(APPEND YONA_PLATFORM_RUNTIME_SOURCES
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/file_linux.c"
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/os_linux.c"
 		"${PROJECT_SOURCE_DIR}/src/runtime/platform/net_linux.c"
 	)
 endif()
+list(APPEND all_lib_SRCS ${YONA_PLATFORM_RUNTIME_SOURCES})
 if(NOT PCRE2_FOUND)
     list(FILTER all_lib_SRCS EXCLUDE REGEX "src/runtime/regex\\.c$")
 endif()
@@ -162,6 +168,10 @@ target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/i
 target_include_directories(yona_lib_static PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib_static PRIVATE ${LLVM_INCLUDE_DIRS})
 target_link_libraries(yona_lib_static PRIVATE ${llvm_libs})
+if(YONA_INPROCESS_LLD_AVAILABLE)
+	target_link_libraries(yona_lib_static PRIVATE ${YONA_INPROCESS_LLD_LIBS})
+	target_compile_definitions(yona_lib_static PRIVATE YONA_ENABLE_INPROCESS_LLD=1)
+endif()
 if(WIN32)
 	target_link_libraries(yona_lib_static PRIVATE ws2_32 dbghelp)
 endif()
@@ -176,6 +186,10 @@ target_include_directories(yona_lib PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/include)
 target_include_directories(yona_lib PRIVATE ${LLVM_INCLUDE_DIRS})
 
 target_link_libraries(yona_lib PRIVATE ${llvm_libs})
+if(YONA_INPROCESS_LLD_AVAILABLE)
+	target_link_libraries(yona_lib PRIVATE ${YONA_INPROCESS_LLD_LIBS})
+	target_compile_definitions(yona_lib PRIVATE YONA_ENABLE_INPROCESS_LLD=1)
+endif()
 if(WIN32)
 	target_link_libraries(yona_lib PRIVATE ws2_32 dbghelp)
 endif()
@@ -206,6 +220,64 @@ else()
 	target_link_libraries(yonac PRIVATE yona_lib CLI11::CLI11)
 endif()
 
+# Prebuilt runtime artifacts for packaged/sysroot-first toolchain flow.
+set(YONA_RUNTIME_ARTIFACT_DIR "${CMAKE_CURRENT_BINARY_DIR}/runtime")
+set(YONA_RUNTIME_MAIN_OBJ "${YONA_RUNTIME_ARTIFACT_DIR}/compiled_runtime.o")
+set(YONA_RUNTIME_PLATFORM_OBJS)
+foreach(_pf IN LISTS YONA_PLATFORM_RUNTIME_SOURCES)
+	get_filename_component(_pf_name "${_pf}" NAME)
+	list(APPEND YONA_RUNTIME_PLATFORM_OBJS "${YONA_RUNTIME_ARTIFACT_DIR}/crt_${_pf_name}.o")
+endforeach()
+
+add_custom_command(
+	OUTPUT "${YONA_RUNTIME_MAIN_OBJ}"
+	COMMAND ${CMAKE_COMMAND} -E make_directory "${YONA_RUNTIME_ARTIFACT_DIR}"
+	COMMAND ${CMAKE_C_COMPILER} -c "${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
+		-I${PROJECT_SOURCE_DIR}/src -I${PROJECT_SOURCE_DIR}/include
+		-o "${YONA_RUNTIME_MAIN_OBJ}"
+	DEPENDS "${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
+	COMMENT "Building packaged runtime object: compiled_runtime.o"
+	VERBATIM
+)
+
+set(_runtime_obj_idx 0)
+foreach(_pf IN LISTS YONA_PLATFORM_RUNTIME_SOURCES)
+	list(GET YONA_RUNTIME_PLATFORM_OBJS ${_runtime_obj_idx} _po)
+	add_custom_command(
+		OUTPUT "${_po}"
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${YONA_RUNTIME_ARTIFACT_DIR}"
+		COMMAND ${CMAKE_C_COMPILER} -c "${_pf}"
+			-I${PROJECT_SOURCE_DIR}/src -I${PROJECT_SOURCE_DIR}/include
+			-o "${_po}"
+		DEPENDS "${_pf}"
+		COMMENT "Building packaged runtime object: ${_po}"
+		VERBATIM
+	)
+	math(EXPR _runtime_obj_idx "${_runtime_obj_idx} + 1")
+endforeach()
+
+add_custom_target(yona_runtime_objects
+	DEPENDS "${YONA_RUNTIME_MAIN_OBJ}" ${YONA_RUNTIME_PLATFORM_OBJS}
+)
+
+add_library(yona_runtime_static STATIC
+	"${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
+	${YONA_PLATFORM_RUNTIME_SOURCES}
+)
+set_target_properties(yona_runtime_static PROPERTIES
+	OUTPUT_NAME yona_runtime
+	ARCHIVE_OUTPUT_DIRECTORY "${YONA_RUNTIME_ARTIFACT_DIR}"
+)
+target_include_directories(yona_runtime_static PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${CMAKE_CURRENT_BINARY_DIR}/include
+)
+if(WIN32)
+	target_link_libraries(yona_runtime_static PRIVATE ws2_32 dbghelp)
+endif()
+
+add_dependencies(yonac yona_runtime_objects yona_runtime_static)
+
 # REPL executable
 add_executable(yona ${all_repl_SRCS})
 target_include_directories(yona PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -216,6 +288,7 @@ if(WIN32)
 else()
 	target_link_libraries(yona PRIVATE yona_lib)
 endif()
+add_dependencies(yona yona_runtime_objects yona_runtime_static)
 
 if(WIN32)
 	# repl uses popen; map to _popen on UCRT (same header as tests).

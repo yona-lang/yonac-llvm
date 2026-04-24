@@ -32,17 +32,59 @@ jobs:
           cmake --preset x64-release-linux
           cmake --build --preset build-release-linux
 
+      - name: Report embedded LLD status
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          cache = Path("out/build/x64-release-linux/CMakeCache.txt")
+          text = cache.read_text(encoding="utf-8", errors="ignore")
+          enabled = ""
+          reason = ""
+          for line in text.splitlines():
+              if line.startswith("YONA_INPROCESS_LLD_AVAILABLE:BOOL="):
+                  enabled = line.split("=", 1)[1].strip()
+              elif line.startswith("YONA_INPROCESS_LLD_REASON:STRING="):
+                  reason = line.split("=", 1)[1].strip()
+          if not enabled:
+              raise SystemExit("Missing YONA_INPROCESS_LLD_AVAILABLE in CMakeCache.txt")
+          if not reason:
+              raise SystemExit("Missing YONA_INPROCESS_LLD_REASON in CMakeCache.txt")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("### Embedded LLD (Linux release)\n")
+              f.write(f"- active: `{enabled}`\n")
+              f.write(f"- reason: `{reason}`\n\n")
+          print(f"Embedded LLD active={enabled}; reason={reason}")
+          PY
+
       - name: Run tests
         run: ctest --preset unit-tests-linux
+
+      - name: Validate packaged runtime and linker modes
+        run: |
+          BUILD_DIR=out/build/x64-release-linux
+          test -f ${BUILD_DIR}/runtime/compiled_runtime.o
+          test -f ${BUILD_DIR}/runtime/libyona_runtime.a
+          INPROC_ACTIVE=$(awk -F= '/^YONA_INPROCESS_LLD_AVAILABLE:BOOL=/{print $2}' "${BUILD_DIR}/CMakeCache.txt" | tr -d '\r')
+          YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode system -e "1 + 2" -o ${BUILD_DIR}/release_link_system
+          test "$(${BUILD_DIR}/release_link_system)" = "3"
+          if [[ "${INPROC_ACTIVE}" == "TRUE" ]]; then
+            YONAC_REQUIRE_INPROCESS_LLD=1 YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode inprocess -e "1 + 2" -o ${BUILD_DIR}/release_link_inprocess
+          else
+            YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode inprocess -e "1 + 2" -o ${BUILD_DIR}/release_link_inprocess
+          fi
+          test "$(${BUILD_DIR}/release_link_inprocess)" = "3"
 
       - name: Package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           DIST=yona-${VERSION}-linux-${{ matrix.arch }}
-          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/runtime ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
           cp out/build/x64-release-linux/yonac ${DIST}/bin/
           cp out/build/x64-release-linux/yona ${DIST}/bin/
           cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
+          cp out/build/x64-release-linux/runtime/* ${DIST}/runtime/ 2>/dev/null || true
           cp src/compiled_runtime.c ${DIST}/src/
           cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true
@@ -72,14 +114,57 @@ jobs:
           cmake --preset x64-release-macos
           cmake --build --preset build-release-macos
 
+      - name: Report embedded LLD status
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          cache = Path("out/build/x64-release-macos/CMakeCache.txt")
+          text = cache.read_text(encoding="utf-8", errors="ignore")
+          enabled = ""
+          reason = ""
+          for line in text.splitlines():
+              if line.startswith("YONA_INPROCESS_LLD_AVAILABLE:BOOL="):
+                  enabled = line.split("=", 1)[1].strip()
+              elif line.startswith("YONA_INPROCESS_LLD_REASON:STRING="):
+                  reason = line.split("=", 1)[1].strip()
+          if not enabled:
+              raise SystemExit("Missing YONA_INPROCESS_LLD_AVAILABLE in CMakeCache.txt")
+          if not reason:
+              raise SystemExit("Missing YONA_INPROCESS_LLD_REASON in CMakeCache.txt")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("### Embedded LLD (macOS release)\n")
+              f.write(f"- active: `{enabled}`\n")
+              f.write(f"- reason: `{reason}`\n\n")
+          print(f"Embedded LLD active={enabled}; reason={reason}")
+          PY
+
+      - name: Validate packaged runtime and linker modes
+        run: |
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          BUILD_DIR=out/build/x64-release-macos
+          test -f ${BUILD_DIR}/runtime/compiled_runtime.o
+          test -f ${BUILD_DIR}/runtime/libyona_runtime.a
+          INPROC_ACTIVE=$(awk -F= '/^YONA_INPROCESS_LLD_AVAILABLE:BOOL=/{print $2}' "${BUILD_DIR}/CMakeCache.txt" | tr -d '\r')
+          YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode system -e "1 + 2" -o ${BUILD_DIR}/release_link_system
+          test "$(${BUILD_DIR}/release_link_system)" = "3"
+          if [[ "${INPROC_ACTIVE}" == "TRUE" ]]; then
+            YONAC_REQUIRE_INPROCESS_LLD=1 YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode inprocess -e "1 + 2" -o ${BUILD_DIR}/release_link_inprocess
+          else
+            YONAC_CC=clang ${BUILD_DIR}/yonac --sysroot ${BUILD_DIR} --linker-mode inprocess -e "1 + 2" -o ${BUILD_DIR}/release_link_inprocess
+          fi
+          test "$(${BUILD_DIR}/release_link_inprocess)" = "3"
+
       - name: Package
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           DIST=yona-${VERSION}-macos-$(uname -m)
-          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
+          mkdir -p ${DIST}/bin ${DIST}/lib/Std ${DIST}/runtime ${DIST}/src/runtime/platform ${DIST}/include/yona/runtime
           cp out/build/x64-release-macos/yonac ${DIST}/bin/
           cp out/build/x64-release-macos/yona ${DIST}/bin/
           cp lib/Std/*.yona* ${DIST}/lib/Std/ 2>/dev/null || true
+          cp out/build/x64-release-macos/runtime/* ${DIST}/runtime/ 2>/dev/null || true
           cp src/compiled_runtime.c ${DIST}/src/
           cp src/runtime/*.c ${DIST}/src/runtime/ 2>/dev/null || true
           cp src/runtime/*.h ${DIST}/src/runtime/ 2>/dev/null || true

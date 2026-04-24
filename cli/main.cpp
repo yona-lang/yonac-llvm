@@ -27,6 +27,8 @@
 #include "Parser.h"
 #include "Codegen.h"
 #include "Diagnostic.h"
+#include "InProcessLld.h"
+#include "LinkerPlan.h"
 #include "typechecker/TypeChecker.h"
 #include "typechecker/RefinementChecker.h"
 #include "typechecker/LinearityChecker.h"
@@ -140,6 +142,7 @@ int main(int argc, char* argv[]) {
     vector<string> include_paths;
     string sysroot_path;
     string explain_code;
+    string linker_mode_opt;
 
     app.add_option("input", input_file, "Input .yona file");
     app.add_option("-e,--expression", expression, "Compile expression");
@@ -147,6 +150,8 @@ int main(int argc, char* argv[]) {
     app.add_option("-I,--include", include_paths, "Module search paths (for .yonai files)");
     app.add_option("--sysroot", sysroot_path,
                    "Yona distribution root (used to find lib/ and runtime objects)");
+    app.add_option("--linker-mode", linker_mode_opt,
+                   "Linker mode: auto|bundled|system|inprocess (also via YONAC_LINKER_MODE)");
     app.add_option("-O", opt_level, "Optimization level (0-3, default 2)")
        ->check(CLI::Range(0, 3));
     app.add_flag("--emit-ir", emit_ir, "Print LLVM IR instead of compiling");
@@ -229,6 +234,29 @@ int main(int argc, char* argv[]) {
     codegen.set_opt_level(opt_level);
 
     vector<filesystem::path> sysroots = discover_sysroots(argc > 0 ? argv[0] : nullptr, sysroot_path);
+    yona::toolchain::LinkerPlan linker_selection;
+    string linker_mode_raw = linker_mode_opt;
+    if (linker_mode_raw.empty()) {
+        if (const char* env_mode = getenv("YONAC_LINKER_MODE")) {
+            if (*env_mode) linker_mode_raw = env_mode;
+        }
+    }
+    string linker_error;
+    if (!yona::toolchain::resolve_linker_plan(linker_mode_raw, sysroots, linker_selection, linker_error)) {
+        cerr << "Error: " << linker_error << endl;
+        return 1;
+    }
+    const bool require_inprocess = yona::toolchain::require_inprocess_lld_from_env();
+    if (linker_selection.use_inprocess_lld && !yona::toolchain::inprocess_lld_available()) {
+        if (require_inprocess) {
+            cerr << "Error: inprocess linker mode required but unavailable: "
+                 << yona::toolchain::inprocess_lld_unavailable_reason() << endl;
+            return 1;
+        }
+        cerr << "Warning: inprocess linker mode requested but unavailable: "
+             << yona::toolchain::inprocess_lld_unavailable_reason()
+             << ". Falling back to external linker path." << endl;
+    }
 
     // Set module search paths for import resolution.
     unordered_set<string> module_seen;
@@ -341,14 +369,25 @@ int main(int argc, char* argv[]) {
     if (exe_dir.empty()) exe_dir = filesystem::current_path();
     string rt_obj = (exe_dir / "compiled_runtime.o").string();
     string rt_bc = (exe_dir / "compiled_runtime.bc").string();
+    bool rt_obj_is_archive = false;
     vector<string> rt_extra_objs; /* platform .o files linked alongside rt_obj */
 
     auto find_packaged_runtime_objects = [&]() -> bool {
         for (const auto& root : sysroots) {
             for (const auto& base : {root / "runtime", root / "lib" / "yona" / "runtime"}) {
+                for (const auto& archive_name : {"yona_runtime.lib", "libyona_runtime.lib", "libyona_runtime.a"}) {
+                    auto archive = canonical_if_exists(base / archive_name);
+                    if (!archive.empty()) {
+                        rt_obj = archive.string();
+                        rt_obj_is_archive = true;
+                        rt_extra_objs.clear();
+                        return true;
+                    }
+                }
                 auto main_o = canonical_if_exists(base / "compiled_runtime.o");
                 if (main_o.empty()) continue;
                 rt_obj = main_o.string();
+                rt_obj_is_archive = false;
                 rt_extra_objs.clear();
                 for (const char* pf : platform_runtime_sources) {
                     auto a = canonical_if_exists(base / ("crt_" + string(pf) + ".o"));
@@ -366,6 +405,7 @@ int main(int argc, char* argv[]) {
 
     // Find runtime source and compile to both .o (for linking) and .bc (for LTO) if needed.
     if (!have_packaged_runtime) {
+        rt_obj_is_archive = false;
         for (const auto& root : sysroots) {
             auto candidate = root / "src" / "compiled_runtime.c";
             if (!filesystem::exists(candidate)) continue;
@@ -494,21 +534,83 @@ int main(int argc, char* argv[]) {
 
     // When LTO merged the runtime, don't link rt_obj separately (avoid dups).
     // Unix: -rdynamic exports symbols for backtrace_symbols() stack traces.
-    const char* cc_link = yonac_cc_exe();
-    string link_cmd = string(cc_link) + " " + q_cmd_path(filesystem::path(obj_file));
-    if (!lto_active) {
-        link_cmd += " " + q_cmd_path(filesystem::path(rt_obj));
+    auto append_link_objects = [&](auto&& append_one) {
+        append_one(obj_file);
+        if (!lto_active) {
+            append_one(rt_obj);
+            if (!rt_obj_is_archive) {
 #ifdef _WIN32
-        for (const auto& ex : rt_extra_objs) link_cmd += " " + q_cmd_path(filesystem::path(ex));
+                for (const auto& ex : rt_extra_objs) append_one(ex);
 #endif
-    }
-    if (!prelude_obj.empty()) link_cmd += " " + q_cmd_path(filesystem::path(prelude_obj));
+            }
+        }
+        if (!prelude_obj.empty()) append_one(prelude_obj);
+    };
+
+    int link_result = 1;
+    bool used_inprocess = false;
+    if (linker_selection.use_inprocess_lld && yona::toolchain::inprocess_lld_available()) {
+        vector<string> lld_args;
 #ifdef _WIN32
-    link_cmd += " -o " + q_cmd_path(filesystem::path(output_file)) + " -lws2_32 -ldbghelp";
+        lld_args.push_back("lld-link");
+        lld_args.push_back("/NOLOGO");
+        append_link_objects([&](const string& s) { lld_args.push_back(s); });
+        lld_args.push_back("/OUT:" + filesystem::path(output_file).string());
+        lld_args.push_back("ws2_32.lib");
+        lld_args.push_back("dbghelp.lib");
 #else
-    link_cmd += " -lm -lpthread -rdynamic -o " + q_cmd_path(filesystem::path(output_file));
+        lld_args.push_back("ld.lld");
+        append_link_objects([&](const string& s) { lld_args.push_back(s); });
+        lld_args.push_back("-o");
+        lld_args.push_back(filesystem::path(output_file).string());
+#ifdef __APPLE__
+        lld_args.push_back("-lSystem");
+#else
+        lld_args.push_back("-lm");
+        lld_args.push_back("-lpthread");
+        lld_args.push_back("-rdynamic");
 #endif
-    int link_result = system(link_cmd.c_str());
+#endif
+        yona::toolchain::InProcessLldResult lld_res;
+        used_inprocess = true;
+        if (yona::toolchain::run_inprocess_lld(lld_args, lld_res)) {
+            link_result = 0;
+        } else {
+            if (require_inprocess) {
+                diag.error(SourceLocation::unknown(), compiler::ErrorCode::E0401,
+                           "in-process LLD link failed and fallback is disabled");
+                if (!lld_res.stderr_text.empty()) cerr << lld_res.stderr_text << endl;
+                return 1;
+            }
+            cerr << "Warning: in-process LLD link failed, falling back to external linker path.";
+            if (!lld_res.stderr_text.empty()) cerr << " details: " << lld_res.stderr_text;
+            cerr << endl;
+            link_result = 1;
+        }
+    }
+
+    if (!used_inprocess || link_result != 0) {
+        const char* cc_link = yonac_cc_exe();
+        string link_cmd = string(cc_link) + " " + q_cmd_path(filesystem::path(obj_file));
+        if (linker_selection.use_bundled_lld) {
+            link_cmd += " -fuse-ld=lld -B" + q_cmd_path(linker_selection.bundled_lld_path.parent_path());
+        }
+        if (!lto_active) {
+            link_cmd += " " + q_cmd_path(filesystem::path(rt_obj));
+            if (!rt_obj_is_archive) {
+#ifdef _WIN32
+                for (const auto& ex : rt_extra_objs) link_cmd += " " + q_cmd_path(filesystem::path(ex));
+#endif
+            }
+        }
+        if (!prelude_obj.empty()) link_cmd += " " + q_cmd_path(filesystem::path(prelude_obj));
+#ifdef _WIN32
+        link_cmd += " -o " + q_cmd_path(filesystem::path(output_file)) + " -lws2_32 -ldbghelp";
+#else
+        link_cmd += " -lm -lpthread -rdynamic -o " + q_cmd_path(filesystem::path(output_file));
+#endif
+        link_result = system(link_cmd.c_str());
+    }
     filesystem::remove(obj_file);
 
     if (link_result != 0) {

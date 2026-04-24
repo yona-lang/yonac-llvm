@@ -48,6 +48,29 @@ Policy:
   now route through platform wrappers (open/close/seek/tell/flush/truncate),
   removing remaining per-OS `#if` branches from this path.
 
+## CLI/REPL linker plan
+
+- `include/LinkerPlan.h` + `src/LinkerPlan.cpp` define shared linker-mode
+  selection for `yonac` and `yona`.
+- Supported modes are `auto`, `bundled`, `system`, and `inprocess`.
+- In `auto`, the toolchain prefers bundled `lld` when found under discovered
+  sysroots (`bin/` or `llvm/bin/`), and falls back to the external/system
+  linker if none is packaged.
+- `bundled` requires packaged `lld` and fails fast when missing; `system`
+  always uses the host toolchain linker path.
+- `inprocess` is an opt-in embedded-linker path; current builds may fall back
+  to the external linker flow when embedded LLD support is not compiled in.
+- Current CMake default requests embedded LLD (`YONA_ENABLE_INPROCESS_LLD=ON`),
+  but configure-time dependency checks may auto-disable it on toolchains that
+  are missing required linker deps (for example, MSVC-compatible LibXml2 on
+  Windows for LLVM Windows-manifest support).
+- `YONAC_REQUIRE_INPROCESS_LLD=1` forces hard failure when in-process linker
+  mode is unavailable or fails, preventing silent fallback in strict CI gates.
+- CMake now produces prebuilt runtime artifacts under build-local `runtime/`
+  (`compiled_runtime.o`, `crt_*.o`, and `yona_runtime.lib` /
+  `libyona_runtime.a`) so distribution packaging can ship an object/sysroot
+  layout that avoids runtime C recompilation in normal CLI/REPL usage.
+
 ## Windows compile flags
 
 - **`NOMINMAX`** and **`WIN32_LEAN_AND_MEAN`** are set in CMake for `WIN32` so Windows headers do not break C++ standard library min/max.
