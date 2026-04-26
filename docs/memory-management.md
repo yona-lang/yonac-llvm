@@ -12,8 +12,13 @@ uses **reference counting** with several optimizations:
   last-use args transferred without a DUP, callees consume on path-copy
 - **Automatic borrow inference** — non-escaping heap params (not
   returned, not captured, not stored) skip rc_inc at the call site
-  and rc_dec at function exit. Eliminates refcount overhead for
-  closure params in HOFs (foldl, map, filter)
+  and rc_dec at function exit. Inferred borrow masks are emitted into
+  `.yonai` metadata so imported functions keep the same ownership
+  contract across module boundaries. Borrow inference is conservative:
+  forwarded arguments only remain borrowed when the callee is known to
+  borrow that parameter, functions that can directly raise keep owned
+  unwind cleanup, and anonymous borrowed temporaries are released by the
+  caller after the call.
 - **Per-branch transfer_scope** (if + case arms) — asymmetric
   transfers emit compensating rc_decs only on branches that didn't
   transfer, with SSA dominance preserved by snapshotting pre_blocks
@@ -351,6 +356,13 @@ doesn't own.
 The type check (`all_args[ai].type != cf.return_type`) is conservative:
 if the types match, the callee might return the arg, so we skip the DROP.
 
+Borrowed heap temporaries are handled separately. If borrow inference says
+the callee only reads a heap parameter, the callee skips its normal owned
+DROP; therefore an anonymous temporary passed to that borrowed parameter is
+released by the caller immediately after the call. Named borrowed arguments
+are not dropped at the call site because their enclosing let/function scope
+still owns them.
+
 ## Pool Allocator
 
 A slab-based pool allocator reduces malloc/free overhead for common
@@ -406,12 +418,18 @@ for every async call without significant benefit.
 Value created:    rc_alloc → pool_alloc(total) → rc=1, type_tag encoded
 Let binding:      no rc change (rc=1 from alloc)
 DUP at call:      rc_inc at call site for named heap args EXCEPT on
-                  single-use (SEQ/SET/DICT) — those skip the inc and
-                  mark the Value* as transferred
+                  single-use (SEQ/SET/DICT) or inferred borrowed params.
+                  Single-use args skip the inc and mark the Value* as
+                  transferred; borrowed args remain owned by the caller.
 Function param:   callee-owns for all heap types (seqs, sets, dicts,
-                  closures, strings, ADTs, tuples, ...)
+                  closures, strings, ADTs, tuples, ...) unless the
+                  parameter has an inferred borrow contract.
 Callee DROP:      rc_dec at function exit if param != return AND the
-                  param was not transferred to a consumer in the body
+                  param was not transferred to a consumer in the body;
+                  borrowed params skip this DROP and are excluded from
+                  unwind frames.
+Borrowed temp:    anonymous heap temporary passed to a borrowed parameter
+                  is rc_dec'd by the caller after the call.
 Scope exit:       rc_inc(result), rc_dec(binding) unless transferred
 Closure capture:  rc_inc (except self-capture)
 Seq cons/tail:    rc_inc for structural sharing (next chunk);

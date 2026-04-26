@@ -65,19 +65,36 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
             hv = builder_->CreateCall(rt_.seq_head_, {seq_ptr}, "head");
         else
             hv = builder_->CreateCall(rt_.seq_get_, {seq_ptr, ConstantInt::get(i64_ty, hi)});
+        auto* hp = htp->heads[hi];
+        CType head_type = (hp->get_type() == AST_TUPLE_PATTERN) ? CType::TUPLE : elem_type;
         Value* elem_val = hv;
-        if (elem_type == CType::SEQ || elem_type == CType::STRING ||
-            elem_type == CType::FUNCTION || elem_type == CType::ADT ||
+        if (head_type == CType::SEQ || head_type == CType::STRING ||
+            head_type == CType::FUNCTION || head_type == CType::ADT ||
             elem_type == CType::SET || elem_type == CType::DICT)
             elem_val = builder_->CreateIntToPtr(hv, PointerType::get(*context_, 0));
-        auto* hp = htp->heads[hi];
         if (hp->get_type() == AST_PATTERN_VALUE) {
             auto* pv = static_cast<PatternValue*>(hp);
             if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-                named_values_[(*id)->name->value] = {elem_val, elem_type};
+                named_values_[(*id)->name->value] = {elem_val, head_type};
+        } else if (hp->get_type() == AST_TUPLE_PATTERN) {
+            auto* tp = static_cast<TuplePattern*>(hp);
+            Value* tuple_ptr = elem_val;
+            if (tuple_ptr->getType()->isIntegerTy())
+                tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0));
+            for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+                auto* sub = tp->patterns[ti];
+                if (sub->get_type() != AST_PATTERN_VALUE) continue;
+                auto* pv = static_cast<PatternValue*>(sub);
+                auto* id = std::get_if<IdentifierExpr*>(&pv->expr);
+                if (!id) continue;
+                auto* gep = builder_->CreateGEP(i64_ty, tuple_ptr,
+                    {ConstantInt::get(i64_ty, ti + 2)}, "tuple_head_gep");
+                auto* elem = builder_->CreateLoad(i64_ty, gep, "tuple_head_elem");
+                named_values_[(*id)->name->value] = {elem, CType::INT};
+            }
         }
     }
-    if (htp->tail && htp->tail->get_type() == AST_PATTERN_VALUE) {
+    if (htp->tail) {
         // Ownership model — Perceus-linear (phase 1, single-use):
         //
         //   OWNED SCRUTINEE (scrut is a single-use identifier in the
@@ -107,9 +124,11 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
                 int uses = count_identifier_refs(current_fn_body_, scrut_name);
                 owned = (uses <= 1);
             } else {
-                // No enclosing function body (top-level expression) — use
-                // clause body count as before.
-                owned = (count_identifier_refs(clause->body, scrut_name) == 0);
+                // No enclosing function body means top-level expression or
+                // other context without whole-scope visibility. Be
+                // conservative: a named scrutinee may be referenced after
+                // this case expression, so do not consume/mutate in place.
+                owned = false;
             }
         }
 
@@ -127,9 +146,18 @@ bool Codegen::codegen_pattern_headtail(HeadTailsPattern* htp, CaseExpr* node,
             emit_rc_inc(seq_ptr, CType::SEQ);
             tv = builder_->CreateCall(rt_.seq_tail_, {seq_ptr});
         }
-        auto* pv = static_cast<PatternValue*>(htp->tail);
-        if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
-            named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
+        if (htp->tail->get_type() == AST_PATTERN_VALUE) {
+            auto* pv = static_cast<PatternValue*>(htp->tail);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr))
+                named_values_[(*id)->name->value] = {tv, CType::SEQ, scrutinee.subtypes};
+        } else if (htp->tail->get_type() == AST_HEAD_TAILS_PATTERN) {
+            auto* nested_tail_bb = BasicBlock::Create(*context_, "tail.pat.match",
+                body_bb->getParent());
+            auto* nested = static_cast<HeadTailsPattern*>(htp->tail);
+            TypedValue tail_scrutinee{tv, CType::SEQ, scrutinee.subtypes};
+            codegen_pattern_headtail(nested, node, clause, tail_scrutinee, tv,
+                                     nested_tail_bb, next_bb);
+        }
         if (!arm_drop_stack_.empty()) {
             arm_drop_stack_.back().push_back({tv, CType::SEQ});
             if (!owned)
@@ -240,6 +268,23 @@ bool Codegen::codegen_pattern_tuple(TuplePattern* tp, const TypedValue& scrutine
                     builder_->SetInsertPoint(match_bb);
                 }
             }
+        } else if (sub->get_type() == AST_TUPLE_PATTERN) {
+            auto* nested = static_cast<TuplePattern*>(sub);
+            Value* nested_ptr = elem;
+            if (nested_ptr->getType()->isIntegerTy())
+                nested_ptr = builder_->CreateIntToPtr(nested_ptr,
+                    PointerType::get(*context_, 0), "nested_tuple_ptr");
+            for (size_t ni = 0; ni < nested->patterns.size(); ni++) {
+                auto* nested_sub = nested->patterns[ni];
+                if (nested_sub->get_type() != AST_PATTERN_VALUE) continue;
+                auto* pv = static_cast<PatternValue*>(nested_sub);
+                auto* id = std::get_if<IdentifierExpr*>(&pv->expr);
+                if (!id) continue;
+                auto* gep = builder_->CreateGEP(i64_ty, nested_ptr,
+                    {ConstantInt::get(i64_ty, ni + 2)}, "nested_tuple_gep");
+                auto* nested_elem = builder_->CreateLoad(i64_ty, gep, "nested_tuple_elem");
+                named_values_[(*id)->name->value] = {nested_elem, CType::INT};
+            }
         }
         // AST_UNDERSCORE_PATTERN: wildcard, no action needed
     }
@@ -259,11 +304,38 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
     auto tag_ty = LType::getInt64Ty(*context_);
     auto i64_ty = LType::getInt64Ty(*context_);
 
+    auto bind_tuple_pattern_fields = [&](TuplePattern* tp, Value* tuple_value) {
+        if (!tp || !tuple_value) return;
+        Value* tuple_ptr = tuple_value;
+        if (tuple_ptr->getType()->isIntegerTy())
+            tuple_ptr = builder_->CreateIntToPtr(tuple_ptr, PointerType::get(*context_, 0),
+                                                 "ctor_tuple_field_ptr");
+        for (size_t ti = 0; ti < tp->patterns.size(); ti++) {
+            auto* sub = tp->patterns[ti];
+            if (sub->get_type() != AST_PATTERN_VALUE) continue;
+            auto* pv = static_cast<PatternValue*>(sub);
+            auto* id = std::get_if<IdentifierExpr*>(&pv->expr);
+            if (!id) continue;
+            auto* gep = builder_->CreateGEP(i64_ty, tuple_ptr,
+                {ConstantInt::get(i64_ty, ti + 2)}, "ctor_tuple_gep");
+            auto* elem = builder_->CreateLoad(i64_ty, gep, "ctor_tuple_elem");
+            named_values_[(*id)->name->value] = {elem, CType::INT};
+        }
+    };
+
     // The scrutinee is sometimes an i64-typed ADT — this happens when the
     // value comes through a generic i64-returning runtime call (e.g.
     // `yona_rt_async_await` for a CAF returning an Option). Coerce back to
     // ptr so the heap-layout extractors work.
     TypedValue scrutinee = scrutinee_in;
+    if (!ctor_it->second.is_recursive && ctor_it->second.max_arity == 0 &&
+        scrutinee.val && scrutinee.val->getType()->isIntegerTy()) {
+        builder_->CreateCondBr(
+            builder_->CreateICmpEQ(scrutinee.val, ConstantInt::get(i64_ty, tag)),
+            body_bb, next_bb);
+        builder_->SetInsertPoint(body_bb);
+        return true;
+    }
     if (scrutinee.val && scrutinee.val->getType()->isIntegerTy() &&
         scrutinee.type == CType::ADT) {
         scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
@@ -302,6 +374,8 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                         ? scrutinee.subtypes[fi] : CType::INT;
                     CType ftype = (registered == CType::INT && runtime_st != CType::INT)
                         ? runtime_st : registered;
+                    if (ctor_it->second.type_name == "Iterator" && fi == 0)
+                        ftype = CType::FUNCTION;
                     Value* typed_val = field_val;
                     if (ftype == CType::ADT || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::FUNCTION ||
@@ -333,9 +407,14 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                         bound.subtypes = {ctor_it->second.field_fn_return_types[fi]};
                         if (fi < ctor_it->second.field_fn_return_adt_names.size())
                             bound.adt_type_name = ctor_it->second.field_fn_return_adt_names[fi];
+                    } else if (ctor_it->second.type_name == "Iterator" && fi == 0) {
+                        bound.subtypes = {CType::ADT};
+                        bound.adt_type_name = "Option";
                     }
                     named_values_[(*id)->name->value] = bound;
                 }
+            } else if (sub_pat->get_type() == AST_TUPLE_PATTERN) {
+                bind_tuple_pattern_fields(static_cast<TuplePattern*>(sub_pat), field_val);
             }
         }
     } else {
@@ -363,6 +442,8 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                         ? scrutinee.subtypes[fi] : CType::INT;
                     CType ftype = (registered == CType::INT && runtime_st != CType::INT)
                         ? runtime_st : registered;
+                    if (ctor_it->second.type_name == "Iterator" && fi == 0)
+                        ftype = CType::FUNCTION;
                     Value* typed_val = field_val;
                     if (ftype == CType::FUNCTION || ftype == CType::SEQ ||
                         ftype == CType::STRING || ftype == CType::ADT ||
@@ -378,6 +459,8 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
                         emit_rc_inc(typed_val, ftype);
                     named_values_[(*id)->name->value] = {typed_val, ftype};
                 }
+            } else if (sub_pat->get_type() == AST_TUPLE_PATTERN) {
+                bind_tuple_pattern_fields(static_cast<TuplePattern*>(sub_pat), field_val);
             }
         }
     }
@@ -388,13 +471,29 @@ bool Codegen::codegen_pattern_constructor(ConstructorPattern* cp, const TypedVal
 static Value* coerce_for_phi(Value* val, LType* target, IRBuilder<>& builder, LLVMContext& ctx) {
     auto* src = val->getType();
     if (src == target) return val;
+    if (src->isVoidTy())
+        return Constant::getNullValue(target);
     if (src->isIntegerTy() && target->isIntegerTy())
         return builder.CreateZExtOrTrunc(val, target);
     if (src->isPointerTy() && target->isIntegerTy())
         return builder.CreatePtrToInt(val, target);
     if (src->isIntegerTy() && target->isPointerTy())
         return builder.CreateIntToPtr(val, target);
+    if (src->isFloatingPointTy() && target->isIntegerTy())
+        return builder.CreateFPToSI(val, target);
+    if (src->isIntegerTy() && target->isFloatingPointTy())
+        return builder.CreateSIToFP(val, target);
     if (src->isStructTy() && target->isPointerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return alloca;
+    }
+    if (src->isStructTy() && target->isIntegerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return builder.CreatePtrToInt(alloca, target);
+    }
+    if (!src->isVoidTy() && target->isPointerTy()) {
         auto* alloca = builder.CreateAlloca(src);
         builder.CreateStore(val, alloca);
         return alloca;
@@ -412,6 +511,10 @@ static LType* common_phi_type(LType* a, LType* b, LLVMContext& ctx) {
         unsigned wa = a->getIntegerBitWidth(), wb = b->getIntegerBitWidth();
         return wa >= wb ? a : b;
     }
+    if (a->isFloatingPointTy() || b->isFloatingPointTy())
+        return a->isDoubleTy() || b->isDoubleTy()
+            ? LType::getDoubleTy(ctx)
+            : LType::getFloatTy(ctx);
     return LType::getInt64Ty(ctx);
 }
 
@@ -430,19 +533,29 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
         }
     }
 
-    // If scrutinee is INT but patterns are ADT constructors, the value is
-    // an ADT encoded as i64 (e.g., from a closure returning a heap-allocated ADT).
-    // Convert it to the ADT type for pattern matching.
-    if (scrutinee.type == CType::INT && !node->clauses.empty()) {
+    // If scrutinee is an integer-encoded ADT and patterns are ADT constructors
+    // or named record patterns,
+    // switch to the heap-layout view before matching. This covers imported ADT
+    // results, closure-returned ADTs, and annotated ADT parameters.
+    if ((scrutinee.type == CType::INT ||
+         (scrutinee.type == CType::ADT && scrutinee.val &&
+          scrutinee.val->getType()->isIntegerTy())) &&
+        !node->clauses.empty()) {
         auto* first_pat = node->clauses[0]->pattern;
-        if (first_pat->get_type() == AST_CONSTRUCTOR_PATTERN) {
-            auto* cp = static_cast<ConstructorPattern*>(first_pat);
-            auto ctor_it = types_.adt_constructors.find(cp->constructor_name);
-            if (ctor_it != types_.adt_constructors.end() && ctor_it->second.is_recursive) {
-                // Convert i64 → ptr for recursive ADT
-                scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
-                    PointerType::get(*context_, 0));
-                scrutinee.type = CType::ADT;
+        std::string ctor_name;
+        if (first_pat->get_type() == AST_CONSTRUCTOR_PATTERN)
+            ctor_name = static_cast<ConstructorPattern*>(first_pat)->constructor_name;
+        else if (first_pat->get_type() == AST_RECORD_PATTERN)
+            ctor_name = static_cast<RecordPattern*>(first_pat)->recordType;
+        if (!ctor_name.empty()) {
+            auto ctor_it = types_.adt_constructors.find(ctor_name);
+            if (ctor_it != types_.adt_constructors.end()) {
+                if (!(ctor_it->second.max_arity == 0 && !ctor_it->second.is_recursive)) {
+                    scrutinee.val = builder_->CreateIntToPtr(scrutinee.val,
+                        PointerType::get(*context_, 0));
+                    scrutinee.type = CType::ADT;
+                    scrutinee.adt_type_name = ctor_it->second.type_name;
+                }
             }
         }
     }
@@ -497,6 +610,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
     for (size_t i = 0; i < node->clauses.size(); i++) {
         auto* clause = node->clauses[i];
         auto* pat = clause->pattern;
+        auto arm_named_values = named_values_;
         auto body_bb = BasicBlock::Create(*context_, "case.body." + std::to_string(i), fn);
         auto next_bb = (i + 1 < node->clauses.size())
             ? BasicBlock::Create(*context_, "case.next." + std::to_string(i+1), fn)
@@ -582,7 +696,9 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
                 auto tag_ty = LType::getInt64Ty(*context_);
                 auto i64_ty = LType::getInt64Ty(*context_);
 
-                if (ctor_it->second.is_recursive) {
+                bool use_heap_layout = ctor_it->second.is_recursive ||
+                    (scrutinee.val && scrutinee.val->getType()->isPointerTy());
+                if (use_heap_layout) {
                     auto scr_tag = builder_->CreateCall(rt_.adt_get_tag_, {scrutinee.val});
                     builder_->CreateCondBr(builder_->CreateICmpEQ(scr_tag, ConstantInt::get(tag_ty, tag)),
                                            body_bb, next_bb);
@@ -668,6 +784,7 @@ TypedValue Codegen::codegen_case(CaseExpr* node) {
             }
             arm_drop_stack_.pop_back();
         }
+        named_values_ = std::move(arm_named_values);
         BasicBlock* arm_exit = builder_->GetInsertBlock()->getTerminator()
             ? nullptr : builder_->GetInsertBlock();
         if (arm_exit) builder_->CreateBr(merge_bb);

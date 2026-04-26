@@ -9,11 +9,117 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Type.h>
+#include <algorithm>
 #include <iostream>
 
 namespace yona::compiler::codegen {
 using namespace llvm;
 using LType = llvm::Type;
+
+namespace {
+bool identifier_used_as_callee(AstNode* node, const std::string& name) {
+    if (!node) return false;
+
+    if (node->get_type() == AST_APPLY_EXPR) {
+        auto* ae = static_cast<ApplyExpr*>(node);
+        if (auto* nc = dynamic_cast<NameCall*>(ae->call)) {
+            if (nc->name->value == name) return true;
+        } else if (auto* ec = dynamic_cast<ExprCall*>(ae->call)) {
+            if (auto* id = dynamic_cast<IdentifierExpr*>(ec->expr)) {
+                if (id->name->value == name) return true;
+            }
+            if (identifier_used_as_callee(ec->expr, name)) return true;
+        }
+        for (auto& arg : ae->args) {
+            AstNode* arg_node = std::holds_alternative<ExprNode*>(arg)
+                ? static_cast<AstNode*>(std::get<ExprNode*>(arg))
+                : static_cast<AstNode*>(std::get<ValueExpr*>(arg));
+            if (identifier_used_as_callee(arg_node, name)) return true;
+        }
+    } else if (auto* ce = dynamic_cast<CaseExpr*>(node)) {
+        if (identifier_used_as_callee(ce->expr, name)) return true;
+        for (auto* clause : ce->clauses)
+            if (identifier_used_as_callee(clause->body, name)) return true;
+    } else if (auto* le = dynamic_cast<LetExpr*>(node)) {
+        if (identifier_used_as_callee(le->expr, name)) return true;
+        for (auto* alias : le->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(alias)) {
+                if (identifier_used_as_callee(va->expr, name)) return true;
+            } else if (auto* la = dynamic_cast<LambdaAlias*>(alias)) {
+                if (identifier_used_as_callee(la->lambda, name)) return true;
+            } else if (auto* pa = dynamic_cast<PatternAlias*>(alias)) {
+                if (identifier_used_as_callee(pa->expr, name)) return true;
+            } else if (identifier_used_as_callee(alias, name)) {
+                return true;
+            }
+        }
+    } else if (auto* ie = dynamic_cast<IfExpr*>(node)) {
+        return identifier_used_as_callee(ie->condition, name) ||
+               identifier_used_as_callee(ie->thenExpr, name) ||
+               identifier_used_as_callee(ie->elseExpr, name);
+    } else if (auto* de = dynamic_cast<DoExpr*>(node)) {
+        for (auto* step : de->steps)
+            if (identifier_used_as_callee(step, name)) return true;
+    } else if (auto* bop = dynamic_cast<BinaryOpExpr*>(node)) {
+        return identifier_used_as_callee(bop->left, name) ||
+               identifier_used_as_callee(bop->right, name);
+    } else if (auto* te = dynamic_cast<TupleExpr*>(node)) {
+        for (auto* value : te->values)
+            if (identifier_used_as_callee(value, name)) return true;
+    } else if (auto* ve = dynamic_cast<ValuesSequenceExpr*>(node)) {
+        for (auto* value : ve->values)
+            if (identifier_used_as_callee(value, name)) return true;
+    } else if (auto* fn_expr = dynamic_cast<FunctionExpr*>(node)) {
+        for (auto* body : fn_expr->bodies) {
+            if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
+                if (identifier_used_as_callee(bwg->expr, name)) return true;
+            }
+        }
+    } else if (auto* sg = dynamic_cast<SeqGeneratorExpr*>(node)) {
+        if (identifier_used_as_callee(sg->reducerExpr, name)) return true;
+        if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(sg->collectionExtractor)) {
+            if (identifier_used_as_callee(ext->collection, name)) return true;
+            if (identifier_used_as_callee(ext->condition, name)) return true;
+        }
+    } else if (auto* setg = dynamic_cast<SetGeneratorExpr*>(node)) {
+        if (identifier_used_as_callee(setg->reducerExpr, name)) return true;
+        if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(setg->collectionExtractor)) {
+            if (identifier_used_as_callee(ext->collection, name)) return true;
+            if (identifier_used_as_callee(ext->condition, name)) return true;
+        }
+    } else if (auto* dictg = dynamic_cast<DictGeneratorExpr*>(node)) {
+        if (dictg->reducerExpr) {
+            if (identifier_used_as_callee(dictg->reducerExpr->key, name)) return true;
+            if (identifier_used_as_callee(dictg->reducerExpr->value, name)) return true;
+        }
+        if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(dictg->collectionExtractor)) {
+            if (identifier_used_as_callee(ext->collection, name)) return true;
+            if (identifier_used_as_callee(ext->condition, name)) return true;
+        }
+    }
+
+    return false;
+}
+
+std::vector<CType> infer_seq_head_subtypes_from_pattern(PatternNode* pat,
+                                                        ExprNode* body) {
+    if (!pat) return {};
+
+    if (pat->get_type() == AST_HEAD_TAILS_PATTERN) {
+        auto* htp = static_cast<HeadTailsPattern*>(pat);
+        for (auto* head : htp->heads) {
+            if (head->get_type() != AST_PATTERN_VALUE) continue;
+            auto* pv = static_cast<PatternValue*>(head);
+            if (auto* id = std::get_if<IdentifierExpr*>(&pv->expr)) {
+                if (identifier_used_as_callee(body, (*id)->name->value)) {
+                    return {CType::FUNCTION};
+                }
+            }
+        }
+    }
+    return {};
+}
+} // namespace
 
 // Infer a CType from a single pattern node.
 // Tuple patterns → TUPLE, sequence/head-tail patterns → SEQ,
@@ -113,6 +219,7 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
             // Case expressions: scrutinee type inference
             if (node->get_type() == AST_CASE_EXPR) {
                 auto* ce = static_cast<CaseExpr*>(node);
+                analyze(ce->expr);
                 if (ce->expr && ce->expr->get_type() == AST_IDENTIFIER_EXPR) {
                     auto* id = static_cast<IdentifierExpr*>(ce->expr);
                     auto it = param_index.find(id->name->value);
@@ -120,9 +227,20 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
                         for (auto* clause : ce->clauses) {
                             CType pat_type = infer_type_from_pattern(clause->pattern);
                             if (pat_type != CType::INT) {
-                                result[it->second].type = pat_type;
-                                result[it->second].source_pattern = clause->pattern;
-                                break;
+                                if (result[it->second].type == CType::INT) {
+                                    result[it->second].type = pat_type;
+                                    result[it->second].source_pattern = clause->pattern;
+                                }
+                                if (pat_type == CType::SEQ) {
+                                    auto subtypes =
+                                        infer_seq_head_subtypes_from_pattern(clause->pattern,
+                                                                            clause->body);
+                                    if (!subtypes.empty())
+                                        result[it->second].subtypes = std::move(subtypes);
+                                }
+                                if (result[it->second].type != CType::SEQ ||
+                                    !result[it->second].subtypes.empty())
+                                    break;
                             }
                         }
                     }
@@ -190,10 +308,39 @@ std::vector<Codegen::InferredParamType> Codegen::infer_param_types(FunctionExpr*
                 // Field access: if the object is a parameter, it must be an ADT
                 if (auto* id = dynamic_cast<IdentifierExpr*>(fa->identifier)) {
                     auto it = param_index.find(id->name->value);
-                    if (it != param_index.end() && result[it->second].type == CType::INT) {
-                        result[it->second].type = CType::ADT;
-                        result[it->second].source_pattern = nullptr;
+                    if (it != param_index.end()) {
+                        auto& inferred = result[it->second];
+                        if (inferred.type == CType::INT) {
+                            inferred.type = CType::ADT;
+                            inferred.source_pattern = nullptr;
+                        }
+                        if (inferred.type == CType::ADT) {
+                            auto& fields = inferred.accessed_fields;
+                            if (std::find(fields.begin(), fields.end(), fa->name->value) == fields.end())
+                                fields.push_back(fa->name->value);
+                        }
                     }
+                }
+            } else if (auto* sg = dynamic_cast<SeqGeneratorExpr*>(node)) {
+                analyze(sg->reducerExpr);
+                if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(sg->collectionExtractor)) {
+                    analyze(ext->collection);
+                    analyze(ext->condition);
+                }
+            } else if (auto* setg = dynamic_cast<SetGeneratorExpr*>(node)) {
+                analyze(setg->reducerExpr);
+                if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(setg->collectionExtractor)) {
+                    analyze(ext->collection);
+                    analyze(ext->condition);
+                }
+            } else if (auto* dictg = dynamic_cast<DictGeneratorExpr*>(node)) {
+                if (dictg->reducerExpr) {
+                    analyze(dictg->reducerExpr->key);
+                    analyze(dictg->reducerExpr->value);
+                }
+                if (auto* ext = dynamic_cast<ValueCollectionExtractorExpr*>(dictg->collectionExtractor)) {
+                    analyze(ext->collection);
+                    analyze(ext->condition);
                 }
             }
         };
@@ -211,6 +358,24 @@ bool Codegen::is_heap_type(CType ct) {
            ct == CType::BYTE_ARRAY || ct == CType::TUPLE || ct == CType::SUM ||
            ct == CType::RECORD || ct == CType::INT_ARRAY || ct == CType::FLOAT_ARRAY ||
            ct == CType::CHANNEL;
+}
+
+bool Codegen::is_unboxed_enum_adt(const TypedValue& value) const {
+    if (value.type != CType::ADT || value.adt_type_name.empty())
+        return false;
+    bool saw_ctor = false;
+    for (const auto& [_, info] : types_.adt_constructors) {
+        if (info.type_name != value.adt_type_name)
+            continue;
+        saw_ctor = true;
+        if (info.is_recursive || info.max_arity != 0)
+            return false;
+    }
+    return saw_ctor;
+}
+
+bool Codegen::is_heap_value(const TypedValue& value) const {
+    return is_heap_type(value.type) && !is_unboxed_enum_adt(value);
 }
 
 void Codegen::emit_rc_inc(Value* val, CType type) {

@@ -131,6 +131,8 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
             // Non-recursive ADT struct {tag, fields...} — box to heap.
             auto* sty = llvm::cast<llvm::StructType>(arg_val->getType());
             unsigned num_fields = sty->getNumElements();
+            if (num_fields == 1)
+                return builder_->CreateExtractValue(arg_val, {0}, "adt_tag_value");
             auto* tag_v = builder_->CreateExtractValue(arg_val, {0});
             auto* boxed = builder_->CreateCall(rt_.adt_alloc_,
                 {tag_v, ConstantInt::get(i64_ty, num_fields - 1)});
@@ -171,11 +173,11 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
             // Storing a heap-typed value into the ADT transfers/shares
             // ownership — rc_inc so the field's lifetime is tied to the ADT,
             // not the original binding.
-            if (is_heap_type(all_args[ai].type) && !all_args[ai].val->getType()->isStructTy())
+            if (is_heap_value(all_args[ai]) && !all_args[ai].val->getType()->isStructTy())
                 emit_rc_inc(all_args[ai].val, all_args[ai].type);
             builder_->CreateCall(rt_.adt_set_field_,
                 {node_ptr, ConstantInt::get(i64_ty, ai), arg_val});
-            if (is_heap_type(all_args[ai].type) && ai < 64)
+            if (is_heap_value(all_args[ai]) && ai < 64)
                 adt_heap_mask |= ((int64_t)1 << ai);
         }
         if (adt_heap_mask != 0)
@@ -195,7 +197,7 @@ TypedValue Codegen::codegen_adt_construct(const std::string& fn_name, const std:
         for (size_t ai = 0; ai < all_args.size() && ai < (size_t)info.arity; ai++) {
             // rc_inc heap field values: same ownership rule as the recursive
             // path — the ADT (eventually boxed) becomes a co-owner.
-            if (is_heap_type(all_args[ai].type) && !all_args[ai].val->getType()->isStructTy())
+            if (is_heap_value(all_args[ai]) && !all_args[ai].val->getType()->isStructTy())
                 emit_rc_inc(all_args[ai].val, all_args[ai].type);
             Value* arg_val = to_i64(all_args[ai]);
             val = builder_->CreateInsertValue(val, arg_val, {(unsigned)(ai + 1)});
@@ -454,13 +456,37 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
             }
         }
     }
-    if (genfn_it != imports_.imported_sources.end() && types_differ) {
+    if (genfn_it != imports_.imported_sources.end()) {
         auto& ifs = genfn_it->second;
         auto reparsed = reparse_genfn(ifs.local_name, ifs.source_text);
         if (reparsed && !reparsed->functions.empty()) {
             auto* func_ast = reparsed->functions[0];
             reparsed->functions.clear();
             imports_.imported_ast_nodes.push_back(std::unique_ptr<FunctionExpr>(func_ast));
+            auto saved_externs = imports_.extern_functions;
+            std::vector<std::string> scoped_cafs;
+            auto sep = mangled.rfind("__");
+            std::string module_prefix = (sep == std::string::npos) ? "" : mangled.substr(0, sep + 2);
+            if (!module_prefix.empty()) {
+                for (const auto& [dep_mangled, dep_meta] : imports_.meta) {
+                    if (dep_mangled.rfind(module_prefix, 0) != 0) continue;
+                    auto dep_sep = dep_mangled.rfind("__");
+                    if (dep_sep == std::string::npos) continue;
+                    std::string dep_name = dep_mangled.substr(dep_sep + 2);
+                    imports_.extern_functions.emplace(dep_name, dep_mangled);
+                    if (dep_meta.param_types.empty() &&
+                        compiled_functions_.find(dep_name) == compiled_functions_.end()) {
+                        auto* ret_ty = llvm_type(dep_meta.return_type);
+                        auto* fn_type = llvm::FunctionType::get(ret_ty, {}, false);
+                        auto* fn = module_->getFunction(dep_mangled);
+                        if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage,
+                                                       dep_mangled, module_.get());
+                        compiled_functions_[dep_name] =
+                            compiled_function_from_meta(fn, dep_meta, dep_meta.return_type);
+                        scoped_cafs.push_back(dep_name);
+                    }
+                }
+            }
             codegen_function_def(func_ast, fn_name);
             auto def_it2 = deferred_functions_.find(fn_name);
             if (def_it2 != deferred_functions_.end()) {
@@ -468,14 +494,23 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
                 auto cf_it2 = compiled_functions_.find(fn_name);
                 if (cf_it2 != compiled_functions_.end()) {
                     // Remove from extern so future calls use local copy
+                    imports_.extern_functions = std::move(saved_externs);
+                    for (const auto& scoped_caf : scoped_cafs)
+                        compiled_functions_.erase(scoped_caf);
                     imports_.extern_functions.erase(fn_name);
                     imports_.imported_sources.erase(mangled);
                     auto& cf2 = cf_it2->second;
+                    size_t genfn_arity = cf2.param_types.size() - cf2.capture_names.size();
+                    if (all_args.size() < genfn_arity)
+                        return codegen_partial_apply(fn_name, cf2, all_args);
                     std::vector<Value*> vals;
                     for (auto& a : all_args) vals.push_back(a.val);
                     return {builder_->CreateCall(cf2.fn, vals, "genfn_call"), cf2.return_type};
                 }
             }
+            imports_.extern_functions = std::move(saved_externs);
+            for (const auto& scoped_caf : scoped_cafs)
+                compiled_functions_.erase(scoped_caf);
         }
         // Fallthrough: if re-parse failed, call as extern
     }
@@ -510,7 +545,16 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
     }
 
     std::vector<LType*> arg_types;
-    for (auto& a : all_args) arg_types.push_back(a.val->getType());
+    if (meta_it != imports_.meta.end()) {
+        for (size_t ai = 0; ai < all_args.size(); ai++) {
+            if (!is_boxed && ai < meta_it->second.param_types.size())
+                arg_types.push_back(llvm_type(meta_it->second.param_types[ai]));
+            else
+                arg_types.push_back(all_args[ai].val->getType());
+        }
+    } else {
+        for (auto& a : all_args) arg_types.push_back(a.val->getType());
+    }
     auto ret_llvm = is_boxed ? i64_ty_local : llvm_type(ret_ctype);
     auto fn_type = llvm::FunctionType::get(ret_llvm, arg_types, false);
 
@@ -520,9 +564,37 @@ TypedValue Codegen::codegen_extern_call(ApplyExpr* node, const std::string& fn_n
                                    mangled, module_.get());
     }
 
+    std::optional<CompiledFunction> ext_cf;
+    if (meta_it != imports_.meta.end()) {
+        ext_cf = compiled_function_from_meta(ext_fn, meta_it->second, ret_ctype);
+        prepare_callee_owned_heap_args(*ext_cf, all_args);
+    }
+
     std::vector<Value*> vals;
-    for (auto& a : all_args) vals.push_back(a.val);
-    Value* ext_result = builder_->CreateCall(ext_fn, vals, "extern_call");
+    for (size_t ai = 0; ai < all_args.size(); ai++) {
+        Value* arg_val = all_args[ai].val;
+        auto* expected_ty = ai < arg_types.size() ? arg_types[ai] : arg_val->getType();
+        if (arg_val->getType() != expected_ty) {
+            if (arg_val->getType()->isStructTy() && expected_ty->isIntegerTy()) {
+                arg_val = builder_->CreateExtractValue(arg_val, {0}, "adt_tag_arg");
+                if (arg_val->getType() != expected_ty)
+                    arg_val = builder_->CreateZExtOrTrunc(arg_val, expected_ty);
+            } else if (arg_val->getType()->isIntegerTy() && expected_ty->isPointerTy())
+                arg_val = builder_->CreateIntToPtr(arg_val, expected_ty);
+            else if (arg_val->getType()->isPointerTy() && expected_ty->isIntegerTy())
+                arg_val = builder_->CreatePtrToInt(arg_val, expected_ty);
+            else if (arg_val->getType()->isIntegerTy() && expected_ty->isIntegerTy())
+                arg_val = builder_->CreateZExtOrTrunc(arg_val, expected_ty);
+        }
+        vals.push_back(arg_val);
+    }
+    Value* ext_result = ext_fn->getReturnType()->isVoidTy()
+        ? builder_->CreateCall(ext_fn, vals)
+        : builder_->CreateCall(ext_fn, vals, "extern_call");
+    if (ext_cf)
+        cleanup_borrowed_temporary_args(*ext_cf, all_args);
+    if (ext_fn->getReturnType()->isVoidTy())
+        ext_result = ConstantInt::get(LType::getInt64Ty(*context_), 0);
 
     // Callee-owns for Set/Dict extern ops that consume their heap input
     // (e.g. Set.insert, Dict.put). For SET/DICT args and SET/DICT returns
@@ -572,19 +644,57 @@ TypedValue Codegen::codegen_partial_apply(const std::string& fn_name, CompiledFu
     size_t func_arity = cf.param_types.size() - cf.capture_names.size();
     size_t n_provided = all_args.size();
     size_t n_remaining = func_arity - n_provided;
+    auto ptr_ty = PointerType::get(*context_, 0);
+    auto i64_ty = LType::getInt64Ty(*context_);
+
+    bool can_embed_args = true;
+    for (const auto& arg : all_args) {
+        if (!arg.val || (!isa<Constant>(arg.val) && !isa<Function>(arg.val))) {
+            can_embed_args = false;
+            break;
+        }
+    }
+    if (can_embed_args) {
+        std::vector<LType*> wrapper_params;
+        for (size_t i = n_provided; i < func_arity; i++)
+            wrapper_params.push_back(llvm_type(cf.param_types[i]));
+        auto* wrapper_type = llvm::FunctionType::get(cf.fn->getReturnType(), wrapper_params, false);
+        std::string wrapper_name = fn_name + "_partial" + std::to_string(n_provided) + "of" + std::to_string(func_arity);
+        auto* wrapper = Function::Create(wrapper_type, Function::InternalLinkage,
+                                          wrapper_name, module_.get());
+        auto saved_block = builder_->GetInsertBlock();
+        auto saved_point = builder_->GetInsertPoint();
+        auto* entry = BasicBlock::Create(*context_, "entry", wrapper);
+        builder_->SetInsertPoint(entry);
+        std::vector<Value*> inner_call_args;
+        for (auto& a : all_args)
+            inner_call_args.push_back(a.val);
+        for (auto& arg : wrapper->args())
+            inner_call_args.push_back(&arg);
+        for (auto& cap_name : cf.capture_names) {
+            auto cap_it = named_values_.find(cap_name);
+            if (cap_it != named_values_.end())
+                inner_call_args.push_back(cap_it->second.val);
+        }
+        auto* result = builder_->CreateCall(cf.fn, inner_call_args, "partial_call");
+        builder_->CreateRet(result);
+        builder_->SetInsertPoint(saved_block, saved_point);
+        CompiledFunction partial_cf;
+        partial_cf.fn = wrapper;
+        partial_cf.return_type = cf.return_type;
+        for (size_t i = n_provided; i < func_arity; i++)
+            partial_cf.param_types.push_back(cf.param_types[i]);
+        compiled_functions_[wrapper_name] = partial_cf;
+        named_values_[wrapper_name] = {wrapper, CType::FUNCTION};
+        return {wrapper, CType::FUNCTION, {cf.return_type}};
+    }
 
     // Build the wrapper's parameter types (remaining params)
-    std::vector<LType*> wrapper_params;
+    std::vector<LType*> wrapper_params = {ptr_ty};
     for (size_t i = n_provided; i < func_arity; i++)
         wrapper_params.push_back(llvm_type(cf.param_types[i]));
-    // Add captured params from original function
-    for (size_t i = 0; i < cf.capture_names.size(); i++)
-        wrapper_params.push_back(llvm_type(cf.param_types[func_arity + i]));
-    // Add the partially applied args as captured params
-    for (auto& a : all_args)
-        wrapper_params.push_back(a.val->getType());
 
-    auto ret_llvm = cf.fn->getReturnType();
+    auto ret_llvm = i64_ty;
     auto wrapper_type = llvm::FunctionType::get(ret_llvm, wrapper_params, false);
     std::string wrapper_name = fn_name + "_partial" + std::to_string(n_provided) + "of" + std::to_string(func_arity);
     auto* wrapper = Function::Create(wrapper_type, Function::InternalLinkage,
@@ -597,60 +707,27 @@ TypedValue Codegen::codegen_partial_apply(const std::string& fn_name, CompiledFu
     auto* entry = BasicBlock::Create(*context_, "entry", wrapper);
     builder_->SetInsertPoint(entry);
 
-    // Build call args: captured partial args + remaining params
     std::vector<Value*> inner_call_args;
-    // First: the remaining params (from wrapper's parameters)
-    size_t pi = 0;
-    for (size_t i = 0; i < n_remaining; i++) {
-        // These are the wrapper's first params — but we need to put
-        // the partial args FIRST in the call, so collect remaining params
-    }
-    // Actually: original function expects (provided_args..., remaining_args..., captures...)
-    // The wrapper's params are (remaining_args..., captures..., provided_args_captured...)
-
-    // Reorder: provided args (from captured) + remaining args (from params) + captures
     auto arg_it = wrapper->arg_begin();
+    Value* env = &*arg_it++;
 
-    // Skip to captured partial args (at the end of wrapper params)
-    // Wrapper params layout: [remaining_args..., orig_captures..., partial_captured...]
-    // For calling original: [partial_captured..., remaining_args..., orig_captures...]
+    // First: the partially applied args captured in the closure env.
+    for (size_t i = 0; i < n_provided; i++) {
+        Value* cap = builder_->CreateCall(rt_.closure_get_cap_,
+            {env, ConstantInt::get(i64_ty, i)}, "partial_cap");
+        auto* expected_ty = cf.fn->getArg(i)->getType();
+        if (cap->getType() != expected_ty) {
+            if (expected_ty->isPointerTy())
+                cap = builder_->CreateIntToPtr(cap, expected_ty);
+            else if (expected_ty->isIntegerTy())
+                cap = builder_->CreateZExtOrTrunc(cap, expected_ty);
+        }
+        inner_call_args.push_back(cap);
+    }
 
-    // Collect all wrapper args
-    std::vector<Value*> wrapper_args_vec;
-    for (auto& arg : wrapper->args()) wrapper_args_vec.push_back(&arg);
-
-    // partial_captured are the last n_provided args of wrapper
-    // remaining are the first n_remaining
-    // orig_captures are in between
-
-    size_t n_orig_captures = cf.capture_names.size();
-
-    // The wrapper takes only the remaining args as parameters.
-    // The partially applied args are embedded as constants in the wrapper body.
-    wrapper_params.clear();
-    for (size_t i = n_provided; i < func_arity; i++)
-        wrapper_params.push_back(llvm_type(cf.param_types[i]));
-
-    // Rebuild wrapper with only remaining params
-    wrapper->eraseFromParent();
-    wrapper_type = llvm::FunctionType::get(ret_llvm, wrapper_params, false);
-    wrapper = Function::Create(wrapper_type, Function::InternalLinkage,
-                                wrapper_name, module_.get());
-
-    entry = BasicBlock::Create(*context_, "entry", wrapper);
-    builder_->SetInsertPoint(entry);
-
-    // Build call to original function:
-    // args = [captured_partial_args..., remaining_params..., orig_captures...]
-    inner_call_args.clear();
-
-    // First: the partially applied args (constants from the call site)
-    for (auto& a : all_args)
-        inner_call_args.push_back(a.val);
-
-    // Then: the remaining params (wrapper's parameters)
-    for (auto& arg : wrapper->args())
-        inner_call_args.push_back(&arg);
+    // Then: the remaining params (wrapper's normal parameters).
+    for (; arg_it != wrapper->arg_end(); ++arg_it)
+        inner_call_args.push_back(&*arg_it);
 
     // Then: original function's captures (from enclosing scope)
     for (auto& cap_name : cf.capture_names) {
@@ -660,21 +737,43 @@ TypedValue Codegen::codegen_partial_apply(const std::string& fn_name, CompiledFu
     }
 
     auto* result = builder_->CreateCall(cf.fn, inner_call_args, "partial_call");
-    builder_->CreateRet(result);
+    Value* ret_val = result;
+    if (ret_val->getType() != i64_ty) {
+        if (ret_val->getType()->isPointerTy())
+            ret_val = builder_->CreatePtrToInt(ret_val, i64_ty);
+        else if (ret_val->getType()->isDoubleTy())
+            ret_val = builder_->CreateBitCast(ret_val, i64_ty);
+        else if (ret_val->getType()->isIntegerTy())
+            ret_val = builder_->CreateZExtOrTrunc(ret_val, i64_ty);
+    }
+    builder_->CreateRet(ret_val);
 
     // Restore
     builder_->SetInsertPoint(saved_block, saved_point);
 
-    // Register wrapper — no captures needed (args are embedded as constants)
-    CompiledFunction partial_cf;
-    partial_cf.fn = wrapper;
-    partial_cf.return_type = cf.return_type;
-    for (size_t i = n_provided; i < func_arity; i++)
-        partial_cf.param_types.push_back(cf.param_types[i]);
-
-    compiled_functions_[wrapper_name] = partial_cf;
-    named_values_[wrapper_name] = {wrapper, CType::FUNCTION};
-    return {wrapper, CType::FUNCTION};
+    Value* closure = builder_->CreateCall(rt_.closure_create_,
+        {wrapper, ConstantInt::get(i64_ty, static_cast<int64_t>(cf.return_type)),
+         ConstantInt::get(i64_ty, n_remaining),
+         ConstantInt::get(i64_ty, n_provided)}, wrapper_name + "_closure");
+    int64_t heap_mask = 0;
+    for (size_t i = 0; i < n_provided; i++) {
+        Value* cap = all_args[i].val;
+        Value* stored = cap;
+        if (stored->getType()->isPointerTy())
+            stored = builder_->CreatePtrToInt(stored, i64_ty);
+        else if (stored->getType()->isIntegerTy() && stored->getType() != i64_ty)
+            stored = builder_->CreateZExtOrTrunc(stored, i64_ty);
+        builder_->CreateCall(rt_.closure_set_cap_,
+            {closure, ConstantInt::get(i64_ty, i), stored});
+        if (is_heap_value(all_args[i])) {
+            emit_rc_inc(cap, all_args[i].type);
+            if (i < 64) heap_mask |= ((int64_t)1 << i);
+        }
+    }
+    if (heap_mask != 0)
+        builder_->CreateCall(rt_.closure_set_heap_mask_,
+            {closure, ConstantInt::get(i64_ty, heap_mask)});
+    return {closure, CType::FUNCTION, {cf.return_type}};
 }
 
 TypedValue Codegen::codegen_curry_apply(const std::string& fn_name, CompiledFunction& cf,
@@ -730,8 +829,8 @@ TypedValue Codegen::codegen_curry_apply(const std::string& fn_name, CompiledFunc
     return {current_fn, CType::INT};
 }
 
-TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunction& cf,
-                                      const std::vector<TypedValue>& all_args) {
+void Codegen::prepare_callee_owned_heap_args(const CompiledFunction& cf,
+                                             const std::vector<TypedValue>& all_args) {
     // Perceus DUP for heap args. Standard rule: at non-last-use sites we
     // rc_inc so the consumed-by-callee ref doesn't pull the caller's
     // binding out from under us. Last-use (or single-use globally) sites
@@ -776,6 +875,29 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         }
         emit_rc_inc(all_args[ai].val, ct);
     }
+}
+
+void Codegen::cleanup_borrowed_temporary_args(const CompiledFunction& cf,
+                                              const std::vector<TypedValue>& all_args) {
+    for (size_t ai = 0; ai < all_args.size(); ai++) {
+        if (ai >= cf.borrowed_params.size() || !cf.borrowed_params[ai])
+            continue;
+        CType ct = all_args[ai].type;
+        if (!is_heap_type(ct)) continue;
+        if (!all_args[ai].val || isa<Constant>(all_args[ai].val)) continue;
+        if (all_args[ai].val->getType()->isStructTy()) continue;
+
+        bool is_named = false;
+        for (auto& [k, v] : named_values_)
+            if (v.val == all_args[ai].val) { is_named = true; break; }
+        if (!is_named)
+            emit_rc_dec(all_args[ai].val, ct);
+    }
+}
+
+TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunction& cf,
+                                      const std::vector<TypedValue>& all_args) {
+    prepare_callee_owned_heap_args(cf, all_args);
 
     std::vector<Value*> call_args;
 
@@ -795,6 +917,45 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
                     arg_val = builder_->CreateIntToPtr(arg_val, expected_ty);
                 else if (arg_val->getType()->isPointerTy() && expected_ty->isIntegerTy())
                     arg_val = builder_->CreatePtrToInt(arg_val, expected_ty);
+                else if (arg_val->getType()->isStructTy() && expected_ty->isIntegerTy()) {
+                    auto* st = llvm::cast<llvm::StructType>(arg_val->getType());
+                    auto i64_ty = LType::getInt64Ty(*context_);
+                    if (st->getNumElements() == 1) {
+                        arg_val = builder_->CreateExtractValue(arg_val, {0}, "adt_tag_arg");
+                        if (arg_val->getType() != expected_ty)
+                            arg_val = builder_->CreateZExtOrTrunc(arg_val, expected_ty);
+                    } else {
+                        auto* tag_val = builder_->CreateExtractValue(arg_val, {0}, "adt_tag_arg");
+                        if (tag_val->getType() != i64_ty)
+                            tag_val = builder_->CreateZExtOrTrunc(tag_val, i64_ty);
+                        auto* boxed = builder_->CreateCall(rt_.adt_alloc_,
+                            {tag_val, ConstantInt::get(i64_ty, st->getNumElements() - 1)},
+                            "adt_box_arg");
+                        int64_t heap_mask = 0;
+                        for (unsigned fi = 1; fi < st->getNumElements(); fi++) {
+                            auto* field = builder_->CreateExtractValue(arg_val, {fi}, "adt_field_arg");
+                            if (field->getType() != i64_ty) {
+                                if (field->getType()->isPointerTy())
+                                    field = builder_->CreatePtrToInt(field, i64_ty);
+                                else if (field->getType()->isIntegerTy())
+                                    field = builder_->CreateZExtOrTrunc(field, i64_ty);
+                            }
+                            builder_->CreateCall(rt_.adt_set_field_,
+                                {boxed, ConstantInt::get(i64_ty, fi - 1), field});
+                            size_t subtype_index = fi - 1;
+                            if (subtype_index < all_args[ai].subtypes.size() &&
+                                all_args[ai].subtypes[subtype_index] != CType::ADT &&
+                                is_heap_type(all_args[ai].subtypes[subtype_index])) {
+                                if (fi <= 64) heap_mask |= (int64_t{1} << subtype_index);
+                                emit_rc_inc(field, all_args[ai].subtypes[subtype_index]);
+                            }
+                        }
+                        if (heap_mask != 0)
+                            builder_->CreateCall(rt_.adt_set_heap_mask_,
+                                {boxed, ConstantInt::get(i64_ty, heap_mask)});
+                        arg_val = builder_->CreatePtrToInt(boxed, expected_ty);
+                    }
+                }
             }
         }
         call_args.push_back(arg_val);
@@ -908,6 +1069,7 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         for (size_t pi = 0; pi < tco_param_names_.size() && pi < tco_param_ctypes_.size(); pi++) {
             CType ct = tco_param_ctypes_[pi];
             if (ct == CType::SEQ || !is_heap_type(ct)) continue;
+            if (pi < tco_borrowed_params_.size() && tco_borrowed_params_[pi]) continue;
             if (pi >= current_fn->arg_size()) continue;
             auto* param = current_fn->getArg((unsigned)pi);
             if (param->getType()->isStructTy()) continue;
@@ -928,7 +1090,10 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         tco_cleanup_done_ = true;
     }
 
-    auto* call_inst = builder_->CreateCall(cf.fn, call_args, "calltmp");
+    auto* call_inst = cf.fn->getReturnType()->isVoidTy()
+        ? builder_->CreateCall(cf.fn, call_args)
+        : builder_->CreateCall(cf.fn, call_args, "calltmp");
+    cleanup_borrowed_temporary_args(cf, all_args);
     if (is_self_recursive)
         call_inst->setTailCall(true);
     else if (cf.fn == current_fn)
@@ -949,6 +1114,8 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         for (auto& [k, v] : named_values_)
             if (v.val == all_args[ai].val) { is_named = true; break; }
         if (!is_named) {
+            if (ai < cf.borrowed_params.size() && cf.borrowed_params[ai])
+                continue;
             if (ct == CType::SEQ)
                 mark_transferred(all_args[ai].val, TransferDomain::Seq);
             else
@@ -957,7 +1124,10 @@ TypedValue Codegen::emit_direct_call(const std::string& fn_name, CompiledFunctio
         }
     }
 
-    TypedValue result{call_inst, cf.return_type};
+    Value* result_val = cf.fn->getReturnType()->isVoidTy()
+        ? static_cast<Value*>(ConstantInt::get(LType::getInt64Ty(*context_), 0))
+        : static_cast<Value*>(call_inst);
+    TypedValue result{result_val, cf.return_type};
     if (cf.return_type == CType::ADT && !cf.return_adt_name.empty())
         result.adt_type_name = cf.return_adt_name;
     if (!cf.return_subtypes.empty())
@@ -1023,6 +1193,13 @@ TypedValue Codegen::codegen_apply(ApplyExpr* node) {
         // Zero-arity Type constructor — use codegen_adt_construct with no args
         return codegen_adt_construct(ctor_name, {});
     }
+
+    // Explicit imports shadow trait-method fallback. This matters for names
+    // like `close`, where Std\Channel.close must not resolve to Closeable Int.
+    if (imports_.extern_functions.find(fn_name) != imports_.extern_functions.end() &&
+        compiled_functions_.find(fn_name) == compiled_functions_.end() &&
+        deferred_functions_.find(fn_name) == deferred_functions_.end())
+        return codegen_extern_call(node, fn_name, all_args);
 
     // 5. Resolve the function (compiled, deferred, or trait method)
     auto cf_it = resolve_apply_function(fn_name, all_args);

@@ -1,6 +1,7 @@
 import iterator from Std\Set in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
 let build n acc = if n <= 0 then acc else build (n - 1) (n :: acc) in
 let nums = build 100 [] in
 let s = {x for x = nums} in
 let iter = iterator s in
-foldl (\acc x -> acc + x) 0 iter
+foldl (\acc x -> acc + x) 0 [x for x = iter]

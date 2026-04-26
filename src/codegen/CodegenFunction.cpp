@@ -566,9 +566,20 @@ Codegen::CompiledFunction Codegen::compile_function(
     // If the function has a type annotation, use it to determine param types
     // instead of relying on caller's arg types (which may be wrong).
     std::vector<CType> annotated_ctypes;
+    std::vector<std::string> annotated_adt_names;
     if (def.ast->type_signature.has_value()) {
         auto [ann_params, ann_ret] = uncurry_type_signature(*def.ast->type_signature);
         annotated_ctypes = ann_params;
+        const types::Type* current_type = &*def.ast->type_signature;
+        while (std::holds_alternative<std::shared_ptr<types::FunctionType>>(*current_type)) {
+            auto ft = std::get<std::shared_ptr<types::FunctionType>>(*current_type);
+            if (std::holds_alternative<std::shared_ptr<types::NamedType>>(ft->argumentType))
+                annotated_adt_names.push_back(
+                    std::get<std::shared_ptr<types::NamedType>>(ft->argumentType)->name);
+            else
+                annotated_adt_names.push_back("");
+            current_type = &ft->returnType;
+        }
     }
 
     // Build parameter types from type annotation or actual argument types.
@@ -747,21 +758,21 @@ Codegen::CompiledFunction Codegen::compile_function(
     auto fn_type = llvm::FunctionType::get(ret_type, param_types, false);
     auto fn = Function::Create(fn_type, Function::InternalLinkage, name, module_.get());
 
-    // Register immediately so recursive calls find this function
-    // ===== Borrow inference (must run BEFORE preliminary cf registration
-    // so recursive calls see the borrow info) =====
-    std::vector<bool> borrowed(def.param_names.size(), false);
-    if (!def.ast->bodies.empty()) {
-        auto* body = def.ast->bodies[0];
-        if (auto* bwg = dynamic_cast<BodyWithoutGuards*>(body)) {
-            for (size_t pi = 0; pi < def.param_names.size(); pi++) {
-                if (pi >= param_ctypes.size()) continue;
-                if (!is_heap_type(param_ctypes[pi])) continue;
-                if (!has_escaping_use(bwg->expr, def.param_names[pi], true))
-                    borrowed[pi] = true;
-            }
-        }
-    }
+    // Borrow inference must run before preliminary registration so recursive
+    // calls see the same ownership contract as non-recursive calls.
+    std::vector<bool> borrowed = infer_borrowed_params(def, param_ctypes);
+    auto param_is_borrowed = [&](size_t pi) {
+        return pi < borrowed.size() && borrowed[pi];
+    };
+    auto annotated_param_is_unboxed_enum = [&](size_t pi) {
+        if (annotated_adt_names.empty() || pi >= annotated_adt_names.size() ||
+            annotated_adt_names[pi].empty())
+            return false;
+        TypedValue tv;
+        tv.type = CType::ADT;
+        tv.adt_type_name = annotated_adt_names[pi];
+        return is_unboxed_enum_adt(tv);
+    };
 
     CompiledFunction cf_preliminary;
     cf_preliminary.fn = fn;
@@ -844,7 +855,10 @@ Codegen::CompiledFunction Codegen::compile_function(
         arg.setName(pname);
         TypedValue param_tv{&arg, ct, st};
         // Propagate ADT type name from argument
-        if (ct == CType::ADT && i < args.size() && !args[i].adt_type_name.empty()) {
+        if (ct == CType::ADT && !annotated_adt_names.empty() && i < annotated_adt_names.size() &&
+            !annotated_adt_names[i].empty()) {
+            param_tv.adt_type_name = annotated_adt_names[i];
+        } else if (ct == CType::ADT && i < args.size() && !args[i].adt_type_name.empty()) {
             param_tv.adt_type_name = args[i].adt_type_name;
         }
         named_values_[pname] = param_tv;
@@ -952,8 +966,12 @@ Codegen::CompiledFunction Codegen::compile_function(
         auto* ptr_ty = PointerType::get(*context_, 0);
         for (size_t pi = 0; pi < def.param_names.size(); pi++) {
             if (pi >= param_ctypes.size()) continue;
+            if (param_is_borrowed(pi)) continue;
             CType ct = param_ctypes[pi];
             if (!is_heap_type(ct)) continue;
+            if (annotated_param_is_unboxed_enum(pi) ||
+                (pi < args.size() && is_unboxed_enum_adt(args[pi])))
+                continue;
             if (pi >= fn->arg_size()) continue;
             auto* param = fn->getArg(pi);
             if (param->getType()->isStructTy()) continue;
@@ -1023,6 +1041,7 @@ Codegen::CompiledFunction Codegen::compile_function(
     tco_fn_name_ = has_self_tail_call ? name : "";
     tco_param_names_ = has_self_tail_call ? def.param_names : std::vector<std::string>{};
     tco_param_ctypes_ = has_self_tail_call ? param_ctypes : std::vector<CType>{};
+    tco_borrowed_params_ = has_self_tail_call ? borrowed : std::vector<bool>{};
     tco_cleanup_done_ = false;
 
     // Compile body. Stash the body AST so nested codegen steps (notably
@@ -1188,12 +1207,14 @@ Codegen::CompiledFunction Codegen::compile_function(
                     if (pi >= param_ctypes.size()) continue;
                     CType ct = param_ctypes[pi];
                     if (!is_heap_type(ct)) continue;
+                    if (annotated_param_is_unboxed_enum(pi) ||
+                        (pi < args.size() && is_unboxed_enum_adt(args[pi])))
+                        continue;
                     if (pi >= fn->arg_size()) continue;
                     auto* param = fn->getArg(pi);
                     if (param->getType()->isStructTy()) continue;
                     // Borrow inference: borrowed params don't need rc_dec.
-                    if (pi < borrowed.size() && borrowed[pi])
-                        continue;
+                    if (param_is_borrowed(pi)) continue;
                     // SEQ domain tracks Perceus last-use; MAP domain tracks
                     // SET/DICT callee-owns and closure-consumed heap args.
                     if (ct == CType::SEQ &&

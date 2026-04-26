@@ -172,7 +172,7 @@ Text-based format describing module exports:
 ```
 ADT TypeName variant_count max_arity [recursive]
 CTOR ConstructorName tag arity [fields name:TYPE ...]
-FN yona_Pkg_Mod__func param_count TYPE1 TYPE2 -> RETURN_TYPE
+FN yona_Pkg_Mod__func param_count TYPE1 TYPE2 -> RETURN_TYPE [borrow MASK]
 AFN yona_Pkg_Mod__func param_count TYPE1 -> RETURN_TYPE   (async, runs in thread pool)
 TRAIT TraitName type_param method_count
   METHOD method_name
@@ -184,6 +184,19 @@ GENFN_END
 ```
 
 Types: `INT`, `FLOAT`, `BOOL`, `STRING`, `SEQ`, `TUPLE`, `SET`, `DICT`, `ADT`, `FUNCTION`, `SYMBOL`
+
+`FN` entries can include an optional `borrow` bitmask. Each bit maps to a
+parameter position; `1` means the compiler inferred that the heap parameter is
+read-only and non-escaping, so importers can avoid the caller-side defensive
+`rc_inc` and the callee can skip owned cleanup for that parameter. Omitted
+borrow metadata is equivalent to all zeros, i.e. the normal callee-owns
+convention.
+
+Borrow inference is intentionally conservative across module boundaries:
+arguments forwarded to another function only remain borrowed when that callee
+is known to borrow the corresponding parameter, functions that can directly
+`raise` keep owned unwind cleanup, and anonymous heap temporaries passed to a
+borrowed parameter are released by the caller after the call.
 
 ### Cross-module Generics (GENFN)
 

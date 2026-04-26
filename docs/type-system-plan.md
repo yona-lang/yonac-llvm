@@ -69,10 +69,20 @@ CTOR None 1 0
 ADT List 2 2 recursive
 CTOR Cons 0 2
 CTOR Nil 1 0
-FN isSome yona_Std_Option__isSome 1 ADT -> BOOL
+FN yona_Std_Option__isSome 1 ADT -> BOOL
+FN yona_Std_User__inspectName 1 STRING -> INT borrow 1
 ```
 
 Importers read `.yonai` to get constructor info and function signatures.
+The optional `borrow` bitmask records inferred read-only heap parameters;
+`borrow 1` means the first parameter is borrowed, while omitted metadata means
+all parameters use the normal owned/callee-consumes convention.
+Borrowed parameters are not source syntax. They are compiler-generated
+metadata and are only inferred when the parameter is non-escaping. The analysis
+stays conservative for forwarding calls and exception paths: forwarded
+arguments inherit borrow only from a known borrowed callee parameter, functions
+that can directly `raise` keep owned cleanup, and anonymous borrowed
+temporaries are cleaned up by the caller after the call.
 `yonac -I lib main.yona` searches `lib/` for `.yonai` files.
 
 ## Remaining Work

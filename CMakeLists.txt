@@ -223,6 +223,24 @@ endif()
 # Prebuilt runtime artifacts for packaged/sysroot-first toolchain flow.
 set(YONA_RUNTIME_ARTIFACT_DIR "${CMAKE_CURRENT_BINARY_DIR}/runtime")
 set(YONA_RUNTIME_MAIN_OBJ "${YONA_RUNTIME_ARTIFACT_DIR}/compiled_runtime.o")
+set(YONA_EMBEDDED_RUNTIME_SOURCES
+	"${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
+	"${PROJECT_SOURCE_DIR}/src/runtime/seq.c"
+	"${PROJECT_SOURCE_DIR}/src/runtime/hamt.c"
+	"${PROJECT_SOURCE_DIR}/src/runtime/exceptions.c"
+	"${PROJECT_SOURCE_DIR}/src/runtime/closures.c"
+)
+if(WIN32)
+	list(APPEND YONA_EMBEDDED_RUNTIME_SOURCES
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/async_win32.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/channel_win32.c"
+	)
+else()
+	list(APPEND YONA_EMBEDDED_RUNTIME_SOURCES
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/async_posix.c"
+		"${PROJECT_SOURCE_DIR}/src/runtime/platform/channel_posix.c"
+	)
+endif()
 set(YONA_RUNTIME_PLATFORM_OBJS)
 foreach(_pf IN LISTS YONA_PLATFORM_RUNTIME_SOURCES)
 	get_filename_component(_pf_name "${_pf}" NAME)
@@ -235,7 +253,7 @@ add_custom_command(
 	COMMAND ${CMAKE_C_COMPILER} -c "${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
 		-I${PROJECT_SOURCE_DIR}/src -I${PROJECT_SOURCE_DIR}/include
 		-o "${YONA_RUNTIME_MAIN_OBJ}"
-	DEPENDS "${PROJECT_SOURCE_DIR}/src/compiled_runtime.c"
+	DEPENDS ${YONA_EMBEDDED_RUNTIME_SOURCES}
 	COMMENT "Building packaged runtime object: compiled_runtime.o"
 	VERBATIM
 )

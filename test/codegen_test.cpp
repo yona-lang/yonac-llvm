@@ -39,6 +39,19 @@ static bool ir_contains(const string& ir, const string& pattern) {
     return ir.find(pattern) != string::npos;
 }
 
+static string ir_function_body(const string& ir, const string& fn_name) {
+    string marker = "define internal fastcc";
+    size_t start = ir.find(marker + " ");
+    while (start != string::npos) {
+        size_t name_pos = ir.find("@" + fn_name + "(", start);
+        size_t next = ir.find("\ndefine ", start + 1);
+        if (name_pos != string::npos && (next == string::npos || name_pos < next))
+            return ir.substr(start, next == string::npos ? string::npos : next - start);
+        start = ir.find(marker + " ", start + 1);
+    }
+    return "";
+}
+
 static string compile_and_run(const string& code) {
     parser::Parser parser;
 
@@ -183,6 +196,26 @@ TEST_CASE("Borrow inference eliminates rc_inc for closure param in foldl") {
     CHECK(!ir_contains(ir, "call void @yona_rt_rc_inc"));
 }
 
+TEST_CASE("Borrowed heap params are excluded from owned cleanup paths") {
+    auto borrowed_ir = compile_to_ir("let inspect xs = 1 in inspect [1,2,3]");
+    auto borrowed_body = ir_function_body(borrowed_ir, "inspect");
+    REQUIRE(!borrowed_body.empty());
+    CHECK(!ir_contains(borrowed_body, "call void @yona_rt_rc_dec"));
+    CHECK(!ir_contains(borrowed_ir, "call void @yona_rt_frame_push"));
+    CHECK(ir_contains(borrowed_ir, "call void @yona_rt_rc_dec"));
+
+    auto owned_ir = compile_to_ir("let keep xs = xs in keep [1,2,3]");
+    auto owned_body = ir_function_body(owned_ir, "keep");
+    REQUIRE(!owned_body.empty());
+    CHECK(ir_contains(owned_ir, "call void @yona_rt_frame_push"));
+
+    auto raising_ir = compile_to_ir("let always_raise xs = raise 42 in "
+                                    "try always_raise [1,2,3] catch _ -> 0 end");
+    auto raising_body = ir_function_body(raising_ir, "always_raise");
+    REQUIRE(!raising_body.empty());
+    CHECK(ir_contains(raising_ir, "call void @yona_rt_frame_push"));
+}
+
 // with expression E2E test is in test/codegen/with_value.yona fixture
 
 TEST_CASE("Function generates internal LLVM function") {
@@ -309,6 +342,28 @@ TEST_CASE("raise through heap-owning frames does not leak") {
     REQUIRE(codegen.emit_object_file(obj_path.string()));
 
     assert_linked_yona_zero_alloc_leaks(obj_path.string(), "yona_perceus_raise");
+}
+
+TEST_CASE("borrowed temporary heap arguments are released by caller") {
+    ensure_compiled_runtime_test_obj();
+    string source = "let inspect xs = 1 in inspect [1,2,3]";
+
+    parser::Parser parser;
+    Codegen codegen("borrowed_temp_cleanup_test");
+    DiagnosticEngine tc_diag;
+    typechecker::TypeChecker type_checker(tc_diag);
+    codegen.load_prelude(&parser, &type_checker);
+    istringstream stream(source);
+    auto pr = parser.parse_input(stream);
+    REQUIRE(pr.node);
+    type_checker.check(pr.node.get());
+    REQUIRE(!type_checker.has_direct_errors());
+    auto module = codegen.compile(pr.node.get());
+    REQUIRE(module);
+
+    fs::path obj_path = yona::test::link::scratch_root() / "yona_borrowed_temp_cleanup.o";
+    REQUIRE(codegen.emit_object_file(obj_path.string()));
+    assert_linked_yona_zero_alloc_leaks(obj_path.string(), "yona_borrowed_temp_cleanup");
 }
 
 TEST_CASE("raise through grouped-let task group frees bump arena") {
@@ -631,6 +686,92 @@ greet name = "Hello " ++ name
     string result = yona::test::link::popen_read_all(exe_path);
 
     CHECK(result == "10"); // %g format: 10.0 prints as "10"
+}
+
+TEST_CASE("Interface files preserve inferred borrow metadata") {
+    namespace fs = std::filesystem;
+    REQUIRE(yona::test::link::ensure_runtime_objects());
+    fs::path yona_lib = yona::test::link::scratch_root() / "yona_lib_borrow_meta";
+    fs::create_directories(yona_lib / "Test");
+
+    parser::Parser p1;
+    string mod_source = R"(
+module Test\BorrowMeta
+
+export ignoreSeq, returnSeq
+
+ignoreSeq : Seq -> Int
+ignoreSeq xs = 1
+
+returnSeq : Seq -> Seq
+returnSeq xs = xs
+)";
+    auto mod_result = p1.parse_module(mod_source, "borrow_meta.yona");
+    REQUIRE(mod_result.has_value());
+
+    Codegen mod_codegen("borrow_meta_mod");
+    auto mod = mod_codegen.compile_module(mod_result.value().get());
+    REQUIRE(mod != nullptr);
+    fs::path mod_obj = yona::test::link::scratch_root() / "borrow_meta_mod_test.o";
+    REQUIRE(mod_codegen.emit_object_file(mod_obj.string()));
+    fs::path iface = yona_lib / "Test" / "BorrowMeta.yonai";
+    REQUIRE(mod_codegen.emit_interface_file(iface.string()));
+
+    string yonai = read_file(iface);
+    CHECK(yonai.find("FN yona_Test_BorrowMeta__ignoreSeq 1 ADT -> INT borrow 1") != string::npos);
+    CHECK(yonai.find("FN yona_Test_BorrowMeta__returnSeq 1 ADT -> ADT borrow") == string::npos);
+
+    {
+        parser::Parser p2;
+        string borrowed_source = "import ignoreSeq from Test\\BorrowMeta in let xs = [1, 2, 3] in ignoreSeq xs";
+        istringstream stream(borrowed_source);
+        auto expr_result = p2.parse_input(stream);
+        REQUIRE(expr_result.node != nullptr);
+
+        Codegen borrowed_codegen("borrow_meta_borrowed_expr");
+        borrowed_codegen.module_paths_.push_back(yona_lib.string());
+        auto expr_mod = borrowed_codegen.compile(expr_result.node.get());
+        REQUIRE(expr_mod != nullptr);
+        string ir = borrowed_codegen.emit_ir();
+        CHECK(ir.find("call void @yona_rt_rc_inc") == string::npos);
+    }
+
+    {
+        parser::Parser p2;
+        string owned_source =
+            "import ignoreSeq, returnSeq from Test\\BorrowMeta in "
+            "let xs = [1, 2, 3] in let _ = returnSeq xs in ignoreSeq xs";
+        istringstream stream(owned_source);
+        auto expr_result = p2.parse_input(stream);
+        REQUIRE(expr_result.node != nullptr);
+
+        Codegen owned_codegen("borrow_meta_owned_expr");
+        owned_codegen.module_paths_.push_back(yona_lib.string());
+        auto expr_mod = owned_codegen.compile(expr_result.node.get());
+        REQUIRE(expr_mod != nullptr);
+        string ir = owned_codegen.emit_ir();
+        CHECK(ir.find("call void @yona_rt_rc_inc") != string::npos);
+    }
+
+    parser::Parser p2;
+    string expr_source = "import ignoreSeq from Test\\BorrowMeta in ignoreSeq [1, 2, 3]";
+    istringstream stream(expr_source);
+    auto expr_result = p2.parse_input(stream);
+    REQUIRE(expr_result.node != nullptr);
+
+    Codegen expr_codegen("borrow_meta_expr");
+    expr_codegen.module_paths_.push_back(yona_lib.string());
+    auto expr_mod = expr_codegen.compile(expr_result.node.get());
+    REQUIRE(expr_mod != nullptr);
+    fs::path expr_obj = yona::test::link::scratch_root() / "borrow_meta_expr_test.o";
+    REQUIRE(expr_codegen.emit_object_file(expr_obj.string()));
+
+    fs::path exe_path = yona::test::link::scratch_root() / ("borrow_meta_test_exe" + yona::test::link::exe_suffix());
+    vector<fs::path> objs = {mod_obj, expr_obj};
+    REQUIRE(yona::test::link::append_runtime_objects(objs));
+    REQUIRE(yona::test::link::link_objs_to_exe(objs, exe_path));
+
+    CHECK(yona::test::link::popen_read_all(exe_path) == "1");
 }
 
 } // Codegen Modules

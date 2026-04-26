@@ -1,2 +1,4 @@
 import readLines from Std\File, length from Std\String in
-foldl (\acc line -> acc + length line) 0 (readLines "bench/data/large_text.txt")
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
+let iter = readLines "bench/data/large_text.txt" in
+foldl (\acc line -> acc + length line) 0 [line for line = iter]

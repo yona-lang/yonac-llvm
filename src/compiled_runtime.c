@@ -1962,6 +1962,34 @@ int64_t yona_Std_IO__writeLine(int64_t fd, const char* s) {
     return yona_platform_write_fd_strs_submit((int)fd, s, "\n");
 }
 
+int64_t yona_Std_IO__print(const char* s) {
+    return yona_Std_IO__writeStr(1, s);
+}
+
+int64_t yona_Std_IO__println(const char* s) {
+    return yona_Std_IO__writeLine(1, s);
+}
+
+int64_t yona_Std_IO__eprint(const char* s) {
+    return yona_Std_IO__writeStr(2, s);
+}
+
+int64_t yona_Std_IO__eprintln(const char* s) {
+    return yona_Std_IO__writeLine(2, s);
+}
+
+int64_t yona_Std_IO__putStr(int64_t fd, const char* s) {
+    return yona_Std_IO__writeStr(fd, s);
+}
+
+int64_t yona_Std_IO__putStrLn(int64_t fd, const char* s) {
+    return yona_Std_IO__writeLine(fd, s);
+}
+
+int64_t yona_Std_IO__write(int64_t fd, const char* s) {
+    return yona_Std_IO__writeStr(fd, s);
+}
+
 /* Thread-pool async: read one line from fd. Returns Option String
  * (heap-allocated Some line / None at EOF). Called via AFN so the
  * read blocks on a worker thread, not the calling task. */
@@ -2111,8 +2139,11 @@ static int fh_fd(int64_t handle_i64) {
  * mode is a FileMode ADT: Read=0, Write=1, ReadWrite=2, Append=3.
  * Returns FileHandle ADT: [tag=0, num_fields=1, heap_mask=0, fd] */
 int64_t yona_Std_File__openFile(const char* path, int64_t mode_i64) {
-    int64_t* mode_adt = (int64_t*)(intptr_t)mode_i64;
-    int64_t mode_tag = mode_adt[0];  /* recursive ADT layout: [tag, num_fields, heap_mask, ...] */
+    int64_t mode_tag = mode_i64;
+    if (mode_i64 > 16) {
+        int64_t* mode_adt = (int64_t*)(intptr_t)mode_i64;
+        mode_tag = mode_adt[0];  /* recursive ADT layout: [tag, num_fields, heap_mask, ...] */
+    }
     int fd = (int)yona_platform_open_file_handle(path, mode_tag);
     if (fd < 0) {
         extern void yona_rt_raise(int64_t tag, const char* msg);
@@ -2165,8 +2196,11 @@ int64_t yona_Std_File__writeBytes(int64_t handle, int64_t bytes_i64) {
 /* seek: set file position. whence is a Whence ADT: SeekSet=0, SeekCur=1, SeekEnd=2 */
 int64_t yona_Std_File__seek(int64_t handle, int64_t offset, int64_t whence_i64) {
     int fd = fh_fd(handle);
-    int64_t* whence_adt = (int64_t*)(intptr_t)whence_i64;
-    int64_t whence_tag = whence_adt[0];
+    int64_t whence_tag = whence_i64;
+    if (whence_i64 > 16) {
+        int64_t* whence_adt = (int64_t*)(intptr_t)whence_i64;
+        whence_tag = whence_adt[0];
+    }
     return yona_platform_seek_file_handle(fd, offset, whence_tag);
 }
 

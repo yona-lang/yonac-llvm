@@ -29,9 +29,11 @@ type Response = Response {
 }
 
 ## Create a request with defaults.
+request : Method -> String -> Int -> String -> Request
 request method path headers body = Request { method = method, path = path, headers = headers, body = body }
 
 ## Format a Method as a string.
+methodString : Method -> String
 methodString m = case m of
     GET -> "GET"
     POST -> "POST"
@@ -43,19 +45,21 @@ methodString m = case m of
 end
 
 ## Format a Request into an HTTP/1.1 request string.
+formatRequest : String -> Request -> String
 formatRequest host req =
-    case req of
-        Request { method = m, path = p, body = b } ->
-            import length from Std\String in
-            import intToString from Std\Types in
-            let method = methodString m, bodyLen = length b in
-            if bodyLen > 0 then
-                method + " " + p + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Yona\r\nConnection: close\r\nContent-Length: " + (intToString bodyLen) + "\r\n\r\n" + b
-            else
-                method + " " + p + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: Yona\r\nConnection: close\r\n\r\n"
-    end
+    import length from Std\String in
+    import intToString from Std\Types in
+    let method = methodString req.method,
+        p = req.path,
+        b = req.body,
+        bodyLen = length b in
+    if bodyLen > 0 then
+        method ++ " " ++ p ++ " HTTP/1.1\r\nHost: " ++ host ++ "\r\nUser-Agent: Yona\r\nConnection: close\r\nContent-Length: " ++ (intToString bodyLen) ++ "\r\n\r\n" ++ b
+    else
+        method ++ " " ++ p ++ " HTTP/1.1\r\nHost: " ++ host ++ "\r\nUser-Agent: Yona\r\nConnection: close\r\n\r\n"
 
 ## Parse an HTTP response string into a Response.
+parseResponse : String -> Response
 parseResponse raw =
     import substring, indexOf, drop from Std\String in
     import toInt from Std\String in
@@ -71,8 +75,9 @@ parseResponse raw =
 ## ```
 ## send "example.com" 80 (request GET "/" 0 "")
 ## ```
+send : String -> Int -> Request -> Response
 send host port req =
-    import tcpConnect, Std\Net\send as netSend, recv, close from Std\Net in
+    import tcpConnect, send as netSend, recv, close from Std\Net in
     do
         fd = tcpConnect host port
         netSend fd (formatRequest host req)
@@ -86,20 +91,23 @@ send host port req =
 ## ```
 ## get "example.com" 80 "/api"
 ## ```
-get host port path = send host port (request GET path 0 "")
+get : String -> Int -> String -> Response
+get host port path = send host port (Request { method = GET, path = path, headers = 0, body = "" })
 
 ## HTTP POST shorthand.
 ##
 ## ```
 ## post "example.com" 80 "/submit" "key=value"
 ## ```
-post host port path body = send host port (request POST path 0 body)
+post : String -> Int -> String -> String -> Response
+post host port path body = send host port (Request { method = POST, path = path, headers = 0, body = body })
 
 ## Create a simple 200 OK response.
 ##
 ## ```
 ## ok "Hello, World!"
 ## ```
+ok : String -> Response
 ok body = Response { status = 200, rawHeaders = "", body = body }
 
 ## Create a 404 Not Found response.
@@ -109,15 +117,16 @@ notFound = Response { status = 404, rawHeaders = "", body = "Not Found" }
 serverError = Response { status = 500, rawHeaders = "", body = "Internal Server Error" }
 
 ## Format a Response into an HTTP/1.1 response string.
+formatResponse : Response -> String
 formatResponse resp =
-    case resp of
-        Response { status = s, body = b } ->
-            import intToString from Std\Types in
-            import length from Std\String in
-            "HTTP/1.1 " + (intToString s) + " OK\r\nContent-Length: " + (intToString (length b)) + "\r\nConnection: close\r\n\r\n" + b
-    end
+    import intToString from Std\Types in
+    import length from Std\String in
+    let s = resp.status,
+        b = resp.body in
+    "HTTP/1.1 " ++ (intToString s) ++ " OK\r\nContent-Length: " ++ (intToString (length b)) ++ "\r\nConnection: close\r\n\r\n" ++ b
 
 ## Create a Response with custom status and body.
+response : Int -> String -> Response
 response status body = Response { status = status, rawHeaders = "", body = body }
 
 ## Start an HTTP server. Calls `handler request` for each incoming connection.
@@ -127,26 +136,31 @@ response status body = Response { status = status, rawHeaders = "", body = body 
 ## ```
 ## serve "0.0.0.0" 8080 (\req -> ok "Hello!")
 ## ```
-serve host port handler =
-    import tcpListen, tcpAccept, Std\Net\send as netSend, recv, close from Std\Net in
+serveLoop : Int -> (Request -> Response) -> Int
+serveLoop listener handler =
+    import tcpAccept, send as netSend, recv, close from Std\Net in
     import split, indexOf, drop from Std\String in
     do
+        client = tcpAccept listener
+        raw = recv client 65536
+        firstLine = case split "\r\n" raw of [h|_] -> h; _ -> "GET / HTTP/1.1" end
+        parts = split " " firstLine
+        method = case parts of [m|_] -> m; _ -> "GET" end
+        path = case parts of [_|[p|_]] -> p; _ -> "/" end
+        bodyStart = indexOf "\r\n\r\n" raw
+        body = if bodyStart >= 0 then drop (bodyStart + 4) raw else ""
+        methodVal = case method of "GET" -> GET; "POST" -> POST; "PUT" -> PUT; "DELETE" -> DELETE; _ -> GET end
+        req = Request { method = methodVal, path = path, headers = 0, body = body }
+        resp = handler req
+        netSend client (formatResponse resp)
+        close client
+        serveLoop listener handler
+    end
+
+serve : String -> Int -> (Request -> Response) -> Int
+serve host port handler =
+    import tcpListen from Std\Net in
+    do
         listener = tcpListen host port
-        loop = \-> do
-            client = tcpAccept listener
-            raw = recv client 65536
-            firstLine = case split "\r\n" raw of [h|_] -> h; _ -> "GET / HTTP/1.1" end
-            parts = split " " firstLine
-            method = case parts of [m|_] -> m; _ -> "GET" end
-            path = case parts of [_|[p|_]] -> p; _ -> "/" end
-            bodyStart = indexOf "\r\n\r\n" raw
-            body = if bodyStart >= 0 then drop (bodyStart + 4) raw else ""
-            methodVal = case method of "GET" -> GET; "POST" -> POST; "PUT" -> PUT; "DELETE" -> DELETE; _ -> GET end
-            req = Request { method = methodVal, path = path, headers = 0, body = body }
-            resp = handler req
-            netSend client (formatResponse resp)
-            close client
-            loop ()
-        end
-        loop ()
+        serveLoop listener handler
     end

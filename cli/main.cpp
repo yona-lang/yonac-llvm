@@ -81,6 +81,37 @@ static const char* const platform_runtime_sources[] = {
 #endif
 };
 
+static vector<filesystem::path> embedded_runtime_sources(const filesystem::path& root) {
+    vector<filesystem::path> sources = {
+        root / "src" / "compiled_runtime.c",
+        root / "src" / "runtime" / "seq.c",
+        root / "src" / "runtime" / "hamt.c",
+        root / "src" / "runtime" / "exceptions.c",
+        root / "src" / "runtime" / "closures.c",
+#ifdef _WIN32
+        root / "src" / "runtime" / "platform" / "async_win32.c",
+        root / "src" / "runtime" / "platform" / "channel_win32.c",
+#else
+        root / "src" / "runtime" / "platform" / "async_posix.c",
+        root / "src" / "runtime" / "platform" / "channel_posix.c",
+#endif
+    };
+    for (const char* pf : platform_runtime_sources)
+        sources.push_back(root / "src" / "runtime" / "platform" / pf);
+    return sources;
+}
+
+static bool artifact_stale_against_sources(const filesystem::path& artifact,
+                                           const vector<filesystem::path>& sources) {
+    if (!filesystem::exists(artifact)) return true;
+    auto artifact_time = filesystem::last_write_time(artifact);
+    for (const auto& source : sources) {
+        if (filesystem::exists(source) && filesystem::last_write_time(source) > artifact_time)
+            return true;
+    }
+    return false;
+}
+
 static filesystem::path canonical_if_exists(const filesystem::path& p) {
     std::error_code ec;
     if (!filesystem::exists(p, ec)) return {};
@@ -119,8 +150,13 @@ static vector<filesystem::path> discover_sysroots(const char* argv0, const strin
 
 static bool is_module_source(const string& source) {
     auto it = source.begin();
-    while (it != source.end() && (*it == ' ' || *it == '\t' || *it == '\n' || *it == '\r'))
-        ++it;
+    while (it != source.end()) {
+        while (it != source.end() && (*it == ' ' || *it == '\t' || *it == '\n' || *it == '\r'))
+            ++it;
+        if (it == source.end() || *it != '#') break;
+        while (it != source.end() && *it != '\n' && *it != '\r')
+            ++it;
+    }
     string prefix(it, min(it + 6, source.end()));
     return prefix == "module";
 }
@@ -423,9 +459,13 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            bool need_rt = !filesystem::exists(filesystem::path(rt_obj));
-            for (const auto& po : plat_obj_paths) {
-                if (!filesystem::exists(filesystem::path(po))) {
+            auto runtime_sources = embedded_runtime_sources(root);
+            bool need_rt = artifact_stale_against_sources(filesystem::path(rt_obj), runtime_sources);
+            for (size_t i = 0; i < plat_obj_paths.size(); ++i) {
+                auto po = filesystem::path(plat_obj_paths[i]);
+                auto ps = root / "src" / "runtime" / "platform" / plat_pf[i];
+                if (!filesystem::exists(po) ||
+                    (filesystem::exists(ps) && filesystem::last_write_time(ps) > filesystem::last_write_time(po))) {
                     need_rt = true;
                     break;
                 }
@@ -475,12 +515,7 @@ int main(int argc, char* argv[]) {
 
             // Compile to LLVM bitcode for LTO (enables runtime function inlining).
             // Merge all runtime sources (main + platform) into one bitcode.
-            bool need_bc = !filesystem::exists(rt_bc);
-            if (!need_bc && filesystem::exists(candidate)) {
-                auto bc_time = filesystem::last_write_time(rt_bc);
-                auto src_time = filesystem::last_write_time(candidate);
-                if (src_time > bc_time) need_bc = true;
-            }
+            bool need_bc = artifact_stale_against_sources(filesystem::path(rt_bc), runtime_sources);
             if (need_bc) {
                 string bc_main = rt_bc + ".main";
                 string bc_cmd = string(yonac_cc_exe()) + " -emit-llvm -O2 -c " + q_cmd_path(candidate) +
@@ -511,7 +546,12 @@ int main(int argc, char* argv[]) {
     // LTO: link runtime bitcode into the module before emitting object code.
     // This enables LLVM to inline seq_head, seq_tail, etc.
     bool lto_active = false;
-    if (filesystem::exists(rt_bc)) {
+    bool rt_bc_usable = filesystem::exists(rt_bc);
+    if (rt_bc_usable && have_packaged_runtime && filesystem::exists(filesystem::path(rt_obj)) &&
+        filesystem::last_write_time(filesystem::path(rt_obj)) > filesystem::last_write_time(filesystem::path(rt_bc))) {
+        rt_bc_usable = false;
+    }
+    if (rt_bc_usable) {
         lto_active = codegen.link_runtime_bitcode(rt_bc);
         if (lto_active) {
             codegen.optimize();

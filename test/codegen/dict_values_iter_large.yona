@@ -1,5 +1,6 @@
 import values, put from Std\Dict in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
 let build n d = if n <= 0 then d else build (n - 1) (put d n (n * 10)) in
 let d = build 50 {} in
 let iter = values d in
-foldl (\acc x -> acc + x) 0 iter
+foldl (\acc x -> acc + x) 0 [x for x = iter]

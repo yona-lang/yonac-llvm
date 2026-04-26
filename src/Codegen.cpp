@@ -43,6 +43,7 @@
 #include <sstream>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 #include <map>
 
 namespace yona::compiler::codegen {
@@ -541,6 +542,8 @@ static CType yona_type_to_ctype(const types::Type& t);
 static std::pair<std::vector<CType>, CType> uncurry_type_signature(const types::Type& t);
 
 Module* Codegen::compile_module(ModuleDecl* mod) {
+    imports_.interface_symbols.clear();
+
     // Build the module FQN string
     std::string fqn;
     if (mod->fqn->packageName.has_value()) {
@@ -620,21 +623,48 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             int arity = static_cast<int>(ctor->field_type_names.size());
             // Map field types to CTypes
             std::vector<CType> ftypes;
+            std::vector<CType> fn_rets;
+            std::vector<std::string> fn_ret_adt_names;
+            auto field_name_to_ctype = [](std::string name) -> CType {
+                auto sp = name.find(' ');
+                if (sp != std::string::npos) name = name.substr(0, sp);
+                if (name == "Int" || name == "a" || name == "b" || name == "e" || name == "s") return CType::INT;
+                if (name == "Float") return CType::FLOAT;
+                if (name == "String") return CType::STRING;
+                if (name == "Bool") return CType::BOOL;
+                if (name == "Symbol") return CType::SYMBOL;
+                if (name == "Seq") return CType::SEQ;
+                if (name == "Set") return CType::SET;
+                if (name == "Dict") return CType::DICT;
+                if (name == "Channel") return CType::CHANNEL;
+                return CType::ADT;
+            };
             for (auto& ft : ctor->field_type_names) {
-                if (ft.is_function_type) ftypes.push_back(CType::FUNCTION);
-                else if (ft.name == "Int" || ft.name == "a" || ft.name == "b" || ft.name == "e" || ft.name == "s") ftypes.push_back(CType::INT);
-                else if (ft.name == "Float") ftypes.push_back(CType::FLOAT);
-                else if (ft.name == "String") ftypes.push_back(CType::STRING);
-                else if (ft.name == "Bool") ftypes.push_back(CType::BOOL);
-                else if (ft.name == "Symbol") ftypes.push_back(CType::SYMBOL);
-                else if (ft.name == adt->name) ftypes.push_back(CType::ADT);
-                else if (ft.name == "()" || ft.name == "Fn" || ft.name == "fn" || ft.name == "Function") ftypes.push_back(CType::FUNCTION);
-                else ftypes.push_back(CType::INT);
+                if (ft.is_function_type || ft.name == "()" || ft.name == "Fn" ||
+                    ft.name == "fn" || ft.name == "Function") {
+                    ftypes.push_back(CType::FUNCTION);
+                    if (!ft.return_types.empty()) {
+                        std::string ret_name = ft.return_types[0].name;
+                        auto ret_ct = field_name_to_ctype(ret_name);
+                        auto sp = ret_name.find(' ');
+                        if (sp != std::string::npos) ret_name = ret_name.substr(0, sp);
+                        fn_rets.push_back(ret_ct);
+                        fn_ret_adt_names.push_back(ret_ct == CType::ADT ? ret_name : "");
+                    } else {
+                        fn_rets.push_back(CType::INT);
+                        fn_ret_adt_names.push_back("");
+                    }
+                } else {
+                    auto ct = ft.name == adt->name ? CType::ADT : field_name_to_ctype(ft.name);
+                    ftypes.push_back(ct);
+                    fn_rets.push_back(CType::INT);
+                    fn_ret_adt_names.push_back("");
+                }
             }
 
             types_.adt_constructors[ctor->name] = {adt->name, static_cast<int>(ci), arity,
                                               static_cast<int>(adt->variants.size()), max_arity, is_recursive,
-                                              ctor->field_names, ftypes};
+                                              ctor->field_names, ftypes, fn_rets, fn_ret_adt_names};
         }
     }
 
@@ -821,7 +851,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
             auto cf_it = compiled_functions_.find(ext->name);
             if (cf_it != compiled_functions_.end()) {
                 auto& cf = cf_it->second;
-                imports_.meta[mangled] = {cf.param_types, cf.return_type};
+                imports_.meta[mangled] = module_meta_from_compiled(cf);
+                imports_.interface_symbols.insert(mangled);
                 // Create a forwarding wrapper
                 if (cf.fn->getName() != mangled) {
                     auto* wrapper = Function::Create(
@@ -845,9 +876,11 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         codegen_function_def(func, fn_name);
 
         // Store source text for exported generic functions (.yonai emission)
-        if (export_set.count(fn_name) && !func->source_text.empty()) {
+        if (export_set.count(fn_name) && !func->type_signature.has_value() &&
+            !func->source_text.empty()) {
             std::string mangled = mangle_name(fqn, fn_name);
             imports_.function_source[mangled] = func->source_text;
+            imports_.interface_symbols.insert(mangled);
         }
     }
 
@@ -864,9 +897,27 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
 
         // Use explicit type annotation if present, otherwise infer from patterns/body
         std::vector<CType> annotated_param_types;
+        std::vector<std::vector<CType>> annotated_param_subtypes;
+        std::vector<std::string> annotated_param_adt_names;
         if (func->type_signature.has_value()) {
             auto [params, ret] = uncurry_type_signature(*func->type_signature);
             annotated_param_types = params;
+            const types::Type* current_type = &*func->type_signature;
+            while (std::holds_alternative<std::shared_ptr<types::FunctionType>>(*current_type)) {
+                auto ft = std::get<std::shared_ptr<types::FunctionType>>(*current_type);
+                if (std::holds_alternative<std::shared_ptr<types::NamedType>>(ft->argumentType))
+                    annotated_param_adt_names.push_back(
+                        std::get<std::shared_ptr<types::NamedType>>(ft->argumentType)->name);
+                else
+                    annotated_param_adt_names.push_back("");
+                std::vector<CType> subtypes;
+                if (std::holds_alternative<std::shared_ptr<types::FunctionType>>(ft->argumentType)) {
+                    auto arg_ft = std::get<std::shared_ptr<types::FunctionType>>(ft->argumentType);
+                    subtypes.push_back(yona_type_to_ctype(arg_ft->returnType));
+                }
+                annotated_param_subtypes.push_back(std::move(subtypes));
+                current_type = &ft->returnType;
+            }
         }
 
         auto inferred = func->type_signature.has_value()
@@ -896,7 +947,9 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 }
             } else if (ct == CType::SEQ) {
                 auto* ptr_type = PointerType::get(*context_, 0);
-                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SEQ});
+                std::vector<CType> elem_ctypes =
+                    (i < inferred.size()) ? inferred[i].subtypes : std::vector<CType>{};
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::SEQ, elem_ctypes});
             } else if (ct == CType::STRING) {
                 auto* ptr_type = PointerType::get(*context_, 0);
                 typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::STRING});
@@ -908,8 +961,18 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 typed_args.push_back({ConstantInt::get(LType::getInt64Ty(*context_), 0), CType::SYMBOL});
             } else if (ct == CType::FUNCTION) {
                 auto* ptr_type = PointerType::get(*context_, 0);
-                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::FUNCTION});
+                std::vector<CType> subtypes =
+                    (!annotated_param_subtypes.empty() && i < annotated_param_subtypes.size())
+                        ? annotated_param_subtypes[i]
+                        : std::vector<CType>{};
+                typed_args.push_back({ConstantPointerNull::get(ptr_type), CType::FUNCTION, subtypes});
             } else if (ct == CType::ADT) {
+                if (!annotated_param_adt_names.empty() && i < annotated_param_adt_names.size() &&
+                    !annotated_param_adt_names[i].empty()) {
+                    typed_args.push_back({dummy_val, CType::ADT});
+                    typed_args.back().adt_type_name = annotated_param_adt_names[i];
+                    continue;
+                }
                 // Build the ADT struct type based on the constructor pattern
                 // Find which ADT type by looking at the case patterns
                 PatternNode* src = (i < inferred.size()) ? inferred[i].source_pattern : nullptr;
@@ -943,24 +1006,27 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                     }
                 } else {
                     // No constructor pattern — inferred from field access or other usage.
-                    // Search types_.adt_constructors for a constructor with matching field names.
+                    // Field-access inference represents parameters with the heap ABI
+                    // (i64 pointer value) because exported/imported ADTs cross module
+                    // boundaries boxed even when local constructors use flat structs.
                     bool found = false;
                     for (auto& [cname, cinfo] : types_.adt_constructors) {
-                        if (!cinfo.field_names.empty()) {
+                        bool matches_fields = true;
+                        const auto& accessed_fields =
+                            (i < inferred.size()) ? inferred[i].accessed_fields
+                                                  : std::vector<std::string>{};
+                        for (const auto& field : accessed_fields) {
+                            if (std::find(cinfo.field_names.begin(), cinfo.field_names.end(), field) ==
+                                cinfo.field_names.end()) {
+                                matches_fields = false;
+                                break;
+                            }
+                        }
+                        if (!cinfo.field_names.empty() && matches_fields) {
                             TypedValue tv;
                             tv.type = CType::ADT;
                             tv.adt_type_name = cinfo.type_name;
-                            if (cinfo.is_recursive) {
-                                auto* ptr_type = PointerType::get(*context_, 0);
-                                tv.val = ConstantPointerNull::get(ptr_type);
-                            } else {
-                                auto tag_ty = LType::getInt64Ty(*context_);
-                                auto i64_ty = LType::getInt64Ty(*context_);
-                                std::vector<LType*> fields = {tag_ty};
-                                for (int f = 0; f < cinfo.max_arity; f++) fields.push_back(i64_ty);
-                                auto* st = StructType::get(*context_, fields);
-                                tv.val = UndefValue::get(st);
-                            }
+                            tv.val = ConstantInt::get(LType::getInt64Ty(*context_), 0);
                             typed_args.push_back(tv);
                             found = true;
                             break;
@@ -978,7 +1044,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
         if (is_exported) {
             // Store type metadata for importers
             std::string mangled = mangle_name(fqn, fn_name);
-            imports_.meta[mangled] = {cf.param_types, cf.return_type};
+            imports_.meta[mangled] = module_meta_from_compiled(cf);
+            imports_.interface_symbols.insert(mangled);
 
             // Check if the function already has the right linkage
             if (cf.fn->getName() != mangled) {
@@ -1010,8 +1077,9 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 cf_it->second.fn->setLinkage(Function::ExternalLinkage);
                 // Emit FN metadata for the .yonai file
                 if (imports_.meta.find(mangled) == imports_.meta.end()) {
-                    imports_.meta[mangled] = {cf_it->second.param_types, cf_it->second.return_type};
+                    imports_.meta[mangled] = module_meta_from_compiled(cf_it->second);
                 }
+                imports_.interface_symbols.insert(mangled);
                 continue;
             }
             auto def_it = deferred_functions_.find(mangled);
@@ -1073,7 +1141,8 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
                 auto cf = compile_function(mangled, def_it->second, typed_args);
                 if (cf.fn) {
                     cf.fn->setLinkage(Function::ExternalLinkage);
-                    imports_.meta[mangled] = {cf.param_types, cf.return_type};
+                    imports_.meta[mangled] = module_meta_from_compiled(cf);
+                    imports_.interface_symbols.insert(mangled);
                 }
             }
         }
@@ -1137,6 +1206,7 @@ Module* Codegen::compile_module(ModuleDecl* mod) {
 
             // Register in imports_.meta so the interface file includes it
             imports_.meta[dst_mangled] = meta;
+            imports_.interface_symbols.insert(dst_mangled);
         }
     }
 
@@ -1505,6 +1575,10 @@ TypedValue Codegen::codegen(AstNode* node) {
                     return emit_direct_call(fn_name, cf, all_args);
                 }
 
+                auto ext_it = imports_.extern_functions.find(fn_name);
+                if (ext_it != imports_.extern_functions.end())
+                    return codegen_extern_call(nullptr, fn_name, all_args);
+
                 // Higher-order call via named_values_
                 auto var_it = named_values_.find(fn_name);
                 if (var_it != named_values_.end() && var_it->second.type == CType::FUNCTION && var_it->second.val)
@@ -1522,6 +1596,19 @@ TypedValue Codegen::codegen(AstNode* node) {
             }
             CType ret_ct = !fn.subtypes.empty() ? fn.subtypes[0] : CType::INT;
             auto* ret_llvm = llvm_type(ret_ct);
+            if (fn.val->getType()->isPointerTy() && !llvm::isa<llvm::Function>(fn.val)) {
+                auto i64_ty = llvm::Type::getInt64Ty(*context_);
+                auto ptr_ty = llvm::PointerType::get(*context_, 0);
+                auto* fn_i64 = builder_->CreateLoad(i64_ty, fn.val, "pipe_closure_fn_i64");
+                auto* fn_ptr = builder_->CreateIntToPtr(fn_i64, ptr_ty, "pipe_closure_fn");
+                auto* fn_type = llvm::FunctionType::get(i64_ty, {ptr_ty, arg.val->getType()}, false);
+                Value* raw = builder_->CreateCall(fn_type, fn_ptr, {fn.val, arg.val}, "pipe_call");
+                if (ret_llvm->isPointerTy())
+                    raw = builder_->CreateIntToPtr(raw, ret_llvm);
+                else if (ret_llvm->isIntegerTy() && raw->getType() != ret_llvm)
+                    raw = builder_->CreateZExtOrTrunc(raw, ret_llvm);
+                return {raw, ret_ct};
+            }
             auto* fn_type = llvm::FunctionType::get(ret_llvm, {arg.val->getType()}, false);
             return {builder_->CreateCall(fn_type, fn.val, {arg.val}, "pipe_call"), ret_ct};
         }
@@ -1623,13 +1710,21 @@ TypedValue Codegen::codegen(AstNode* node) {
             std::string field_name = fa->name->value;
             if (obj.type == CType::ADT) {
                 for (auto& [ctor_name, info] : types_.adt_constructors) {
+                    if (!obj.adt_type_name.empty() && info.type_name != obj.adt_type_name)
+                        continue;
                     for (size_t fi = 0; fi < info.field_names.size(); fi++) {
                         if (info.field_names[fi] == field_name) {
                             CType ftype = (fi < info.field_types.size()) ? info.field_types[fi] : CType::INT;
-                            if (info.is_recursive) {
+                            bool use_heap_layout = info.is_recursive ||
+                                (obj.val && obj.val->getType()->isPointerTy()) ||
+                                (obj.val && obj.val->getType()->isIntegerTy());
+                            if (use_heap_layout) {
+                                Value* obj_ptr = obj.val;
+                                if (obj_ptr->getType()->isIntegerTy())
+                                    obj_ptr = builder_->CreateIntToPtr(obj_ptr, PointerType::get(*context_, 0));
                                 auto val = builder_->CreateCall(rt_.adt_get_field_,
-                                    {obj.val, ConstantInt::get(LType::getInt64Ty(*context_), fi)});
-                                if (ftype == CType::STRING || ftype == CType::SEQ || ftype == CType::ADT)
+                                    {obj_ptr, ConstantInt::get(LType::getInt64Ty(*context_), fi)});
+                                if (ftype == CType::STRING || ftype == CType::SEQ)
                                     return {builder_->CreateIntToPtr(val, PointerType::get(*context_, 0)), ftype};
                                 return {val, ftype};
                             } else {
@@ -1637,7 +1732,7 @@ TypedValue Codegen::codegen(AstNode* node) {
                                 // Cast i64 to ptr if field type is pointer-based
                                 if (ftype == CType::STRING || ftype == CType::SEQ ||
                                     ftype == CType::SET || ftype == CType::DICT ||
-                                    ftype == CType::FUNCTION || ftype == CType::ADT) {
+                                    ftype == CType::FUNCTION) {
                                     val = builder_->CreateIntToPtr(val, PointerType::get(*context_, 0));
                                 }
                                 return {val, ftype};

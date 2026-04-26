@@ -24,6 +24,29 @@ static CType yona_type_to_ctype(const types::Type& t);
 static std::string yona_type_adt_name(const types::Type& t);
 static std::pair<std::vector<CType>, CType> uncurry_type_signature(const types::Type& t);
 
+static std::string trim_trailing_doc_comments(std::string source) {
+    while (!source.empty() && (source.back() == '\n' || source.back() == '\r' ||
+                              source.back() == ' ' || source.back() == '\t'))
+        source.pop_back();
+
+    while (!source.empty()) {
+        size_t line_start = source.find_last_of("\r\n");
+        line_start = (line_start == std::string::npos) ? 0 : line_start + 1;
+        size_t first = source.find_first_not_of(" \t", line_start);
+        bool is_doc_line = first != std::string::npos &&
+                           first + 1 < source.size() &&
+                           source[first] == '#' && source[first + 1] == '#';
+        if (!is_doc_line) break;
+
+        source.erase(line_start);
+        while (!source.empty() && (source.back() == '\n' || source.back() == '\r' ||
+                                  source.back() == ' ' || source.back() == '\t'))
+            source.pop_back();
+    }
+
+    return source;
+}
+
 std::string Codegen::ctype_to_type_name(CType ct) {
     switch (ct) {
         case CType::INT: return "Int";
@@ -127,6 +150,44 @@ static CType string_to_ctype(const std::string& s) {
     return CType::INT;
 }
 
+static std::string borrowed_params_to_mask(const std::vector<bool>& borrowed, size_t param_count) {
+    std::string mask;
+    mask.reserve(param_count);
+    for (size_t i = 0; i < param_count; i++)
+        mask.push_back((i < borrowed.size() && borrowed[i]) ? '1' : '0');
+    return mask;
+}
+
+static std::vector<bool> borrowed_mask_to_params(const std::string& mask, size_t param_count) {
+    std::vector<bool> borrowed(param_count, false);
+    for (size_t i = 0; i < param_count && i < mask.size(); i++)
+        borrowed[i] = (mask[i] == '1');
+    return borrowed;
+}
+
+Codegen::ModuleFunctionMeta Codegen::module_meta_from_compiled(const CompiledFunction& cf) const {
+    ModuleFunctionMeta meta;
+    meta.param_types = cf.param_types;
+    meta.return_type = cf.return_type;
+    meta.is_io_async = cf.is_io_async;
+    meta.return_adt_name = cf.return_adt_name;
+    meta.borrowed_params = cf.borrowed_params;
+    return meta;
+}
+
+Codegen::CompiledFunction Codegen::compiled_function_from_meta(llvm::Function* fn,
+                                                               const ModuleFunctionMeta& meta,
+                                                               CType return_type) const {
+    CompiledFunction cf;
+    cf.fn = fn;
+    cf.return_type = return_type;
+    cf.param_types = meta.param_types;
+    cf.borrowed_params = meta.borrowed_params;
+    cf.is_io_async = meta.is_io_async;
+    cf.return_adt_name = meta.return_adt_name;
+    return cf;
+}
+
 bool Codegen::emit_interface_file(const std::string& path) {
     std::ofstream out(path);
     if (!out.is_open()) return false;
@@ -148,15 +209,30 @@ bool Codegen::emit_interface_file(const std::string& path) {
             << (is_recursive ? " recursive" : "") << "\n";
         for (auto* ctor : ctors) {
             for (auto& [cname, cinfo] : types_.adt_constructors) {
-                if (&cinfo == ctor)
+                if (&cinfo == ctor) {
                     out << "CTOR " << cname << " " << ctor->tag << " " << ctor->arity;
-                    if (!ctor->field_names.empty()) {
+                    size_t field_count = std::max(ctor->field_names.size(), ctor->field_types.size());
+                    if (field_count > 0) {
                         out << " fields";
-                        for (size_t fi = 0; fi < ctor->field_names.size(); fi++)
-                            out << " " << ctor->field_names[fi] << ":" << ctype_to_string(
-                                fi < ctor->field_types.size() ? ctor->field_types[fi] : CType::INT);
+                        for (size_t fi = 0; fi < field_count; fi++) {
+                            std::string field_name = fi < ctor->field_names.size()
+                                ? ctor->field_names[fi]
+                                : "_" + std::to_string(fi);
+                            CType field_type = fi < ctor->field_types.size()
+                                ? ctor->field_types[fi]
+                                : CType::INT;
+                            out << " " << field_name << ":" << ctype_to_string(field_type);
+                            if (field_type == CType::FUNCTION &&
+                                fi < ctor->field_fn_return_types.size()) {
+                                out << ":" << ctype_to_string(ctor->field_fn_return_types[fi]);
+                                if (fi < ctor->field_fn_return_adt_names.size() &&
+                                    !ctor->field_fn_return_adt_names[fi].empty())
+                                    out << ":" << ctor->field_fn_return_adt_names[fi];
+                            }
+                        }
                     }
                     out << "\n";
+                }
             }
         }
     }
@@ -185,18 +261,36 @@ bool Codegen::emit_interface_file(const std::string& path) {
 
     // Write function signatures
     for (auto& [mangled, meta] : imports_.meta) {
+        if (!imports_.interface_symbols.empty() &&
+            imports_.interface_symbols.find(mangled) == imports_.interface_symbols.end())
+            continue;
         out << "FN " << mangled << " " << meta.param_types.size();
         for (auto ct : meta.param_types) out << " " << ctype_to_string(ct);
-        out << " -> " << ctype_to_string(meta.return_type) << "\n";
+        out << " -> " << ctype_to_string(meta.return_type);
+        if (meta.return_type == CType::ADT && !meta.return_adt_name.empty())
+            out << " retadt " << meta.return_adt_name;
+        auto borrow_mask = borrowed_params_to_mask(meta.borrowed_params, meta.param_types.size());
+        if (borrow_mask.find('1') != std::string::npos)
+            out << " borrow " << borrow_mask;
+        out << "\n";
     }
 
     // Write generic function source for cross-module monomorphization
     for (auto& [mangled, source] : imports_.function_source) {
+        if (!imports_.interface_symbols.empty() &&
+            imports_.interface_symbols.find(mangled) == imports_.interface_symbols.end())
+            continue;
         // Extract local name from mangled: yona_Pkg_Mod__funcname -> funcname
         auto pos = mangled.rfind("__");
         std::string local_name = (pos != std::string::npos) ? mangled.substr(pos + 2) : mangled;
+        // Wrappers around private externs or sibling exports are already
+        // represented by their exported FN ABI. Re-emitting their source
+        // without those private/local dependencies in scope makes importers
+        // fail while reparsing GENFN bodies.
+        if (source.find("raw_") != std::string::npos)
+            continue;
         out << "GENFN_BEGIN " << mangled << " " << local_name << "\n";
-        out << source << "\n";
+        out << trim_trailing_doc_comments(source) << "\n";
         out << "GENFN_END\n";
     }
 
@@ -243,18 +337,32 @@ bool Codegen::load_interface_file(const std::string& path) {
             iss >> name >> tag >> arity;
             std::vector<std::string> fnames;
             std::vector<CType> ftypes;
+            std::vector<CType> fn_rets;
+            std::vector<std::string> fn_ret_adt_names;
             std::string token;
             if (iss >> token && token == "fields") {
                 while (iss >> token) {
-                    auto colon = token.find(':');
-                    if (colon != std::string::npos) {
-                        fnames.push_back(token.substr(0, colon));
-                        ftypes.push_back(string_to_ctype(token.substr(colon + 1)));
+                    std::vector<std::string> parts;
+                    std::stringstream ss(token);
+                    std::string part;
+                    while (std::getline(ss, part, ':')) parts.push_back(part);
+                    if (parts.size() >= 2) {
+                        fnames.push_back(parts[0]);
+                        CType field_type = string_to_ctype(parts[1]);
+                        ftypes.push_back(field_type);
+                        if (field_type == CType::FUNCTION && parts.size() >= 3) {
+                            fn_rets.push_back(string_to_ctype(parts[2]));
+                            fn_ret_adt_names.push_back(parts.size() >= 4 ? parts[3] : "");
+                        } else {
+                            fn_rets.push_back(CType::INT);
+                            fn_ret_adt_names.push_back("");
+                        }
                     }
                 }
             }
             types_.adt_constructors[name] = {current_adt, tag, arity, current_total_variants,
-                                        current_max_arity, current_is_recursive, fnames, ftypes};
+                                        current_max_arity, current_is_recursive, fnames, ftypes,
+                                        fn_rets, fn_ret_adt_names};
             current_ctor_names.push_back(name);
         } else if (keyword == "TRAIT") {
             // Format: TRAIT name param1 [param2 ...] method_count
@@ -330,6 +438,17 @@ bool Codegen::load_interface_file(const std::string& path) {
             meta.is_async = is_thread_async;
             meta.is_io_async = is_io_async;
             if (is_any_async) meta.async_inner_type = string_to_ctype(ret_str);
+            meta.borrowed_params.assign((size_t)param_count, false);
+            std::string trailing;
+            while (iss >> trailing) {
+                if (trailing == "borrow") {
+                    std::string mask;
+                    if (iss >> mask)
+                        meta.borrowed_params = borrowed_mask_to_params(mask, (size_t)param_count);
+                } else if (trailing == "retadt") {
+                    iss >> meta.return_adt_name;
+                }
+            }
 
             imports_.meta[mangled] = meta;
         } else if (keyword == "GENFN_BEGIN") {
@@ -342,7 +461,8 @@ bool Codegen::load_interface_file(const std::string& path) {
                 if (!source.empty()) source += "\n";
                 source += line;
             }
-            imports_.imported_sources[mangled] = {source, local_name};
+            if (source.find("yona_") == std::string::npos)
+                imports_.imported_sources[mangled] = {source, local_name};
         }
     }
     return true;
@@ -532,24 +652,34 @@ void Codegen::register_yona_module_decls(ast::ModuleDecl* mod) {
                 else if (ft.name == "Symbol") { ftypes.push_back(CType::SYMBOL); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
                 else if (ft.name == "Channel") { ftypes.push_back(CType::CHANNEL); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
                 else if (ft.name == adt->name) { ftypes.push_back(CType::ADT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
-                else if (ft.name == "()") { ftypes.push_back(CType::FUNCTION); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
+                else if (ft.name == "()") {
+                    ftypes.push_back(CType::FUNCTION);
+                    if (!ft.return_types.empty()) {
+                        std::string head = ft.return_types[0].name;
+                        auto sp = head.find(' ');
+                        if (sp != std::string::npos) head = head.substr(0, sp);
+                        CType ret_ct = name_to_ctype(head);
+                        fn_rets.push_back(ret_ct);
+                        fn_ret_adt_names.push_back(ret_ct == CType::ADT ? head : "");
+                    } else {
+                        fn_rets.push_back(CType::INT);
+                        fn_ret_adt_names.push_back("");
+                    }
+                }
                 else { ftypes.push_back(CType::INT); fn_rets.push_back(CType::INT); fn_ret_adt_names.push_back(""); }
             }
-            // Don't overwrite if already registered (e.g., from Prelude)
-            if (types_.adt_constructors.find(ctor->name) == types_.adt_constructors.end()) {
-                AdtInfo info;
-                info.type_name = adt->name;
-                info.tag = static_cast<int>(ci);
-                info.arity = arity;
-                info.total_variants = static_cast<int>(adt->variants.size());
-                info.max_arity = max_arity;
-                info.is_recursive = is_recursive;
-                info.field_names = ctor->field_names;
-                info.field_types = ftypes;
-                info.field_fn_return_types = fn_rets;
-                info.field_fn_return_adt_names = fn_ret_adt_names;
-                types_.adt_constructors[ctor->name] = info;
-            }
+            AdtInfo info;
+            info.type_name = adt->name;
+            info.tag = static_cast<int>(ci);
+            info.arity = arity;
+            info.total_variants = static_cast<int>(adt->variants.size());
+            info.max_arity = max_arity;
+            info.is_recursive = is_recursive;
+            info.field_names = ctor->field_names;
+            info.field_types = ftypes;
+            info.field_fn_return_types = fn_rets;
+            info.field_fn_return_adt_names = fn_ret_adt_names;
+            types_.adt_constructors[ctor->name] = info;
         }
     }
 
@@ -651,11 +781,7 @@ void Codegen::register_trait_externs() {
                 auto* fn = module_->getFunction(mangled);
                 if (!fn)
                     fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-                CompiledFunction cf;
-                cf.fn = fn;
-                cf.return_type = meta.return_type;
-                cf.param_types = meta.param_types;
-                compiled_functions_[mangled] = cf;
+                compiled_functions_[mangled] = compiled_function_from_meta(fn, meta, meta.return_type);
             }
         }
     }
@@ -702,10 +828,7 @@ void Codegen::register_import(const std::string& mod_fqn,
         auto* fn_type = llvm::FunctionType::get(i64_ty, param_types, false);
         auto* fn = module_->getFunction(mangled);
         if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-        CompiledFunction cf;
-        cf.fn = fn;
-        cf.return_type = CType::PROMISE;
-        cf.param_types = meta.param_types;
+        CompiledFunction cf = compiled_function_from_meta(fn, meta, CType::PROMISE);
         cf.is_io_async = true;
         compiled_functions_[import_name] = cf;
         named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
@@ -717,10 +840,7 @@ void Codegen::register_import(const std::string& mod_fqn,
         auto* fn_type = llvm::FunctionType::get(llvm_type(meta.async_inner_type), param_types, false);
         auto* fn = module_->getFunction(mangled);
         if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-        CompiledFunction cf;
-        cf.fn = fn;
-        cf.return_type = CType::PROMISE;
-        cf.param_types = meta.param_types;
+        CompiledFunction cf = compiled_function_from_meta(fn, meta, CType::PROMISE);
         compiled_functions_[import_name] = cf;
         named_values_[import_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
     } else if (meta_it != imports_.meta.end() && meta_it->second.param_types.empty()) {
@@ -732,10 +852,7 @@ void Codegen::register_import(const std::string& mod_fqn,
         auto* fn_type = llvm::FunctionType::get(ret_ty, {}, false);
         auto* fn = module_->getFunction(mangled);
         if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-        CompiledFunction cf;
-        cf.fn = fn;
-        cf.return_type = meta.return_type;
-        compiled_functions_[import_name] = cf;
+        compiled_functions_[import_name] = compiled_function_from_meta(fn, meta, meta.return_type);
         imports_.extern_functions[import_name] = mangled;
     } else {
         named_values_[import_name] = {nullptr, CType::FUNCTION};
@@ -759,6 +876,9 @@ void Codegen::register_all_imports(const std::string& mod_fqn) {
             for (char c : mod_fqn) expected_prefix += (c == '\\') ? '_' : c;
             expected_prefix += "__";
             if (mangled.find(expected_prefix) == 0) {
+                std::string exported_tail = mangled.substr(expected_prefix.size());
+                if (exported_tail.find("__") != std::string::npos)
+                    continue;
                 if (meta.is_io_async) {
                     // IO: submit-and-return, returns i64 uring ID
                     auto i64_ty = LType::getInt64Ty(*context_);
@@ -767,10 +887,7 @@ void Codegen::register_all_imports(const std::string& mod_fqn) {
                     auto* fn_type = llvm::FunctionType::get(i64_ty, param_types, false);
                     auto* fn = module_->getFunction(mangled);
                     if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-                    CompiledFunction cf;
-                    cf.fn = fn;
-                    cf.return_type = CType::PROMISE;
-                    cf.param_types = meta.param_types;
+                    CompiledFunction cf = compiled_function_from_meta(fn, meta, CType::PROMISE);
                     cf.is_io_async = true;
                     compiled_functions_[func_name] = cf;
                     named_values_[func_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
@@ -781,10 +898,7 @@ void Codegen::register_all_imports(const std::string& mod_fqn) {
                     auto* fn_type = llvm::FunctionType::get(llvm_type(meta.async_inner_type), param_types, false);
                     auto* fn = module_->getFunction(mangled);
                     if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage, mangled, module_.get());
-                    CompiledFunction cf;
-                    cf.fn = fn;
-                    cf.return_type = CType::PROMISE;
-                    cf.param_types = meta.param_types;
+                    CompiledFunction cf = compiled_function_from_meta(fn, meta, CType::PROMISE);
                     compiled_functions_[func_name] = cf;
                     named_values_[func_name] = {fn, CType::FUNCTION, {meta.async_inner_type}};
                 } else {

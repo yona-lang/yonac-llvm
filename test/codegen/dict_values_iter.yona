@@ -1,4 +1,5 @@
 import values from Std\Dict in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
 let d = {1: 10, 2: 20, 3: 30} in
 let iter = values d in
-foldl (\acc x -> acc + x) 0 iter
+foldl (\acc x -> acc + x) 0 [x for x = iter]

@@ -214,6 +214,8 @@ private:
     // into a collection, or passed as an ADT constructor field.
     bool has_escaping_use(ast::AstNode* node, const std::string& name,
                           bool is_return_position = false);
+    std::vector<bool> infer_borrowed_params(const DeferredFunction& def,
+                                            const std::vector<CType>& param_ctypes);
     std::unordered_map<std::string, CompiledFunction> compiled_functions_;
 
     int lambda_counter_ = 0;
@@ -382,7 +384,15 @@ private:
         bool is_io_async = false;
         CType async_inner_type = CType::INT;
         std::string return_adt_name;  // for ADT returns from extern decls: the type name
+        // Inferred borrow contract loaded from .yonai. borrowed_params[i]
+        // means parameter i is read-only/non-escaping, so call sites can
+        // avoid defensive ownership bumps across module boundaries.
+        std::vector<bool> borrowed_params;
     };
+    ModuleFunctionMeta module_meta_from_compiled(const CompiledFunction& cf) const;
+    CompiledFunction compiled_function_from_meta(llvm::Function* fn,
+                                                 const ModuleFunctionMeta& meta,
+                                                 CType return_type) const;
 
     struct EffectInfo {
         std::string name, type_param;
@@ -403,6 +413,7 @@ private:
     struct ImportState {
         std::unordered_map<std::string, std::string> extern_functions;       // local → mangled
         std::unordered_map<std::string, std::string> function_source;        // mangled → source
+        std::unordered_set<std::string> interface_symbols;                   // symbols owned by current module
         std::unordered_map<std::string, ImportedFunctionSource> imported_sources;
         std::vector<std::unique_ptr<ast::FunctionExpr>> imported_ast_nodes;  // ownership
         std::unordered_map<std::string, ModuleFunctionMeta> meta;            // function metadata
@@ -605,6 +616,7 @@ private:
     std::string tco_fn_name_;                  ///< Current function name (if self-recursive)
     std::vector<std::string> tco_param_names_; ///< Parameter names for RC cleanup
     std::vector<CType> tco_param_ctypes_;      ///< Parameter CTypes
+    std::vector<bool> tco_borrowed_params_;    ///< Borrowed params excluded from TCO cleanup
     bool tco_cleanup_done_ = false;            ///< Pre-tail-call cleanup already emitted
 
     // Identifiers
@@ -642,6 +654,10 @@ private:
                                       const std::vector<TypedValue>& all_args);
     TypedValue codegen_curry_apply(const std::string& fn_name, CompiledFunction& cf,
                                     const std::vector<TypedValue>& all_args);
+    void prepare_callee_owned_heap_args(const CompiledFunction& cf,
+                                        const std::vector<TypedValue>& all_args);
+    void cleanup_borrowed_temporary_args(const CompiledFunction& cf,
+                                         const std::vector<TypedValue>& all_args);
     TypedValue emit_direct_call(const std::string& fn_name, CompiledFunction& cf,
                                  const std::vector<TypedValue>& all_args);
 
@@ -709,6 +725,8 @@ private:
     struct InferredParamType {
         CType type = CType::INT;
         PatternNode* source_pattern = nullptr; // tuple/seq pattern for element types
+        std::vector<CType> subtypes;
+        std::vector<std::string> accessed_fields;
     };
 
     // Infer parameter types for a module function by analyzing patterns and body
@@ -716,6 +734,8 @@ private:
 
     // Reference counting helpers — emit rc_inc/rc_dec for heap-typed values
     static bool is_heap_type(CType ct);
+    bool is_unboxed_enum_adt(const TypedValue& value) const;
+    bool is_heap_value(const TypedValue& value) const;
     void emit_rc_inc(llvm::Value* val, CType type);
     void emit_rc_dec(llvm::Value* val, CType type);
 

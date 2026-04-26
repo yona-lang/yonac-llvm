@@ -25,6 +25,8 @@ using LType = llvm::Type;
 static Value* coerce_for_phi(Value* val, LType* target, IRBuilder<>& builder, LLVMContext& ctx) {
     auto* src = val->getType();
     if (src == target) return val;
+    if (src->isVoidTy())
+        return Constant::getNullValue(target);
 
     // Integer widening (e.g., i1 → i64)
     if (src->isIntegerTy() && target->isIntegerTy())
@@ -38,8 +40,26 @@ static Value* coerce_for_phi(Value* val, LType* target, IRBuilder<>& builder, LL
     if (src->isIntegerTy() && target->isPointerTy())
         return builder.CreateIntToPtr(val, target);
 
+    if (src->isFloatingPointTy() && target->isIntegerTy())
+        return builder.CreateFPToSI(val, target);
+
+    if (src->isIntegerTy() && target->isFloatingPointTy())
+        return builder.CreateSIToFP(val, target);
+
     // struct → ptr (box into alloca)
     if (src->isStructTy() && target->isPointerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return alloca;
+    }
+
+    if (src->isStructTy() && target->isIntegerTy()) {
+        auto* alloca = builder.CreateAlloca(src);
+        builder.CreateStore(val, alloca);
+        return builder.CreatePtrToInt(alloca, target);
+    }
+
+    if (!src->isVoidTy() && target->isPointerTy()) {
         auto* alloca = builder.CreateAlloca(src);
         builder.CreateStore(val, alloca);
         return alloca;
@@ -67,6 +87,11 @@ static LType* common_phi_type(LType* a, LType* b, LLVMContext& ctx) {
         unsigned wa = a->getIntegerBitWidth(), wb = b->getIntegerBitWidth();
         return wa >= wb ? a : b;
     }
+
+    if (a->isFloatingPointTy() || b->isFloatingPointTy())
+        return a->isDoubleTy() || b->isDoubleTy()
+            ? LType::getDoubleTy(ctx)
+            : LType::getFloatTy(ctx);
 
     // Fallback: i64
     return LType::getInt64Ty(ctx);
@@ -516,6 +541,77 @@ int Codegen::count_identifier_refs(AstNode* node, const std::string& name) {
 // Conservative: returns true on any ambiguous case. Only params
 // confirmed as non-escaping get the borrow optimization.
 
+static bool contains_raise_expr(AstNode* node) {
+    if (!node) return false;
+    auto ty = node->get_type();
+    if (ty == AST_RAISE_EXPR) return true;
+
+    if (dynamic_cast<BinaryOpExpr*>(node)) {
+        auto* b = static_cast<BinaryOpExpr*>(node);
+        return contains_raise_expr(b->left) || contains_raise_expr(b->right);
+    }
+    if (ty == AST_IF_EXPR) {
+        auto* e = static_cast<IfExpr*>(node);
+        return contains_raise_expr(e->condition)
+            || contains_raise_expr(e->thenExpr)
+            || contains_raise_expr(e->elseExpr);
+    }
+    if (ty == AST_LET_EXPR) {
+        auto* e = static_cast<LetExpr*>(node);
+        for (auto* a : e->aliases) {
+            if (auto* va = dynamic_cast<ValueAlias*>(a)) {
+                if (contains_raise_expr(va->expr)) return true;
+            }
+        }
+        return contains_raise_expr(e->expr);
+    }
+    if (ty == AST_CASE_EXPR) {
+        auto* e = static_cast<CaseExpr*>(node);
+        if (contains_raise_expr(e->expr)) return true;
+        for (auto* clause : e->clauses) {
+            if (contains_raise_expr(clause->guard)) return true;
+            if (contains_raise_expr(clause->body)) return true;
+        }
+        return false;
+    }
+    if (ty == AST_DO_EXPR) {
+        auto* e = static_cast<DoExpr*>(node);
+        for (auto* step : e->steps)
+            if (contains_raise_expr(step)) return true;
+        return false;
+    }
+    if (ty == AST_TRY_CATCH_EXPR) {
+        auto* e = static_cast<TryCatchExpr*>(node);
+        if (contains_raise_expr(e->tryExpr)) return true;
+        for (auto* cp : e->catchExpr->patterns) {
+            if (auto* bwg = std::get_if<PatternWithoutGuards*>(&cp->pattern))
+                if (*bwg && contains_raise_expr((*bwg)->expr)) return true;
+            if (auto* guarded = std::get_if<std::vector<PatternWithGuards*>>(&cp->pattern)) {
+                for (auto* pg : *guarded) {
+                    if (contains_raise_expr(pg->guard)) return true;
+                    if (contains_raise_expr(pg->expr)) return true;
+                }
+            }
+        }
+        return false;
+    }
+    if (ty == AST_APPLY_EXPR) {
+        auto* e = static_cast<ApplyExpr*>(node);
+        for (auto& arg : e->args) {
+            if (auto* expr = std::get_if<ExprNode*>(&arg))
+                if (*expr && contains_raise_expr(*expr)) return true;
+        }
+        return false;
+    }
+    if (ty == AST_FUNCTION_EXPR) {
+        // Nested functions are analyzed independently; a raise there does not
+        // make this function's parameter contract unwind-unsafe unless the
+        // parameter is captured, which has_escaping_use already rejects.
+        return false;
+    }
+    return false;
+}
+
 bool Codegen::has_escaping_use(AstNode* node, const std::string& name,
                                 bool is_return_position) {
     if (!node) return false;
@@ -608,16 +704,27 @@ bool Codegen::has_escaping_use(AstNode* node, const std::string& name,
         return false;
     }
 
-    // Apply: the function's arguments are NOT storage (they're passed to
-    // a callee which may borrow). This is the key: passing a value to a
-    // function call does NOT count as an escape. The callee's convention
-    // determines whether it's borrowed or owned.
+    // Apply: forwarding a param only remains a borrow if the callee is known
+    // to borrow that argument. Unknown callees and callee-owned params escape
+    // because the callee may consume or retain the value.
     if (ty == AST_APPLY_EXPR) {
         auto* e = static_cast<ApplyExpr*>(node);
-        // The call result might be in return position, but the
-        // arguments themselves are not stored — they're consumed by
-        // the callee. We only flag escaping if the name appears in a
-        // context where it would be structurally stored.
+        std::string callee_name;
+        if (auto* nc = dynamic_cast<NameCall*>(e->call))
+            callee_name = nc->name->value;
+        auto cf_it = callee_name.empty()
+            ? compiled_functions_.end()
+            : compiled_functions_.find(callee_name);
+        for (size_t ai = 0; ai < e->args.size(); ai++) {
+            auto* arg_expr = std::get_if<ExprNode*>(&e->args[ai]);
+            if (!arg_expr || !*arg_expr) continue;
+            if (has_escaping_use(*arg_expr, name, false)) return true;
+            if (count_identifier_refs(*arg_expr, name) == 0) continue;
+            if (cf_it == compiled_functions_.end()) return true;
+            if (ai >= cf_it->second.borrowed_params.size()
+                || !cf_it->second.borrowed_params[ai])
+                return true;
+        }
         return false;
     }
 
@@ -635,6 +742,25 @@ bool Codegen::has_escaping_use(AstNode* node, const std::string& name,
     // Conservative default: if we don't recognize the node type and name
     // appears in it, assume it escapes.
     return count_identifier_refs(node, name) > 0;
+}
+
+std::vector<bool> Codegen::infer_borrowed_params(const DeferredFunction& def,
+                                                  const std::vector<CType>& param_ctypes) {
+    std::vector<bool> borrowed(def.param_names.size(), false);
+    if (def.ast->bodies.empty()) return borrowed;
+
+    auto* body = def.ast->bodies[0];
+    auto* bwg = dynamic_cast<BodyWithoutGuards*>(body);
+    if (!bwg) return borrowed;
+    if (contains_raise_expr(bwg->expr)) return borrowed;
+
+    for (size_t pi = 0; pi < def.param_names.size(); pi++) {
+        if (pi >= param_ctypes.size()) continue;
+        if (!is_heap_type(param_ctypes[pi])) continue;
+        if (!has_escaping_use(bwg->expr, def.param_names[pi], true))
+            borrowed[pi] = true;
+    }
+    return borrowed;
 }
 
 // ===== Let Bindings =====
@@ -1114,6 +1240,69 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
                 auto& cf = cf_it->second;
                 size_t user_arity = cf.param_types.size() - cf.capture_names.size();
                 if (user_arity == 0 && !cf.is_io_async && cf.return_type != CType::PROMISE) {
+                    auto ext_it = imports_.extern_functions.find(node->name->value);
+                    if (ext_it != imports_.extern_functions.end()) {
+                        auto genfn_it = imports_.imported_sources.find(ext_it->second);
+                        if (genfn_it != imports_.imported_sources.end()) {
+                            auto reparsed = reparse_genfn(genfn_it->second.local_name,
+                                                           genfn_it->second.source_text);
+                            if (reparsed && !reparsed->functions.empty()) {
+                                auto* func_ast = reparsed->functions[0];
+                                reparsed->functions.clear();
+                                imports_.imported_ast_nodes.push_back(std::unique_ptr<FunctionExpr>(func_ast));
+                                auto saved_externs = imports_.extern_functions;
+                                std::vector<std::string> scoped_cafs;
+                                auto sep = ext_it->second.rfind("__");
+                                std::string module_prefix = (sep == std::string::npos)
+                                    ? "" : ext_it->second.substr(0, sep + 2);
+                                if (!module_prefix.empty()) {
+                                    for (const auto& [dep_mangled, dep_meta] : imports_.meta) {
+                                        if (dep_mangled.rfind(module_prefix, 0) != 0) continue;
+                                        auto dep_sep = dep_mangled.rfind("__");
+                                        if (dep_sep == std::string::npos) continue;
+                                        std::string dep_name = dep_mangled.substr(dep_sep + 2);
+                                        imports_.extern_functions.emplace(dep_name, dep_mangled);
+                                        if (dep_meta.param_types.empty() &&
+                                            compiled_functions_.find(dep_name) == compiled_functions_.end()) {
+                                            auto* ret_ty = llvm_type(dep_meta.return_type);
+                                            auto* fn_type = llvm::FunctionType::get(ret_ty, {}, false);
+                                            auto* fn = module_->getFunction(dep_mangled);
+                                            if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage,
+                                                                           dep_mangled, module_.get());
+                                            compiled_functions_[dep_name] =
+                                                compiled_function_from_meta(fn, dep_meta, dep_meta.return_type);
+                                            scoped_cafs.push_back(dep_name);
+                                        }
+                                    }
+                                }
+                                codegen_function_def(func_ast, node->name->value);
+                                auto local_def_it = deferred_functions_.find(node->name->value);
+                                if (local_def_it == deferred_functions_.end()) {
+                                    imports_.extern_functions = std::move(saved_externs);
+                                    for (const auto& scoped_caf : scoped_cafs)
+                                        compiled_functions_.erase(scoped_caf);
+                                    return it->second;
+                                }
+                                auto local_cf = compile_function(node->name->value,
+                                                                 local_def_it->second, {});
+                                imports_.extern_functions = std::move(saved_externs);
+                                for (const auto& scoped_caf : scoped_cafs)
+                                    compiled_functions_.erase(scoped_caf);
+                                std::vector<llvm::Value*> local_args;
+                                if (local_cf.closure_env) local_args.push_back(local_cf.closure_env);
+                                auto* local_call = local_cf.fn->getReturnType()->isVoidTy()
+                                    ? builder_->CreateCall(local_cf.fn, local_args)
+                                    : builder_->CreateCall(local_cf.fn, local_args, "caf_call");
+                                Value* local_val = local_cf.fn->getReturnType()->isVoidTy()
+                                    ? static_cast<Value*>(ConstantInt::get(LType::getInt64Ty(*context_), 0))
+                                    : static_cast<Value*>(local_call);
+                                TypedValue result{local_val, local_cf.return_type};
+                                if (!local_cf.return_adt_name.empty()) result.adt_type_name = local_cf.return_adt_name;
+                                if (!local_cf.return_subtypes.empty()) result.subtypes = local_cf.return_subtypes;
+                                return result;
+                            }
+                        }
+                    }
                     std::vector<llvm::Value*> no_args;
                     if (cf.closure_env) no_args.push_back(cf.closure_env);
                     auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");
@@ -1137,6 +1326,68 @@ TypedValue Codegen::codegen_identifier(IdentifierExpr* node) {
         auto& cf = fit->second;
         size_t user_arity = cf.param_types.size() - cf.capture_names.size();
         if (user_arity == 0 && !cf.is_io_async && cf.return_type != CType::PROMISE) {
+            auto ext_it = imports_.extern_functions.find(node->name->value);
+            if (ext_it != imports_.extern_functions.end()) {
+                auto genfn_it = imports_.imported_sources.find(ext_it->second);
+                if (genfn_it != imports_.imported_sources.end()) {
+                    auto reparsed = reparse_genfn(genfn_it->second.local_name,
+                                                   genfn_it->second.source_text);
+                    if (reparsed && !reparsed->functions.empty()) {
+                        auto* func_ast = reparsed->functions[0];
+                        reparsed->functions.clear();
+                        imports_.imported_ast_nodes.push_back(std::unique_ptr<FunctionExpr>(func_ast));
+                        auto saved_externs = imports_.extern_functions;
+                        std::vector<std::string> scoped_cafs;
+                        auto sep = ext_it->second.rfind("__");
+                        std::string module_prefix = (sep == std::string::npos)
+                            ? "" : ext_it->second.substr(0, sep + 2);
+                        if (!module_prefix.empty()) {
+                            for (const auto& [dep_mangled, dep_meta] : imports_.meta) {
+                                if (dep_mangled.rfind(module_prefix, 0) != 0) continue;
+                                auto dep_sep = dep_mangled.rfind("__");
+                                if (dep_sep == std::string::npos) continue;
+                                std::string dep_name = dep_mangled.substr(dep_sep + 2);
+                                imports_.extern_functions.emplace(dep_name, dep_mangled);
+                                if (dep_meta.param_types.empty() &&
+                                    compiled_functions_.find(dep_name) == compiled_functions_.end()) {
+                                    auto* ret_ty = llvm_type(dep_meta.return_type);
+                                    auto* fn_type = llvm::FunctionType::get(ret_ty, {}, false);
+                                    auto* fn = module_->getFunction(dep_mangled);
+                                    if (!fn) fn = Function::Create(fn_type, Function::ExternalLinkage,
+                                                                   dep_mangled, module_.get());
+                                    compiled_functions_[dep_name] =
+                                        compiled_function_from_meta(fn, dep_meta, dep_meta.return_type);
+                                    scoped_cafs.push_back(dep_name);
+                                }
+                            }
+                        }
+                        codegen_function_def(func_ast, node->name->value);
+                        auto local_def_it = deferred_functions_.find(node->name->value);
+                        if (local_def_it != deferred_functions_.end()) {
+                            auto local_cf = compile_function(node->name->value,
+                                                             local_def_it->second, {});
+                            imports_.extern_functions = std::move(saved_externs);
+                            for (const auto& scoped_caf : scoped_cafs)
+                                compiled_functions_.erase(scoped_caf);
+                            std::vector<llvm::Value*> local_args;
+                            if (local_cf.closure_env) local_args.push_back(local_cf.closure_env);
+                            auto* local_call = local_cf.fn->getReturnType()->isVoidTy()
+                                ? builder_->CreateCall(local_cf.fn, local_args)
+                                : builder_->CreateCall(local_cf.fn, local_args, "caf_call");
+                            Value* local_val = local_cf.fn->getReturnType()->isVoidTy()
+                                ? static_cast<Value*>(ConstantInt::get(LType::getInt64Ty(*context_), 0))
+                                : static_cast<Value*>(local_call);
+                            TypedValue result{local_val, local_cf.return_type};
+                            if (!local_cf.return_adt_name.empty()) result.adt_type_name = local_cf.return_adt_name;
+                            if (!local_cf.return_subtypes.empty()) result.subtypes = local_cf.return_subtypes;
+                            return result;
+                        }
+                        imports_.extern_functions = std::move(saved_externs);
+                        for (const auto& scoped_caf : scoped_cafs)
+                            compiled_functions_.erase(scoped_caf);
+                    }
+                }
+            }
             std::vector<llvm::Value*> no_args;
             if (cf.closure_env) no_args.push_back(cf.closure_env);
             auto* call = builder_->CreateCall(cf.fn, no_args, "caf_call");

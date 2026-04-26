@@ -1,6 +1,7 @@
 import openFile, readChunks, closeFileHandle from Std\File, length from Std\ByteArray in
+let foldl fn acc seq = case seq of [] -> acc; [h|t] -> foldl fn (fn acc h) t end in
 let rh = openFile "bench/data/bench_binary.bin" Read in
 let iter = readChunks rh 65536 in
-let total = foldl (\acc chunk -> acc + length chunk) 0 iter in
+let total = foldl (\acc chunk -> acc + length chunk) 0 [chunk for chunk = iter] in
 let _ = closeFileHandle rh in
 total

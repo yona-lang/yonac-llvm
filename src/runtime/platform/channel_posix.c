@@ -228,6 +228,23 @@ void yona_rt_channel_destroy(void* ptr) {
 /* ===== Std\Channel wrappers (i64-based for codegen) ===== */
 
 int64_t yona_Std_Channel__channel(int64_t cap) {
+    int64_t raw = (int64_t)(intptr_t)yona_rt_channel_new(cap);
+    void* left = yona_rt_adt_alloc(0, 1);
+    void* right = yona_rt_adt_alloc(0, 1);
+    yona_rt_rc_inc((void*)(intptr_t)raw);
+    yona_rt_rc_inc((void*)(intptr_t)raw);
+    yona_rt_adt_set_field(left, 0, raw);
+    yona_rt_adt_set_field(right, 0, raw);
+    yona_rt_adt_set_heap_mask(left, 1);
+    yona_rt_adt_set_heap_mask(right, 1);
+    void* tuple = yona_rt_tuple_alloc(2);
+    yona_rt_tuple_set(tuple, 0, (int64_t)(intptr_t)left);
+    yona_rt_tuple_set(tuple, 1, (int64_t)(intptr_t)right);
+    yona_rt_tuple_set_heap_mask(tuple, 3);
+    return (int64_t)(intptr_t)tuple;
+}
+
+int64_t yona_Std_Channel__raw_new(int64_t cap) {
     return (int64_t)(intptr_t)yona_rt_channel_new(cap);
 }
 
@@ -236,12 +253,24 @@ int64_t yona_Std_Channel__send(int64_t ch_i64, int64_t value) {
     return 0;
 }
 
+int64_t yona_Std_Channel__raw_send(int64_t ch_i64, int64_t value) {
+    return yona_Std_Channel__send(ch_i64, value);
+}
+
 int64_t yona_Std_Channel__recv(int64_t ch_i64) {
     return yona_rt_channel_recv((yona_channel_t*)(intptr_t)ch_i64);
 }
 
+int64_t yona_Std_Channel__raw_recv(int64_t ch_i64) {
+    return yona_Std_Channel__recv(ch_i64);
+}
+
 int64_t yona_Std_Channel__tryRecv(int64_t ch_i64) {
     return yona_rt_channel_try_recv((yona_channel_t*)(intptr_t)ch_i64);
+}
+
+int64_t yona_Std_Channel__raw_tryRecv(int64_t ch_i64) {
+    return yona_Std_Channel__tryRecv(ch_i64);
 }
 
 int64_t yona_Std_Channel__close(int64_t ch_i64) {
@@ -249,16 +278,32 @@ int64_t yona_Std_Channel__close(int64_t ch_i64) {
     return 0;
 }
 
+int64_t yona_Std_Channel__raw_close(int64_t ch_i64) {
+    return yona_Std_Channel__close(ch_i64);
+}
+
 int64_t yona_Std_Channel__isClosed(int64_t ch_i64) {
     return yona_rt_channel_is_closed((yona_channel_t*)(intptr_t)ch_i64);
+}
+
+int64_t yona_Std_Channel__raw_isClosed(int64_t ch_i64) {
+    return yona_Std_Channel__isClosed(ch_i64);
 }
 
 int64_t yona_Std_Channel__length(int64_t ch_i64) {
     return yona_rt_channel_length((yona_channel_t*)(intptr_t)ch_i64);
 }
 
+int64_t yona_Std_Channel__raw_length(int64_t ch_i64) {
+    return yona_Std_Channel__length(ch_i64);
+}
+
 int64_t yona_Std_Channel__capacity(int64_t ch_i64) {
     return yona_rt_channel_capacity((yona_channel_t*)(intptr_t)ch_i64);
+}
+
+int64_t yona_Std_Channel__raw_capacity(int64_t ch_i64) {
+    return yona_Std_Channel__capacity(ch_i64);
 }
 
 /* ===== Std\Task — task spawning ===== */
